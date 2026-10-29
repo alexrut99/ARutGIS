@@ -1,6 +1,6 @@
 ; setup.exe installer (NSIS 3), built by package.sh. A per-user install that needs no admin
-; rights, in %LOCALAPPDATA%\Programs\RustGIS: a Start menu shortcut, rustgis-cli on the user's
-; PATH, .rgis/.rgisx projects opened by RustGIS and RustGIS offered under Open with for .geojson.
+; rights, in %LOCALAPPDATA%\Programs\ARutGIS: a Start menu shortcut, rustgis-cli on the user's
+; PATH, .rgis/.rgisx projects opened by ARutGIS and ARutGIS offered under Open with for .geojson.
 ; Defines passed with -D: VERSION, VERSION4 (four numbers), STAGE (the folder holding the exes,
 ; LICENSE, THIRD-PARTY-LICENSES.txt and path.ps1), ICON, SIDEBAR (a 164x314 BMP) and OUTFILE.
 
@@ -9,8 +9,8 @@ SetCompressor /SOLID lzma
 RequestExecutionLevel user
 ManifestDPIAware true
 
-!define APP "RustGIS"
-!define PUBLISHER "Open Geospatial Solutions"
+!define APP "ARutGIS"
+!define PUBLISHER "ARutGIS"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
 
 Name "${APP}"
@@ -24,7 +24,7 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "FileDescription" "${APP} ${VERSION} setup"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
-VIAddVersionKey "LegalCopyright" "Copyright the RustGIS contributors. Apache-2.0."
+VIAddVersionKey "LegalCopyright" "Copyright the ARutGIS and RustGIS contributors. Apache-2.0."
 
 !include "MUI2.nsh"
 !include "WinMessages.nsh"
@@ -77,13 +77,13 @@ Section "Install"
     MessageBox MB_OK|MB_ICONEXCLAMATION "${APP} is installed, but rustgis-cli could not be added to your PATH ($0). Run it from $INSTDIR instead." /SD IDOK
   !insertmacro RefreshEnvironment
 
-  ; Projects open in RustGIS; GeoJSON lists it under Open with.
-  WriteRegStr HKCU "Software\Classes\RustGIS.Project" "" "RustGIS project"
-  WriteRegStr HKCU "Software\Classes\RustGIS.Project\DefaultIcon" "" '"$INSTDIR\rustgis.exe",0'
-  WriteRegStr HKCU "Software\Classes\RustGIS.Project\shell\open\command" "" '"$INSTDIR\rustgis.exe" "%1"'
-  WriteRegStr HKCU "Software\Classes\.rgis" "" "RustGIS.Project"
-  WriteRegStr HKCU "Software\Classes\.rgisx" "" "RustGIS.Project"
-  WriteRegStr HKCU "Software\Classes\.geojson\OpenWithProgids" "RustGIS.Project" ""
+  ; Projects open in ARutGIS; GeoJSON lists it under Open with.
+  WriteRegStr HKCU "Software\Classes\ARutGIS.Project" "" "ARutGIS project"
+  WriteRegStr HKCU "Software\Classes\ARutGIS.Project\DefaultIcon" "" '"$INSTDIR\rustgis.exe",0'
+  WriteRegStr HKCU "Software\Classes\ARutGIS.Project\shell\open\command" "" '"$INSTDIR\rustgis.exe" "%1"'
+  WriteRegStr HKCU "Software\Classes\.rgis" "" "ARutGIS.Project"
+  WriteRegStr HKCU "Software\Classes\.rgisx" "" "ARutGIS.Project"
+  WriteRegStr HKCU "Software\Classes\.geojson\OpenWithProgids" "ARutGIS.Project" ""
   !insertmacro RefreshShell
 
   ; Apps & features.
@@ -93,7 +93,7 @@ Section "Install"
   WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "${PUBLISHER}"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" '"$INSTDIR\rustgis.exe",0'
   WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "${UNINST_KEY}" "URLInfoAbout" "https://rustgis.app"
+  WriteRegStr HKCU "${UNINST_KEY}" "URLInfoAbout" "https://github.com/alexrut99/ARustGIS"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKCU "${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
@@ -114,14 +114,14 @@ Section "Uninstall"
   !insertmacro RefreshEnvironment
 
   ; Only the associations this installer made: another program may own .geojson.
-  DeleteRegValue HKCU "Software\Classes\.geojson\OpenWithProgids" "RustGIS.Project"
+  DeleteRegValue HKCU "Software\Classes\.geojson\OpenWithProgids" "ARutGIS.Project"
   ReadRegStr $0 HKCU "Software\Classes\.rgis" ""
-  StrCmp $0 "RustGIS.Project" 0 +2
+  StrCmp $0 "ARutGIS.Project" 0 +2
     DeleteRegKey HKCU "Software\Classes\.rgis"
   ReadRegStr $0 HKCU "Software\Classes\.rgisx" ""
-  StrCmp $0 "RustGIS.Project" 0 +2
+  StrCmp $0 "ARutGIS.Project" 0 +2
     DeleteRegKey HKCU "Software\Classes\.rgisx"
-  DeleteRegKey HKCU "Software\Classes\RustGIS.Project"
+  DeleteRegKey HKCU "Software\Classes\ARutGIS.Project"
   !insertmacro RefreshShell
 
   Delete "$INSTDIR\rustgis.exe"

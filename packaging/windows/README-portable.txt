@@ -1,4 +1,4 @@
-RustGIS @VERSION@ (portable)
+ARutGIS @VERSION@ (portable)
 
 Unzip this folder anywhere and run rustgis.exe. No installation or admin rights
 are needed. rustgis-cli.exe is the command line tool: run it from a terminal in

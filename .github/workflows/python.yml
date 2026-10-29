@@ -155,7 +155,8 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    if: github.event_name == 'release'
+    # Only RustGIS's own repository publishes the rustgis package to PyPI, never a fork.
+    if: github.repository == 'opengeos/RustGIS' && github.event_name == 'release'
     needs: [test, wheels, sdist]
     runs-on: ubuntu-latest
     environment: pypi

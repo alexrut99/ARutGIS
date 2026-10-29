@@ -142,7 +142,7 @@ jobs:
         shell: bash
         run: |
           hdiutil attach -nobrowse -mountpoint "$RUNNER_TEMP/dmg" dist/*.dmg
-          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/dmg/RustGIS.app"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/dmg/ARutGIS.app"
           # stapler validate looks the ticket up in Apple's CloudKit, which drops connections now
           # and then ("The network connection was lost", error 68): retry before failing.
           validate() {
@@ -153,8 +153,8 @@ jobs:
             return 1
           }
           if [ -n "${{ steps.macsign.outputs.api_key_path }}" ]; then
-            spctl --assess --type execute --verbose=2 "$RUNNER_TEMP/dmg/RustGIS.app"
-            validate "$RUNNER_TEMP/dmg/RustGIS.app"
+            spctl --assess --type execute --verbose=2 "$RUNNER_TEMP/dmg/ARutGIS.app"
+            validate "$RUNNER_TEMP/dmg/ARutGIS.app"
             # package.sh stapled the DMG and stapling validates the ticket it attaches, so ask
             # Gatekeeper here: it reads the stapled ticket locally, as a user's Mac does, instead
             # of another CloudKit lookup that the Intel runners keep losing.
@@ -195,9 +195,9 @@ jobs:
           $log = "$env:RUNNER_TEMP\msi.log"
           $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v `"$log`"" -Wait -PassThru
           if ($p.ExitCode) { Get-Content $log -Tail 80; throw "msiexec /i exited with $($p.ExitCode)" }
-          $dir = "$env:ProgramFiles\RustGIS"
+          $dir = "$env:ProgramFiles\ARutGIS"
           Check $dir 'Machine'
-          if (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\RustGIS.lnk")) {
+          if (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\ARutGIS.lnk")) {
             throw 'no Start menu shortcut'
           }
           $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru
@@ -206,9 +206,9 @@ jobs:
 
           $setup = (Get-Item dist\*-setup.exe).FullName
           Start-Process $setup -ArgumentList '/S' -Wait
-          $dir = "$env:LOCALAPPDATA\Programs\RustGIS"
+          $dir = "$env:LOCALAPPDATA\Programs\ARutGIS"
           Check $dir 'User'
-          if ((Get-ItemProperty 'HKCU:\Software\Classes\.rgis').'(default)' -ne 'RustGIS.Project') {
+          if ((Get-ItemProperty 'HKCU:\Software\Classes\.rgis').'(default)' -ne 'ARutGIS.Project') {
             throw '.rgis is not associated'
           }
           # _?= keeps the uninstaller in place, so -Wait waits for it.
@@ -240,7 +240,7 @@ jobs:
           test -x squashfs-root/AppRun
           # The embedded update information points at the .zsync published beside it.
           "$GITHUB_WORKSPACE"/dist/*.AppImage --appimage-updateinformation | tee update.txt
-          grep -q "^gh-releases-zsync|.*|latest|RustGIS-\*-linux-$(uname -m).AppImage.zsync$" update.txt
+          grep -q "^gh-releases-zsync|.*|latest|ARutGIS-\*-linux-$(uname -m).AppImage.zsync$" update.txt
           test -s "$GITHUB_WORKSPACE"/dist/*.AppImage.zsync
           # The GUI cannot start on a headless runner: check that its libraries resolve.
           if ldd squashfs-root/usr/bin/rustgis | grep 'not found'; then exit 1; fi

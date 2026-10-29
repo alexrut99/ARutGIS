@@ -4,7 +4,7 @@
 #   packaging/package.sh <version> [rust-target]
 #
 # Linux: a .tar.gz, a .deb, an .rpm (when rpmbuild is installed) and an AppImage.
-# macOS: a .dmg holding RustGIS.app, plus a .tar.gz of the CLI
+# macOS: a .dmg holding ARutGIS.app, plus a .tar.gz of the CLI
 # (signed and notarized when the MACOS_SIGN_IDENTITY / APPLE_API_* variables are set).
 # Windows (Git Bash): a portable .zip, an NSIS setup.exe (per user), a WiX .msi (all users) and
 # an .msix for the Microsoft Store. The installers need makensis and the wix .NET tool with the
@@ -43,7 +43,7 @@ logo() { "$bin/rustgis-cli$exe" logo "$1" --size "$2"; }
 # The licence notices of the crates in the binaries (`cargo xtask notices`), shipped with LICENSE.
 notices="$root/THIRD-PARTY-LICENSES.txt"
 [ -f "$notices" ] || { echo "missing $notices: run cargo xtask notices" >&2; exit 1; }
-name="RustGIS-$version-$os-$arch"
+name="ARutGIS-$version-$os-$arch"
 
 case "$os" in
   linux)
@@ -178,7 +178,7 @@ SPEC
       fetch "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-$arch" \
         "$runtime_sha" "$t/runtime"
       chmod +x "$t/appimagetool"
-      a="$work/RustGIS.AppDir"
+      a="$work/ARutGIS.AppDir"
       mkdir -p "$a"
       cp -a "$p/usr" "$a/"
       cp "$root/packaging/linux/rustgis.desktop" "$a/"
@@ -187,8 +187,8 @@ SPEC
       # Update information for AppImageUpdate and friends: the newest GitHub release's .zsync,
       # which appimagetool makes with its bundled zsyncmake. zsyncmake writes into the current
       # folder, so run it from dist/.
-      repo="${GITHUB_REPOSITORY:-opengeos/RustGIS}"
-      update="gh-releases-zsync|${repo%%/*}|${repo#*/}|latest|RustGIS-*-linux-$arch.AppImage.zsync"
+      repo="${GITHUB_REPOSITORY:-alexrut99/ARustGIS}"
+      update="gh-releases-zsync|${repo%%/*}|${repo#*/}|latest|ARutGIS-*-linux-$arch.AppImage.zsync"
       (cd "$dist" && ARCH="$arch" APPIMAGE_EXTRACT_AND_RUN=1 "$t/appimagetool" --no-appstream \
         --runtime-file "$t/runtime" -u "$update" "$a" "$name.AppImage")
       [ -f "$dist/$name.AppImage.zsync" ] || { echo "appimagetool wrote no $name.AppImage.zsync" >&2; exit 1; }
@@ -196,7 +196,7 @@ SPEC
     ;;
 
   macos)
-    app="$work/RustGIS.app"
+    app="$work/ARutGIS.app"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     cp "$bin/rustgis" "$app/Contents/MacOS/rustgis"
     # Bundle versions must be dot-separated numbers: drop a pre-release suffix (0.2.0-rc.1).
@@ -242,8 +242,8 @@ SPEC
     # reaches Apple's servers at first launch (#89). Stapling adds a file outside the signed
     # contents, so the signature stays valid.
     if [ -n "$identity" ] && [ -n "${APPLE_API_KEY_PATH:-}" ]; then
-      ditto -c -k --keepParent "$app" "$work/RustGIS.app.zip"
-      notarize "$work/RustGIS.app.zip"
+      ditto -c -k --keepParent "$app" "$work/ARutGIS.app.zip"
+      notarize "$work/ARutGIS.app.zip"
       staple "$app"
     fi
 
@@ -255,7 +255,7 @@ SPEC
     # copying the app): size the image from the folder, with room to spare. UDZO compresses the
     # free space away.
     size_mb=$(($(du -sm "$stage" | cut -f1) + 64))
-    hdiutil create -volname "RustGIS $version" -srcfolder "$stage" -size "${size_mb}m" -ov -format UDZO "$dist/$name.dmg"
+    hdiutil create -volname "ARutGIS $version" -srcfolder "$stage" -size "${size_mb}m" -ov -format UDZO "$dist/$name.dmg"
     if [ -n "$identity" ]; then
       sign "$dist/$name.dmg"
       if notarize "$dist/$name.dmg" && [ -n "${APPLE_API_KEY_PATH:-}" ]; then
@@ -346,9 +346,9 @@ SPEC
     xmlval() { printf '%s' "$1" | sed -e 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' -e 's/[\\|&]/\\&/g'; }
     # MSIX versions are four numbers: drop a pre-release suffix (0.2.0-rc.1 -> 0.2.0.0).
     sed -e "s|@VERSION@|${version%%-*}.0|g" -e "s|@ARCH@|$instarch|g" \
-      -e "s|@NAME@|$(xmlval "${MSIX_NAME:-OpenGeospatialSolutions.RustGIS}")|g" \
+      -e "s|@NAME@|$(xmlval "${MSIX_NAME:-AlexRut.ARutGIS}")|g" \
       -e "s|@PUBLISHER@|$(xmlval "${MSIX_PUBLISHER:-CN=E6AE8172-DC4F-4F79-844B-9D84204BF95A}")|g" \
-      -e "s|@PUBLISHER_DISPLAY_NAME@|$(xmlval "${MSIX_PUBLISHER_DISPLAY_NAME:-Open Geospatial Solutions}")|g" \
+      -e "s|@PUBLISHER_DISPLAY_NAME@|$(xmlval "${MSIX_PUBLISHER_DISPLAY_NAME:-ARutGIS}")|g" \
       "$root/packaging/windows/AppxManifest.xml" > "$m/AppxManifest.xml"
     makeappx="$(command -v makeappx.exe || true)"
     if [ -z "$makeappx" ]; then

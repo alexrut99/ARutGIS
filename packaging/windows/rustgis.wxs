@@ -1,43 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Windows Installer package (WiX 5), built by package.sh. An all-users install in Program Files:
-  a Start menu shortcut, rustgis-cli on the system PATH, .rgis/.rgisx projects opened by RustGIS
-  and RustGIS offered under Open with for .geojson. Variables passed with -d: Version (three
+  a Start menu shortcut, rustgis-cli on the system PATH, .rgis/.rgisx projects opened by ARutGIS
+  and ARutGIS offered under Open with for .geojson. Variables passed with -d: Version (three
   numbers), Stage (the folder holding the exes, LICENSE and
   THIRD-PARTY-LICENSES.txt), Icon, License (RTF), Banner and
   Dialog (BMPs).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <!-- The UpgradeCode never changes: a new version replaces the installed one. -->
-  <Package Name="RustGIS" Manufacturer="Open Geospatial Solutions" Version="$(var.Version)"
-    UpgradeCode="B8624035-B7AF-41E7-BCAC-7C59DE885053" Scope="perMachine" Language="1033">
+  <Package Name="ARutGIS" Manufacturer="ARutGIS" Version="$(var.Version)"
+    UpgradeCode="278669A5-450F-4C8D-A1C8-FE40027B38C9" Scope="perMachine" Language="1033">
     <!-- Same-version upgrades too: a pre-release (0.2.0-rc.1) and its release share 0.2.0. -->
     <MajorUpgrade AllowSameVersionUpgrades="yes"
-      DowngradeErrorMessage="A newer version of RustGIS is already installed." />
+      DowngradeErrorMessage="A newer version of ARutGIS is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Icon Id="rustgis.ico" SourceFile="$(var.Icon)" />
     <Property Id="ARPPRODUCTICON" Value="rustgis.ico" />
-    <Property Id="ARPURLINFOABOUT" Value="https://rustgis.app" />
-    <Property Id="ARPHELPLINK" Value="https://github.com/opengeos/RustGIS/issues" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/alexrut99/ARustGIS" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/alexrut99/ARustGIS/issues" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="RustGIS" />
+      <Directory Id="INSTALLFOLDER" Name="ARutGIS" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
 
-    <Feature Id="Main" Title="RustGIS">
+    <Feature Id="Main" Title="ARutGIS">
       <Component Directory="INSTALLFOLDER">
         <File Id="rustgis.exe" Source="$(var.Stage)\rustgis.exe" KeyPath="yes" />
-        <ProgId Id="RustGIS.Project" Description="RustGIS project" Icon="rustgis.exe" IconIndex="0">
+        <ProgId Id="ARutGIS.Project" Description="ARutGIS project" Icon="rustgis.exe" IconIndex="0">
           <Extension Id="rgis">
             <Verb Id="open" TargetFile="rustgis.exe" Argument="&quot;%1&quot;" />
           </Extension>
-          <!-- The verb is the ProgId's (RustGIS.Project\shell\open): one serves both. -->
+          <!-- The verb is the ProgId's (ARutGIS.Project\shell\open): one serves both. -->
           <Extension Id="rgisx" />
         </ProgId>
         <!-- Listed under Open with for GeoJSON, without taking over the default app. -->
-        <RegistryValue Root="HKLM" Key="Software\Classes\.geojson\OpenWithProgids" Name="RustGIS.Project"
+        <RegistryValue Root="HKLM" Key="Software\Classes\.geojson\OpenWithProgids" Name="ARutGIS.Project"
           Type="string" Value="" />
       </Component>
       <Component Directory="INSTALLFOLDER">
@@ -47,9 +47,9 @@
       </Component>
       <!-- A shortcut needs a registry key path (ICE43). -->
       <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
-        <Shortcut Id="StartMenuShortcut" Name="RustGIS" Description="Desktop GIS with a ribbon workflow"
+        <Shortcut Id="StartMenuShortcut" Name="ARutGIS" Description="Desktop GIS with a ribbon workflow"
           Target="[#rustgis.exe]" WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKCU" Key="Software\RustGIS" Name="StartMenuShortcut" Type="integer" Value="1"
+        <RegistryValue Root="HKCU" Key="Software\ARutGIS" Name="StartMenuShortcut" Type="integer" Value="1"
           KeyPath="yes" />
       </Component>
       <Component Directory="INSTALLFOLDER">
