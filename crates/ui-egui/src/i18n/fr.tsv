@@ -42,8 +42,8 @@ A line for the Script pane	Une ligne pour le volet Script
 A magnifying lens that follows the pointer.	Une loupe qui suit le pointeur.
 A map, feature or coverage service's address: WMS, WMTS, WFS, WCS, OGC API Features or Tiles, or an ArcGIS FeatureServer, MapServer, ImageServer or VectorTileServer (or a services directory, to browse).	L'adresse d'un service de cartes, d'entités ou de couvertures : WMS, WMTS, WFS, WCS, OGC API Features ou Tiles, ou un FeatureServer, MapServer, ImageServer ou VectorTileServer ArcGIS (ou un répertoire de services, à parcourir).
 a name, or owner/name such as giswqs/geospatial	un nom, ou propriétaire/nom comme giswqs/geospatial
-A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	Un point de terminaison nommé et réutilisable. Les clés et jetons sont conservés jusqu'à la fermeture de RustGIS, jamais enregistrés.
-A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	Un point de terminaison nommé et réutilisable. Les clés sont conservées jusqu'à la fermeture de RustGIS, sauf si vous choisissez de les mémoriser sur cet ordinateur ; la connexion elle-même ne les conserve jamais.
+A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	Un point de terminaison nommé et réutilisable. Les clés et jetons sont conservés jusqu'à la fermeture de ARutGIS, jamais enregistrés.
+A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	Un point de terminaison nommé et réutilisable. Les clés sont conservées jusqu'à la fermeture de ARutGIS, sauf si vous choisissez de les mémoriser sur cet ordinateur ; la connexion elle-même ne les conserve jamais.
 A named endpoint you can reuse. Passwords last for this session unless you choose to remember them in this computer's password store.	Un point de terminaison nommé et réutilisable. Les mots de passe durent le temps de cette session, sauf si vous choisissez de les mémoriser dans le magasin de mots de passe de cet ordinateur.
 A node cannot connect to itself.	Un nœud ne peut pas se connecter à lui-même.
 A notebook of text and command cells.	Un bloc-notes de cellules de texte et de commandes.
@@ -79,8 +79,8 @@ A5 Grid	Grille A5
 A5's equal-area pentagonal cells at a resolution, over the map's extent, a layer or the world, as polygons with their ids.	Les cellules pentagonales équivalentes d'A5 à une résolution donnée, sur l'étendue de la carte, une couche ou le monde, sous forme de polygones avec leurs identifiants.
 About	À propos
 About plugins	À propos des extensions
-About RustGIS	À propos de RustGIS
-About RustGIS.	À propos de RustGIS.
+About RustGIS	À propos de ARutGIS
+About RustGIS.	À propos de ARutGIS.
 Above	Au-dessus
 Above Left	En haut à gauche
 Above Right	En haut à droite
@@ -244,7 +244,7 @@ Agent input queue is full or disconnected; stop the agent and try again.	La file
 Agent threads	Fils d'agents
 Agent work	Agent work
 Agents have full access: they may run scripts, tasks, models and plugins. Click to stop the MCP relay	Les agents ont un accès complet : ils peuvent exécuter des scripts, tâches, modèles et extensions. Cliquez pour arrêter le relais MCP
-Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	Les agents de cet ordinateur qui se connectent (Claude Code, Codex, Cursor et d'autres) travaillent sur la carte ouverte ici avec les outils de RustGIS : ils peuvent ouvrir et enregistrer des fichiers et utiliser le web. Les scripts et la gestion des extensions restent désactivés.
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	Les agents de cet ordinateur qui se connectent (Claude Code, Codex, Cursor et d'autres) travaillent sur la carte ouverte ici avec les outils de ARutGIS : ils peuvent ouvrir et enregistrer des fichiers et utiliser le web. Les scripts et la gestion des extensions restent désactivés.
 Agents then run commands, change files and use the web on this computer without asking you.	Les agents exécutent alors des commandes, modifient des fichiers et utilisent le web sur cet ordinateur sans vous demander.
 Aggregate Points to A5	Agréger les points en A5
 Aggregation	Agrégation
@@ -269,7 +269,7 @@ Allow Feature Selection	Autoriser la sélection d'entités
 Allow only certain combinations of values across fields.	N'autoriser que certaines combinaisons de valeurs entre champs.
 Allow such actions for this conversation	Autoriser ce type d'action pour cette conversation
 Allow this action?	Autoriser cette action ?
-Allow this agent's RustGIS action?	Autoriser cette action RustGIS de l'agent ?
+Allow this agent's RustGIS action?	Autoriser cette action ARutGIS de l'agent ?
 Along lines	Le long des lignes
 Along Selected Line	Le long de la ligne sélectionnée
 Alt+	Alt+
@@ -277,7 +277,7 @@ Alternating bar	Barre alternée
 Altitude	Altitude
 Always allow	Toujours autoriser
 Amazon S3	Amazon S3
-Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3, ou un service compatible S3 (MinIO, Cloudflare R2, Wasabi…) par son point de terminaison. Les clés sont conservées jusqu'à la fermeture de RustGIS ; une connexion enregistrée garde son nom, son point de terminaison et sa région, jamais sa clé secrète.
+Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3, ou un service compatible S3 (MinIO, Cloudflare R2, Wasabi…) par son point de terminaison. Les clés sont conservées jusqu'à la fermeture de ARutGIS ; une connexion enregistrée garde son nom, son point de terminaison et sa région, jamais sa clé secrète.
 amenity=cafe, shop	amenity=cafe, shop
 An agent on this computer asks to:	Un agent de cet ordinateur demande à :
 An AWS profile	Un profil AWS
@@ -320,7 +320,7 @@ Areas (name, land use, area)	Zones (nom, occupation du sol, surface)
 Arrange	Disposer
 Arrow	Flèche
 Arrowheads	Pointes de flèche
-Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	Posez une question sur vos données, ou décrivez ce qu'il faut faire avec la carte. L'assistant exécute des commandes RustGIS pour vous ; chaque modification peut être annulée.
+Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	Posez une question sur vos données, ou décrivez ce qu'il faut faire avec la carte. L'assistant exécute des commandes ARutGIS pour vous ; chaque modification peut être annulée.
 Ask about the map, or tell it what to do…	Posez une question sur la carte, ou dites-lui quoi faire…
 Ask about your data, or tell the assistant what to do with the map.	Posez une question sur vos données, ou dites à l'assistant quoi faire avec la carte.
 Asking NASA's CMR…	Interrogation du CMR de la NASA…
@@ -635,7 +635,7 @@ Color Vision Simulator	Simulateur de vision des couleurs
 Colorbar	Barre de couleurs
 Colormap	Table de couleurs
 Colors from the raster's own color table.	Couleurs issues de la table de couleurs du raster.
-Colour ramps (RustGIS, QGIS, GDAL, GMT)	Dégradés de couleurs (RustGIS, QGIS, GDAL, GMT)
+Colour ramps (RustGIS, QGIS, GDAL, GMT)	Dégradés de couleurs (ARutGIS, QGIS, GDAL, GMT)
 Columns named like longitude/latitude, easting/northing or geometry are picked for you.	Les colonnes nommées comme longitude/latitude, easting/northing ou geometry sont choisies pour vous.
 Combinations from the box above, one per line	Combinaisons de la zone ci-dessus, une par ligne
 COMID {comid}	COMID {comid}
@@ -831,7 +831,7 @@ Delete selected rows	Supprimer les lignes sélectionnées
 Delete Style	Supprimer le style
 Delete Task	Supprimer la tâche
 Delete Task Step	Supprimer l'étape de tâche
-Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	Supprimer l'exécuteur GeoLibre installé par RustGIS. Vous pouvez le réinstaller à tout moment.
+Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	Supprimer l'exécuteur GeoLibre installé par ARutGIS. Vous pouvez le réinstaller à tout moment.
 Delete the layout {name}?	Supprimer la mise en page {name} ?
 Delete the map {name}?	Supprimer la carte {name} ?
 Delete the selected features.	Supprimer les entités sélectionnées.
@@ -1020,7 +1020,7 @@ Element Properties	Propriétés de l'élément
 Elevation	Altitude
 Elevation model	Modèle d'élévation
 Elevation profiles along lines, cross sections and more.	Profils d'altitude le long de lignes, coupes transversales et plus.
-Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	Les requêtes admissibles de RustGIS utilisent votre forfait ChatGPT. Vous pouvez gérer l'utilisation dans les paramètres de ChatGPT.
+Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	Les requêtes admissibles de ARutGIS utilisent votre forfait ChatGPT. Vous pouvez gérer l'utilisation dans les paramètres de ChatGPT.
 Ellipse	Ellipse
 Embeddings	Plongements
 Ember	Braise
@@ -1197,7 +1197,7 @@ Find and run geoprocessing tools.	Trouver et exécuter des outils de géotraitem
 Find any command by name (Ctrl+K).	Trouver une commande par son nom (Ctrl+K).
 Find Items	Rechercher des éléments
 Find Place	Rechercher un lieu
-Find plugins in the RustGIS plugin registry.	Trouver des extensions dans le registre des extensions RustGIS.
+Find plugins in the RustGIS plugin registry.	Trouver des extensions dans le registre des extensions ARutGIS.
 Find Similar	Rechercher des similaires
 Find Tools	Rechercher des outils
 Finding routes…	Recherche d'itinéraires…
@@ -1233,7 +1233,7 @@ Forget Earthdata Login Token	Oublier le jeton Earthdata Login
 Forget Saved Keys	Oublier les clés enregistrées
 Forget Saved Password	Oublier le mot de passe enregistré
 Format	Format
-Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	Trouvés : {names}. Un agent travaille sur cette carte avec les outils de RustGIS et les siens (web, scripts, fichiers), dans un dossier à lui, conservé dans Documents › RustGIS › Agent work. Il vous demande avant chaque action.
+Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	Trouvés : {names}. Un agent travaille sur cette carte avec les outils de ARutGIS et les siens (web, scripts, fichiers), dans un dossier à lui, conservé dans Documents › ARutGIS › Agent work. Il vous demande avant chaque action.
 Frame rate	Fréquence d'images
 Frame rate, draw time, data size and memory.	Fréquence d'images, temps de dessin, taille des données et mémoire.
 France	France
@@ -1438,7 +1438,7 @@ In memory	En mémoire
 In Progress	En cours
 in progress	en cours
 In project	Dans le projet
-In RustGIS, it can:	Dans RustGIS, elle peut :
+In RustGIS, it can:	Dans ARutGIS, elle peut :
 In the browser, pick the .shp and .dbf together, with any sidecars, or pick a ZIP. The override applies to every Shapefile in the ZIP.	Dans le navigateur, sélectionnez ensemble les fichiers .shp et .dbf, avec leurs fichiers annexes, ou choisissez un ZIP. Le remplacement s'applique à chaque Shapefile du ZIP.
 In use	En cours d'utilisation
 Indexes	Index
@@ -1509,7 +1509,7 @@ It's too large to keep in the browser: install it again on your next visit.	Elle
 Italic	Italique
 Item Pop-ups	Fenêtres contextuelles des éléments
 Item {id}	Élément {id}
-Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	Son pare-feu ({firewall}) a bloqué RustGIS. Le service n'autorise peut-être que certaines applications : contactez son administrateur et envoyez-lui les détails ci-dessous.
+Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	Son pare-feu ({firewall}) a bloqué ARutGIS. Le service n'autorise peut-être que certaines applications : contactez son administrateur et envoyez-lui les détails ci-dessous.
 Its tool isn't available now (a plugin's, not loaded, or a suite's, not installed)	Son outil n'est pas disponible pour l'instant (celui d'une extension non chargée, ou d'une suite non installée)
 Jobs	Travaux
 JOIN	JOIN
@@ -1609,7 +1609,7 @@ Legend	Légende
 Legend label. Clear it to show the value again.	Étiquette de légende. Effacez-la pour afficher à nouveau la valeur.
 Length {length} · gain {gain} · loss {loss}	Longueur {length} · montée {gain} · descente {loss}
 Let the assistant hand tasks to agents on this computer	Laisser l'assistant confier des tâches aux agents de cet ordinateur
-Let your Agents Control RustGIS	Laissez vos agents piloter RustGIS
+Let your Agents Control RustGIS	Laissez vos agents piloter ARutGIS
 Letter spacing	Espacement des lettres
 Level	Niveau
 Library	Bibliothèque
@@ -1660,7 +1660,7 @@ List The National Map Services	Lister les services The National Map
 List the provider's models	Lister les modèles du fournisseur
 List this layer in the legend	Afficher cette couche dans la légende
 List what it holds	Lister son contenu
-Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	Listé pour découverte : RustGIS ne lit pas encore ce jeu de données. Ses données et son article sont liés ci-dessus.
+Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	Listé pour découverte : ARutGIS ne lit pas encore ce jeu de données. Ses données et son article sont liés ci-dessus.
 Listing…	Liste en cours…
 Lit	Éclairé
 Live summary of the features in view.	Résumé en direct des entités visibles.
@@ -1695,7 +1695,7 @@ Look for {name}, outlined on the ribbon.	Cherchez {name}, entouré sur le ruban.
 Looking up the place…	Recherche du lieu…
 Loop	Boucle
 Lower Priority	Baisser la priorité
-Made in RustGIS: samples, drawings and tool outputs	Créées dans RustGIS : exemples, dessins et sorties d'outils
+Made in RustGIS: samples, drawings and tool outputs	Créées dans ARutGIS : exemples, dessins et sorties d'outils
 Magnifier	Loupe
 Major Lakes	Grands lacs
 Major Rivers	Grands fleuves
@@ -1927,7 +1927,7 @@ No COMID was returned for this point.	Aucun COMID n'a été renvoyé pour ce poi
 no command	aucune commande
 No data at the points picked.	Aucune donnée aux points choisis.
 No datasets match.	Aucun jeu de données ne correspond.
-No datasets with data RustGIS can add	Aucun jeu de données avec des données que RustGIS peut ajouter
+No datasets with data RustGIS can add	Aucun jeu de données avec des données que ARutGIS peut ajouter
 no date in the name	pas de date dans le nom
 No edits since the project was saved	Aucune modification depuis l'enregistrement du projet
 No features are selected in this layer.	Aucune entité n'est sélectionnée dans cette couche.
@@ -1986,8 +1986,8 @@ North\nArrow	Flèche\ndu nord
 North Polar Stereographic	Stéréographique polaire nord
 NOT	NOT
 not a picture	pas une image
-not a RustGIS layout	pas une mise en page RustGIS
-not a RustGIS project	pas un projet RustGIS
+not a RustGIS layout	pas une mise en page ARutGIS
+not a RustGIS project	pas un projet ARutGIS
 Not applied yet.	Pas encore appliqué.
 Not for texts: a text is edited in the Format pane.	Pas pour les textes : un texte se modifie dans le volet Format.
 not needed	non requise
@@ -2045,8 +2045,8 @@ Open a .rgis project	Ouvrir un projet .rgis
 open a layout first	ouvrez d'abord une mise en page
 Open a model file (*.model.json)	Ouvrir un fichier de modèle (*.model.json)
 Open a model of this project	Ouvrir un modèle de ce projet
-Open a RustGIS or Jupyter notebook.	Ouvrir un bloc-notes RustGIS ou Jupyter.
-Open a RustGIS project.	Ouvrir un projet RustGIS.
+Open a RustGIS or Jupyter notebook.	Ouvrir un bloc-notes ARutGIS ou Jupyter.
+Open a RustGIS project.	Ouvrir un projet ARutGIS.
 Open an offline area to edit.	Ouvrir une zone hors connexion à modifier.
 Open browser again	Rouvrir le navigateur
 Open Custom Template	Ouvrir un modèle personnalisé
@@ -2074,7 +2074,7 @@ Open the layer's attribute table.	Ouvrir la table attributaire de la couche.
 Open the layer's table.	Ouvrir la table de la couche.
 Open the plugin's panel.	Ouvrir le panneau de l'extension.
 Open the Release Page	Ouvrir la page de la version
-Open the RustGIS user guide.	Ouvrir le guide de l'utilisateur de RustGIS.
+Open the RustGIS user guide.	Ouvrir le guide de l'utilisateur de ARutGIS.
 Open the selected layer's table.	Ouvrir la table de la couche sélectionnée.
 Open the Symbology pane.	Ouvrir le volet Symbologie.
 Open the task's steps	Ouvrir les étapes de la tâche
@@ -2230,7 +2230,7 @@ Plugin registry	Registre des extensions
 Plugins	Extensions
 Plugins are .rgplugin files. Install only plugins from people you trust.	Les extensions sont des fichiers .rgplugin. N'installez que des extensions provenant de personnes de confiance.
 Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	Les extensions marquées « Hors bac à sable » s'exécutent plutôt comme des programmes sur votre ordinateur et peuvent faire tout ce que vous pouvez faire.
-Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	Les extensions s'exécutent dans un bac à sable : elles ne peuvent accéder ni à vos fichiers ni au réseau, et ne modifient le projet qu'au moyen des commandes de RustGIS, dans la limite des autorisations que vous acceptez.
+Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	Les extensions s'exécutent dans un bac à sable : elles ne peuvent accéder ni à vos fichiers ni au réseau, et ne modifient le projet qu'au moyen des commandes de ARutGIS, dans la limite des autorisations que vous acceptez.
 PMTiles archive	Archive PMTiles
 PNG frames (zip)	Images PNG (zip)
 PNG image	Image PNG
@@ -2299,7 +2299,7 @@ Project templates: start projects from a saved setup.	Modèles de projet : déma
 project's path is required	le chemin du projet est requis
 Projection	Projection
 Projections	Projections
-Projects (RustGIS, QGIS)	Projets (RustGIS, QGIS)
+Projects (RustGIS, QGIS)	Projets (ARutGIS, QGIS)
 Properties	Propriétés
 Property	Propriété
 Proportional Symbols	Symboles proportionnels
@@ -2355,7 +2355,7 @@ Read and write files on this computer	Lire et écrire des fichiers sur cet ordin
 Read the bands picked for the view (at most about 6 km a side)	Lire les bandes choisies pour la vue (au plus environ 6 km de côté)
 Read the map's layers and features	Lire les couches et les entités de la carte
 Read the points in the view, coloured by their principal components	Lire les points de la vue, colorés selon leurs composantes principales
-Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	Lire les fichiers d'un granule nécessite un jeton Earthdata Login, valable pour tous les DAAC de la NASA. Il est conservé jusqu'à la fermeture de RustGIS, jamais dans le projet, et envoyé uniquement aux serveurs de données Earthdata de la NASA.
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	Lire les fichiers d'un granule nécessite un jeton Earthdata Login, valable pour tous les DAAC de la NASA. Il est conservé jusqu'à la fermeture de ARutGIS, jamais dans le projet, et envoyé uniquement aux serveurs de données Earthdata de la NASA.
 Reading the catalog: {n} documents read, {m} items found…	Lecture du catalogue : {n} documents lus, {m} éléments trouvés…
 Reading the catalog…	Lecture du catalogue…
 Reading the embeddings…	Lecture des plongements…
@@ -2516,30 +2516,30 @@ Run Tool	Exécuter l'outil
 Run {name}	Exécuter {name}
 Running the query for the map…	Exécution de la requête pour la carte…
 Running…	Exécution…
-RustGIS	RustGIS
-RustGIS bookmarks	Signets RustGIS
-RustGIS could not confirm that any previously saved key was deleted from the system keychain.	RustGIS n'a pas pu confirmer qu'une clé enregistrée auparavant a été supprimée du trousseau du système.
-RustGIS couldn't reach the server.	RustGIS n'a pas pu joindre le serveur.
-RustGIS deep learning package	Paquetage d'apprentissage profond RustGIS
-RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	RustGIS ne s'est pas fermé correctement la dernière fois : il a donc démarré avec World Atlas au lieu de votre projet de démarrage. Ouvrez le projet depuis le menu Projet quand vous le souhaitez.
-RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	RustGIS ne dispose pas de cet outil. Installez les outils dont il provient, ou supprimez le nœud.
-RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	RustGIS est un SIG libre et open source écrit en Rust pur. Il fonctionne sur le bureau et dans le navigateur, et chaque action est une commande que vous pouvez aussi exécuter en ligne de commande.
-RustGIS layer file	Fichier de couche RustGIS
-RustGIS layers, maps and projects	Couches, cartes et projets RustGIS
-RustGIS layout	Mise en page RustGIS
-RustGIS maps and projects	Cartes et projets RustGIS
-RustGIS model	Modèle RustGIS
-RustGIS or Jupyter notebook	Bloc-notes RustGIS ou Jupyter
-RustGIS plugin	Extension RustGIS
-RustGIS presentation	Présentation RustGIS
-RustGIS project	Projet RustGIS
-RustGIS project template	Modèle de projet RustGIS
-RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	RustGIS a rencontré une erreur interne la dernière fois. Les détails sont dans {path} ; joignez-les à un rapport de bogue.
-RustGIS report or report template	Rapport ou modèle de rapport RustGIS
-RustGIS styles	Styles RustGIS
-RustGIS task	Tâche RustGIS
-RustGIS {latest} is available.	RustGIS {latest} est disponible.
-RustGIS {version} is the latest version.	RustGIS {version} est la dernière version.
+RustGIS	ARutGIS
+RustGIS bookmarks	Signets ARutGIS
+RustGIS could not confirm that any previously saved key was deleted from the system keychain.	ARutGIS n'a pas pu confirmer qu'une clé enregistrée auparavant a été supprimée du trousseau du système.
+RustGIS couldn't reach the server.	ARutGIS n'a pas pu joindre le serveur.
+RustGIS deep learning package	Paquetage d'apprentissage profond ARutGIS
+RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	ARutGIS ne s'est pas fermé correctement la dernière fois : il a donc démarré avec World Atlas au lieu de votre projet de démarrage. Ouvrez le projet depuis le menu Projet quand vous le souhaitez.
+RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	ARutGIS ne dispose pas de cet outil. Installez les outils dont il provient, ou supprimez le nœud.
+RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	ARutGIS est un SIG libre et open source écrit en Rust pur. Il fonctionne sur le bureau et dans le navigateur, et chaque action est une commande que vous pouvez aussi exécuter en ligne de commande.
+RustGIS layer file	Fichier de couche ARutGIS
+RustGIS layers, maps and projects	Couches, cartes et projets ARutGIS
+RustGIS layout	Mise en page ARutGIS
+RustGIS maps and projects	Cartes et projets ARutGIS
+RustGIS model	Modèle ARutGIS
+RustGIS or Jupyter notebook	Bloc-notes ARutGIS ou Jupyter
+RustGIS plugin	Extension ARutGIS
+RustGIS presentation	Présentation ARutGIS
+RustGIS project	Projet ARutGIS
+RustGIS project template	Modèle de projet ARutGIS
+RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	ARutGIS a rencontré une erreur interne la dernière fois. Les détails sont dans {path} ; joignez-les à un rapport de bogue.
+RustGIS report or report template	Rapport ou modèle de rapport ARutGIS
+RustGIS styles	Styles ARutGIS
+RustGIS task	Tâche ARutGIS
+RustGIS {latest} is available.	ARutGIS {latest} est disponible.
+RustGIS {version} is the latest version.	ARutGIS {version} est la dernière version.
 RUSTGIS_ASSISTANT_MODEL	RUSTGIS_ASSISTANT_MODEL
 RUSTGIS_ASSISTANT_PROVIDER	RUSTGIS_ASSISTANT_PROVIDER
 RUSTGIS_GPU	RUSTGIS_GPU
@@ -2548,7 +2548,7 @@ S3 Buckets	Compartiments S3
 S3 Connections	Connexions S3
 S3…	S3…
 Sample data (Natural Earth)	Données d'exemple (Natural Earth)
-Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	Données d'exemple © Natural Earth (domaine public). RustGIS est sous licence Apache-2.0.
+Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	Données d'exemple © Natural Earth (domaine public). ARutGIS est sous licence Apache-2.0.
 Sample data: Natural Earth (public domain). Licensed under Apache-2.0.	Données d'exemple : Natural Earth (domaine public). Sous licence Apache-2.0.
 Sans-serif	Sans empattement
 Satellite Embedding Datasets	Jeux de données de plongements satellitaires
@@ -2677,7 +2677,7 @@ Sections	Sections
 See and set the camera's position and scale.	Voir et définir la position et l'échelle de la caméra.
 See the map as people with colour vision deficiencies do.	Voir la carte comme les personnes ayant un trouble de la vision des couleurs.
 See the tools you've run.	Voir les outils exécutés.
-See whether a newer RustGIS has been released.	Vérifier si une version plus récente de RustGIS est parue.
+See whether a newer RustGIS has been released.	Vérifier si une version plus récente de ARutGIS est parue.
 SELECT	SELECT
 Select	Sélectionner
 Select (click)	Sélectionner (clic)
@@ -2843,7 +2843,7 @@ Sign-in	Connexion
 Sign-in cancelled.	Connexion annulée.
 Sign-in timed out. Start again and allow the browser to reach this computer's loopback address.	Le délai de connexion est dépassé. Recommencez et autorisez le navigateur à accéder à l’adresse de bouclage de cet ordinateur.
 signed in	connecté
-Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	Déconnecté sur cet ordinateur, mais OpenAI ne l'a pas confirmé. Vous pouvez déconnecter RustGIS dans les paramètres de ChatGPT.
+Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	Déconnecté sur cet ordinateur, mais OpenAI ne l'a pas confirmé. Vous pouvez déconnecter ARutGIS dans les paramètres de ChatGPT.
 Significance level	Seuil de signification
 Signing in with ChatGPT works in the desktop app.	La connexion avec ChatGPT fonctionne dans l'application de bureau.
 Signing the asset (Planetary Computer)…	Signature de l'asset (Planetary Computer)…
@@ -3067,7 +3067,7 @@ The connection failed; trying again in {seconds} s.	La connexion a échoué ; no
 the connection has no id	la connexion n'a pas d'identifiant
 The country list couldn't be read ({e}): type a country's code	La liste des pays n'a pas pu être lue ({e}) : saisissez le code d'un pays
 The current elevation stays in effect while you edit inputs. Click Apply elevation to apply the value and units.	L'altitude actuelle reste en vigueur pendant que vous modifiez les valeurs. Cliquez sur Appliquer l'altitude pour appliquer la valeur et les unités.
-The dataset has nothing RustGIS can add	Le jeu de données ne contient rien que RustGIS puisse ajouter
+The dataset has nothing RustGIS can add	Le jeu de données ne contient rien que ARutGIS puisse ajouter
 The environment (AWS_ACCESS_KEY_ID…)	L'environnement (AWS_ACCESS_KEY_ID…)
 The features where the map is	Les entités là où se trouve la carte
 The first 1,000 entries; narrow it down a folder at a time.	Les 1 000 premières entrées ; affinez dossier par dossier.
@@ -3088,10 +3088,10 @@ The layer's file couldn't be read: {error}	Le fichier de la couche n'a pas pu ê
 The layer's strokes	Les traits de la couche
 the layout export failed unexpectedly	l'export de la mise en page a échoué de manière inattendue
 The link doesn't say its STAC API: Find Items searches {api}	Le lien n'indique pas son API STAC : Rechercher des éléments interroge {api}
-The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	La liste des extensions à parcourir. Laissez vide pour utiliser le registre des extensions RustGIS.
+The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	La liste des extensions à parcourir. Laissez vide pour utiliser le registre des extensions ARutGIS.
 the map has no layers	la carte n'a aucune couche
 The map is drawn in this coordinate system; layers are projected on the fly.	La carte est dessinée dans ce système de coordonnées ; les couches sont projetées à la volée.
-the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	la carte n'est pas à l'écran dans RustGIS (une mise en page ou le catalogue est affiché), elle a donc été dessinée hors écran
+the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	la carte n'est pas à l'écran dans ARutGIS (une mise en page ou le catalogue est affiché), elle a donc été dessinée hors écran
 The map view as it is now	La vue cartographique telle qu'elle est maintenant
 The map's extent isn't known yet	L'étendue de la carte n'est pas encore connue
 The map's view takes {n} of Overture's {ty} files (up to {max}): zoom in, or add the theme as map tiles	La vue de la carte couvre {n} des fichiers {ty} d'Overture (au plus {max}) : zoomez ou ajoutez le thème en tuiles de carte
@@ -3146,7 +3146,7 @@ The sign-in expired or was revoked. Sign in again.	La connexion a expiré ou a �
 The sign-in is kept in the app's settings folder, for your user account only, and never in a project file.	La connexion est conservée dans le dossier de paramètres de l'application, pour votre compte utilisateur seulement, et jamais dans un fichier de projet.
 The significance level is a number, such as 0.05	Le seuil de signification est un nombre, par exemple 0.05
 The start-up project {path} didn't open: {error}	Le projet de démarrage {path} ne s'est pas ouvert : {error}
-The start-up project {path} isn't a RustGIS project file.	Le projet de démarrage {path} n'est pas un fichier de projet RustGIS.
+The start-up project {path} isn't a RustGIS project file.	Le projet de démarrage {path} n'est pas un fichier de projet ARutGIS.
 The step's layer {name} isn't in the map.	La couche {name} de l'étape n'est pas dans la carte.
 The store has no variables with two or more dimensions.	Le magasin n'a aucune variable à deux dimensions ou plus.
 the store is gone	le magasin a disparu
@@ -3189,7 +3189,7 @@ This map has no layers yet.	Cette carte n'a pas encore de couche.
 This map's thumbnail, from an image.	La miniature de cette carte, à partir d'une image.
 This map's thumbnail, from the view.	La miniature de cette carte, à partir de la vue.
 This plugin can:	Cette extension peut :
-This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	Cette extension s'exécute comme un programme sur votre ordinateur, en dehors du bac à sable de RustGIS. Elle peut faire tout ce que vous pouvez faire : lire et modifier vos fichiers, utiliser le réseau et lancer d'autres programmes. Ne l'installez que si vous faites confiance à son auteur.
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	Cette extension s'exécute comme un programme sur votre ordinateur, en dehors du bac à sable de ARutGIS. Elle peut faire tout ce que vous pouvez faire : lire et modifier vos fichiers, utiliser le réseau et lancer d'autres programmes. Ne l'installez que si vous faites confiance à son auteur.
 This request has no one-time allow option.	Cette demande n'a pas d'option d'autorisation ponctuelle.
 This request uses an unsupported capability. Check the parameter and change the request.	Cette requête utilise une fonction non prise en charge. Vérifiez le paramètre et modifiez la requête.
 This result is kept	Ce résultat est conservé
@@ -3303,7 +3303,7 @@ Units	Unités
 Units per step	Unités par pas
 unknown (an older project)	inconnu (un projet plus ancien)
 UNKNOWN TOOL	OUTIL INCONNU
-Unload the GeoLibre tools and stop loading them when RustGIS starts.	Décharger les outils GeoLibre et ne plus les charger au démarrage de RustGIS.
+Unload the GeoLibre tools and stop loading them when RustGIS starts.	Décharger les outils GeoLibre et ne plus les charger au démarrage de ARutGIS.
 Unsaved changes	Modifications non enregistrées
 Unsupervised classes (k-means)	Classes non supervisées (k-means)
 Unsupervised classes (k-means).	Classes non supervisées (k-means).
@@ -3425,13 +3425,13 @@ Web Tool	Outil web
 Website	Site web
 Weekly usage	Utilisation hebdomadaire
 Weights	Pondérations
-Welcome to RustGIS	Bienvenue dans RustGIS
+Welcome to RustGIS	Bienvenue dans ARutGIS
 West	Ouest
 WFS	WFS
 WGS 84 / Globe	WGS 84 / Globe
 WGS 84 / Web Mercator	WGS 84 / Web Mercator
-What RustGIS opens with: the World Atlas sample or a blank map.	Ce qu'ouvre RustGIS au démarrage : l'exemple World Atlas ou une carte vierge.
-What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	Ce qu'ouvre RustGIS au démarrage : l'exemple World Atlas, une carte vierge, un projet que vous choisissez ou le dernier projet ouvert ou enregistré.
+What RustGIS opens with: the World Atlas sample or a blank map.	Ce qu'ouvre ARutGIS au démarrage : l'exemple World Atlas ou une carte vierge.
+What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	Ce qu'ouvre ARutGIS au démarrage : l'exemple World Atlas, une carte vierge, un projet que vous choisissez ou le dernier projet ouvert ou enregistré.
 What to do, where to find it and why	Quoi faire, où le trouver et pourquoi
 What's near a point	Ce qui se trouve près d'un point
 WHERE	WHERE

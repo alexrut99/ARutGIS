@@ -53,6 +53,21 @@ fn bengali_registration_and_fallback() {
 }
 
 #[test]
+fn the_interface_calls_the_app_arutgis() {
+    for lang in Lang::all() {
+        assert!(tr(lang, "RustGIS").contains("ARutGIS"), "{}", lang.code());
+        let about = tr(lang, "About RustGIS");
+        assert!(about.contains("ARutGIS") && !about.contains("RustGIS project"), "{}: {about}", lang.code());
+    }
+    assert_eq!(tr(Lang::EN, "About RustGIS"), "About ARutGIS");
+    assert_eq!(tr(Lang::EN, "Explore"), "Explore");
+    for l in &LANGUAGES {
+        let (m, _) = parse(l.source);
+        assert!(m.values().all(|v| !v.contains("RustGIS")), "{}: a translation still says RustGIS", l.code);
+    }
+}
+
+#[test]
 fn thai_registration_and_fallback() {
     let th = Lang::from_code("th").unwrap_or(Lang::EN);
     assert_eq!(th.name(), "ไทย");

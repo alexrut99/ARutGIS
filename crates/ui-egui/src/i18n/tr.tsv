@@ -42,8 +42,8 @@ A line for the Script pane	Betik bölmesi için bir satır
 A magnifying lens that follows the pointer.	İşaretçiyi izleyen bir büyüteç.
 A map, feature or coverage service's address: WMS, WMTS, WFS, WCS, OGC API Features or Tiles, or an ArcGIS FeatureServer, MapServer, ImageServer or VectorTileServer (or a services directory, to browse).	Bir harita, detay veya kapsama servisinin adresi: WMS, WMTS, WFS, WCS, OGC API Features veya Tiles ya da bir ArcGIS FeatureServer, MapServer, ImageServer veya VectorTileServer (ya da göz atmak için bir servis dizini).
 a name, or owner/name such as giswqs/geospatial	bir ad veya giswqs/geospatial gibi sahip/ad
-A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	Yeniden kullanabileceğiniz adlandırılmış bir uç nokta. Anahtarlar ve belirteçler RustGIS kapanana kadar tutulur, asla kaydedilmez.
-A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	Yeniden kullanabileceğiniz adlandırılmış bir uç nokta. Anahtarlar, bu bilgisayarda hatırlamayı seçmediğiniz sürece RustGIS kapanana kadar tutulur; bağlantının kendisi onları asla tutmaz.
+A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	Yeniden kullanabileceğiniz adlandırılmış bir uç nokta. Anahtarlar ve belirteçler ARutGIS kapanana kadar tutulur, asla kaydedilmez.
+A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	Yeniden kullanabileceğiniz adlandırılmış bir uç nokta. Anahtarlar, bu bilgisayarda hatırlamayı seçmediğiniz sürece ARutGIS kapanana kadar tutulur; bağlantının kendisi onları asla tutmaz.
 A named endpoint you can reuse. Passwords last for this session unless you choose to remember them in this computer's password store.	Yeniden kullanabileceğiniz adlandırılmış bir uç nokta. Parolalar, bu bilgisayarın parola deposunda hatırlamayı seçmediğiniz sürece bu oturum boyunca geçerlidir.
 A node cannot connect to itself.	Bir düğüm kendisine bağlanamaz.
 A notebook of text and command cells.	Metin ve komut hücrelerinden oluşan bir not defteri.
@@ -79,8 +79,8 @@ A5 Grid	A5 Izgarası
 A5's equal-area pentagonal cells at a resolution, over the map's extent, a layer or the world, as polygons with their ids.	Bir çözünürlükte, harita kapsamı, bir katman veya tüm dünya üzerinde A5'in eşit alanlı beşgen hücreleri, kimlikleriyle birlikte poligonlar olarak.
 About	Hakkında
 About plugins	Eklentiler hakkında
-About RustGIS	RustGIS Hakkında
-About RustGIS.	RustGIS hakkında.
+About RustGIS	ARutGIS Hakkında
+About RustGIS.	ARutGIS hakkında.
 Above	Üst
 Above Left	Sol Üst
 Above Right	Sağ Üst
@@ -244,7 +244,7 @@ Agent input queue is full or disconnected; stop the agent and try again.	Ajan gi
 Agent threads	Ajan iş parçacıkları
 Agent work	Agent work
 Agents have full access: they may run scripts, tasks, models and plugins. Click to stop the MCP relay	Ajanların tam erişimi var: betik, görev, model ve eklenti çalıştırabilirler. MCP rölesini durdurmak için tıklayın
-Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	Bağlanan bu bilgisayardaki ajanlar (Claude Code, Codex, Cursor ve diğerleri) RustGIS'in araçlarıyla burada açık olan harita üzerinde çalışır: dosya açıp kaydedebilir ve web'i kullanabilirler. Betikler ve eklenti yönetimi kapalı kalır.
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	Bağlanan bu bilgisayardaki ajanlar (Claude Code, Codex, Cursor ve diğerleri) ARutGIS'in araçlarıyla burada açık olan harita üzerinde çalışır: dosya açıp kaydedebilir ve web'i kullanabilirler. Betikler ve eklenti yönetimi kapalı kalır.
 Agents then run commands, change files and use the web on this computer without asking you.	Ajanlar bu durumda size sormadan bu bilgisayarda komut çalıştırır, dosyaları değiştirir ve web'i kullanır.
 Aggregate Points to A5	Noktaları A5'te Topla
 Aggregation	Toplama
@@ -269,7 +269,7 @@ Allow Feature Selection	Detay Seçimine İzin Ver
 Allow only certain combinations of values across fields.	Alanlar arasında yalnızca belirli değer kombinasyonlarına izin ver.
 Allow such actions for this conversation	Bu sohbette bu tür işlemlere izin ver
 Allow this action?	Bu işleme izin verilsin mi?
-Allow this agent's RustGIS action?	Bu ajanın RustGIS işlemine izin verilsin mi?
+Allow this agent's RustGIS action?	Bu ajanın ARutGIS işlemine izin verilsin mi?
 Along lines	Çizgiler boyunca
 Along Selected Line	Seçili Çizgi Boyunca
 Alt+	Alt+
@@ -277,7 +277,7 @@ Alternating bar	Dönüşümlü çubuk
 Altitude	Yükseklik
 Always allow	Her zaman izin ver
 Amazon S3	Amazon S3
-Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3 veya uç noktasıyla S3 uyumlu bir servis (MinIO, Cloudflare R2, Wasabi…). Anahtarlar RustGIS kapanana kadar tutulur; kaydedilen bir bağlantı adını, uç noktasını ve bölgesini saklar, gizli anahtarını asla saklamaz.
+Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3 veya uç noktasıyla S3 uyumlu bir servis (MinIO, Cloudflare R2, Wasabi…). Anahtarlar ARutGIS kapanana kadar tutulur; kaydedilen bir bağlantı adını, uç noktasını ve bölgesini saklar, gizli anahtarını asla saklamaz.
 amenity=cafe, shop	amenity=cafe, shop
 An agent on this computer asks to:	Bu bilgisayardaki bir ajan şunu yapmak istiyor:
 An AWS profile	Bir AWS profili
@@ -320,7 +320,7 @@ Areas (name, land use, area)	Alanlar (ad, arazi kullanımı, alan)
 Arrange	Düzenle
 Arrow	Ok
 Arrowheads	Ok Uçları
-Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	Verileriniz hakkında bir soru sorun ya da haritayla ne yapılacağını anlatın. Asistan RustGIS komutlarını sizin için çalıştırır; her değişiklik geri alınabilir.
+Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	Verileriniz hakkında bir soru sorun ya da haritayla ne yapılacağını anlatın. Asistan ARutGIS komutlarını sizin için çalıştırır; her değişiklik geri alınabilir.
 Ask about the map, or tell it what to do…	Harita hakkında sorun ya da ne yapacağını söyleyin…
 Ask about your data, or tell the assistant what to do with the map.	Verileriniz hakkında sorun ya da asistana haritayla ne yapacağını söyleyin.
 Asking NASA's CMR…	NASA'nın CMR'sine soruluyor…
@@ -635,7 +635,7 @@ Color Vision Simulator	Renk Görme Simülatörü
 Colorbar	Renk Çubuğu
 Colormap	Renk haritası
 Colors from the raster's own color table.	Rasterin kendi renk tablosundaki renkler.
-Colour ramps (RustGIS, QGIS, GDAL, GMT)	Renk rampaları (RustGIS, QGIS, GDAL, GMT)
+Colour ramps (RustGIS, QGIS, GDAL, GMT)	Renk rampaları (ARutGIS, QGIS, GDAL, GMT)
 Columns named like longitude/latitude, easting/northing or geometry are picked for you.	longitude/latitude, easting/northing veya geometry gibi adlandırılmış sütunlar sizin için seçilir.
 Combinations from the box above, one per line	Yukarıdaki kutudan kombinasyonlar, her satıra bir tane
 COMID {comid}	COMID {comid}
@@ -831,7 +831,7 @@ Delete selected rows	Seçili satırları sil
 Delete Style	Stili Sil
 Delete Task	Görevi Sil
 Delete Task Step	Görev Adımını Sil
-Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	RustGIS'in yüklediği GeoLibre çalıştırıcısını sil. İstediğiniz zaman yeniden yükleyebilirsiniz.
+Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	ARutGIS'in yüklediği GeoLibre çalıştırıcısını sil. İstediğiniz zaman yeniden yükleyebilirsiniz.
 Delete the layout {name}?	{name} sayfa düzeni silinsin mi?
 Delete the map {name}?	{name} haritası silinsin mi?
 Delete the selected features.	Seçili detayları sil.
@@ -1020,7 +1020,7 @@ Element Properties	Öğe Özellikleri
 Elevation	Yükseklik
 Elevation model	Yükseklik modeli
 Elevation profiles along lines, cross sections and more.	Çizgiler boyunca yükseklik profilleri, enine kesitler ve daha fazlası.
-Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	RustGIS'teki uygun istekler ChatGPT planınızı kullanır. Kullanımı ChatGPT ayarlarından yönetebilirsiniz.
+Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	ARutGIS'teki uygun istekler ChatGPT planınızı kullanır. Kullanımı ChatGPT ayarlarından yönetebilirsiniz.
 Ellipse	Elips
 Embeddings	Gömmeler
 Ember	Kor
@@ -1197,7 +1197,7 @@ Find and run geoprocessing tools.	Coğrafi işleme araçlarını bul ve çalış
 Find any command by name (Ctrl+K).	Herhangi bir komutu adıyla bul (Ctrl+K).
 Find Items	Öğeleri Bul
 Find Place	Yer Bul
-Find plugins in the RustGIS plugin registry.	RustGIS eklenti kayıt defterinde eklenti bulun.
+Find plugins in the RustGIS plugin registry.	ARutGIS eklenti kayıt defterinde eklenti bulun.
 Find Similar	Benzerlerini Bul
 Find Tools	Araç Bul
 Finding routes…	Rotalar bulunuyor…
@@ -1233,7 +1233,7 @@ Forget Earthdata Login Token	Earthdata Login Belirtecini Unut
 Forget Saved Keys	Kayıtlı Anahtarları Unut
 Forget Saved Password	Kayıtlı Parolayı Unut
 Format	Biçim
-Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	Bulunanlar: {names}. Bir ajan bu harita üzerinde RustGIS'in araçlarıyla ve kendi araçlarıyla (web, betikler, dosyalar), Belgeler › RustGIS › Agent work altında saklanan kendi klasöründe çalışır. Her işlemden önce size sorar.
+Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	Bulunanlar: {names}. Bir ajan bu harita üzerinde ARutGIS'in araçlarıyla ve kendi araçlarıyla (web, betikler, dosyalar), Belgeler › ARutGIS › Agent work altında saklanan kendi klasöründe çalışır. Her işlemden önce size sorar.
 Frame rate	Kare hızı
 Frame rate, draw time, data size and memory.	Kare hızı, çizim süresi, veri boyutu ve bellek.
 France	Fransa
@@ -1438,7 +1438,7 @@ In memory	Bellekte
 In Progress	Devam Ediyor
 in progress	devam ediyor
 In project	Projede
-In RustGIS, it can:	RustGIS'te şunları yapabilir:
+In RustGIS, it can:	ARutGIS'te şunları yapabilir:
 In the browser, pick the .shp and .dbf together, with any sidecars, or pick a ZIP. The override applies to every Shapefile in the ZIP.	Tarayıcıda .shp ve .dbf dosyalarını yardımcı dosyalarıyla birlikte seçin veya bir ZIP seçin. Geçersiz kılma ZIP içindeki her Shapefile'a uygulanır.
 In use	Kullanımda
 Indexes	Dizinler
@@ -1509,7 +1509,7 @@ It's too large to keep in the browser: install it again on your next visit.	Tara
 Italic	İtalik
 Item Pop-ups	Öğe Açılır Pencereleri
 Item {id}	Öğe {id}
-Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	Güvenlik duvarı ({firewall}) RustGIS'i engelledi. Servis yalnızca bazı uygulamalara izin veriyor olabilir: yöneticisiyle iletişime geçin ve aşağıdaki ayrıntıları gönderin.
+Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	Güvenlik duvarı ({firewall}) ARutGIS'i engelledi. Servis yalnızca bazı uygulamalara izin veriyor olabilir: yöneticisiyle iletişime geçin ve aşağıdaki ayrıntıları gönderin.
 Its tool isn't available now (a plugin's, not loaded, or a suite's, not installed)	Aracı şu anda kullanılamıyor (yüklenmemiş bir eklentinin veya kurulmamış bir paketin aracı)
 Jobs	İşler
 JOIN	JOIN
@@ -1609,7 +1609,7 @@ Legend	Lejant
 Legend label. Clear it to show the value again.	Lejant etiketi. Değeri yeniden göstermek için temizleyin.
 Length {length} · gain {gain} · loss {loss}	Uzunluk {length} · artış {gain} · kayıp {loss}
 Let the assistant hand tasks to agents on this computer	Asistanın görevleri bu bilgisayardaki ajanlara devretmesine izin ver
-Let your Agents Control RustGIS	Ajanlarınızın RustGIS'i yönetmesine izin verin
+Let your Agents Control RustGIS	Ajanlarınızın ARutGIS'i yönetmesine izin verin
 Letter spacing	Harf aralığı
 Level	Düzey
 Library	Kitaplık
@@ -1660,7 +1660,7 @@ List The National Map Services	The National Map Servislerini Listele
 List the provider's models	Sağlayıcının modellerini listele
 List this layer in the legend	Bu katmanı lejantta listele
 List what it holds	İçindekileri listele
-Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	Keşif için listelendi: RustGIS bu veri kümesini henüz okumuyor. Verisi ve makalesi yukarıda bağlantılıdır.
+Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	Keşif için listelendi: ARutGIS bu veri kümesini henüz okumuyor. Verisi ve makalesi yukarıda bağlantılıdır.
 Listing…	Listeleniyor…
 Lit	Aydınlık
 Live summary of the features in view.	Görünümdeki detayların canlı özeti.
@@ -1695,7 +1695,7 @@ Look for {name}, outlined on the ribbon.	Şeritte çerçeveyle gösterilen {name
 Looking up the place…	Yer aranıyor…
 Loop	Döngü
 Lower Priority	Önceliği Düşür
-Made in RustGIS: samples, drawings and tool outputs	RustGIS'te oluşturulanlar: örnekler, çizimler ve araç çıktıları
+Made in RustGIS: samples, drawings and tool outputs	ARutGIS'te oluşturulanlar: örnekler, çizimler ve araç çıktıları
 Magnifier	Büyüteç
 Major Lakes	Büyük Göller
 Major Rivers	Büyük Nehirler
@@ -1927,7 +1927,7 @@ No COMID was returned for this point.	Bu nokta için COMID döndürülmedi.
 no command	komut yok
 No data at the points picked.	Seçilen noktalarda veri yok.
 No datasets match.	Eşleşen veri kümesi yok.
-No datasets with data RustGIS can add	RustGIS'in ekleyebileceği veriye sahip veri kümesi yok
+No datasets with data RustGIS can add	ARutGIS'in ekleyebileceği veriye sahip veri kümesi yok
 no date in the name	adda tarih yok
 No edits since the project was saved	Proje kaydedildiğinden beri düzenleme yok
 No features are selected in this layer.	Bu katmanda seçili detay yok.
@@ -1986,8 +1986,8 @@ North\nArrow	Kuzey\nOku
 North Polar Stereographic	Kuzey Kutup Stereografik
 NOT	NOT
 not a picture	resim değil
-not a RustGIS layout	bir RustGIS sayfa düzeni değil
-not a RustGIS project	RustGIS projesi değil
+not a RustGIS layout	bir ARutGIS sayfa düzeni değil
+not a RustGIS project	ARutGIS projesi değil
 Not applied yet.	Henüz uygulanmadı.
 Not for texts: a text is edited in the Format pane.	Metinler için değil: metin Biçim bölmesinde düzenlenir.
 not needed	gerekmiyor
@@ -2045,8 +2045,8 @@ Open a .rgis project	Bir .rgis projesi aç
 open a layout first	önce bir sayfa düzeni açın
 Open a model file (*.model.json)	Bir model dosyası aç (*.model.json)
 Open a model of this project	Bu projenin bir modelini aç
-Open a RustGIS or Jupyter notebook.	Bir RustGIS veya Jupyter not defteri aç.
-Open a RustGIS project.	Bir RustGIS projesi aç.
+Open a RustGIS or Jupyter notebook.	Bir ARutGIS veya Jupyter not defteri aç.
+Open a RustGIS project.	Bir ARutGIS projesi aç.
 Open an offline area to edit.	Düzenlemek için bir çevrimdışı alan aç.
 Open browser again	Tarayıcıyı yeniden aç
 Open Custom Template	Özel Şablon Aç
@@ -2074,7 +2074,7 @@ Open the layer's attribute table.	Katmanın öznitelik tablosunu aç.
 Open the layer's table.	Katmanın tablosunu aç.
 Open the plugin's panel.	Eklentinin panelini aç.
 Open the Release Page	Sürüm Sayfasını Aç
-Open the RustGIS user guide.	RustGIS kullanıcı kılavuzunu aç.
+Open the RustGIS user guide.	ARutGIS kullanıcı kılavuzunu aç.
 Open the selected layer's table.	Seçili katmanın tablosunu aç.
 Open the Symbology pane.	Semboloji panelini aç.
 Open the task's steps	Görevin adımlarını aç
@@ -2230,7 +2230,7 @@ Plugin registry	Eklenti kayıt defteri
 Plugins	Eklentiler
 Plugins are .rgplugin files. Install only plugins from people you trust.	Eklentiler .rgplugin dosyalarıdır. Yalnızca güvendiğiniz kişilerin eklentilerini yükleyin.
 Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	"Korumalı alan dışında" olarak işaretlenen eklentiler bunun yerine bilgisayarınızda program olarak çalışır ve sizin yapabildiğiniz her şeyi yapabilir.
-Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	Eklentiler bir korumalı alanda çalışır: dosyalarınıza veya ağa erişemezler ve projeyi yalnızca RustGIS'in kendi komutlarıyla, kabul ettiğiniz izinler dahilinde değiştirirler.
+Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	Eklentiler bir korumalı alanda çalışır: dosyalarınıza veya ağa erişemezler ve projeyi yalnızca ARutGIS'in kendi komutlarıyla, kabul ettiğiniz izinler dahilinde değiştirirler.
 PMTiles archive	PMTiles arşivi
 PNG frames (zip)	PNG kareleri (zip)
 PNG image	PNG görüntüsü
@@ -2299,7 +2299,7 @@ Project templates: start projects from a saved setup.	Proje şablonları: projel
 project's path is required	projenin yolu gerekli
 Projection	Projeksiyon
 Projections	Projeksiyonlar
-Projects (RustGIS, QGIS)	Projeler (RustGIS, QGIS)
+Projects (RustGIS, QGIS)	Projeler (ARutGIS, QGIS)
 Properties	Özellikler
 Property	Özellik
 Proportional Symbols	Orantılı Semboller
@@ -2355,7 +2355,7 @@ Read and write files on this computer	Bu bilgisayardaki dosyaları okuma ve yazm
 Read the bands picked for the view (at most about 6 km a side)	Görünüm için seçilen bantları oku (en fazla kenarı yaklaşık 6 km)
 Read the map's layers and features	Haritanın katmanlarını ve detaylarını okuma
 Read the points in the view, coloured by their principal components	Görünümdeki noktaları oku, temel bileşenlerine göre renklendirilmiş
-Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	Bir granülün dosyalarını okumak için her NASA DAAC'ında geçerli bir Earthdata Login belirteci gerekir. RustGIS kapanana kadar saklanır, asla projeye yazılmaz ve yalnızca NASA'nın Earthdata veri sunucularına gönderilir.
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	Bir granülün dosyalarını okumak için her NASA DAAC'ında geçerli bir Earthdata Login belirteci gerekir. ARutGIS kapanana kadar saklanır, asla projeye yazılmaz ve yalnızca NASA'nın Earthdata veri sunucularına gönderilir.
 Reading the catalog: {n} documents read, {m} items found…	Katalog okunuyor: {n} belge okundu, {m} öğe bulundu…
 Reading the catalog…	Katalog okunuyor…
 Reading the embeddings…	Gömmeler okunuyor…
@@ -2516,30 +2516,30 @@ Run Tool	Aracı Çalıştır
 Run {name}	Çalıştır: {name}
 Running the query for the map…	Sorgu harita için çalıştırılıyor…
 Running…	Çalışıyor…
-RustGIS	RustGIS
-RustGIS bookmarks	RustGIS yer imleri
-RustGIS could not confirm that any previously saved key was deleted from the system keychain.	RustGIS, daha önce kaydedilmiş bir anahtarın sistem anahtarlığından silindiğini doğrulayamadı.
-RustGIS couldn't reach the server.	RustGIS sunucuya ulaşamadı.
-RustGIS deep learning package	RustGIS derin öğrenme paketi
-RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	RustGIS geçen sefer düzgün kapanmadı, bu yüzden başlangıç projeniz yerine World Atlas ile açıldı. Hazır olduğunuzda projeyi Proje menüsünden açın.
-RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	RustGIS'te bu araç yok. Geldiği araçları yükleyin veya düğümü silin.
-RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	RustGIS, saf Rust ile yazılmış özgür ve açık kaynaklı bir CBS'dir. Masaüstünde ve tarayıcıda çalışır ve her işlem komut satırından da çalıştırabileceğiniz bir komuttur.
-RustGIS layer file	RustGIS katman dosyası
-RustGIS layers, maps and projects	RustGIS katmanları, haritaları ve projeleri
-RustGIS layout	RustGIS sayfa düzeni
-RustGIS maps and projects	RustGIS haritaları ve projeleri
-RustGIS model	RustGIS modeli
-RustGIS or Jupyter notebook	RustGIS veya Jupyter not defteri
-RustGIS plugin	RustGIS eklentisi
-RustGIS presentation	RustGIS sunumu
-RustGIS project	RustGIS projesi
-RustGIS project template	RustGIS proje şablonu
-RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	RustGIS son seferde dahili bir hatayla karşılaştı. Ayrıntılar {path} dosyasında; lütfen bir hata raporuna ekleyin.
-RustGIS report or report template	RustGIS raporu veya rapor şablonu
-RustGIS styles	RustGIS stilleri
-RustGIS task	RustGIS görevi
-RustGIS {latest} is available.	RustGIS {latest} kullanılabilir.
-RustGIS {version} is the latest version.	RustGIS {version} en son sürüm.
+RustGIS	ARutGIS
+RustGIS bookmarks	ARutGIS yer imleri
+RustGIS could not confirm that any previously saved key was deleted from the system keychain.	ARutGIS, daha önce kaydedilmiş bir anahtarın sistem anahtarlığından silindiğini doğrulayamadı.
+RustGIS couldn't reach the server.	ARutGIS sunucuya ulaşamadı.
+RustGIS deep learning package	ARutGIS derin öğrenme paketi
+RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	ARutGIS geçen sefer düzgün kapanmadı, bu yüzden başlangıç projeniz yerine World Atlas ile açıldı. Hazır olduğunuzda projeyi Proje menüsünden açın.
+RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	ARutGIS'te bu araç yok. Geldiği araçları yükleyin veya düğümü silin.
+RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	ARutGIS, saf Rust ile yazılmış özgür ve açık kaynaklı bir CBS'dir. Masaüstünde ve tarayıcıda çalışır ve her işlem komut satırından da çalıştırabileceğiniz bir komuttur.
+RustGIS layer file	ARutGIS katman dosyası
+RustGIS layers, maps and projects	ARutGIS katmanları, haritaları ve projeleri
+RustGIS layout	ARutGIS sayfa düzeni
+RustGIS maps and projects	ARutGIS haritaları ve projeleri
+RustGIS model	ARutGIS modeli
+RustGIS or Jupyter notebook	ARutGIS veya Jupyter not defteri
+RustGIS plugin	ARutGIS eklentisi
+RustGIS presentation	ARutGIS sunumu
+RustGIS project	ARutGIS projesi
+RustGIS project template	ARutGIS proje şablonu
+RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	ARutGIS son seferde dahili bir hatayla karşılaştı. Ayrıntılar {path} dosyasında; lütfen bir hata raporuna ekleyin.
+RustGIS report or report template	ARutGIS raporu veya rapor şablonu
+RustGIS styles	ARutGIS stilleri
+RustGIS task	ARutGIS görevi
+RustGIS {latest} is available.	ARutGIS {latest} kullanılabilir.
+RustGIS {version} is the latest version.	ARutGIS {version} en son sürüm.
 RUSTGIS_ASSISTANT_MODEL	RUSTGIS_ASSISTANT_MODEL
 RUSTGIS_ASSISTANT_PROVIDER	RUSTGIS_ASSISTANT_PROVIDER
 RUSTGIS_GPU	RUSTGIS_GPU
@@ -2548,7 +2548,7 @@ S3 Buckets	S3 Bucket'ları
 S3 Connections	S3 Bağlantıları
 S3…	S3…
 Sample data (Natural Earth)	Örnek veri (Natural Earth)
-Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	Örnek veri © Natural Earth (kamu malı). RustGIS, Apache-2.0 ile lisanslanmıştır.
+Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	Örnek veri © Natural Earth (kamu malı). ARutGIS, Apache-2.0 ile lisanslanmıştır.
 Sample data: Natural Earth (public domain). Licensed under Apache-2.0.	Örnek veri: Natural Earth (kamu malı). Apache-2.0 ile lisanslanmıştır.
 Sans-serif	Tırnaksız
 Satellite Embedding Datasets	Uydu Gömme Veri Kümeleri
@@ -2677,7 +2677,7 @@ Sections	Bölümler
 See and set the camera's position and scale.	Kameranın konumunu ve ölçeğini gör ve ayarla.
 See the map as people with colour vision deficiencies do.	Haritayı renk görme eksikliği olan kişilerin gördüğü gibi gör.
 See the tools you've run.	Çalıştırdığınız araçları görün.
-See whether a newer RustGIS has been released.	Daha yeni bir RustGIS sürümü yayımlanıp yayımlanmadığını denetle.
+See whether a newer RustGIS has been released.	Daha yeni bir ARutGIS sürümü yayımlanıp yayımlanmadığını denetle.
 SELECT	SELECT
 Select	Seç
 Select (click)	Seç (tıklama)
@@ -2843,7 +2843,7 @@ Sign-in	Oturum açma
 Sign-in cancelled.	Oturum açma iptal edildi.
 Sign-in timed out. Start again and allow the browser to reach this computer's loopback address.	Oturum açma zaman aşımına uğradı. Yeniden başlayın ve tarayıcının bu bilgisayarın geri döngü adresine erişmesine izin verin.
 signed in	oturum açık
-Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	Bu bilgisayarda oturum kapatıldı, ancak OpenAI bunu onaylamadı. RustGIS'in bağlantısını ChatGPT ayarlarından kesebilirsiniz.
+Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	Bu bilgisayarda oturum kapatıldı, ancak OpenAI bunu onaylamadı. ARutGIS'in bağlantısını ChatGPT ayarlarından kesebilirsiniz.
 Significance level	Anlamlılık düzeyi
 Signing in with ChatGPT works in the desktop app.	ChatGPT ile oturum açma masaüstü uygulamasında çalışır.
 Signing the asset (Planetary Computer)…	Varlık imzalanıyor (Planetary Computer)…
@@ -3067,7 +3067,7 @@ The connection failed; trying again in {seconds} s.	Bağlantı başarısız oldu
 the connection has no id	bağlantının kimliği yok
 The country list couldn't be read ({e}): type a country's code	Ülke listesi okunamadı ({e}): bir ülke kodu yazın
 The current elevation stays in effect while you edit inputs. Click Apply elevation to apply the value and units.	Girdileri düzenlerken geçerli yükseklik etkin kalır. Değeri ve birimleri uygulamak için Yüksekliği uygula'ya tıklayın.
-The dataset has nothing RustGIS can add	Veri kümesinde RustGIS'in ekleyebileceği bir şey yok
+The dataset has nothing RustGIS can add	Veri kümesinde ARutGIS'in ekleyebileceği bir şey yok
 The environment (AWS_ACCESS_KEY_ID…)	Ortam (AWS_ACCESS_KEY_ID…)
 The features where the map is	Haritanın olduğu yerdeki detaylar
 The first 1,000 entries; narrow it down a folder at a time.	İlk 1.000 girdi; her seferinde bir klasör daraltın.
@@ -3088,10 +3088,10 @@ The layer's file couldn't be read: {error}	Katmanın dosyası okunamadı: {error
 The layer's strokes	Katmanın konturları
 the layout export failed unexpectedly	sayfa düzeni dışa aktarımı beklenmedik şekilde başarısız oldu
 The link doesn't say its STAC API: Find Items searches {api}	Bağlantı STAC API'sini belirtmiyor: Öğeleri Bul {api} üzerinde arar
-The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	Göz atılacak eklenti listesi. RustGIS eklenti kayıt defteri için boş bırakın.
+The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	Göz atılacak eklenti listesi. ARutGIS eklenti kayıt defteri için boş bırakın.
 the map has no layers	haritada katman yok
 The map is drawn in this coordinate system; layers are projected on the fly.	Harita bu koordinat sisteminde çizilir; katmanlar anında projekte edilir.
-the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	harita RustGIS'te ekranda değil (bir sayfa düzeni veya katalog gösteriliyor), bu yüzden ekran dışında çizildi
+the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	harita ARutGIS'te ekranda değil (bir sayfa düzeni veya katalog gösteriliyor), bu yüzden ekran dışında çizildi
 The map view as it is now	Harita görünümünün şu anki hali
 The map's extent isn't known yet	Haritanın kapsamı henüz bilinmiyor
 The map's view takes {n} of Overture's {ty} files (up to {max}): zoom in, or add the theme as map tiles	Harita görünümü Overture'ın {n} {ty} dosyasını kapsıyor (en fazla {max}): yakınlaştırın veya temayı harita karoları olarak ekleyin
@@ -3146,7 +3146,7 @@ The sign-in expired or was revoked. Sign in again.	Oturumun süresi doldu veya e
 The sign-in is kept in the app's settings folder, for your user account only, and never in a project file.	Oturum, uygulamanın ayarlar klasöründe yalnızca kullanıcı hesabınız için saklanır, asla bir proje dosyasında saklanmaz.
 The significance level is a number, such as 0.05	Anlamlılık düzeyi 0.05 gibi bir sayıdır
 The start-up project {path} didn't open: {error}	Başlangıç projesi {path} açılamadı: {error}
-The start-up project {path} isn't a RustGIS project file.	Başlangıç projesi {path} bir RustGIS proje dosyası değil.
+The start-up project {path} isn't a RustGIS project file.	Başlangıç projesi {path} bir ARutGIS proje dosyası değil.
 The step's layer {name} isn't in the map.	Adımın katmanı {name} haritada değil.
 The store has no variables with two or more dimensions.	Depoda iki veya daha fazla boyutlu değişken yok.
 the store is gone	depo artık yok
@@ -3189,7 +3189,7 @@ This map has no layers yet.	Bu haritada henüz katman yok.
 This map's thumbnail, from an image.	Bir görüntüden bu haritanın küçük resmi.
 This map's thumbnail, from the view.	Görünümden bu haritanın küçük resmi.
 This plugin can:	Bu eklenti şunları yapabilir:
-This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	Bu eklenti, RustGIS'in korumalı alanının dışında, bilgisayarınızda bir program olarak çalışır. Sizin yapabildiğiniz her şeyi yapabilir: dosyalarınızı okuyup değiştirebilir, ağı kullanabilir ve başka programlar çalıştırabilir. Yalnızca yazarına güveniyorsanız yükleyin.
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	Bu eklenti, ARutGIS'in korumalı alanının dışında, bilgisayarınızda bir program olarak çalışır. Sizin yapabildiğiniz her şeyi yapabilir: dosyalarınızı okuyup değiştirebilir, ağı kullanabilir ve başka programlar çalıştırabilir. Yalnızca yazarına güveniyorsanız yükleyin.
 This request has no one-time allow option.	Bu istek için tek seferlik izin seçeneği yok.
 This request uses an unsupported capability. Check the parameter and change the request.	Bu istek desteklenmeyen bir özellik kullanıyor. Parametreyi kontrol edip isteği değiştirin.
 This result is kept	Bu sonuç saklanır
@@ -3303,7 +3303,7 @@ Units	Birimler
 Units per step	Adım başına birim
 unknown (an older project)	bilinmiyor (eski bir proje)
 UNKNOWN TOOL	BİLİNMEYEN ARAÇ
-Unload the GeoLibre tools and stop loading them when RustGIS starts.	GeoLibre araçlarını kaldır ve RustGIS başlarken yüklenmelerini durdur.
+Unload the GeoLibre tools and stop loading them when RustGIS starts.	GeoLibre araçlarını kaldır ve ARutGIS başlarken yüklenmelerini durdur.
 Unsaved changes	Kaydedilmemiş değişiklikler
 Unsupervised classes (k-means)	Denetimsiz sınıflar (k-ortalama)
 Unsupervised classes (k-means).	Denetimsiz sınıflar (k-ortalama).
@@ -3425,13 +3425,13 @@ Web Tool	Web Aracı
 Website	Web sitesi
 Weekly usage	Haftalık kullanım
 Weights	Ağırlıklar
-Welcome to RustGIS	RustGIS'e hoş geldiniz
+Welcome to RustGIS	ARutGIS'e hoş geldiniz
 West	Batı
 WFS	WFS
 WGS 84 / Globe	WGS 84 / Küre
 WGS 84 / Web Mercator	WGS 84 / Web Mercator
-What RustGIS opens with: the World Atlas sample or a blank map.	RustGIS'in neyle açılacağı: World Atlas örneği ya da boş bir harita.
-What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	RustGIS'in neyle açılacağı: World Atlas örneği, boş bir harita, seçtiğiniz bir proje ya da en son açılan veya kaydedilen proje.
+What RustGIS opens with: the World Atlas sample or a blank map.	ARutGIS'in neyle açılacağı: World Atlas örneği ya da boş bir harita.
+What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	ARutGIS'in neyle açılacağı: World Atlas örneği, boş bir harita, seçtiğiniz bir proje ya da en son açılan veya kaydedilen proje.
 What to do, where to find it and why	Ne yapılacağı, nerede bulunacağı ve neden
 What's near a point	Bir noktanın yakınında ne var
 WHERE	WHERE

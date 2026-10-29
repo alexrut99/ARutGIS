@@ -42,8 +42,8 @@ A line for the Script pane	Satu baris untuk panel Skrip
 A magnifying lens that follows the pointer.	Lensa pembesar yang mengikuti penunjuk.
 A map, feature or coverage service's address: WMS, WMTS, WFS, WCS, OGC API Features or Tiles, or an ArcGIS FeatureServer, MapServer, ImageServer or VectorTileServer (or a services directory, to browse).	Alamat layanan peta, fitur, atau coverage: WMS, WMTS, WFS, WCS, OGC API Features atau Tiles, atau ArcGIS FeatureServer, MapServer, ImageServer, atau VectorTileServer (atau direktori layanan, untuk dijelajahi).
 a name, or owner/name such as giswqs/geospatial	nama, atau pemilik/nama seperti giswqs/geospatial
-A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	Endpoint bernama yang dapat Anda gunakan kembali. Kunci dan token disimpan sampai RustGIS ditutup, tidak pernah disimpan permanen.
-A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	Endpoint bernama yang dapat Anda gunakan kembali. Kunci disimpan sampai RustGIS ditutup kecuali Anda memilih untuk mengingatnya di komputer ini; koneksi itu sendiri tidak pernah menyimpannya.
+A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	Endpoint bernama yang dapat Anda gunakan kembali. Kunci dan token disimpan sampai ARutGIS ditutup, tidak pernah disimpan permanen.
+A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	Endpoint bernama yang dapat Anda gunakan kembali. Kunci disimpan sampai ARutGIS ditutup kecuali Anda memilih untuk mengingatnya di komputer ini; koneksi itu sendiri tidak pernah menyimpannya.
 A named endpoint you can reuse. Passwords last for this session unless you choose to remember them in this computer's password store.	Endpoint bernama yang dapat Anda gunakan kembali. Kata sandi berlaku untuk sesi ini kecuali Anda memilih untuk mengingatnya di penyimpanan kata sandi komputer ini.
 A node cannot connect to itself.	Node tidak dapat terhubung ke dirinya sendiri.
 A notebook of text and command cells.	Buku catatan berisi sel teks dan sel perintah.
@@ -79,8 +79,8 @@ A5 Grid	Grid A5
 A5's equal-area pentagonal cells at a resolution, over the map's extent, a layer or the world, as polygons with their ids.	Sel pentagonal luas sama A5 pada suatu resolusi, di atas cakupan peta, sebuah layer, atau seluruh dunia, sebagai poligon beserta id-nya.
 About	Tentang
 About plugins	Tentang plugin
-About RustGIS	Tentang RustGIS
-About RustGIS.	Tentang RustGIS.
+About RustGIS	Tentang ARutGIS
+About RustGIS.	Tentang ARutGIS.
 Above	Atas
 Above Left	Kiri Atas
 Above Right	Kanan Atas
@@ -244,7 +244,7 @@ Agent input queue is full or disconnected; stop the agent and try again.	Antrean
 Agent threads	Utas agen
 Agent work	Agent work
 Agents have full access: they may run scripts, tasks, models and plugins. Click to stop the MCP relay	Agen memiliki akses penuh: mereka dapat menjalankan skrip, tugas, model, dan plugin. Klik untuk menghentikan relay MCP
-Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	Agen di komputer ini yang terhubung (Claude Code, Codex, Cursor, dan lainnya) bekerja pada peta yang terbuka di sini dengan alat RustGIS: mereka dapat membuka dan menyimpan file serta menggunakan web. Skrip dan pengelolaan plugin tetap nonaktif.
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	Agen di komputer ini yang terhubung (Claude Code, Codex, Cursor, dan lainnya) bekerja pada peta yang terbuka di sini dengan alat ARutGIS: mereka dapat membuka dan menyimpan file serta menggunakan web. Skrip dan pengelolaan plugin tetap nonaktif.
 Agents then run commands, change files and use the web on this computer without asking you.	Agen akan menjalankan perintah, mengubah file, dan menggunakan web di komputer ini tanpa bertanya kepada Anda.
 Aggregate Points to A5	Agregasi Titik ke A5
 Aggregation	Agregasi
@@ -269,7 +269,7 @@ Allow Feature Selection	Izinkan Seleksi Fitur
 Allow only certain combinations of values across fields.	Izinkan hanya kombinasi nilai tertentu di antara kolom.
 Allow such actions for this conversation	Izinkan tindakan seperti ini untuk percakapan ini
 Allow this action?	Izinkan tindakan ini?
-Allow this agent's RustGIS action?	Izinkan tindakan RustGIS dari agen ini?
+Allow this agent's RustGIS action?	Izinkan tindakan ARutGIS dari agen ini?
 Along lines	Sepanjang garis
 Along Selected Line	Sepanjang Garis Terpilih
 Alt+	Alt+
@@ -277,7 +277,7 @@ Alternating bar	Bilah berselang-seling
 Altitude	Ketinggian
 Always allow	Selalu izinkan
 Amazon S3	Amazon S3
-Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3, atau layanan yang kompatibel dengan S3 (MinIO, Cloudflare R2, Wasabi…) melalui endpoint-nya. Kunci disimpan hingga RustGIS ditutup; koneksi tersimpan menyimpan nama, endpoint, dan wilayahnya, tidak pernah rahasianya.
+Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3, atau layanan yang kompatibel dengan S3 (MinIO, Cloudflare R2, Wasabi…) melalui endpoint-nya. Kunci disimpan hingga ARutGIS ditutup; koneksi tersimpan menyimpan nama, endpoint, dan wilayahnya, tidak pernah rahasianya.
 amenity=cafe, shop	amenity=cafe, shop
 An agent on this computer asks to:	Agen di komputer ini meminta untuk:
 An AWS profile	Profil AWS
@@ -320,7 +320,7 @@ Areas (name, land use, area)	Area (nama, penggunaan lahan, luas)
 Arrange	Atur
 Arrow	Panah
 Arrowheads	Kepala panah
-Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	Ajukan pertanyaan tentang data Anda, atau jelaskan apa yang harus dilakukan pada peta. Asisten menjalankan perintah RustGIS untuk Anda; setiap perubahan dapat diurungkan.
+Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	Ajukan pertanyaan tentang data Anda, atau jelaskan apa yang harus dilakukan pada peta. Asisten menjalankan perintah ARutGIS untuk Anda; setiap perubahan dapat diurungkan.
 Ask about the map, or tell it what to do…	Tanyakan tentang peta, atau beri tahu apa yang harus dilakukan…
 Ask about your data, or tell the assistant what to do with the map.	Tanyakan tentang data Anda, atau beri tahu asisten apa yang harus dilakukan pada peta.
 Asking NASA's CMR…	Menanyakan ke CMR NASA…
@@ -635,7 +635,7 @@ Color Vision Simulator	Simulator Penglihatan Warna
 Colorbar	Bilah Warna
 Colormap	Peta Warna
 Colors from the raster's own color table.	Warna dari tabel warna raster itu sendiri.
-Colour ramps (RustGIS, QGIS, GDAL, GMT)	Ramp warna (RustGIS, QGIS, GDAL, GMT)
+Colour ramps (RustGIS, QGIS, GDAL, GMT)	Ramp warna (ARutGIS, QGIS, GDAL, GMT)
 Columns named like longitude/latitude, easting/northing or geometry are picked for you.	Kolom bernama seperti longitude/latitude, easting/northing atau geometry dipilih secara otomatis.
 Combinations from the box above, one per line	Kombinasi dari kotak di atas, satu per baris
 COMID {comid}	COMID {comid}
@@ -831,7 +831,7 @@ Delete selected rows	Hapus baris terpilih
 Delete Style	Hapus Gaya
 Delete Task	Hapus Tugas
 Delete Task Step	Hapus Langkah Tugas
-Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	Hapus runner GeoLibre yang dipasang RustGIS. Pasang lagi kapan saja.
+Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	Hapus runner GeoLibre yang dipasang ARutGIS. Pasang lagi kapan saja.
 Delete the layout {name}?	Hapus tata letak {name}?
 Delete the map {name}?	Hapus peta {name}?
 Delete the selected features.	Hapus fitur terpilih.
@@ -1020,7 +1020,7 @@ Element Properties	Properti Elemen
 Elevation	Elevasi
 Elevation model	Model elevasi
 Elevation profiles along lines, cross sections and more.	Profil elevasi di sepanjang garis, penampang melintang, dan lainnya.
-Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	Permintaan yang memenuhi syarat di RustGIS menggunakan paket ChatGPT Anda. Anda dapat mengelola penggunaan di pengaturan ChatGPT.
+Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	Permintaan yang memenuhi syarat di ARutGIS menggunakan paket ChatGPT Anda. Anda dapat mengelola penggunaan di pengaturan ChatGPT.
 Ellipse	Elips
 Embeddings	Embedding
 Ember	Bara
@@ -1197,7 +1197,7 @@ Find and run geoprocessing tools.	Temukan dan jalankan alat geoprosesing.
 Find any command by name (Ctrl+K).	Temukan perintah apa pun berdasarkan nama (Ctrl+K).
 Find Items	Cari Item
 Find Place	Cari Tempat
-Find plugins in the RustGIS plugin registry.	Temukan plugin di registri plugin RustGIS.
+Find plugins in the RustGIS plugin registry.	Temukan plugin di registri plugin ARutGIS.
 Find Similar	Cari yang Mirip
 Find Tools	Cari Alat
 Finding routes…	Mencari rute…
@@ -1233,7 +1233,7 @@ Forget Earthdata Login Token	Lupakan Token Earthdata Login
 Forget Saved Keys	Lupakan Kunci Tersimpan
 Forget Saved Password	Lupakan Kata Sandi Tersimpan
 Format	Format
-Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	Ditemukan: {names}. Agen bekerja pada peta ini dengan alat RustGIS dan alatnya sendiri (web, skrip, file), di folder miliknya yang disimpan di Dokumen › RustGIS › Agent work. Agen meminta izin Anda sebelum setiap tindakan.
+Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	Ditemukan: {names}. Agen bekerja pada peta ini dengan alat ARutGIS dan alatnya sendiri (web, skrip, file), di folder miliknya yang disimpan di Dokumen › ARutGIS › Agent work. Agen meminta izin Anda sebelum setiap tindakan.
 Frame rate	Laju bingkai
 Frame rate, draw time, data size and memory.	Laju bingkai, waktu gambar, ukuran data, dan memori.
 France	Prancis
@@ -1438,7 +1438,7 @@ In memory	Di memori
 In Progress	Sedang Berjalan
 in progress	sedang berjalan
 In project	Dalam proyek
-In RustGIS, it can:	Di RustGIS, plugin ini dapat:
+In RustGIS, it can:	Di ARutGIS, plugin ini dapat:
 In the browser, pick the .shp and .dbf together, with any sidecars, or pick a ZIP. The override applies to every Shapefile in the ZIP.	Di browser, pilih .shp dan .dbf sekaligus beserta file pendampingnya, atau pilih ZIP. Penggantian berlaku untuk setiap Shapefile di dalam ZIP.
 In use	Digunakan
 Indexes	Indeks
@@ -1509,7 +1509,7 @@ It's too large to keep in the browser: install it again on your next visit.	Plug
 Italic	Miring
 Item Pop-ups	Pop-up Item
 Item {id}	Item {id}
-Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	Firewall-nya ({firewall}) memblokir RustGIS. Layanan ini mungkin hanya mengizinkan beberapa aplikasi: hubungi administratornya dan kirimkan detail di bawah.
+Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	Firewall-nya ({firewall}) memblokir ARutGIS. Layanan ini mungkin hanya mengizinkan beberapa aplikasi: hubungi administratornya dan kirimkan detail di bawah.
 Its tool isn't available now (a plugin's, not loaded, or a suite's, not installed)	Alatnya tidak tersedia sekarang (milik plugin yang tidak dimuat, atau milik suite yang tidak dipasang)
 Jobs	Pekerjaan
 JOIN	JOIN
@@ -1609,7 +1609,7 @@ Legend	Legenda
 Legend label. Clear it to show the value again.	Label legenda. Kosongkan untuk menampilkan nilainya lagi.
 Length {length} · gain {gain} · loss {loss}	Panjang {length} · naik {gain} · turun {loss}
 Let the assistant hand tasks to agents on this computer	Izinkan asisten menyerahkan tugas ke agen di komputer ini
-Let your Agents Control RustGIS	Biarkan agen Anda mengendalikan RustGIS
+Let your Agents Control RustGIS	Biarkan agen Anda mengendalikan ARutGIS
 Letter spacing	Spasi huruf
 Level	Tingkat
 Library	Pustaka
@@ -1660,7 +1660,7 @@ List The National Map Services	Daftar Layanan The National Map
 List the provider's models	Tampilkan daftar model penyedia
 List this layer in the legend	Cantumkan layer ini di legenda
 List what it holds	Daftar isinya
-Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	Dicantumkan untuk penemuan: RustGIS belum dapat membaca dataset ini. Data dan makalahnya ditautkan di atas.
+Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	Dicantumkan untuk penemuan: ARutGIS belum dapat membaca dataset ini. Data dan makalahnya ditautkan di atas.
 Listing…	Membuat daftar…
 Lit	Terang
 Live summary of the features in view.	Ringkasan langsung fitur yang terlihat.
@@ -1695,7 +1695,7 @@ Look for {name}, outlined on the ribbon.	Cari {name}, yang diberi garis tepi di 
 Looking up the place…	Mencari tempat…
 Loop	Ulang
 Lower Priority	Prioritas Lebih Rendah
-Made in RustGIS: samples, drawings and tool outputs	Dibuat di RustGIS: sampel, gambar, dan keluaran alat
+Made in RustGIS: samples, drawings and tool outputs	Dibuat di ARutGIS: sampel, gambar, dan keluaran alat
 Magnifier	Kaca Pembesar
 Major Lakes	Danau Utama
 Major Rivers	Sungai Utama
@@ -1927,7 +1927,7 @@ No COMID was returned for this point.	Tidak ada COMID yang dikembalikan untuk ti
 no command	tidak ada perintah
 No data at the points picked.	Tidak ada data di titik yang dipilih.
 No datasets match.	Tidak ada dataset yang cocok.
-No datasets with data RustGIS can add	Tidak ada dataset dengan data yang dapat ditambahkan RustGIS
+No datasets with data RustGIS can add	Tidak ada dataset dengan data yang dapat ditambahkan ARutGIS
 no date in the name	tidak ada tanggal di nama
 No edits since the project was saved	Tidak ada suntingan sejak proyek disimpan
 No features are selected in this layer.	Tidak ada fitur yang dipilih di layer ini.
@@ -1986,8 +1986,8 @@ North\nArrow	Panah\nUtara
 North Polar Stereographic	Stereografis Kutub Utara
 NOT	NOT
 not a picture	bukan gambar
-not a RustGIS layout	bukan tata letak RustGIS
-not a RustGIS project	bukan proyek RustGIS
+not a RustGIS layout	bukan tata letak ARutGIS
+not a RustGIS project	bukan proyek ARutGIS
 Not applied yet.	Belum diterapkan.
 Not for texts: a text is edited in the Format pane.	Bukan untuk teks: teks diedit di panel Format.
 not needed	tidak diperlukan
@@ -2045,8 +2045,8 @@ Open a .rgis project	Buka proyek .rgis
 open a layout first	buka tata letak terlebih dahulu
 Open a model file (*.model.json)	Buka file model (*.model.json)
 Open a model of this project	Buka model dari proyek ini
-Open a RustGIS or Jupyter notebook.	Buka notebook RustGIS atau Jupyter.
-Open a RustGIS project.	Buka proyek RustGIS.
+Open a RustGIS or Jupyter notebook.	Buka notebook ARutGIS atau Jupyter.
+Open a RustGIS project.	Buka proyek ARutGIS.
 Open an offline area to edit.	Buka area offline untuk disunting.
 Open browser again	Buka browser lagi
 Open Custom Template	Buka Templat Kustom
@@ -2074,7 +2074,7 @@ Open the layer's attribute table.	Buka tabel atribut layer.
 Open the layer's table.	Buka tabel layer.
 Open the plugin's panel.	Buka panel plugin.
 Open the Release Page	Buka Halaman Rilis
-Open the RustGIS user guide.	Buka panduan pengguna RustGIS.
+Open the RustGIS user guide.	Buka panduan pengguna ARutGIS.
 Open the selected layer's table.	Buka tabel layer terpilih.
 Open the Symbology pane.	Buka panel Simbologi.
 Open the task's steps	Buka langkah-langkah tugas
@@ -2230,7 +2230,7 @@ Plugin registry	Registri plugin
 Plugins	Plugin
 Plugins are .rgplugin files. Install only plugins from people you trust.	Plugin adalah file .rgplugin. Pasang hanya plugin dari orang yang Anda percaya.
 Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	Plugin bertanda "Tanpa sandbox" berjalan sebagai program di komputer Anda dan dapat melakukan apa pun yang dapat Anda lakukan.
-Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	Plugin berjalan di sandbox: plugin tidak dapat mengakses file Anda atau jaringan, dan hanya mengubah proyek melalui perintah RustGIS sendiri, dalam batas izin yang Anda setujui.
+Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	Plugin berjalan di sandbox: plugin tidak dapat mengakses file Anda atau jaringan, dan hanya mengubah proyek melalui perintah ARutGIS sendiri, dalam batas izin yang Anda setujui.
 PMTiles archive	Arsip PMTiles
 PNG frames (zip)	Bingkai PNG (zip)
 PNG image	Gambar PNG
@@ -2299,7 +2299,7 @@ Project templates: start projects from a saved setup.	Templat proyek: mulai proy
 project's path is required	path project wajib diisi
 Projection	Proyeksi
 Projections	Proyeksi
-Projects (RustGIS, QGIS)	Proyek (RustGIS, QGIS)
+Projects (RustGIS, QGIS)	Proyek (ARutGIS, QGIS)
 Properties	Properti
 Property	Properti
 Proportional Symbols	Simbol Proporsional
@@ -2355,7 +2355,7 @@ Read and write files on this computer	Membaca dan menulis file di komputer ini
 Read the bands picked for the view (at most about 6 km a side)	Baca band yang dipilih untuk tampilan (paling banyak sekitar 6 km per sisi)
 Read the map's layers and features	Membaca layer dan fitur peta
 Read the points in the view, coloured by their principal components	Baca titik di tampilan, diwarnai menurut komponen utamanya
-Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	Membaca file granule memerlukan token Earthdata Login, yang berlaku untuk setiap DAAC NASA. Token disimpan hingga RustGIS ditutup, tidak pernah di dalam proyek, dan hanya dikirim ke server data Earthdata NASA.
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	Membaca file granule memerlukan token Earthdata Login, yang berlaku untuk setiap DAAC NASA. Token disimpan hingga ARutGIS ditutup, tidak pernah di dalam proyek, dan hanya dikirim ke server data Earthdata NASA.
 Reading the catalog: {n} documents read, {m} items found…	Membaca katalog: {n} dokumen dibaca, {m} item ditemukan…
 Reading the catalog…	Membaca katalog…
 Reading the embeddings…	Membaca embedding…
@@ -2516,30 +2516,30 @@ Run Tool	Jalankan Alat
 Run {name}	Jalankan {name}
 Running the query for the map…	Menjalankan kueri untuk peta…
 Running…	Berjalan…
-RustGIS	RustGIS
-RustGIS bookmarks	Penanda RustGIS
-RustGIS could not confirm that any previously saved key was deleted from the system keychain.	RustGIS tidak dapat memastikan bahwa kunci yang disimpan sebelumnya telah dihapus dari keychain sistem.
-RustGIS couldn't reach the server.	RustGIS tidak dapat menjangkau server.
-RustGIS deep learning package	Paket deep learning RustGIS
-RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	RustGIS tidak ditutup dengan benar terakhir kali, jadi RustGIS dimulai dengan World Atlas, bukan proyek awal Anda. Buka proyek dari menu Proyek saat Anda siap.
-RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	RustGIS tidak memiliki alat ini. Instal alat asalnya, atau hapus node ini.
-RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	RustGIS adalah SIG bebas dan sumber terbuka yang ditulis dalam Rust murni. Aplikasi ini berjalan di desktop dan di peramban, dan setiap tindakan adalah perintah yang juga dapat Anda jalankan dari baris perintah.
-RustGIS layer file	File layer RustGIS
-RustGIS layers, maps and projects	Layer, peta, dan proyek RustGIS
-RustGIS layout	Tata letak RustGIS
-RustGIS maps and projects	Peta dan proyek RustGIS
-RustGIS model	Model RustGIS
-RustGIS or Jupyter notebook	Notebook RustGIS atau Jupyter
-RustGIS plugin	Plugin RustGIS
-RustGIS presentation	Presentasi RustGIS
-RustGIS project	Proyek RustGIS
-RustGIS project template	Templat proyek RustGIS
-RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	RustGIS mengalami kesalahan internal terakhir kali. Detailnya ada di {path}; lampirkan ke laporan bug.
-RustGIS report or report template	Laporan atau templat laporan RustGIS
-RustGIS styles	Gaya RustGIS
-RustGIS task	Tugas RustGIS
-RustGIS {latest} is available.	RustGIS {latest} tersedia.
-RustGIS {version} is the latest version.	RustGIS {version} adalah versi terbaru.
+RustGIS	ARutGIS
+RustGIS bookmarks	Penanda ARutGIS
+RustGIS could not confirm that any previously saved key was deleted from the system keychain.	ARutGIS tidak dapat memastikan bahwa kunci yang disimpan sebelumnya telah dihapus dari keychain sistem.
+RustGIS couldn't reach the server.	ARutGIS tidak dapat menjangkau server.
+RustGIS deep learning package	Paket deep learning ARutGIS
+RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	ARutGIS tidak ditutup dengan benar terakhir kali, jadi ARutGIS dimulai dengan World Atlas, bukan proyek awal Anda. Buka proyek dari menu Proyek saat Anda siap.
+RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	ARutGIS tidak memiliki alat ini. Instal alat asalnya, atau hapus node ini.
+RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	ARutGIS adalah SIG bebas dan sumber terbuka yang ditulis dalam Rust murni. Aplikasi ini berjalan di desktop dan di peramban, dan setiap tindakan adalah perintah yang juga dapat Anda jalankan dari baris perintah.
+RustGIS layer file	File layer ARutGIS
+RustGIS layers, maps and projects	Layer, peta, dan proyek ARutGIS
+RustGIS layout	Tata letak ARutGIS
+RustGIS maps and projects	Peta dan proyek ARutGIS
+RustGIS model	Model ARutGIS
+RustGIS or Jupyter notebook	Notebook ARutGIS atau Jupyter
+RustGIS plugin	Plugin ARutGIS
+RustGIS presentation	Presentasi ARutGIS
+RustGIS project	Proyek ARutGIS
+RustGIS project template	Templat proyek ARutGIS
+RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	ARutGIS mengalami kesalahan internal terakhir kali. Detailnya ada di {path}; lampirkan ke laporan bug.
+RustGIS report or report template	Laporan atau templat laporan ARutGIS
+RustGIS styles	Gaya ARutGIS
+RustGIS task	Tugas ARutGIS
+RustGIS {latest} is available.	ARutGIS {latest} tersedia.
+RustGIS {version} is the latest version.	ARutGIS {version} adalah versi terbaru.
 RUSTGIS_ASSISTANT_MODEL	RUSTGIS_ASSISTANT_MODEL
 RUSTGIS_ASSISTANT_PROVIDER	RUSTGIS_ASSISTANT_PROVIDER
 RUSTGIS_GPU	RUSTGIS_GPU
@@ -2548,7 +2548,7 @@ S3 Buckets	Bucket S3
 S3 Connections	Koneksi S3
 S3…	S3…
 Sample data (Natural Earth)	Data contoh (Natural Earth)
-Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	Data contoh © Natural Earth (domain publik). RustGIS dilisensikan di bawah Apache-2.0.
+Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	Data contoh © Natural Earth (domain publik). ARutGIS dilisensikan di bawah Apache-2.0.
 Sample data: Natural Earth (public domain). Licensed under Apache-2.0.	Data contoh: Natural Earth (domain publik). Dilisensikan di bawah Apache-2.0.
 Sans-serif	Sans-serif
 Satellite Embedding Datasets	Dataset Embedding Satelit
@@ -2677,7 +2677,7 @@ Sections	Bagian
 See and set the camera's position and scale.	Lihat dan atur posisi serta skala kamera.
 See the map as people with colour vision deficiencies do.	Lihat peta seperti yang dilihat penyandang gangguan penglihatan warna.
 See the tools you've run.	Lihat alat yang telah Anda jalankan.
-See whether a newer RustGIS has been released.	Periksa apakah RustGIS yang lebih baru telah dirilis.
+See whether a newer RustGIS has been released.	Periksa apakah ARutGIS yang lebih baru telah dirilis.
 SELECT	SELECT
 Select	Pilih
 Select (click)	Pilih (klik)
@@ -2843,7 +2843,7 @@ Sign-in	Masuk
 Sign-in cancelled.	Proses masuk dibatalkan.
 Sign-in timed out. Start again and allow the browser to reach this computer's loopback address.	Waktu masuk habis. Mulai lagi dan izinkan browser mengakses alamat loopback komputer ini.
 signed in	sudah masuk
-Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	Keluar di komputer ini, tetapi OpenAI tidak mengonfirmasinya. Anda dapat memutus RustGIS di pengaturan ChatGPT.
+Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	Keluar di komputer ini, tetapi OpenAI tidak mengonfirmasinya. Anda dapat memutus ARutGIS di pengaturan ChatGPT.
 Significance level	Tingkat signifikansi
 Signing in with ChatGPT works in the desktop app.	Masuk dengan ChatGPT berfungsi di aplikasi desktop.
 Signing the asset (Planetary Computer)…	Menandatangani aset (Planetary Computer)…
@@ -3067,7 +3067,7 @@ The connection failed; trying again in {seconds} s.	Koneksi gagal; mencoba lagi 
 the connection has no id	koneksi tidak memiliki id
 The country list couldn't be read ({e}): type a country's code	Daftar negara tidak dapat dibaca ({e}): ketik kode negara
 The current elevation stays in effect while you edit inputs. Click Apply elevation to apply the value and units.	Elevasi saat ini tetap berlaku selama Anda mengedit masukan. Klik Terapkan elevasi untuk menerapkan nilai dan satuannya.
-The dataset has nothing RustGIS can add	Dataset ini tidak berisi apa pun yang dapat ditambahkan RustGIS
+The dataset has nothing RustGIS can add	Dataset ini tidak berisi apa pun yang dapat ditambahkan ARutGIS
 The environment (AWS_ACCESS_KEY_ID…)	Lingkungan (AWS_ACCESS_KEY_ID…)
 The features where the map is	Fitur di area peta
 The first 1,000 entries; narrow it down a folder at a time.	1.000 entri pertama; persempit satu folder demi satu folder.
@@ -3088,10 +3088,10 @@ The layer's file couldn't be read: {error}	Berkas layer tidak dapat dibaca: {err
 The layer's strokes	Goresan layer
 the layout export failed unexpectedly	ekspor tata letak gagal secara tak terduga
 The link doesn't say its STAC API: Find Items searches {api}	Tautan tidak menyebutkan STAC API-nya: Cari Item mencari di {api}
-The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	Daftar plugin untuk dijelajahi. Biarkan kosong untuk registri plugin RustGIS.
+The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	Daftar plugin untuk dijelajahi. Biarkan kosong untuk registri plugin ARutGIS.
 the map has no layers	peta tidak memiliki layer
 The map is drawn in this coordinate system; layers are projected on the fly.	Peta digambar dalam sistem koordinat ini; lapisan diproyeksikan secara langsung.
-the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	peta tidak tampil di layar RustGIS (tata letak atau katalog sedang ditampilkan), sehingga digambar di luar layar
+the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	peta tidak tampil di layar ARutGIS (tata letak atau katalog sedang ditampilkan), sehingga digambar di luar layar
 The map view as it is now	Tampilan peta seperti sekarang
 The map's extent isn't known yet	Cakupan peta belum diketahui
 The map's view takes {n} of Overture's {ty} files (up to {max}): zoom in, or add the theme as map tiles	Tampilan peta mencakup {n} file {ty} Overture (maksimum {max}): perbesar, atau tambahkan tema sebagai ubin peta
@@ -3146,7 +3146,7 @@ The sign-in expired or was revoked. Sign in again.	Sesi masuk kedaluwarsa atau d
 The sign-in is kept in the app's settings folder, for your user account only, and never in a project file.	Info masuk disimpan di folder pengaturan aplikasi, hanya untuk akun pengguna Anda, dan tidak pernah di berkas proyek.
 The significance level is a number, such as 0.05	Tingkat signifikansi berupa angka, misalnya 0.05
 The start-up project {path} didn't open: {error}	Proyek awal {path} tidak dapat dibuka: {error}
-The start-up project {path} isn't a RustGIS project file.	Proyek awal {path} bukan file proyek RustGIS.
+The start-up project {path} isn't a RustGIS project file.	Proyek awal {path} bukan file proyek ARutGIS.
 The step's layer {name} isn't in the map.	Layer langkah ini, {name}, tidak ada di peta.
 The store has no variables with two or more dimensions.	Penyimpanan tidak memiliki variabel dengan dua dimensi atau lebih.
 the store is gone	penyimpanan sudah tidak ada
@@ -3189,7 +3189,7 @@ This map has no layers yet.	Peta ini belum memiliki layer.
 This map's thumbnail, from an image.	Thumbnail peta ini, dari sebuah gambar.
 This map's thumbnail, from the view.	Thumbnail peta ini, dari tampilan.
 This plugin can:	Plugin ini dapat:
-This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	Plugin ini berjalan sebagai program di komputer Anda, di luar sandbox RustGIS. Plugin ini dapat melakukan apa pun yang dapat Anda lakukan: membaca dan mengubah file Anda, menggunakan jaringan, dan menjalankan program lain. Pasang hanya jika Anda memercayai pembuatnya.
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	Plugin ini berjalan sebagai program di komputer Anda, di luar sandbox ARutGIS. Plugin ini dapat melakukan apa pun yang dapat Anda lakukan: membaca dan mengubah file Anda, menggunakan jaringan, dan menjalankan program lain. Pasang hanya jika Anda memercayai pembuatnya.
 This request has no one-time allow option.	Permintaan ini tidak memiliki opsi izinkan sekali.
 This request uses an unsupported capability. Check the parameter and change the request.	Permintaan ini menggunakan kemampuan yang tidak didukung. Periksa parameter dan ubah permintaan.
 This result is kept	Hasil ini disimpan
@@ -3303,7 +3303,7 @@ Units	Satuan
 Units per step	Unit per langkah
 unknown (an older project)	tidak diketahui (proyek lama)
 UNKNOWN TOOL	ALAT TIDAK DIKENAL
-Unload the GeoLibre tools and stop loading them when RustGIS starts.	Lepas alat GeoLibre dan berhenti memuatnya saat RustGIS dimulai.
+Unload the GeoLibre tools and stop loading them when RustGIS starts.	Lepas alat GeoLibre dan berhenti memuatnya saat ARutGIS dimulai.
 Unsaved changes	Perubahan belum disimpan
 Unsupervised classes (k-means)	Kelas tak terbimbing (k-means)
 Unsupervised classes (k-means).	Kelas tak terbimbing (k-means).
@@ -3425,13 +3425,13 @@ Web Tool	Alat Web
 Website	Situs web
 Weekly usage	Penggunaan mingguan
 Weights	Bobot
-Welcome to RustGIS	Selamat datang di RustGIS
+Welcome to RustGIS	Selamat datang di ARutGIS
 West	Barat
 WFS	WFS
 WGS 84 / Globe	WGS 84 / Globe
 WGS 84 / Web Mercator	WGS 84 / Web Mercator
-What RustGIS opens with: the World Atlas sample or a blank map.	Apa yang dibuka RustGIS: contoh World Atlas atau peta kosong.
-What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	Apa yang dibuka RustGIS: contoh World Atlas, peta kosong, proyek yang Anda pilih, atau proyek terakhir yang dibuka atau disimpan.
+What RustGIS opens with: the World Atlas sample or a blank map.	Apa yang dibuka ARutGIS: contoh World Atlas atau peta kosong.
+What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	Apa yang dibuka ARutGIS: contoh World Atlas, peta kosong, proyek yang Anda pilih, atau proyek terakhir yang dibuka atau disimpan.
 What to do, where to find it and why	Apa yang dilakukan, di mana menemukannya, dan mengapa
 What's near a point	Apa yang ada di dekat suatu titik
 WHERE	WHERE

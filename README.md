@@ -1,31 +1,47 @@
 <p align="center">
-  <img src="https://assets.rustgis.app/images/logo.svg" alt="RustGIS logo: a rust-coloured cog framing a segmented globe with an orbit" width="160">
+  <img src="docs/assets/arutgis-logo.svg" alt="ARutGIS logo: a white letter A whose apex is a map pin and whose crossbar is a dotted route, on a sky-blue to blue rounded tile" width="160">
 </p>
 
-<h1 align="center">RustGIS</h1>
+<h1 align="center">ARutGIS</h1>
 
 <p align="center">
-  <b>A fast, free and open-source GIS in pure Rust for mapping, analyzing and sharing geospatial data.</b><br>
-  Native on Windows, macOS and Linux, and in your web browser. Your data stays on your machine
-  unless you send it to an AI model you choose, and every action is a command you can script.
+  <b>โปรแกรม GIS ฟรีและโอเพนซอร์ส สำหรับทำแผนที่ วิเคราะห์ และแบ่งปันข้อมูลเชิงพื้นที่ รองรับภาษาไทยเต็มรูปแบบ</b><br>
+  A free and open-source GIS with full Thai support, developed from
+  <a href="https://github.com/opengeos/RustGIS">RustGIS</a>.
 </p>
 
 <p align="center">
-  <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-b84a2c?style=flat-square&logo=rust&logoColor=white">
   <img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2563eb?style=flat-square">
-  <img alt="20 languages" src="https://img.shields.io/badge/languages-20-0e9384?style=flat-square">
-  <a href="https://plugins.rustgis.app"><img alt="Plugins" src="https://img.shields.io/badge/plugins-registry-7c3aed?style=flat-square"></a>
-  <a href="https://pypi.org/project/rustgis/"><img alt="PyPI" src="https://img.shields.io/pypi/v/rustgis?style=flat-square&logo=python&logoColor=white&label=pypi"></a>
-  <a href="https://colab.research.google.com/github/opengeos/RustGIS/blob/main/apps/rustgis-python/examples/getting-started.ipynb"><img alt="Open in Colab" src="https://colab.research.google.com/assets/colab-badge.svg"></a>
-  <a href="https://doi.org/10.5281/zenodo.23633281"><img alt="DOI" src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23633281-1682d4?style=flat-square"></a>
+  <img alt="ภาษาไทย" src="https://img.shields.io/badge/%E0%B8%A0%E0%B8%B2%E0%B8%A9%E0%B8%B2-%E0%B9%84%E0%B8%97%E0%B8%A2-38bdf8?style=flat-square">
+  <a href="https://github.com/opengeos/RustGIS"><img alt="Based on RustGIS" src="https://img.shields.io/badge/based%20on-RustGIS-0b1220?style=flat-square"></a>
 </p>
 
-<p align="center">
-  <a href="https://web.rustgis.app"><img alt="Launch the RustGIS web app" src="https://img.shields.io/badge/Launch-web%20app-b84a2c?style=for-the-badge&logo=webassembly&logoColor=white" height="36"></a>
-  <a href="https://github.com/opengeos/RustGIS/releases/latest"><img alt="Download the desktop app" src="https://img.shields.io/badge/Download-desktop%20app-2563eb?style=for-the-badge&logo=github&logoColor=white" height="36"></a>
-  <a href="https://rustgis.app"><img alt="Read the documentation" src="https://img.shields.io/badge/Read-the%20docs-0e9384?style=for-the-badge&logo=materialformkdocs&logoColor=white" height="36"></a>
-  <a href="https://apps.microsoft.com/detail/9ppjw8h561lq?mode=direct"><img alt="Get it from Microsoft" src="https://get.microsoft.com/images/en-us%20dark.svg" height="36"></a>
-</p>
+## ARutGIS และที่มา
+
+ARutGIS พัฒนาต่อจาก [RustGIS](https://github.com/opengeos/RustGIS) ของ Qiusheng Wu
+ภายใต้สัญญาอนุญาต [Apache-2.0](LICENSE) ซึ่งเป็นสัญญาเดียวกับต้นฉบับ ARutGIS ไม่ได้มีส่วนเกี่ยวข้องและไม่ได้รับการรับรองจากโครงการ RustGIS
+แจกจ่ายให้ใช้ฟรี
+
+ARutGIS is developed from [RustGIS](https://github.com/opengeos/RustGIS) by Qiusheng Wu, under
+the same [Apache-2.0](LICENSE) licence. It is not affiliated with or endorsed by the RustGIS
+project. The copyright notices, licences and attributions of RustGIS and the libraries it uses
+are kept in [LICENSE](LICENSE), [ATTRIBUTION.md](ATTRIBUTION.md) and
+[THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt). If you use it in research, please also
+cite RustGIS ([CITATION.cff](CITATION.cff)).
+
+### สิ่งที่เพิ่มจาก RustGIS
+
+- **ตัวอักษรไทย**: ข้อมูล ตาราง และป้ายชื่อภาษาไทยแสดงด้วยฟอนต์ไทยที่มีในเครื่อง
+  (Leelawadee UI / Tahoma บน Windows, Thonburi บน macOS, Noto Sans Thai / Loma บน Linux)
+  และจัดวางวรรณยุกต์ถูกต้องทั้งบนจอและตอนส่งออกแผนที่
+- **เมนูภาษาไทย**: แปลข้อความในโปรแกรมทั้งหมดเป็นภาษาไทย (การตั้งค่า › ภาษา › ไทย)
+- **ระบบพิกัดไทย**: WGS 84 / UTM โซน 47N, 48N และ Indian 1975 / UTM โซน 47N, 48N
+- **ชื่อและโลโก้ ARutGIS**
+
+## RustGIS, the project ARutGIS comes from
+
+The rest of this page is RustGIS's own description. Its links (web app, downloads, docs,
+plugins, PyPI) go to the RustGIS project, not to ARutGIS.
 
 <p align="center">
   <img src="https://assets.rustgis.app/images/hero.webp" alt="RustGIS with the Home tab of the ribbon open. The Layers pane lists Cities, Rivers, Lakes and Countries with their legends; the map shows the world in the Equal Earth projection, countries shaded by population, sized city dots and country labels." width="100%">

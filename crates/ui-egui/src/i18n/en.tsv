@@ -1,0 +1,79 @@
+# en interface catalog: the app's English strings that name it, as ARutGIS. Every other
+# English string is its own key.
+A PostgreSQL/PostGIS connection (host=… port=… dbname=… user=…, or a postgresql:// address), a MySQL or MariaDB address (mysql://user@host:3306/database), a SQL Server address (mssql://user@host:1433/database) or a DuckDB file. PostGIS, MySQL, MariaDB and SQL Server tables are read live, large ones a view at a time; the password is kept until RustGIS closes, never in the project.	A PostgreSQL/PostGIS connection (host=… port=… dbname=… user=…, or a postgresql:// address), a MySQL or MariaDB address (mysql://user@host:3306/database), a SQL Server address (mssql://user@host:1433/database) or a DuckDB file. PostGIS, MySQL, MariaDB and SQL Server tables are read live, large ones a view at a time; the password is kept until ARutGIS closes, never in the project.
+A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	A named endpoint you can reuse. Keys and tokens are kept until ARutGIS closes, never saved.
+A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	A named endpoint you can reuse. Keys are kept until ARutGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.
+About RustGIS	About ARutGIS
+About RustGIS.	About ARutGIS.
+Agents may also run scripts, tasks and models, and install, remove and run plugins: anything you could do yourself. Turn it on only for an agent you trust with your computer. It lasts until RustGIS closes or agents are turned off.	Agents may also run scripts, tasks and models, and install, remove and run plugins: anything you could do yourself. Turn it on only for an agent you trust with your computer. It lasts until ARutGIS closes or agents are turned off.
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with ARutGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. So can a script any program of yours writes to the file bridge shown below. Scripts and plugin management stay off. The choice is remembered across launches.	Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with ARutGIS's tools: they can open and save files and use the web. So can a script any program of yours writes to the file bridge shown below. Scripts and plugin management stay off. The choice is remembered across launches.
+Allow this agent's RustGIS action?	Allow this agent's ARutGIS action?
+Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until ARutGIS closes; a saved connection keeps its name, endpoint and region, never its secret.
+Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	Ask a question about your data, or describe what to do with the map. The assistant runs ARutGIS commands for you; every change can be undone.
+Colour ramps (RustGIS, QGIS, GDAL, GMT)	Colour ramps (ARutGIS, QGIS, GDAL, GMT)
+Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	Delete the GeoLibre runner that ARutGIS installed. Install it again at any time.
+Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	Eligible requests in ARutGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.
+Find plugins in the RustGIS plugin registry.	Find plugins in the ARutGIS plugin registry.
+For ArcGIS Online, the client ID is RustGIS's own app. For an ArcGIS Enterprise portal, register an OAuth app on it (Content › New item › Developer credentials) whose redirect URL is {redirect}, and give its client ID.	For ArcGIS Online, the client ID is ARutGIS's own app. For an ArcGIS Enterprise portal, register an OAuth app on it (Content › New item › Developer credentials) whose redirect URL is {redirect}, and give its client ID.
+Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	Found: {names}. An agent works on this map through ARutGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › ARutGIS › Agent work. It asks you before each action.
+How often RustGIS keeps a copy of unsaved work, to offer it back after a crash.	How often ARutGIS keeps a copy of unsaved work, to offer it back after a crash.
+In RustGIS, it can:	In ARutGIS, it can:
+Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	Its firewall ({firewall}) blocked ARutGIS. The service may only allow some applications: contact its administrator and send them the details below.
+Let your Agents Control RustGIS	Let your Agents Control ARutGIS
+Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	Listed for discovery: ARutGIS doesn't read this dataset yet. Its data and paper are linked above.
+Made in RustGIS: samples, drawings and tool outputs	Made in ARutGIS: samples, drawings and tool outputs
+No datasets with data RustGIS can add	No datasets with data ARutGIS can add
+Open a RustGIS or Jupyter notebook.	Open a ARutGIS or Jupyter notebook.
+Open a RustGIS project.	Open a ARutGIS project.
+Open the RustGIS user guide.	Open the ARutGIS user guide.
+Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through ARutGIS's own commands, within the permissions you accept.
+Projects (RustGIS, QGIS)	Projects (ARutGIS, QGIS)
+Projects and JSON data (RustGIS, QGIS, GeoLibre)	Projects and JSON data (ARutGIS, QGIS, GeoLibre)
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until ARutGIS closes, never in the project, and sent only to NASA's Earthdata data servers.
+RustGIS	ARutGIS
+RustGIS bookmarks	ARutGIS bookmarks
+RustGIS could not confirm that any previously saved key was deleted from the system keychain.	ARutGIS could not confirm that any previously saved key was deleted from the system keychain.
+RustGIS couldn't reach the server.	ARutGIS couldn't reach the server.
+RustGIS deep learning package	ARutGIS deep learning package
+RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	ARutGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.
+RustGIS didn't close properly last time.	ARutGIS didn't close properly last time.
+RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	ARutGIS doesn't have this tool. Install the tools it comes from, or delete the node.
+RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	ARutGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.
+RustGIS layer file	ARutGIS layer file
+RustGIS layers, maps and projects	ARutGIS layers, maps and projects
+RustGIS layout	ARutGIS layout
+RustGIS maps and projects	ARutGIS maps and projects
+RustGIS model	ARutGIS model
+RustGIS or Jupyter notebook	ARutGIS or Jupyter notebook
+RustGIS plugin	ARutGIS plugin
+RustGIS presentation	ARutGIS presentation
+RustGIS project	ARutGIS project
+RustGIS project template	ARutGIS project template
+RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	ARutGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.
+RustGIS report or report template	ARutGIS report or report template
+RustGIS runs it and writes the outcome to:	ARutGIS runs it and writes the outcome to:
+RustGIS styles	ARutGIS styles
+RustGIS task	ARutGIS task
+RustGIS was quit last time without saving your changes.	ARutGIS was quit last time without saving your changes.
+RustGIS {latest} is available.	ARutGIS {latest} is available.
+RustGIS {version} is the latest version.	ARutGIS {version} is the latest version.
+Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	Sample data © Natural Earth (public domain). ARutGIS is licensed under Apache-2.0.
+See whether a newer RustGIS has been released.	See whether a newer ARutGIS has been released.
+Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	Signed out on this computer, but OpenAI didn't confirm it. You can disconnect ARutGIS in ChatGPT's settings.
+Signed out on this computer, but the system keychain couldn't be read, so OpenAI wasn't asked to end the session. You can disconnect RustGIS in ChatGPT's settings.	Signed out on this computer, but the system keychain couldn't be read, so OpenAI wasn't asked to end the session. You can disconnect ARutGIS in ChatGPT's settings.
+The browser didn't give RustGIS the clipboard ({why}): paste with {keys}.	The browser didn't give ARutGIS the clipboard ({why}): paste with {keys}.
+The dataset has nothing RustGIS can add	The dataset has nothing ARutGIS can add
+The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	The list of plugins to browse. Leave it empty for the ARutGIS plugin registry.
+The start-up project {path} isn't a RustGIS project file.	The start-up project {path} isn't a ARutGIS project file.
+The system keychain is unavailable, so this sign-in won't be remembered: it lasts until RustGIS closes.	The system keychain is unavailable, so this sign-in won't be remembered: it lasts until ARutGIS closes.
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	This plugin runs as a program on your computer, outside ARutGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.
+Unload the GeoLibre tools and stop loading them when RustGIS starts.	Unload the GeoLibre tools and stop loading them when ARutGIS starts.
+Welcome to RustGIS	Welcome to ARutGIS
+What RustGIS opens with: the World Atlas sample or a blank map.	What ARutGIS opens with: the World Atlas sample or a blank map.
+What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	What ARutGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.
+not a RustGIS layout	not a ARutGIS layout
+not a RustGIS project	not a ARutGIS project
+the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	the map isn't on screen in ARutGIS (a layout or the catalog is shown), so it was drawn offscreen
+{name} is not a text file: RustGIS opens GeoJSON, CSV, GeoTIFF and .rgis here	{name} is not a text file: ARutGIS opens GeoJSON, CSV, GeoTIFF and .rgis here
+{n} layer address(es) were saved without their keys, tokens or passwords: after RustGIS closes, add those layers again to give them	{n} layer address(es) were saved without their keys, tokens or passwords: after ARutGIS closes, add those layers again to give them

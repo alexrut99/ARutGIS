@@ -507,7 +507,7 @@ fn main() -> eframe::Result {
     }
     app.session.mark_saved();
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("RustGIS")
+        .with_title("ARutGIS")
         .with_app_id("org.rustgis.RustGIS")
         .with_inner_size([1480.0, 920.0])
         .with_min_inner_size([900.0, 560.0])

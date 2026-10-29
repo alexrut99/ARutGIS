@@ -42,8 +42,8 @@ A line for the Script pane	บรรทัดสำหรับแผงสค�
 A magnifying lens that follows the pointer.	แว่นขยายที่เคลื่อนตามตัวชี้เมาส์
 A map, feature or coverage service's address: WMS, WMTS, WFS, WCS, OGC API Features or Tiles, or an ArcGIS FeatureServer, MapServer, ImageServer or VectorTileServer (or a services directory, to browse).	ที่อยู่ของบริการแผนที่ ฟีเจอร์ หรือ coverage: WMS, WMTS, WFS, WCS, OGC API Features หรือ Tiles หรือ ArcGIS FeatureServer, MapServer, ImageServer หรือ VectorTileServer (หรือไดเรกทอรีบริการ เพื่อเรียกดู)
 a name, or owner/name such as giswqs/geospatial	ชื่อ หรือ owner/name เช่น giswqs/geospatial
-A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	ปลายทาง (endpoint) ที่ตั้งชื่อไว้และนำกลับมาใช้ได้ คีย์และโทเค็นจะถูกเก็บไว้จนกว่าจะปิด RustGIS และจะไม่ถูกบันทึก
-A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	ปลายทาง (endpoint) ที่ตั้งชื่อไว้และนำกลับมาใช้ได้ คีย์จะถูกเก็บไว้จนกว่าจะปิด RustGIS เว้นแต่คุณเลือกให้จดจำไว้ในคอมพิวเตอร์เครื่องนี้ ตัวการเชื่อมต่อเองจะไม่เก็บคีย์
+A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	ปลายทาง (endpoint) ที่ตั้งชื่อไว้และนำกลับมาใช้ได้ คีย์และโทเค็นจะถูกเก็บไว้จนกว่าจะปิด ARutGIS และจะไม่ถูกบันทึก
+A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	ปลายทาง (endpoint) ที่ตั้งชื่อไว้และนำกลับมาใช้ได้ คีย์จะถูกเก็บไว้จนกว่าจะปิด ARutGIS เว้นแต่คุณเลือกให้จดจำไว้ในคอมพิวเตอร์เครื่องนี้ ตัวการเชื่อมต่อเองจะไม่เก็บคีย์
 A named endpoint you can reuse. Passwords last for this session unless you choose to remember them in this computer's password store.	ปลายทาง (endpoint) ที่ตั้งชื่อไว้และนำกลับมาใช้ได้ รหัสผ่านจะใช้ได้ตลอดเซสชันนี้ เว้นแต่คุณเลือกให้จดจำไว้ในที่เก็บรหัสผ่านของคอมพิวเตอร์เครื่องนี้
 A node cannot connect to itself.	โหนดเชื่อมต่อกับตัวเองไม่ได้
 A notebook of text and command cells.	สมุดโน้ตที่มีเซลล์ข้อความและเซลล์คำสั่ง
@@ -79,8 +79,8 @@ A5 Grid	กริด A5
 A5's equal-area pentagonal cells at a resolution, over the map's extent, a layer or the world, as polygons with their ids.	เซลล์ห้าเหลี่ยมพื้นที่เท่ากันของ A5 ที่ความละเอียดที่กำหนด ครอบคลุมขอบเขตแผนที่ ชั้นข้อมูล หรือทั้งโลก เป็นรูปหลายเหลี่ยมพร้อม id
 About	เกี่ยวกับ
 About plugins	เกี่ยวกับปลั๊กอิน
-About RustGIS	เกี่ยวกับ RustGIS
-About RustGIS.	เกี่ยวกับ RustGIS
+About RustGIS	เกี่ยวกับ ARutGIS
+About RustGIS.	เกี่ยวกับ ARutGIS
 Above	ด้านบน
 Above Left	ด้านบนซ้าย
 Above Right	ด้านบนขวา
@@ -244,7 +244,7 @@ Agent input queue is full or disconnected; stop the agent and try again.	คิ�
 Agent threads	เธรดของเอเจนต์
 Agent work	งานของเอเจนต์
 Agents have full access: they may run scripts, tasks, models and plugins. Click to stop the MCP relay	เอเจนต์มีสิทธิ์เข้าถึงเต็มที่: สามารถเรียกใช้สคริปต์ งาน โมเดล และปลั๊กอินได้ คลิกเพื่อหยุดรีเลย์ MCP
-Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	เอเจนต์บนคอมพิวเตอร์เครื่องนี้ที่เชื่อมต่อเข้ามา (Claude Code, Codex, Cursor และอื่น ๆ) จะทำงานกับแผนที่ที่เปิดอยู่ที่นี่ด้วยเครื่องมือของ RustGIS: สามารถเปิดและบันทึกไฟล์ และใช้เว็บได้ ส่วนสคริปต์และการจัดการปลั๊กอินยังคงปิดอยู่
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	เอเจนต์บนคอมพิวเตอร์เครื่องนี้ที่เชื่อมต่อเข้ามา (Claude Code, Codex, Cursor และอื่น ๆ) จะทำงานกับแผนที่ที่เปิดอยู่ที่นี่ด้วยเครื่องมือของ ARutGIS: สามารถเปิดและบันทึกไฟล์ และใช้เว็บได้ ส่วนสคริปต์และการจัดการปลั๊กอินยังคงปิดอยู่
 Agents then run commands, change files and use the web on this computer without asking you.	จากนั้นเอเจนต์จะเรียกใช้คำสั่ง เปลี่ยนแปลงไฟล์ และใช้เว็บบนคอมพิวเตอร์เครื่องนี้โดยไม่ถามคุณ
 Aggregate Points to A5	รวมจุดเข้ากริด A5
 Aggregation	การรวมข้อมูล
@@ -269,7 +269,7 @@ Allow Feature Selection	อนุญาตการเลือกฟีเจ�
 Allow only certain combinations of values across fields.	อนุญาตเฉพาะชุดค่าบางชุดที่ประกอบกันข้ามฟิลด์
 Allow such actions for this conversation	อนุญาตการดำเนินการลักษณะนี้สำหรับการสนทนานี้
 Allow this action?	อนุญาตการดำเนินการนี้หรือไม่?
-Allow this agent's RustGIS action?	อนุญาตการดำเนินการใน RustGIS ของเอเจนต์นี้หรือไม่?
+Allow this agent's RustGIS action?	อนุญาตการดำเนินการใน ARutGIS ของเอเจนต์นี้หรือไม่?
 Along lines	ตามแนวเส้น
 Along Selected Line	ตามแนวเส้นที่เลือก
 Alt+	Alt+
@@ -277,7 +277,7 @@ Alternating bar	แถบสลับสี
 Altitude	ระดับความสูง
 Always allow	อนุญาตเสมอ
 Amazon S3	Amazon S3
-Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3 หรือบริการที่เข้ากันได้กับ S3 (MinIO, Cloudflare R2, Wasabi…) ตามปลายทาง (endpoint) คีย์จะถูกเก็บไว้จนกว่าจะปิด RustGIS การเชื่อมต่อที่บันทึกไว้จะเก็บชื่อ ปลายทาง และภูมิภาค แต่ไม่เก็บรหัสลับ
+Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3 หรือบริการที่เข้ากันได้กับ S3 (MinIO, Cloudflare R2, Wasabi…) ตามปลายทาง (endpoint) คีย์จะถูกเก็บไว้จนกว่าจะปิด ARutGIS การเชื่อมต่อที่บันทึกไว้จะเก็บชื่อ ปลายทาง และภูมิภาค แต่ไม่เก็บรหัสลับ
 amenity=cafe, shop	amenity=cafe, shop
 An agent on this computer asks to:	เอเจนต์บนคอมพิวเตอร์เครื่องนี้ขอ:
 An AWS profile	โปรไฟล์ AWS
@@ -320,7 +320,7 @@ Areas (name, land use, area)	พื้นที่ (ชื่อ การใช
 Arrange	จัดเรียง
 Arrow	ลูกศร
 Arrowheads	หัวลูกศร
-Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	ถามคำถามเกี่ยวกับข้อมูลของคุณ หรืออธิบายสิ่งที่ต้องการทำกับแผนที่ ผู้ช่วยจะเรียกใช้คำสั่ง RustGIS ให้คุณ และทุกการเปลี่ยนแปลงสามารถเลิกทำได้
+Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	ถามคำถามเกี่ยวกับข้อมูลของคุณ หรืออธิบายสิ่งที่ต้องการทำกับแผนที่ ผู้ช่วยจะเรียกใช้คำสั่ง ARutGIS ให้คุณ และทุกการเปลี่ยนแปลงสามารถเลิกทำได้
 Ask about the map, or tell it what to do…	ถามเกี่ยวกับแผนที่ หรือบอกสิ่งที่ต้องการให้ทำ…
 Ask about your data, or tell the assistant what to do with the map.	ถามเกี่ยวกับข้อมูลของคุณ หรือบอกผู้ช่วยว่าต้องทำอะไรกับแผนที่
 Asking NASA's CMR…	กำลังสอบถาม CMR ของ NASA…
@@ -635,7 +635,7 @@ Color Vision Simulator	ตัวจำลองการมองเห็นส
 Colorbar	แถบสี
 Colormap	แผนที่สี
 Colors from the raster's own color table.	สีจากตารางสีของแรสเตอร์เอง
-Colour ramps (RustGIS, QGIS, GDAL, GMT)	ชุดไล่สี (RustGIS, QGIS, GDAL, GMT)
+Colour ramps (RustGIS, QGIS, GDAL, GMT)	ชุดไล่สี (ARutGIS, QGIS, GDAL, GMT)
 Columns named like longitude/latitude, easting/northing or geometry are picked for you.	คอลัมน์ที่มีชื่ออย่าง longitude/latitude, easting/northing หรือ geometry จะถูกเลือกให้อัตโนมัติ
 Combinations from the box above, one per line	ชุดผสมจากกล่องด้านบน บรรทัดละหนึ่งชุด
 COMID {comid}	COMID {comid}
@@ -831,7 +831,7 @@ Delete selected rows	ลบแถวที่เลือก
 Delete Style	ลบสไตล์
 Delete Task	ลบงาน
 Delete Task Step	ลบขั้นตอนของงาน
-Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	ลบตัวเรียกใช้ GeoLibre ที่ RustGIS ติดตั้งไว้ ติดตั้งใหม่ได้ทุกเมื่อ
+Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	ลบตัวเรียกใช้ GeoLibre ที่ ARutGIS ติดตั้งไว้ ติดตั้งใหม่ได้ทุกเมื่อ
 Delete the layout {name}?	ลบเลย์เอาต์ {name} หรือไม่
 Delete the map {name}?	ลบแผนที่ {name} หรือไม่
 Delete the selected features.	ลบฟีเจอร์ที่เลือก
@@ -1020,7 +1020,7 @@ Element Properties	คุณสมบัติขององค์ประก�
 Elevation	ความสูง
 Elevation model	แบบจำลองความสูง
 Elevation profiles along lines, cross sections and more.	โพรไฟล์ความสูงตามแนวเส้น ภาพตัดขวาง และอื่น ๆ
-Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	คำขอที่เข้าเกณฑ์ใน RustGIS จะใช้แพ็กเกจ ChatGPT ของคุณ คุณจัดการการใช้งานได้ในการตั้งค่า ChatGPT
+Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	คำขอที่เข้าเกณฑ์ใน ARutGIS จะใช้แพ็กเกจ ChatGPT ของคุณ คุณจัดการการใช้งานได้ในการตั้งค่า ChatGPT
 Ellipse	วงรี
 Embeddings	เอ็มเบดดิง
 Ember	ถ่านไฟ
@@ -1197,7 +1197,7 @@ Find and run geoprocessing tools.	ค้นหาและรันเครื�
 Find any command by name (Ctrl+K).	ค้นหาคำสั่งใดก็ได้ตามชื่อ (Ctrl+K)
 Find Items	ค้นหารายการ
 Find Place	ค้นหาสถานที่
-Find plugins in the RustGIS plugin registry.	ค้นหาปลั๊กอินในคลังปลั๊กอินของ RustGIS
+Find plugins in the RustGIS plugin registry.	ค้นหาปลั๊กอินในคลังปลั๊กอินของ ARutGIS
 Find Similar	ค้นหาที่คล้ายกัน
 Find Tools	ค้นหาเครื่องมือ
 Finding routes…	กำลังค้นหาเส้นทาง…
@@ -1233,7 +1233,7 @@ Forget Earthdata Login Token	ลืมโทเค็น Earthdata Login
 Forget Saved Keys	ลืมคีย์ที่บันทึกไว้
 Forget Saved Password	ลืมรหัสผ่านที่บันทึกไว้
 Format	รูปแบบ
-Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	พบ: {names} เอเจนต์จะทำงานกับแผนที่นี้ผ่านเครื่องมือของ RustGIS และเครื่องมือของตัวเอง (เว็บ สคริปต์ ไฟล์) ในโฟลเดอร์ของตัวเอง ซึ่งเก็บไว้ที่ เอกสาร › RustGIS › Agent work โดยจะถามคุณก่อนทุกการกระทำ
+Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	พบ: {names} เอเจนต์จะทำงานกับแผนที่นี้ผ่านเครื่องมือของ ARutGIS และเครื่องมือของตัวเอง (เว็บ สคริปต์ ไฟล์) ในโฟลเดอร์ของตัวเอง ซึ่งเก็บไว้ที่ เอกสาร › ARutGIS › Agent work โดยจะถามคุณก่อนทุกการกระทำ
 Frame rate	อัตราเฟรม
 Frame rate, draw time, data size and memory.	อัตราเฟรม เวลาในการวาด ขนาดข้อมูล และหน่วยความจำ
 France	ฝรั่งเศส
@@ -1438,7 +1438,7 @@ In memory	ในหน่วยความจำ
 In Progress	กำลังดำเนินการ
 in progress	กำลังดำเนินการ
 In project	ในโปรเจกต์
-In RustGIS, it can:	ใน RustGIS สามารถ:
+In RustGIS, it can:	ใน ARutGIS สามารถ:
 In the browser, pick the .shp and .dbf together, with any sidecars, or pick a ZIP. The override applies to every Shapefile in the ZIP.	ในเบราว์เซอร์ ให้เลือกไฟล์ .shp และ .dbf พร้อมกัน รวมถึงไฟล์ประกอบอื่น ๆ หรือเลือกไฟล์ ZIP การกำหนดทับจะใช้กับ Shapefile ทุกไฟล์ใน ZIP
 In use	ใช้งานอยู่
 Indexes	ดัชนี
@@ -1509,7 +1509,7 @@ It's too large to keep in the browser: install it again on your next visit.	ม�
 Italic	ตัวเอียง
 Item Pop-ups	ป๊อปอัปของรายการ
 Item {id}	รายการ {id}
-Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	ไฟร์วอลล์ของบริการ ({firewall}) บล็อก RustGIS บริการนี้อาจอนุญาตเฉพาะบางแอปพลิเคชัน: ติดต่อผู้ดูแลระบบและส่งรายละเอียดด้านล่างให้
+Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	ไฟร์วอลล์ของบริการ ({firewall}) บล็อก ARutGIS บริการนี้อาจอนุญาตเฉพาะบางแอปพลิเคชัน: ติดต่อผู้ดูแลระบบและส่งรายละเอียดด้านล่างให้
 Its tool isn't available now (a plugin's, not loaded, or a suite's, not installed)	เครื่องมือของรายการนี้ใช้งานไม่ได้ในขณะนี้ (เป็นของปลั๊กอินที่ยังไม่โหลด หรือของชุดเครื่องมือที่ยังไม่ได้ติดตั้ง)
 Jobs	รายการงาน
 JOIN	JOIN
@@ -1609,7 +1609,7 @@ Legend	คำอธิบายสัญลักษณ์
 Legend label. Clear it to show the value again.	ป้ายในคำอธิบายสัญลักษณ์ ล้างข้อความเพื่อแสดงค่าอีกครั้ง
 Length {length} · gain {gain} · loss {loss}	ความยาว {length} · ขึ้น {gain} · ลง {loss}
 Let the assistant hand tasks to agents on this computer	ให้ผู้ช่วยส่งต่องานให้เอเจนต์บนคอมพิวเตอร์เครื่องนี้
-Let your Agents Control RustGIS	ให้เอเจนต์ของคุณควบคุม RustGIS
+Let your Agents Control RustGIS	ให้เอเจนต์ของคุณควบคุม ARutGIS
 Letter spacing	ระยะห่างตัวอักษร
 Level	ระดับ
 Library	ไลบรารี
@@ -1660,7 +1660,7 @@ List The National Map Services	แสดงรายการบริการ 
 List the provider's models	แสดงรายการโมเดลของผู้ให้บริการ
 List this layer in the legend	แสดงชั้นข้อมูลนี้ในคำอธิบายสัญลักษณ์
 List what it holds	แสดงรายการสิ่งที่อยู่ภายใน
-Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	แสดงไว้เพื่อการค้นพบ: RustGIS ยังอ่านชุดข้อมูลนี้ไม่ได้ ลิงก์ไปยังข้อมูลและบทความอยู่ด้านบน
+Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	แสดงไว้เพื่อการค้นพบ: ARutGIS ยังอ่านชุดข้อมูลนี้ไม่ได้ ลิงก์ไปยังข้อมูลและบทความอยู่ด้านบน
 Listing…	กำลังแสดงรายการ…
 Lit	ด้านรับแสง
 Live summary of the features in view.	สรุปฟีเจอร์ในมุมมองแบบสด
@@ -1695,7 +1695,7 @@ Look for {name}, outlined on the ribbon.	มองหา {name} ที่มี�
 Looking up the place…	กำลังค้นหาสถานที่…
 Loop	วนซ้ำ
 Lower Priority	ลดลำดับความสำคัญ
-Made in RustGIS: samples, drawings and tool outputs	สร้างใน RustGIS: ตัวอย่าง ภาพวาด และผลลัพธ์จากเครื่องมือ
+Made in RustGIS: samples, drawings and tool outputs	สร้างใน ARutGIS: ตัวอย่าง ภาพวาด และผลลัพธ์จากเครื่องมือ
 Magnifier	แว่นขยาย
 Major Lakes	ทะเลสาบสำคัญ
 Major Rivers	แม่น้ำสายหลัก
@@ -1927,7 +1927,7 @@ No COMID was returned for this point.	ไม่ได้รับ COMID สำ�
 no command	ไม่มีคำสั่ง
 No data at the points picked.	ไม่มีข้อมูลที่จุดที่เลือก
 No datasets match.	ไม่มีชุดข้อมูลที่ตรงกัน
-No datasets with data RustGIS can add	ไม่มีชุดข้อมูลที่มีข้อมูลซึ่ง RustGIS เพิ่มได้
+No datasets with data RustGIS can add	ไม่มีชุดข้อมูลที่มีข้อมูลซึ่ง ARutGIS เพิ่มได้
 no date in the name	ไม่มีวันที่ในชื่อ
 No edits since the project was saved	ไม่มีการแก้ไขตั้งแต่บันทึกโปรเจกต์
 No features are selected in this layer.	ไม่มีฟีเจอร์ที่ถูกเลือกในชั้นข้อมูลนี้
@@ -1986,8 +1986,8 @@ North\nArrow	ลูกศร\nทิศเหนือ
 North Polar Stereographic	North Polar Stereographic
 NOT	NOT
 not a picture	ไม่ใช่รูปภาพ
-not a RustGIS layout	ไม่ใช่เลย์เอาต์ RustGIS
-not a RustGIS project	ไม่ใช่โปรเจกต์ RustGIS
+not a RustGIS layout	ไม่ใช่เลย์เอาต์ ARutGIS
+not a RustGIS project	ไม่ใช่โปรเจกต์ ARutGIS
 Not applied yet.	ยังไม่ได้นำไปใช้
 Not for texts: a text is edited in the Format pane.	ไม่ใช้กับข้อความ: แก้ไขข้อความได้ในแผงรูปแบบ
 not needed	ไม่จำเป็น
@@ -2045,8 +2045,8 @@ Open a .rgis project	เปิดโปรเจกต์ .rgis
 open a layout first	เปิดเลย์เอาต์ก่อน
 Open a model file (*.model.json)	เปิดไฟล์โมเดล (*.model.json)
 Open a model of this project	เปิดโมเดลของโปรเจกต์นี้
-Open a RustGIS or Jupyter notebook.	เปิดโน้ตบุ๊ก RustGIS หรือ Jupyter
-Open a RustGIS project.	เปิดโปรเจกต์ RustGIS
+Open a RustGIS or Jupyter notebook.	เปิดโน้ตบุ๊ก ARutGIS หรือ Jupyter
+Open a RustGIS project.	เปิดโปรเจกต์ ARutGIS
 Open an offline area to edit.	เปิดพื้นที่ออฟไลน์เพื่อแก้ไข
 Open browser again	เปิดเบราว์เซอร์อีกครั้ง
 Open Custom Template	เปิดเทมเพลตกำหนดเอง
@@ -2074,7 +2074,7 @@ Open the layer's attribute table.	เปิดตารางแอตทริ�
 Open the layer's table.	เปิดตารางของชั้นข้อมูล
 Open the plugin's panel.	เปิดแผงของปลั๊กอิน
 Open the Release Page	เปิดหน้าเผยแพร่เวอร์ชัน
-Open the RustGIS user guide.	เปิดคู่มือผู้ใช้ RustGIS
+Open the RustGIS user guide.	เปิดคู่มือผู้ใช้ ARutGIS
 Open the selected layer's table.	เปิดตารางของชั้นข้อมูลที่เลือก
 Open the Symbology pane.	เปิดแผงสัญลักษณ์
 Open the task's steps	เปิดขั้นตอนของงาน
@@ -2230,7 +2230,7 @@ Plugin registry	รีจิสทรีปลั๊กอิน
 Plugins	ปลั๊กอิน
 Plugins are .rgplugin files. Install only plugins from people you trust.	ปลั๊กอินคือไฟล์ .rgplugin ติดตั้งเฉพาะปลั๊กอินจากผู้ที่คุณไว้วางใจ
 Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	ปลั๊กอินที่ระบุว่า ไม่อยู่ในแซนด์บ็อกซ์ จะทำงานเป็นโปรแกรมบนคอมพิวเตอร์ของคุณแทน และทำได้ทุกอย่างที่คุณทำได้
-Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	ปลั๊กอินทำงานในแซนด์บ็อกซ์: เข้าถึงไฟล์หรือเครือข่ายของคุณไม่ได้ และเปลี่ยนแปลงโปรเจกต์ได้ผ่านคำสั่งของ RustGIS เท่านั้น ภายในสิทธิ์ที่คุณยอมรับ
+Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	ปลั๊กอินทำงานในแซนด์บ็อกซ์: เข้าถึงไฟล์หรือเครือข่ายของคุณไม่ได้ และเปลี่ยนแปลงโปรเจกต์ได้ผ่านคำสั่งของ ARutGIS เท่านั้น ภายในสิทธิ์ที่คุณยอมรับ
 PMTiles archive	ไฟล์เก็บถาวร PMTiles
 PNG frames (zip)	เฟรม PNG (zip)
 PNG image	ภาพ PNG
@@ -2299,7 +2299,7 @@ Project templates: start projects from a saved setup.	เทมเพลตโ�
 project's path is required	ต้องระบุ path ของโปรเจกต์
 Projection	เส้นโครงแผนที่
 Projections	เส้นโครงแผนที่
-Projects (RustGIS, QGIS)	โปรเจกต์ (RustGIS, QGIS)
+Projects (RustGIS, QGIS)	โปรเจกต์ (ARutGIS, QGIS)
 Properties	คุณสมบัติ
 Property	คุณสมบัติ
 Proportional Symbols	สัญลักษณ์แบบสัดส่วน
@@ -2355,7 +2355,7 @@ Read and write files on this computer	อ่านและเขียนไฟ
 Read the bands picked for the view (at most about 6 km a side)	อ่านแบนด์ที่เลือกสำหรับมุมมอง (ด้านละไม่เกินประมาณ 6 km)
 Read the map's layers and features	อ่านชั้นข้อมูลและฟีเจอร์ของแผนที่
 Read the points in the view, coloured by their principal components	อ่านจุดในมุมมอง โดยระบายสีตามองค์ประกอบหลัก
-Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	การอ่านไฟล์ของ granule ต้องใช้โทเค็น Earthdata Login ซึ่งใช้ได้กับ NASA DAAC ทุกแห่ง โทเค็นจะถูกเก็บไว้จนกว่าจะปิด RustGIS ไม่เก็บในโปรเจกต์ และส่งไปยังเซิร์ฟเวอร์ข้อมูล Earthdata ของ NASA เท่านั้น
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	การอ่านไฟล์ของ granule ต้องใช้โทเค็น Earthdata Login ซึ่งใช้ได้กับ NASA DAAC ทุกแห่ง โทเค็นจะถูกเก็บไว้จนกว่าจะปิด ARutGIS ไม่เก็บในโปรเจกต์ และส่งไปยังเซิร์ฟเวอร์ข้อมูล Earthdata ของ NASA เท่านั้น
 Reading the catalog: {n} documents read, {m} items found…	กำลังอ่านแค็ตตาล็อก: อ่านแล้ว {n} เอกสาร พบ {m} รายการ…
 Reading the catalog…	กำลังอ่านแค็ตตาล็อก…
 Reading the embeddings…	กำลังอ่านเอ็มเบดดิง…
@@ -2516,30 +2516,30 @@ Run Tool	เรียกใช้เครื่องมือ
 Run {name}	เรียกใช้ {name}
 Running the query for the map…	กำลังเรียกใช้คิวรีสำหรับแผนที่…
 Running…	กำลังเรียกใช้…
-RustGIS	RustGIS
-RustGIS bookmarks	บุ๊กมาร์ก RustGIS
-RustGIS could not confirm that any previously saved key was deleted from the system keychain.	RustGIS ไม่สามารถยืนยันได้ว่าคีย์ที่เคยบันทึกไว้ถูกลบออกจากพวงกุญแจของระบบแล้ว
-RustGIS couldn't reach the server.	RustGIS ติดต่อเซิร์ฟเวอร์ไม่ได้
-RustGIS deep learning package	แพ็กเกจการเรียนรู้เชิงลึกของ RustGIS
-RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	RustGIS ปิดไม่สมบูรณ์ในครั้งก่อน จึงเริ่มต้นด้วย World Atlas แทนโปรเจกต์เริ่มต้นของคุณ เปิดโปรเจกต์จากเมนูโปรเจกต์เมื่อพร้อม
-RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	RustGIS ไม่มีเครื่องมือนี้ ติดตั้งชุดเครื่องมือที่เป็นต้นทางของเครื่องมือนี้ หรือลบโหนดนี้
-RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	RustGIS เป็น GIS ฟรีและโอเพนซอร์สที่เขียนด้วย Rust ล้วน ทำงานได้ทั้งบนเดสก์ท็อปและในเบราว์เซอร์ และทุกการดำเนินการเป็นคำสั่งที่เรียกใช้จากบรรทัดคำสั่งได้ด้วย
-RustGIS layer file	ไฟล์ชั้นข้อมูล RustGIS
-RustGIS layers, maps and projects	ชั้นข้อมูล แผนที่ และโปรเจกต์ RustGIS
-RustGIS layout	เลย์เอาต์ RustGIS
-RustGIS maps and projects	แผนที่และโปรเจกต์ RustGIS
-RustGIS model	โมเดล RustGIS
-RustGIS or Jupyter notebook	สมุดบันทึก RustGIS หรือ Jupyter
-RustGIS plugin	ปลั๊กอิน RustGIS
-RustGIS presentation	งานนำเสนอ RustGIS
-RustGIS project	โปรเจกต์ RustGIS
-RustGIS project template	เทมเพลตโปรเจกต์ RustGIS
-RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	RustGIS พบข้อผิดพลาดภายในในครั้งก่อน รายละเอียดอยู่ใน {path} โปรดแนบไฟล์นี้ไปกับรายงานข้อบกพร่อง
-RustGIS report or report template	รายงานหรือเทมเพลตรายงาน RustGIS
-RustGIS styles	สไตล์ RustGIS
-RustGIS task	งาน RustGIS
-RustGIS {latest} is available.	RustGIS {latest} พร้อมให้ใช้งานแล้ว
-RustGIS {version} is the latest version.	RustGIS {version} เป็นเวอร์ชันล่าสุด
+RustGIS	ARutGIS
+RustGIS bookmarks	บุ๊กมาร์ก ARutGIS
+RustGIS could not confirm that any previously saved key was deleted from the system keychain.	ARutGIS ไม่สามารถยืนยันได้ว่าคีย์ที่เคยบันทึกไว้ถูกลบออกจากพวงกุญแจของระบบแล้ว
+RustGIS couldn't reach the server.	ARutGIS ติดต่อเซิร์ฟเวอร์ไม่ได้
+RustGIS deep learning package	แพ็กเกจการเรียนรู้เชิงลึกของ ARutGIS
+RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	ARutGIS ปิดไม่สมบูรณ์ในครั้งก่อน จึงเริ่มต้นด้วย World Atlas แทนโปรเจกต์เริ่มต้นของคุณ เปิดโปรเจกต์จากเมนูโปรเจกต์เมื่อพร้อม
+RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	ARutGIS ไม่มีเครื่องมือนี้ ติดตั้งชุดเครื่องมือที่เป็นต้นทางของเครื่องมือนี้ หรือลบโหนดนี้
+RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	ARutGIS เป็น GIS ฟรีและโอเพนซอร์สที่เขียนด้วย Rust ล้วน ทำงานได้ทั้งบนเดสก์ท็อปและในเบราว์เซอร์ และทุกการดำเนินการเป็นคำสั่งที่เรียกใช้จากบรรทัดคำสั่งได้ด้วย
+RustGIS layer file	ไฟล์ชั้นข้อมูล ARutGIS
+RustGIS layers, maps and projects	ชั้นข้อมูล แผนที่ และโปรเจกต์ ARutGIS
+RustGIS layout	เลย์เอาต์ ARutGIS
+RustGIS maps and projects	แผนที่และโปรเจกต์ ARutGIS
+RustGIS model	โมเดล ARutGIS
+RustGIS or Jupyter notebook	สมุดบันทึก ARutGIS หรือ Jupyter
+RustGIS plugin	ปลั๊กอิน ARutGIS
+RustGIS presentation	งานนำเสนอ ARutGIS
+RustGIS project	โปรเจกต์ ARutGIS
+RustGIS project template	เทมเพลตโปรเจกต์ ARutGIS
+RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	ARutGIS พบข้อผิดพลาดภายในในครั้งก่อน รายละเอียดอยู่ใน {path} โปรดแนบไฟล์นี้ไปกับรายงานข้อบกพร่อง
+RustGIS report or report template	รายงานหรือเทมเพลตรายงาน ARutGIS
+RustGIS styles	สไตล์ ARutGIS
+RustGIS task	งาน ARutGIS
+RustGIS {latest} is available.	ARutGIS {latest} พร้อมให้ใช้งานแล้ว
+RustGIS {version} is the latest version.	ARutGIS {version} เป็นเวอร์ชันล่าสุด
 RUSTGIS_ASSISTANT_MODEL	RUSTGIS_ASSISTANT_MODEL
 RUSTGIS_ASSISTANT_PROVIDER	RUSTGIS_ASSISTANT_PROVIDER
 RUSTGIS_GPU	RUSTGIS_GPU
@@ -2548,7 +2548,7 @@ S3 Buckets	บักเก็ต S3
 S3 Connections	การเชื่อมต่อ S3
 S3…	S3…
 Sample data (Natural Earth)	ข้อมูลตัวอย่าง (Natural Earth)
-Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	ข้อมูลตัวอย่าง © Natural Earth (สาธารณสมบัติ) RustGIS ใช้สัญญาอนุญาต Apache-2.0
+Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	ข้อมูลตัวอย่าง © Natural Earth (สาธารณสมบัติ) ARutGIS ใช้สัญญาอนุญาต Apache-2.0
 Sample data: Natural Earth (public domain). Licensed under Apache-2.0.	ข้อมูลตัวอย่าง: Natural Earth (สาธารณสมบัติ) ใช้สัญญาอนุญาต Apache-2.0
 Sans-serif	Sans-serif
 Satellite Embedding Datasets	ชุดข้อมูลเอ็มเบดดิงดาวเทียม
@@ -2677,7 +2677,7 @@ Sections	ส่วน
 See and set the camera's position and scale.	ดูและตั้งค่าตำแหน่งและมาตราส่วนของกล้อง
 See the map as people with colour vision deficiencies do.	ดูแผนที่แบบที่ผู้มีภาวะบกพร่องในการมองเห็นสีมองเห็น
 See the tools you've run.	ดูเครื่องมือที่คุณเรียกใช้ไปแล้ว
-See whether a newer RustGIS has been released.	ตรวจสอบว่ามี RustGIS เวอร์ชันใหม่กว่าออกมาแล้วหรือไม่
+See whether a newer RustGIS has been released.	ตรวจสอบว่ามี ARutGIS เวอร์ชันใหม่กว่าออกมาแล้วหรือไม่
 SELECT	SELECT
 Select	เลือก
 Select (click)	เลือก (คลิก)
@@ -2843,7 +2843,7 @@ Sign-in	การลงชื่อเข้าใช้
 Sign-in cancelled.	ยกเลิกการลงชื่อเข้าใช้แล้ว
 Sign-in timed out. Start again and allow the browser to reach this computer's loopback address.	การลงชื่อเข้าใช้หมดเวลา เริ่มใหม่และอนุญาตให้เบราว์เซอร์เข้าถึงที่อยู่ loopback ของคอมพิวเตอร์นี้
 signed in	ลงชื่อเข้าใช้แล้ว
-Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	ออกจากระบบบนคอมพิวเตอร์นี้แล้ว แต่ OpenAI ไม่ได้ยืนยัน คุณสามารถยกเลิกการเชื่อมต่อ RustGIS ได้ในการตั้งค่าของ ChatGPT
+Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	ออกจากระบบบนคอมพิวเตอร์นี้แล้ว แต่ OpenAI ไม่ได้ยืนยัน คุณสามารถยกเลิกการเชื่อมต่อ ARutGIS ได้ในการตั้งค่าของ ChatGPT
 Significance level	ระดับนัยสำคัญ
 Signing in with ChatGPT works in the desktop app.	การลงชื่อเข้าใช้ด้วย ChatGPT ใช้ได้ในแอปเดสก์ท็อป
 Signing the asset (Planetary Computer)…	กำลังลงนามแอสเซ็ต (Planetary Computer)…
@@ -3067,7 +3067,7 @@ The connection failed; trying again in {seconds} s.	การเชื่อม�
 the connection has no id	การเชื่อมต่อไม่มี id
 The country list couldn't be read ({e}): type a country's code	อ่านรายชื่อประเทศไม่ได้ ({e}): พิมพ์รหัสประเทศ
 The current elevation stays in effect while you edit inputs. Click Apply elevation to apply the value and units.	ความสูงปัจจุบันยังมีผลขณะที่คุณแก้ไขข้อมูลนำเข้า คลิก "ใช้ความสูง" เพื่อใช้ค่าและหน่วย
-The dataset has nothing RustGIS can add	ชุดข้อมูลไม่มีสิ่งที่ RustGIS เพิ่มได้
+The dataset has nothing RustGIS can add	ชุดข้อมูลไม่มีสิ่งที่ ARutGIS เพิ่มได้
 The environment (AWS_ACCESS_KEY_ID…)	ตัวแปรสภาพแวดล้อม (AWS_ACCESS_KEY_ID…)
 The features where the map is	ฟีเจอร์ในบริเวณที่แผนที่แสดงอยู่
 The first 1,000 entries; narrow it down a folder at a time.	1,000 รายการแรก จำกัดให้แคบลงทีละโฟลเดอร์
@@ -3088,10 +3088,10 @@ The layer's file couldn't be read: {error}	อ่านไฟล์ของช�
 The layer's strokes	เส้นของชั้นข้อมูล
 the layout export failed unexpectedly	การส่งออกเลย์เอาต์ล้มเหลวโดยไม่คาดคิด
 The link doesn't say its STAC API: Find Items searches {api}	ลิงก์ไม่ได้ระบุ STAC API: "ค้นหารายการ" จะค้นหาใน {api}
-The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	รายการปลั๊กอินสำหรับเรียกดู เว้นว่างไว้เพื่อใช้รีจิสทรีปลั๊กอินของ RustGIS
+The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	รายการปลั๊กอินสำหรับเรียกดู เว้นว่างไว้เพื่อใช้รีจิสทรีปลั๊กอินของ ARutGIS
 the map has no layers	แผนที่ไม่มีชั้นข้อมูล
 The map is drawn in this coordinate system; layers are projected on the fly.	แผนที่วาดในระบบพิกัดนี้ ชั้นข้อมูลจะถูกแปลงพิกัดขณะแสดงผล
-the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	แผนที่ไม่ได้แสดงบนหน้าจอใน RustGIS (กำลังแสดงเลย์เอาต์หรือแค็ตตาล็อก) จึงวาดนอกหน้าจอ
+the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	แผนที่ไม่ได้แสดงบนหน้าจอใน ARutGIS (กำลังแสดงเลย์เอาต์หรือแค็ตตาล็อก) จึงวาดนอกหน้าจอ
 The map view as it is now	มุมมองแผนที่ในขณะนี้
 The map's extent isn't known yet	ยังไม่ทราบขอบเขตของแผนที่
 The map's view takes {n} of Overture's {ty} files (up to {max}): zoom in, or add the theme as map tiles	มุมมองแผนที่ครอบคลุม {n} ไฟล์ {ty} ของ Overture (สูงสุด {max}): ซูมเข้า หรือเพิ่มธีมเป็นไทล์แผนที่
@@ -3146,7 +3146,7 @@ The sign-in expired or was revoked. Sign in again.	การลงชื่อ�
 The sign-in is kept in the app's settings folder, for your user account only, and never in a project file.	ข้อมูลการลงชื่อเข้าใช้จะเก็บไว้ในโฟลเดอร์การตั้งค่าของแอป สำหรับบัญชีผู้ใช้ของคุณเท่านั้น และไม่เคยเก็บไว้ในไฟล์โปรเจกต์
 The significance level is a number, such as 0.05	ระดับนัยสำคัญต้องเป็นตัวเลข เช่น 0.05
 The start-up project {path} didn't open: {error}	เปิดโปรเจกต์เริ่มต้น {path} ไม่ได้: {error}
-The start-up project {path} isn't a RustGIS project file.	โปรเจกต์เริ่มต้น {path} ไม่ใช่ไฟล์โปรเจกต์ RustGIS
+The start-up project {path} isn't a RustGIS project file.	โปรเจกต์เริ่มต้น {path} ไม่ใช่ไฟล์โปรเจกต์ ARutGIS
 The step's layer {name} isn't in the map.	ชั้นข้อมูล {name} ของขั้นตอนไม่อยู่ในแผนที่
 The store has no variables with two or more dimensions.	สโตร์ไม่มีตัวแปรที่มีตั้งแต่สองมิติขึ้นไป
 the store is gone	สโตร์ไม่มีอยู่แล้ว
@@ -3189,7 +3189,7 @@ This map has no layers yet.	แผนที่นี้ยังไม่มี�
 This map's thumbnail, from an image.	ภาพขนาดย่อของแผนที่นี้ จากรูปภาพ
 This map's thumbnail, from the view.	ภาพขนาดย่อของแผนที่นี้ จากมุมมอง
 This plugin can:	ปลั๊กอินนี้สามารถ:
-This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	ปลั๊กอินนี้ทำงานเป็นโปรแกรมบนคอมพิวเตอร์ของคุณ นอกแซนด์บ็อกซ์ของ RustGIS ปลั๊กอินทำได้ทุกอย่างที่คุณทำได้ ทั้งอ่านและแก้ไขไฟล์ ใช้เครือข่าย และเรียกใช้โปรแกรมอื่น ติดตั้งเฉพาะเมื่อคุณเชื่อถือผู้สร้างเท่านั้น
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	ปลั๊กอินนี้ทำงานเป็นโปรแกรมบนคอมพิวเตอร์ของคุณ นอกแซนด์บ็อกซ์ของ ARutGIS ปลั๊กอินทำได้ทุกอย่างที่คุณทำได้ ทั้งอ่านและแก้ไขไฟล์ ใช้เครือข่าย และเรียกใช้โปรแกรมอื่น ติดตั้งเฉพาะเมื่อคุณเชื่อถือผู้สร้างเท่านั้น
 This request has no one-time allow option.	คำขอนี้ไม่มีตัวเลือกอนุญาตครั้งเดียว
 This request uses an unsupported capability. Check the parameter and change the request.	คำขอนี้ใช้ความสามารถที่ไม่รองรับ ตรวจสอบพารามิเตอร์และเปลี่ยนคำขอ
 This result is kept	ผลลัพธ์นี้จะถูกเก็บไว้
@@ -3303,7 +3303,7 @@ Units	หน่วย
 Units per step	หน่วยต่อขั้น
 unknown (an older project)	ไม่ทราบ (โปรเจกต์รุ่นเก่า)
 UNKNOWN TOOL	เครื่องมือที่ไม่รู้จัก
-Unload the GeoLibre tools and stop loading them when RustGIS starts.	ยกเลิกการโหลดเครื่องมือ GeoLibre และไม่ต้องโหลดอีกเมื่อเริ่ม RustGIS
+Unload the GeoLibre tools and stop loading them when RustGIS starts.	ยกเลิกการโหลดเครื่องมือ GeoLibre และไม่ต้องโหลดอีกเมื่อเริ่ม ARutGIS
 Unsaved changes	การเปลี่ยนแปลงที่ยังไม่บันทึก
 Unsupervised classes (k-means)	คลาสแบบไม่มีผู้สอน (k-means)
 Unsupervised classes (k-means).	คลาสแบบไม่มีผู้สอน (k-means)
@@ -3425,13 +3425,13 @@ Web Tool	เครื่องมือเว็บ
 Website	เว็บไซต์
 Weekly usage	การใช้งานรายสัปดาห์
 Weights	น้ำหนัก
-Welcome to RustGIS	ยินดีต้อนรับสู่ RustGIS
+Welcome to RustGIS	ยินดีต้อนรับสู่ ARutGIS
 West	ตะวันตก
 WFS	WFS
 WGS 84 / Globe	WGS 84 / ลูกโลก
 WGS 84 / Web Mercator	WGS 84 / Web Mercator
-What RustGIS opens with: the World Atlas sample or a blank map.	สิ่งที่ RustGIS เปิดเมื่อเริ่มต้น: ตัวอย่าง World Atlas หรือแผนที่เปล่า
-What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	สิ่งที่ RustGIS เปิดเมื่อเริ่มต้น: ตัวอย่าง World Atlas แผนที่เปล่า โปรเจกต์ที่คุณเลือก หรือโปรเจกต์ล่าสุดที่เปิดหรือบันทึก
+What RustGIS opens with: the World Atlas sample or a blank map.	สิ่งที่ ARutGIS เปิดเมื่อเริ่มต้น: ตัวอย่าง World Atlas หรือแผนที่เปล่า
+What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	สิ่งที่ ARutGIS เปิดเมื่อเริ่มต้น: ตัวอย่าง World Atlas แผนที่เปล่า โปรเจกต์ที่คุณเลือก หรือโปรเจกต์ล่าสุดที่เปิดหรือบันทึก
 What to do, where to find it and why	ต้องทำอะไร หาได้ที่ไหน และทำไม
 What's near a point	มีอะไรอยู่ใกล้จุด
 WHERE	WHERE
@@ -3598,17 +3598,17 @@ Finish signing in in the browser…	ลงชื่อเข้าใช้ใ�
 A token for {server}	โทเค็นสำหรับ {server}
 Signed in to {portal}	ลงชื่อเข้าใช้ {portal} แล้ว
 Signed in to {portal} as {user}	ลงชื่อเข้าใช้ {portal} แล้วในชื่อ {user}
-For ArcGIS Online, the client ID is RustGIS's own app. For an ArcGIS Enterprise portal, register an OAuth app on it (Content › New item › Developer credentials) whose redirect URL is {redirect}, and give its client ID.	สำหรับ ArcGIS Online รหัสไคลเอนต์คือแอปของ RustGIS เอง สำหรับพอร์ทัล ArcGIS Enterprise ให้ลงทะเบียนแอป OAuth บนพอร์ทัลนั้น (Content › New item › Developer credentials) โดยตั้ง redirect URL เป็น {redirect} แล้วระบุรหัสไคลเอนต์ของแอปนั้น
+For ArcGIS Online, the client ID is RustGIS's own app. For an ArcGIS Enterprise portal, register an OAuth app on it (Content › New item › Developer credentials) whose redirect URL is {redirect}, and give its client ID.	สำหรับ ArcGIS Online รหัสไคลเอนต์คือแอปของ ARutGIS เอง สำหรับพอร์ทัล ArcGIS Enterprise ให้ลงทะเบียนแอป OAuth บนพอร์ทัลนั้น (Content › New item › Developer credentials) โดยตั้ง redirect URL เป็น {redirect} แล้วระบุรหัสไคลเอนต์ของแอปนั้น
 The sign-in is still kept in the app's settings folder, readable by your user account: the system keychain is unavailable, so it hasn't been moved there yet.	การลงชื่อเข้าใช้ยังถูกเก็บไว้ในโฟลเดอร์การตั้งค่าของแอป ซึ่งบัญชีผู้ใช้ของคุณอ่านได้: พวงกุญแจของระบบใช้งานไม่ได้ จึงยังไม่ได้ย้ายไปเก็บที่นั่น
-The system keychain is unavailable, so this sign-in won't be remembered: it lasts until RustGIS closes.	พวงกุญแจของระบบใช้งานไม่ได้ จึงจะไม่จดจำการลงชื่อเข้าใช้นี้: ใช้ได้จนกว่าจะปิด RustGIS
+The system keychain is unavailable, so this sign-in won't be remembered: it lasts until RustGIS closes.	พวงกุญแจของระบบใช้งานไม่ได้ จึงจะไม่จดจำการลงชื่อเข้าใช้นี้: ใช้ได้จนกว่าจะปิด ARutGIS
 The sign-in is kept in the system keychain, never in the app's settings or a project file.	การลงชื่อเข้าใช้ถูกเก็บไว้ในพวงกุญแจของระบบ ไม่เก็บในการตั้งค่าของแอปหรือไฟล์โปรเจกต์
 Remove account	นำบัญชีออก
 Signs this account out and forgets it on this computer, with its saved sign-in.	ออกจากระบบบัญชีนี้และลบบัญชีออกจากคอมพิวเตอร์เครื่องนี้ พร้อมการลงชื่อเข้าใช้ที่บันทึกไว้
-Signed out on this computer, but the system keychain couldn't be read, so OpenAI wasn't asked to end the session. You can disconnect RustGIS in ChatGPT's settings.	ออกจากระบบบนคอมพิวเตอร์เครื่องนี้แล้ว แต่อ่านพวงกุญแจของระบบไม่ได้ จึงไม่ได้ขอให้ OpenAI สิ้นสุดเซสชัน คุณสามารถยกเลิกการเชื่อมต่อ RustGIS ได้ในการตั้งค่าของ ChatGPT
+Signed out on this computer, but the system keychain couldn't be read, so OpenAI wasn't asked to end the session. You can disconnect RustGIS in ChatGPT's settings.	ออกจากระบบบนคอมพิวเตอร์เครื่องนี้แล้ว แต่อ่านพวงกุญแจของระบบไม่ได้ จึงไม่ได้ขอให้ OpenAI สิ้นสุดเซสชัน คุณสามารถยกเลิกการเชื่อมต่อ ARutGIS ได้ในการตั้งค่าของ ChatGPT
 Untitled	ไม่มีชื่อ
 Recover unsaved work?	กู้คืนงานที่ยังไม่บันทึกหรือไม่
-RustGIS was quit last time without saving your changes.	ครั้งที่แล้ว RustGIS ถูกปิดโดยไม่ได้บันทึกการเปลี่ยนแปลงของคุณ
-RustGIS didn't close properly last time.	ครั้งที่แล้ว RustGIS ปิดไม่สมบูรณ์
+RustGIS was quit last time without saving your changes.	ครั้งที่แล้ว ARutGIS ถูกปิดโดยไม่ได้บันทึกการเปลี่ยนแปลงของคุณ
+RustGIS didn't close properly last time.	ครั้งที่แล้ว ARutGIS ปิดไม่สมบูรณ์
 It was never saved: it opens unsaved, and Save asks where to write it.	งานนี้ไม่เคยถูกบันทึก: จะเปิดในสถานะยังไม่บันทึก และ บันทึก จะถามตำแหน่งที่จะเขียนไฟล์
 The open project has unsaved changes: save them, then recover this copy.	โปรเจกต์ที่เปิดอยู่มีการเปลี่ยนแปลงที่ยังไม่บันทึก: บันทึกก่อน แล้วจึงกู้คืนสำเนานี้
 Recover	กู้คืน
@@ -3650,11 +3650,11 @@ file	ไฟล์
 {kind} {title}: {count} layers	{kind} {title}: {count} ชั้นข้อมูล
 {name} now reads {n} project sources	ขณะนี้ {name} อ่านแหล่งข้อมูลของโปรเจกต์ {n} รายการ
 {name} now reads {n} project sources; {failed} could not be read	ขณะนี้ {name} อ่านแหล่งข้อมูลของโปรเจกต์ {n} รายการ อ่านไม่ได้ {failed} รายการ
-Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. So can a script any program of yours writes to the file bridge shown below. Scripts and plugin management stay off. The choice is remembered across launches.	เอเจนต์บนคอมพิวเตอร์เครื่องนี้ที่เชื่อมต่อเข้ามา (Claude Code, Codex, Cursor และอื่น ๆ) จะทำงานกับแผนที่ที่เปิดอยู่ที่นี่ด้วยเครื่องมือของ RustGIS: สามารถเปิดและบันทึกไฟล์ และใช้เว็บได้ สคริปต์ที่โปรแกรมใด ๆ ของคุณเขียนลงในไฟล์บริดจ์ด้านล่างก็ทำได้เช่นกัน ส่วนสคริปต์และการจัดการปลั๊กอินยังคงปิดอยู่ ตัวเลือกนี้จะถูกจดจำไว้สำหรับการเปิดโปรแกรมครั้งต่อไป
-Agents may also run scripts, tasks and models, and install, remove and run plugins: anything you could do yourself. Turn it on only for an agent you trust with your computer. It lasts until RustGIS closes or agents are turned off.	เอเจนต์ยังสามารถเรียกใช้สคริปต์ งาน และโมเดล รวมถึงติดตั้ง นำออก และเรียกใช้ปลั๊กอินได้: ทุกอย่างที่คุณทำเองได้ เปิดใช้เฉพาะกับเอเจนต์ที่คุณไว้วางใจให้เข้าถึงคอมพิวเตอร์ของคุณ ใช้ได้จนกว่าจะปิด RustGIS หรือปิดเอเจนต์
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. So can a script any program of yours writes to the file bridge shown below. Scripts and plugin management stay off. The choice is remembered across launches.	เอเจนต์บนคอมพิวเตอร์เครื่องนี้ที่เชื่อมต่อเข้ามา (Claude Code, Codex, Cursor และอื่น ๆ) จะทำงานกับแผนที่ที่เปิดอยู่ที่นี่ด้วยเครื่องมือของ ARutGIS: สามารถเปิดและบันทึกไฟล์ และใช้เว็บได้ สคริปต์ที่โปรแกรมใด ๆ ของคุณเขียนลงในไฟล์บริดจ์ด้านล่างก็ทำได้เช่นกัน ส่วนสคริปต์และการจัดการปลั๊กอินยังคงปิดอยู่ ตัวเลือกนี้จะถูกจดจำไว้สำหรับการเปิดโปรแกรมครั้งต่อไป
+Agents may also run scripts, tasks and models, and install, remove and run plugins: anything you could do yourself. Turn it on only for an agent you trust with your computer. It lasts until RustGIS closes or agents are turned off.	เอเจนต์ยังสามารถเรียกใช้สคริปต์ งาน และโมเดล รวมถึงติดตั้ง นำออก และเรียกใช้ปลั๊กอินได้: ทุกอย่างที่คุณทำเองได้ เปิดใช้เฉพาะกับเอเจนต์ที่คุณไว้วางใจให้เข้าถึงคอมพิวเตอร์ของคุณ ใช้ได้จนกว่าจะปิด ARutGIS หรือปิดเอเจนต์
 Full access	สิทธิ์เข้าถึงเต็มที่
 Agents without MCP can write a script (one command per line) to:	เอเจนต์ที่ไม่มี MCP สามารถเขียนสคริปต์ (หนึ่งคำสั่งต่อบรรทัด) ไปยัง:
-RustGIS runs it and writes the outcome to:	RustGIS จะรันสคริปต์และเขียนผลลัพธ์ไปยัง:
+RustGIS runs it and writes the outcome to:	ARutGIS จะรันสคริปต์และเขียนผลลัพธ์ไปยัง:
 MCP over HTTP on 127.0.0.1:{port}	MCP ผ่าน HTTP ที่ 127.0.0.1:{port}
 MCP over HTTP couldn't start: {error}	ไม่สามารถเริ่ม MCP ผ่าน HTTP ได้: {error}
 The file bridge couldn't start: {error}	ไม่สามารถเริ่มไฟล์บริดจ์ได้: {error}
@@ -3687,7 +3687,7 @@ its default	ค่าเริ่มต้น
 for the layers that change with time, as they list their times (2024-06-01, 1995)	สำหรับชั้นข้อมูลที่เปลี่ยนตามเวลา ตามรูปแบบที่ชั้นข้อมูลระบุเวลาไว้ (2024-06-01, 1995)
 Only the map's area	เฉพาะพื้นที่ของแผนที่
 Feature layers: ask the service only for the features that cross the map's view	ชั้นข้อมูลฟีเจอร์: ขอจากบริการเฉพาะฟีเจอร์ที่ตัดผ่านมุมมองแผนที่
-A PostgreSQL/PostGIS connection (host=… port=… dbname=… user=…, or a postgresql:// address), a MySQL or MariaDB address (mysql://user@host:3306/database), a SQL Server address (mssql://user@host:1433/database) or a DuckDB file. PostGIS, MySQL, MariaDB and SQL Server tables are read live, large ones a view at a time; the password is kept until RustGIS closes, never in the project.	การเชื่อมต่อ PostgreSQL/PostGIS (host=… port=… dbname=… user=… หรือที่อยู่ postgresql://) ที่อยู่ MySQL หรือ MariaDB (mysql://user@host:3306/database) ที่อยู่ SQL Server (mssql://user@host:1433/database) หรือไฟล์ DuckDB ตารางของ PostGIS, MySQL, MariaDB และ SQL Server จะอ่านแบบสด ตารางขนาดใหญ่จะอ่านทีละมุมมอง รหัสผ่านจะเก็บไว้จนกว่าจะปิด RustGIS และไม่เก็บในโปรเจกต์
+A PostgreSQL/PostGIS connection (host=… port=… dbname=… user=…, or a postgresql:// address), a MySQL or MariaDB address (mysql://user@host:3306/database), a SQL Server address (mssql://user@host:1433/database) or a DuckDB file. PostGIS, MySQL, MariaDB and SQL Server tables are read live, large ones a view at a time; the password is kept until RustGIS closes, never in the project.	การเชื่อมต่อ PostgreSQL/PostGIS (host=… port=… dbname=… user=… หรือที่อยู่ postgresql://) ที่อยู่ MySQL หรือ MariaDB (mysql://user@host:3306/database) ที่อยู่ SQL Server (mssql://user@host:1433/database) หรือไฟล์ DuckDB ตารางของ PostGIS, MySQL, MariaDB และ SQL Server จะอ่านแบบสด ตารางขนาดใหญ่จะอ่านทีละมุมมอง รหัสผ่านจะเก็บไว้จนกว่าจะปิด ARutGIS และไม่เก็บในโปรเจกต์
 Load for editing	โหลดเพื่อแก้ไข
 Load the table whole (up to 100,000 rows) so its edits can be saved back to it with Edit › Save to PostGIS. It needs a single-column integer primary key.	โหลดทั้งตาราง (สูงสุด 100,000 แถว) เพื่อให้บันทึกการแก้ไขกลับไปยังตารางได้ด้วย แก้ไข › บันทึกลง PostGIS ตารางต้องมีคีย์หลัก (primary key) ชนิดจำนวนเต็มแบบคอลัมน์เดียว
 Condition	เงื่อนไข
@@ -3722,7 +3722,7 @@ north	เหนือ
 {n} found; the map holds more than one search reads: zoom in for the rest	พบ {n} รายการ แผนที่ครอบคลุมมากกว่าที่การค้นหาหนึ่งครั้งอ่านได้: ซูมเข้าเพื่อดูส่วนที่เหลือ
 {kind} · {res} · {dims} values · {years}	{kind} · {res} · {dims} ค่า · {years}
 The clipboard came after you moved on, so nothing was pasted: paste with {keys}.	คลิปบอร์ดมาถึงหลังจากคุณไปทำอย่างอื่นแล้ว จึงไม่ได้วางสิ่งใด: วางด้วย {keys}
-The browser didn't give RustGIS the clipboard ({why}): paste with {keys}.	เบราว์เซอร์ไม่อนุญาตให้ RustGIS เข้าถึงคลิปบอร์ด ({why}): วางด้วย {keys}
+The browser didn't give RustGIS the clipboard ({why}): paste with {keys}.	เบราว์เซอร์ไม่อนุญาตให้ ARutGIS เข้าถึงคลิปบอร์ด ({why}): วางด้วย {keys}
 Fills	สีพื้น
 Add Fill	เพิ่มสีพื้น
 Stack another fill on top	ซ้อนสีพื้นอีกชั้นไว้ด้านบน
@@ -3788,13 +3788,13 @@ EPSG:25832, WKT or a PROJ string; empty: the map's when projected, else the UTM 
 no download service	ไม่มีบริการดาวน์โหลด
 this build has no download service	บิลด์นี้ไม่มีบริการดาวน์โหลด
 Shared vertices must be on or off	จุดยอดร่วมต้องเป็นเปิดหรือปิด
-Projects and JSON data (RustGIS, QGIS, GeoLibre)	โปรเจกต์และข้อมูล JSON (RustGIS, QGIS, GeoLibre)
+Projects and JSON data (RustGIS, QGIS, GeoLibre)	โปรเจกต์และข้อมูล JSON (ARutGIS, QGIS, GeoLibre)
 Give a valid tile archive index.	ระบุดัชนีไฟล์เก็บไทล์ที่ถูกต้อง
 The map has no tile archive read from a file.	แผนที่ไม่มีไฟล์เก็บไทล์ที่อ่านจากไฟล์
 Not a GeoLibre project	ไม่ใช่โปรเจกต์ GeoLibre
 Another dropped file wasn't opened: drop it again once you've answered about the unsaved changes.	ไฟล์อื่นที่วางไว้ไม่ได้เปิด: วางไฟล์อีกครั้งหลังจากตอบเรื่องการเปลี่ยนแปลงที่ยังไม่บันทึกแล้ว
-{name} is not a text file: RustGIS opens GeoJSON, CSV, GeoTIFF and .rgis here	{name} ไม่ใช่ไฟล์ข้อความ: ที่นี่ RustGIS เปิด GeoJSON, CSV, GeoTIFF และ .rgis ได้
-{n} layer address(es) were saved without their keys, tokens or passwords: after RustGIS closes, add those layers again to give them	บันทึกที่อยู่ชั้นข้อมูล {n} รายการโดยไม่มีคีย์ โทเค็น หรือรหัสผ่าน: หลังปิด RustGIS ให้เพิ่มชั้นข้อมูลเหล่านั้นอีกครั้งเพื่อระบุค่าเหล่านี้
+{name} is not a text file: RustGIS opens GeoJSON, CSV, GeoTIFF and .rgis here	{name} ไม่ใช่ไฟล์ข้อความ: ที่นี่ ARutGIS เปิด GeoJSON, CSV, GeoTIFF และ .rgis ได้
+{n} layer address(es) were saved without their keys, tokens or passwords: after RustGIS closes, add those layers again to give them	บันทึกที่อยู่ชั้นข้อมูล {n} รายการโดยไม่มีคีย์ โทเค็น หรือรหัสผ่าน: หลังปิด ARutGIS ให้เพิ่มชั้นข้อมูลเหล่านั้นอีกครั้งเพื่อระบุค่าเหล่านี้
 {command} isn't recorded: the downloaded data is kept for this session only, so a task couldn't add it again.	ไม่ได้บันทึก {command}: ข้อมูลที่ดาวน์โหลดเก็บไว้เฉพาะเซสชันนี้ งานจึงเพิ่มข้อมูลนั้นอีกครั้งไม่ได้
 {command} isn't recorded: its parameters may hold a password, key or token (one is named like it, an address carries one, or they nest too deep to check), and a task would keep it.	ไม่ได้บันทึก {command}: พารามิเตอร์อาจมีรหัสผ่าน คีย์ หรือโทเค็น (มีพารามิเตอร์ที่ชื่อคล้ายกัน มีที่อยู่ที่แนบค่าดังกล่าว หรือซ้อนกันลึกเกินกว่าจะตรวจสอบ) และงานจะเก็บค่านั้นไว้
 {command} isn't recorded: its parameters are over 4 MB, too much for a task to keep. Add that data to the project before recording.	ไม่ได้บันทึก {command}: พารามิเตอร์มีขนาดเกิน 4 MB มากเกินกว่าที่งานจะเก็บได้ เพิ่มข้อมูลนั้นลงในโปรเจกต์ก่อนบันทึก
@@ -3998,7 +3998,7 @@ Move polygon vertices stored at the same coordinate in this layer, including poi
 Keyboard\nShortcuts	แป้นพิมพ์\nลัด
 Customize keyboard shortcuts.	กำหนดแป้นพิมพ์ลัดเอง
 Every 5 min	ทุก 5 นาที
-How often RustGIS keeps a copy of unsaved work, to offer it back after a crash.	ความถี่ที่ RustGIS เก็บสำเนางานที่ยังไม่บันทึก เพื่อนำกลับมาให้หลังโปรแกรมขัดข้อง
+How often RustGIS keeps a copy of unsaved work, to offer it back after a crash.	ความถี่ที่ ARutGIS เก็บสำเนางานที่ยังไม่บันทึก เพื่อนำกลับมาให้หลังโปรแกรมขัดข้อง
 Cities	เมือง
 Style keeps no label groups	แท็บสไตล์ไม่มีกลุ่มป้ายชื่อ
 View keeps no label groups	แท็บมุมมองไม่มีกลุ่มป้ายชื่อ

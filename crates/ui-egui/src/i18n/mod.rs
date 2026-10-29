@@ -93,7 +93,9 @@ pub static LANGUAGES: [LangInfo; 20] = [
         name: "English",
         english: "English",
         script: Script::Alphabetic,
-        source: "",
+        // Only the strings that name the app: the interface calls it ARutGIS, while the code
+        // (and the keys every catalog shares) still say RustGIS, the project it comes from.
+        source: include_str!("en.tsv"),
         catalog: OnceLock::new(),
         visual: OnceLock::new(),
     },

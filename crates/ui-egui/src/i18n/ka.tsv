@@ -42,8 +42,8 @@ A line for the Script pane	სტრიქონი სკრიპტის პ
 A magnifying lens that follows the pointer.	გამადიდებელი შუშა, რომელიც კურსორს მიჰყვება.
 A map, feature or coverage service's address: WMS, WMTS, WFS, WCS, OGC API Features or Tiles, or an ArcGIS FeatureServer, MapServer, ImageServer or VectorTileServer (or a services directory, to browse).	რუკის, ობიექტების ან დაფარვის სერვისის მისამართი: WMS, WMTS, WFS, WCS, OGC API Features ან Tiles, ან ArcGIS FeatureServer, MapServer, ImageServer ან VectorTileServer (ან სერვისების კატალოგი დასათვალიერებლად).
 a name, or owner/name such as giswqs/geospatial	სახელი ან მფლობელი/სახელი, მაგალითად giswqs/geospatial
-A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	სახელიანი ბოლო წერტილი, რომლის ხელახლა გამოყენებაც შეგიძლიათ. გასაღებები და ტოკენები ინახება RustGIS-ის დახურვამდე და არასდროს ინახება მუდმივად.
-A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	სახელიანი ბოლო წერტილი, რომლის ხელახლა გამოყენებაც შეგიძლიათ. გასაღებები ინახება RustGIS-ის დახურვამდე, თუ არ აირჩევთ მათ დამახსოვრებას ამ კომპიუტერში; თავად კავშირი მათ არასდროს ინახავს.
+A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	სახელიანი ბოლო წერტილი, რომლის ხელახლა გამოყენებაც შეგიძლიათ. გასაღებები და ტოკენები ინახება ARutGIS-ის დახურვამდე და არასდროს ინახება მუდმივად.
+A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	სახელიანი ბოლო წერტილი, რომლის ხელახლა გამოყენებაც შეგიძლიათ. გასაღებები ინახება ARutGIS-ის დახურვამდე, თუ არ აირჩევთ მათ დამახსოვრებას ამ კომპიუტერში; თავად კავშირი მათ არასდროს ინახავს.
 A named endpoint you can reuse. Passwords last for this session unless you choose to remember them in this computer's password store.	სახელიანი ბოლო წერტილი, რომლის ხელახლა გამოყენებაც შეგიძლიათ. პაროლები მოქმედებს ამ სესიის განმავლობაში, თუ არ აირჩევთ მათ დამახსოვრებას ამ კომპიუტერის პაროლების საცავში.
 A node cannot connect to itself.	კვანძი საკუთარ თავს ვერ დაუკავშირდება.
 A notebook of text and command cells.	ტექსტისა და ბრძანების უჯრედების რვეული.
@@ -79,8 +79,8 @@ A5 Grid	A5 ბადე
 A5's equal-area pentagonal cells at a resolution, over the map's extent, a layer or the world, as polygons with their ids.	A5-ის ტოლფართობიანი ხუთკუთხა უჯრედები მოცემული გარჩევადობით, რუკის ფარგლებში, ფენაზე ან მთელ მსოფლიოზე, პოლიგონების სახით თავიანთი იდენტიფიკატორებით.
 About	შესახებ
 About plugins	დანამატების შესახებ
-About RustGIS	RustGIS-ის შესახებ
-About RustGIS.	RustGIS-ის შესახებ.
+About RustGIS	ARutGIS-ის შესახებ
+About RustGIS.	ARutGIS-ის შესახებ.
 Above	ზემოთ
 Above Left	ზემოთ მარცხნივ
 Above Right	ზემოთ მარჯვნივ
@@ -244,7 +244,7 @@ Agent input queue is full or disconnected; stop the agent and try again.	აგ�
 Agent threads	აგენტის თემები
 Agent work	Agent work
 Agents have full access: they may run scripts, tasks, models and plugins. Click to stop the MCP relay	აგენტებს სრული წვდომა აქვთ: მათ შეუძლიათ სკრიპტების, დავალებების, მოდელებისა და დანამატების გაშვება. დააწკაპუნეთ MCP რელეს გასაჩერებლად
-Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	ამ კომპიუტერის დაკავშირებული აგენტები (Claude Code, Codex, Cursor და სხვები) აქ გახსნილ რუკაზე RustGIS-ის ხელსაწყოებით მუშაობენ: შეუძლიათ ფაილების გახსნა და შენახვა და ვების გამოყენება. სკრიპტები და მოდულების მართვა გამორთული რჩება.
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	ამ კომპიუტერის დაკავშირებული აგენტები (Claude Code, Codex, Cursor და სხვები) აქ გახსნილ რუკაზე ARutGIS-ის ხელსაწყოებით მუშაობენ: შეუძლიათ ფაილების გახსნა და შენახვა და ვების გამოყენება. სკრიპტები და მოდულების მართვა გამორთული რჩება.
 Agents then run commands, change files and use the web on this computer without asking you.	აგენტები ამ კომპიუტერზე შეკითხვის გარეშე გაუშვებენ ბრძანებებს, შეცვლიან ფაილებს და გამოიყენებენ ვებს.
 Aggregate Points to A5	წერტილების აგრეგაცია A5-ში
 Aggregation	აგრეგაცია
@@ -269,7 +269,7 @@ Allow Feature Selection	ობიექტების მონიშვნი�
 Allow only certain combinations of values across fields.	მხოლოდ ველებს შორის მნიშვნელობების გარკვეული კომბინაციების დაშვება.
 Allow such actions for this conversation	ასეთი მოქმედებების დაშვება ამ საუბარში
 Allow this action?	დაგეშვათ ეს მოქმედება?
-Allow this agent's RustGIS action?	დავუშვათ ამ აგენტის RustGIS-ის მოქმედება?
+Allow this agent's RustGIS action?	დავუშვათ ამ აგენტის ARutGIS-ის მოქმედება?
 Along lines	ხაზების გასწვრივ
 Along Selected Line	მონიშნული ხაზის გასწვრივ
 Alt+	Alt+
@@ -277,7 +277,7 @@ Alternating bar	მონაცვლე ზოლი
 Altitude	სიმაღლე
 Always allow	ყოველთვის დაშვება
 Amazon S3	Amazon S3
-Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3 ან S3-თან თავსებადი სერვისი (MinIO, Cloudflare R2, Wasabi…) მისი ბოლო წერტილით. გასაღებები ინახება RustGIS-ის დახურვამდე; შენახული კავშირი ინახავს სახელს, ბოლო წერტილსა და რეგიონს, მაგრამ არასდროს საიდუმლო გასაღებს.
+Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3 ან S3-თან თავსებადი სერვისი (MinIO, Cloudflare R2, Wasabi…) მისი ბოლო წერტილით. გასაღებები ინახება ARutGIS-ის დახურვამდე; შენახული კავშირი ინახავს სახელს, ბოლო წერტილსა და რეგიონს, მაგრამ არასდროს საიდუმლო გასაღებს.
 amenity=cafe, shop	amenity=cafe, shop
 An agent on this computer asks to:	ამ კომპიუტერის აგენტი ითხოვს:
 An AWS profile	AWS პროფილი
@@ -320,7 +320,7 @@ Areas (name, land use, area)	არეები (სახელი, მიწ�
 Arrange	დალაგება
 Arrow	ისარი
 Arrowheads	ისრის წვერები
-Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	დასვით შეკითხვა თქვენი მონაცემების შესახებ ან აღწერეთ, რა უნდა გაკეთდეს რუკაზე. ასისტენტი RustGIS-ის ბრძანებებს თავად გაუშვებს; ყველა ცვლილების გაუქმება შესაძლებელია.
+Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	დასვით შეკითხვა თქვენი მონაცემების შესახებ ან აღწერეთ, რა უნდა გაკეთდეს რუკაზე. ასისტენტი ARutGIS-ის ბრძანებებს თავად გაუშვებს; ყველა ცვლილების გაუქმება შესაძლებელია.
 Ask about the map, or tell it what to do…	დასვით შეკითხვა რუკის შესახებ ან მიუთითეთ, რა გააკეთოს…
 Ask about your data, or tell the assistant what to do with the map.	დასვით შეკითხვა თქვენი მონაცემების შესახებ ან უთხარით ასისტენტს, რა გააკეთოს რუკაზე.
 Asking NASA's CMR…	NASA-ს CMR-თან მიმართვა…
@@ -635,7 +635,7 @@ Color Vision Simulator	ფერთა აღქმის სიმულატ�
 Colorbar	ფერთა ზოლი
 Colormap	ფერთა რუკა
 Colors from the raster's own color table.	ფერები რასტრის საკუთარი ფერთა ცხრილიდან.
-Colour ramps (RustGIS, QGIS, GDAL, GMT)	ფერთა შკალები (RustGIS, QGIS, GDAL, GMT)
+Colour ramps (RustGIS, QGIS, GDAL, GMT)	ფერთა შკალები (ARutGIS, QGIS, GDAL, GMT)
 Columns named like longitude/latitude, easting/northing or geometry are picked for you.	სვეტები სახელებით, როგორიცაა longitude/latitude, easting/northing ან geometry, ავტომატურად აირჩევა.
 Combinations from the box above, one per line	ზემოთ მოცემული ველიდან კომბინაციები, თითო ხაზზე ერთი
 COMID {comid}	COMID {comid}
@@ -831,7 +831,7 @@ Delete selected rows	მონიშნული სტრიქონები�
 Delete Style	სტილის წაშლა
 Delete Task	ამოცანის წაშლა
 Delete Task Step	ამოცანის საფეხურის წაშლა
-Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	RustGIS-ის მიერ დაინსტალირებული GeoLibre-ის გამშვების წაშლა. ნებისმიერ დროს შეგიძლიათ ხელახლა დააინსტალიროთ.
+Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	ARutGIS-ის მიერ დაინსტალირებული GeoLibre-ის გამშვების წაშლა. ნებისმიერ დროს შეგიძლიათ ხელახლა დააინსტალიროთ.
 Delete the layout {name}?	წაიშალოს განლაგება {name}?
 Delete the map {name}?	წაიშალოს რუკა {name}?
 Delete the selected features.	მონიშნული ობიექტების წაშლა.
@@ -1020,7 +1020,7 @@ Element Properties	ელემენტის თვისებები
 Elevation	სიმაღლე
 Elevation model	სიმაღლის მოდელი
 Elevation profiles along lines, cross sections and more.	სიმაღლის პროფილები ხაზების გასწვრივ, განივი ჭრილები და სხვა.
-Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	RustGIS-ის შესაბამისი მოთხოვნები თქვენს ChatGPT გეგმას იყენებს. გამოყენების მართვა ChatGPT-ის პარამეტრებშია შესაძლებელი.
+Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	ARutGIS-ის შესაბამისი მოთხოვნები თქვენს ChatGPT გეგმას იყენებს. გამოყენების მართვა ChatGPT-ის პარამეტრებშია შესაძლებელი.
 Ellipse	ელიფსი
 Embeddings	ემბედინგები
 Ember	ნაკვერჩხალი
@@ -1197,7 +1197,7 @@ Find and run geoprocessing tools.	გეოდამუშავების ხ
 Find any command by name (Ctrl+K).	ნებისმიერი ბრძანების პოვნა სახელით (Ctrl+K).
 Find Items	ელემენტების პოვნა
 Find Place	ადგილის პოვნა
-Find plugins in the RustGIS plugin registry.	დანამატების პოვნა RustGIS-ის დანამატების რეესტრში.
+Find plugins in the RustGIS plugin registry.	დანამატების პოვნა ARutGIS-ის დანამატების რეესტრში.
 Find Similar	მსგავსის პოვნა
 Find Tools	ხელსაწყოების პოვნა
 Finding routes…	მარშრუტების ძიება…
@@ -1233,7 +1233,7 @@ Forget Earthdata Login Token	Earthdata Login-ის ტოკენის და
 Forget Saved Keys	შენახული გასაღებების დავიწყება
 Forget Saved Password	შენახული პაროლის დავიწყება
 Format	ფორმატი
-Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	მოიძებნა: {names}. აგენტი ამ რუკაზე მუშაობს RustGIS-ის ხელსაწყოებით და საკუთარით (ვები, სკრიპტები, ფაილები), საკუთარ საქაღალდეში, რომელიც ინახება აქ: დოკუმენტები › RustGIS › Agent work. ყოველი მოქმედების წინ გეკითხებათ.
+Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	მოიძებნა: {names}. აგენტი ამ რუკაზე მუშაობს ARutGIS-ის ხელსაწყოებით და საკუთარით (ვები, სკრიპტები, ფაილები), საკუთარ საქაღალდეში, რომელიც ინახება აქ: დოკუმენტები › ARutGIS › Agent work. ყოველი მოქმედების წინ გეკითხებათ.
 Frame rate	კადრების სიხშირე
 Frame rate, draw time, data size and memory.	კადრების სიხშირე, ხატვის დრო, მონაცემთა ზომა და მეხსიერება.
 France	საფრანგეთი
@@ -1438,7 +1438,7 @@ In memory	მეხსიერებაში
 In Progress	მიმდინარეობს
 in progress	მიმდინარეობს
 In project	პროექტში
-In RustGIS, it can:	RustGIS-ში მას შეუძლია:
+In RustGIS, it can:	ARutGIS-ში მას შეუძლია:
 In the browser, pick the .shp and .dbf together, with any sidecars, or pick a ZIP. The override applies to every Shapefile in the ZIP.	ბრაუზერში ერთად აირჩიეთ .shp და .dbf ნებისმიერ თანმხლებ ფაილთან ერთად, ან აირჩიეთ ZIP. ჩანაცვლება ვრცელდება ZIP-ში არსებულ ყველა Shapefile-ზე.
 In use	გამოიყენება
 Indexes	ინდექსები
@@ -1509,7 +1509,7 @@ It's too large to keep in the browser: install it again on your next visit.	ბ�
 Italic	დახრილი
 Item Pop-ups	ელემენტის ამომხტარი ფანჯრები
 Item {id}	ელემენტი {id}
-Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	მისმა ფაიერვოლმა ({firewall}) დაბლოკა RustGIS. სერვისი შესაძლოა მხოლოდ ზოგიერთ აპლიკაციას უშვებდეს: დაუკავშირდით მის ადმინისტრატორს და გაუგზავნეთ ქვემოთ მოცემული დეტალები.
+Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	მისმა ფაიერვოლმა ({firewall}) დაბლოკა ARutGIS. სერვისი შესაძლოა მხოლოდ ზოგიერთ აპლიკაციას უშვებდეს: დაუკავშირდით მის ადმინისტრატორს და გაუგზავნეთ ქვემოთ მოცემული დეტალები.
 Its tool isn't available now (a plugin's, not loaded, or a suite's, not installed)	მისი ხელსაწყო ახლა მიუწვდომელია (მოდულის, რომელიც არ არის ჩატვირთული, ან ნაკრების, რომელიც არ არის დაყენებული)
 Jobs	სამუშაოები
 JOIN	JOIN
@@ -1609,7 +1609,7 @@ Legend	ლეგენდა
 Legend label. Clear it to show the value again.	ლეგენდის წარწერა. გაასუფთავეთ, რომ კვლავ გამოჩნდეს მნიშვნელობა.
 Length {length} · gain {gain} · loss {loss}	სიგრძე {length} · აღმართი {gain} · დაღმართი {loss}
 Let the assistant hand tasks to agents on this computer	ასისტენტს ამ კომპიუტერის აგენტებისთვის დავალებების გადაცემის ნება მიეცით
-Let your Agents Control RustGIS	მიეცით თქვენს აგენტებს RustGIS-ის მართვის საშუალება
+Let your Agents Control RustGIS	მიეცით თქვენს აგენტებს ARutGIS-ის მართვის საშუალება
 Letter spacing	ასოებს შორის ინტერვალი
 Level	დონე
 Library	ბიბლიოთეკა
@@ -1660,7 +1660,7 @@ List The National Map Services	The National Map-ის სერვისებ�
 List the provider's models	პროვაიდერის მოდელების სია
 List this layer in the legend	ამ ფენის ჩვენება ლეგენდაში
 List what it holds	შიგთავსის ჩვენება
-Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	ნაჩვენებია გასაცნობად: RustGIS ჯერ ვერ კითხულობს ამ მონაცემთა ნაკრებს. მისი მონაცემებისა და სტატიის ბმულები ზემოთაა.
+Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	ნაჩვენებია გასაცნობად: ARutGIS ჯერ ვერ კითხულობს ამ მონაცემთა ნაკრებს. მისი მონაცემებისა და სტატიის ბმულები ზემოთაა.
 Listing…	სიის მიღება…
 Lit	განათებული
 Live summary of the features in view.	ხედში მოხვედრილი ობიექტების ცოცხალი შეჯამება.
@@ -1695,7 +1695,7 @@ Look for {name}, outlined on the ribbon.	მოძებნეთ {name}, ლე
 Looking up the place…	ადგილის ძიება…
 Loop	ციკლი
 Lower Priority	პრიორიტეტის დაწევა
-Made in RustGIS: samples, drawings and tool outputs	შექმნილია RustGIS-ში: ნიმუშები, ნახაზები და ხელსაწყოების შედეგები
+Made in RustGIS: samples, drawings and tool outputs	შექმნილია ARutGIS-ში: ნიმუშები, ნახაზები და ხელსაწყოების შედეგები
 Magnifier	გამადიდებელი
 Major Lakes	მსხვილი ტბები
 Major Rivers	მსხვილი მდინარეები
@@ -1927,7 +1927,7 @@ No COMID was returned for this point.	ამ წერტილისთვი�
 no command	ბრძანება არ არის
 No data at the points picked.	არჩეულ წერტილებში მონაცემები არ არის.
 No datasets match.	შესაბამისი მონაცემთა ნაკრებები არ არის.
-No datasets with data RustGIS can add	არ არის მონაცემთა ნაკრებები, რომლებსაც RustGIS დაამატებს
+No datasets with data RustGIS can add	არ არის მონაცემთა ნაკრებები, რომლებსაც ARutGIS დაამატებს
 no date in the name	სახელში თარიღი არ არის
 No edits since the project was saved	პროექტის შენახვის შემდეგ რედაქტირება არ ყოფილა
 No features are selected in this layer.	ამ ფენაში ობიექტები არ არის მონიშნული.
@@ -1986,8 +1986,8 @@ North\nArrow	ჩრდილოეთის\nისარი
 North Polar Stereographic	ჩრდილოეთის პოლარული სტერეოგრაფიული
 NOT	NOT
 not a picture	სურათი არ არის
-not a RustGIS layout	ეს RustGIS-ის განლაგება არ არის
-not a RustGIS project	არ არის RustGIS-ის პროექტი
+not a RustGIS layout	ეს ARutGIS-ის განლაგება არ არის
+not a RustGIS project	არ არის ARutGIS-ის პროექტი
 Not applied yet.	ჯერ არ არის გამოყენებული.
 Not for texts: a text is edited in the Format pane.	არა ტექსტებისთვის: ტექსტი ფორმატის პანელში რედაქტირდება.
 not needed	საჭირო არ არის
@@ -2045,8 +2045,8 @@ Open a .rgis project	.rgis პროექტის გახსნა
 open a layout first	ჯერ გახსენით განლაგება
 Open a model file (*.model.json)	მოდელის ფაილის გახსნა (*.model.json)
 Open a model of this project	ამ პროექტის მოდელის გახსნა
-Open a RustGIS or Jupyter notebook.	RustGIS-ის ან Jupyter-ის რვეულის გახსნა.
-Open a RustGIS project.	RustGIS-ის პროექტის გახსნა.
+Open a RustGIS or Jupyter notebook.	ARutGIS-ის ან Jupyter-ის რვეულის გახსნა.
+Open a RustGIS project.	ARutGIS-ის პროექტის გახსნა.
 Open an offline area to edit.	ოფლაინ არეალის გახსნა სარედაქტიროდ.
 Open browser again	ბრაუზერის ხელახლა გახსნა
 Open Custom Template	მორგებული შაბლონის გახსნა
@@ -2074,7 +2074,7 @@ Open the layer's attribute table.	ფენის ატრიბუტები
 Open the layer's table.	ფენის ცხრილის გახსნა.
 Open the plugin's panel.	მოდულის პანელის გახსნა.
 Open the Release Page	რელიზის გვერდის გახსნა
-Open the RustGIS user guide.	RustGIS-ის მომხმარებლის სახელმძღვანელოს გახსნა.
+Open the RustGIS user guide.	ARutGIS-ის მომხმარებლის სახელმძღვანელოს გახსნა.
 Open the selected layer's table.	არჩეული ფენის ცხრილის გახსნა.
 Open the Symbology pane.	სიმბოლიზაციის პანელის გახსნა.
 Open the task's steps	ამოცანის საფეხურების გახსნა
@@ -2230,7 +2230,7 @@ Plugin registry	დანამატების რეესტრი
 Plugins	დანამატები
 Plugins are .rgplugin files. Install only plugins from people you trust.	დანამატები .rgplugin ფაილებია. დააყენეთ მხოლოდ იმ ადამიანების დანამატები, ვისაც ენდობით.
 Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	„იზოლაციის გარეშე“ მონიშნული დანამატები სამაგიეროდ მუშაობს როგორც პროგრამები თქვენს კომპიუტერზე და შეუძლია ყველაფერი, რაც თქვენ შეგიძლიათ.
-Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	დანამატები იზოლირებულ გარემოში მუშაობს: ისინი ვერ წვდებიან თქვენს ფაილებსა და ქსელს. პროექტს ცვლიან მხოლოდ RustGIS-ის საკუთარი ბრძანებებით, თქვენ მიერ მიღებული ნებართვების ფარგლებში.
+Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	დანამატები იზოლირებულ გარემოში მუშაობს: ისინი ვერ წვდებიან თქვენს ფაილებსა და ქსელს. პროექტს ცვლიან მხოლოდ ARutGIS-ის საკუთარი ბრძანებებით, თქვენ მიერ მიღებული ნებართვების ფარგლებში.
 PMTiles archive	PMTiles არქივი
 PNG frames (zip)	PNG კადრები (zip)
 PNG image	PNG სურათი
@@ -2299,7 +2299,7 @@ Project templates: start projects from a saved setup.	პროექტის �
 project's path is required	საჭიროა project-ის path
 Projection	პროექცია
 Projections	პროექციები
-Projects (RustGIS, QGIS)	პროექტები (RustGIS, QGIS)
+Projects (RustGIS, QGIS)	პროექტები (ARutGIS, QGIS)
 Properties	თვისებები
 Property	თვისება
 Proportional Symbols	პროპორციული სიმბოლოები
@@ -2355,7 +2355,7 @@ Read and write files on this computer	ფაილების წაკით�
 Read the bands picked for the view (at most about 6 km a side)	ხედისთვის არჩეული არხების წაკითხვა (მაქსიმუმ დაახლოებით 6 კმ თითო მხარეზე)
 Read the map's layers and features	რუკის ფენებისა და ობიექტების წაკითხვა
 Read the points in the view, coloured by their principal components	ხედში არსებული წერტილების წაკითხვა, შეფერილი მათი მთავარი კომპონენტების მიხედვით
-Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	გრანულის ფაილების წასაკითხად საჭიროა Earthdata Login-ის ტოკენი, რომელიც ყველა NASA DAAC-ისთვის მუშაობს. ის ინახება RustGIS-ის დახურვამდე, არასოდეს ინახება პროექტში და იგზავნება მხოლოდ NASA-ს Earthdata-ს მონაცემთა სერვერებზე.
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	გრანულის ფაილების წასაკითხად საჭიროა Earthdata Login-ის ტოკენი, რომელიც ყველა NASA DAAC-ისთვის მუშაობს. ის ინახება ARutGIS-ის დახურვამდე, არასოდეს ინახება პროექტში და იგზავნება მხოლოდ NASA-ს Earthdata-ს მონაცემთა სერვერებზე.
 Reading the catalog: {n} documents read, {m} items found…	კატალოგის კითხვა: წაკითხულია {n} დოკუმენტი, ნაპოვნია {m} ელემენტი…
 Reading the catalog…	კატალოგის კითხვა…
 Reading the embeddings…	ემბედინგების კითხვა…
@@ -2516,30 +2516,30 @@ Run Tool	ხელსაწყოს გაშვება
 Run {name}	{name}-ის გაშვება
 Running the query for the map…	მოთხოვნის გაშვება რუკისთვის…
 Running…	მიმდინარეობს გაშვება…
-RustGIS	RustGIS
-RustGIS bookmarks	RustGIS-ის სანიშნეები
-RustGIS could not confirm that any previously saved key was deleted from the system keychain.	RustGIS-მა ვერ დაადასტურა, რომ ადრე შენახული გასაღები წაიშალა სისტემის გასაღებების საცავიდან.
-RustGIS couldn't reach the server.	RustGIS სერვერს ვერ დაუკავშირდა.
-RustGIS deep learning package	RustGIS-ის ღრმა სწავლების პაკეტი
-RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	წინა ჯერზე RustGIS სწორად არ დაიხურა, ამიტომ ის თქვენი საწყისი პროექტის ნაცვლად World Atlas-ით გაეშვა. როცა მზად იქნებით, გახსენით პროექტი მენიუდან „პროექტი“.
-RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	RustGIS-ს ეს ხელსაწყო არ აქვს. დააინსტალირეთ ხელსაწყოები, რომლებსაც ის ეკუთვნის, ან წაშალეთ კვანძი.
-RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	RustGIS არის უფასო, ღია კოდის GIS, სუფთა Rust-ზე დაწერილი. ის მუშაობს დესკტოპზე და ბრაუზერში. ყოველი მოქმედება ბრძანებაა, რომლის გაშვებაც ბრძანებათა ხაზიდანაც შეიძლება.
-RustGIS layer file	RustGIS-ის ფენის ფაილი
-RustGIS layers, maps and projects	RustGIS-ის ფენები, რუკები და პროექტები
-RustGIS layout	RustGIS-ის განლაგება
-RustGIS maps and projects	RustGIS-ის რუკები და პროექტები
-RustGIS model	RustGIS-ის მოდელი
-RustGIS or Jupyter notebook	RustGIS-ის ან Jupyter-ის რვეული
-RustGIS plugin	RustGIS-ის დანამატი
-RustGIS presentation	RustGIS-ის პრეზენტაცია
-RustGIS project	RustGIS-ის პროექტი
-RustGIS project template	RustGIS-ის პროექტის შაბლონი
-RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	RustGIS-ს ბოლოს შიდა შეცდომა შეექმნა. დეტალები იხილეთ აქ: {path}; გთხოვთ, დაურთოთ ისინი შეცდომის შეტყობინებას.
-RustGIS report or report template	RustGIS-ის ანგარიში ან ანგარიშის შაბლონი
-RustGIS styles	RustGIS-ის სტილები
-RustGIS task	RustGIS-ის ამოცანა
-RustGIS {latest} is available.	ხელმისაწვდომია RustGIS {latest}.
-RustGIS {version} is the latest version.	RustGIS {version} უახლესი ვერსიაა.
+RustGIS	ARutGIS
+RustGIS bookmarks	ARutGIS-ის სანიშნეები
+RustGIS could not confirm that any previously saved key was deleted from the system keychain.	ARutGIS-მა ვერ დაადასტურა, რომ ადრე შენახული გასაღები წაიშალა სისტემის გასაღებების საცავიდან.
+RustGIS couldn't reach the server.	ARutGIS სერვერს ვერ დაუკავშირდა.
+RustGIS deep learning package	ARutGIS-ის ღრმა სწავლების პაკეტი
+RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	წინა ჯერზე ARutGIS სწორად არ დაიხურა, ამიტომ ის თქვენი საწყისი პროექტის ნაცვლად World Atlas-ით გაეშვა. როცა მზად იქნებით, გახსენით პროექტი მენიუდან „პროექტი“.
+RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	ARutGIS-ს ეს ხელსაწყო არ აქვს. დააინსტალირეთ ხელსაწყოები, რომლებსაც ის ეკუთვნის, ან წაშალეთ კვანძი.
+RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	ARutGIS არის უფასო, ღია კოდის GIS, სუფთა Rust-ზე დაწერილი. ის მუშაობს დესკტოპზე და ბრაუზერში. ყოველი მოქმედება ბრძანებაა, რომლის გაშვებაც ბრძანებათა ხაზიდანაც შეიძლება.
+RustGIS layer file	ARutGIS-ის ფენის ფაილი
+RustGIS layers, maps and projects	ARutGIS-ის ფენები, რუკები და პროექტები
+RustGIS layout	ARutGIS-ის განლაგება
+RustGIS maps and projects	ARutGIS-ის რუკები და პროექტები
+RustGIS model	ARutGIS-ის მოდელი
+RustGIS or Jupyter notebook	ARutGIS-ის ან Jupyter-ის რვეული
+RustGIS plugin	ARutGIS-ის დანამატი
+RustGIS presentation	ARutGIS-ის პრეზენტაცია
+RustGIS project	ARutGIS-ის პროექტი
+RustGIS project template	ARutGIS-ის პროექტის შაბლონი
+RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	ARutGIS-ს ბოლოს შიდა შეცდომა შეექმნა. დეტალები იხილეთ აქ: {path}; გთხოვთ, დაურთოთ ისინი შეცდომის შეტყობინებას.
+RustGIS report or report template	ARutGIS-ის ანგარიში ან ანგარიშის შაბლონი
+RustGIS styles	ARutGIS-ის სტილები
+RustGIS task	ARutGIS-ის ამოცანა
+RustGIS {latest} is available.	ხელმისაწვდომია ARutGIS {latest}.
+RustGIS {version} is the latest version.	ARutGIS {version} უახლესი ვერსიაა.
 RUSTGIS_ASSISTANT_MODEL	RUSTGIS_ASSISTANT_MODEL
 RUSTGIS_ASSISTANT_PROVIDER	RUSTGIS_ASSISTANT_PROVIDER
 RUSTGIS_GPU	RUSTGIS_GPU
@@ -2548,7 +2548,7 @@ S3 Buckets	S3 ბაკეტები
 S3 Connections	S3 კავშირები
 S3…	S3…
 Sample data (Natural Earth)	სანიმუშო მონაცემები (Natural Earth)
-Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	სანიმუშო მონაცემები © Natural Earth (საჯარო დომენი). RustGIS ლიცენზირებულია Apache-2.0-ით.
+Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	სანიმუშო მონაცემები © Natural Earth (საჯარო დომენი). ARutGIS ლიცენზირებულია Apache-2.0-ით.
 Sample data: Natural Earth (public domain). Licensed under Apache-2.0.	სანიმუშო მონაცემები: Natural Earth (საჯარო დომენი). ლიცენზია: Apache-2.0.
 Sans-serif	უსერიფო
 Satellite Embedding Datasets	სატელიტური ემბედინგების მონაცემთა ნაკრებები
@@ -2677,7 +2677,7 @@ Sections	სექციები
 See and set the camera's position and scale.	კამერის პოზიციისა და მასშტაბის ნახვა და დაყენება.
 See the map as people with colour vision deficiencies do.	რუკის ნახვა ისე, როგორც ფერთა აღქმის დარღვევის მქონე ადამიანები ხედავენ.
 See the tools you've run.	თქვენ მიერ გაშვებული ხელსაწყოების ნახვა.
-See whether a newer RustGIS has been released.	შემოწმება, გამოვიდა თუ არა RustGIS-ის უფრო ახალი ვერსია.
+See whether a newer RustGIS has been released.	შემოწმება, გამოვიდა თუ არა ARutGIS-ის უფრო ახალი ვერსია.
 SELECT	SELECT
 Select	მონიშვნა
 Select (click)	მონიშვნა (დაწკაპუნებით)
@@ -2843,7 +2843,7 @@ Sign-in	შესვლა
 Sign-in cancelled.	შესვლა გაუქმდა.
 Sign-in timed out. Start again and allow the browser to reach this computer's loopback address.	შესვლის ლოდინის დრო ამოიწურა. დაიწყეთ თავიდან და მიეცით ბრაუზერს ამ კომპიუტერის უკუკავშირის მისამართზე წვდომა.
 signed in	შესულია
-Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	ამ კომპიუტერზე გამოსვლა შესრულდა, მაგრამ OpenAI-მ ეს არ დაადასტურა. RustGIS-ის გათიშვა ChatGPT-ის პარამეტრებში შეგიძლიათ.
+Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	ამ კომპიუტერზე გამოსვლა შესრულდა, მაგრამ OpenAI-მ ეს არ დაადასტურა. ARutGIS-ის გათიშვა ChatGPT-ის პარამეტრებში შეგიძლიათ.
 Significance level	მნიშვნელოვნობის დონე
 Signing in with ChatGPT works in the desktop app.	ChatGPT-ით შესვლა მუშაობს სამუშაო მაგიდის აპში.
 Signing the asset (Planetary Computer)…	რესურსის ხელმოწერა (Planetary Computer)…
@@ -3067,7 +3067,7 @@ The connection failed; trying again in {seconds} s.	კავშირი ვე
 the connection has no id	კავშირს არ აქვს id
 The country list couldn't be read ({e}): type a country's code	ქვეყნების სიის წაკითხვა ვერ მოხერხდა ({e}): შეიყვანეთ ქვეყნის კოდი
 The current elevation stays in effect while you edit inputs. Click Apply elevation to apply the value and units.	მიმდინარე სიმაღლე ძალაში რჩება, სანამ შეყვანის ველებს არედაქტირებთ. მნიშვნელობისა და ერთეულების გამოსაყენებლად დააწკაპუნეთ „სიმაღლის გამოყენება“.
-The dataset has nothing RustGIS can add	მონაცემთა ნაკრებში არაფერია, რისი დამატებაც RustGIS-ს შეუძლია
+The dataset has nothing RustGIS can add	მონაცემთა ნაკრებში არაფერია, რისი დამატებაც ARutGIS-ს შეუძლია
 The environment (AWS_ACCESS_KEY_ID…)	გარემო (AWS_ACCESS_KEY_ID…)
 The features where the map is	ობიექტები რუკის არეალში
 The first 1,000 entries; narrow it down a folder at a time.	პირველი 1,000 ჩანაწერი; დააზუსტეთ თითო საქაღალდით.
@@ -3088,10 +3088,10 @@ The layer's file couldn't be read: {error}	ფენის ფაილის �
 The layer's strokes	ფენის შტრიხები
 the layout export failed unexpectedly	განლაგების ექსპორტი მოულოდნელად ჩავარდა
 The link doesn't say its STAC API: Find Items searches {api}	ბმული არ მიუთითებს თავის STAC API-ს: „ელემენტების პოვნა“ ეძებს {api}-ში
-The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	დანამატების სია დასათვალიერებლად. დატოვეთ ცარიელი RustGIS-ის დანამატების რეესტრისთვის.
+The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	დანამატების სია დასათვალიერებლად. დატოვეთ ცარიელი ARutGIS-ის დანამატების რეესტრისთვის.
 the map has no layers	რუკას ფენები არ აქვს
 The map is drawn in this coordinate system; layers are projected on the fly.	რუკა ამ კოორდინატთა სისტემაშია დახატული; ფენები პროექცირდება ფრენისას.
-the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	რუკა RustGIS-ში ეკრანზე არ არის (ნაჩვენებია განლაგება ან კატალოგი), ამიტომ ის ეკრანის გარეთ დაიხატა
+the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	რუკა ARutGIS-ში ეკრანზე არ არის (ნაჩვენებია განლაგება ან კატალოგი), ამიტომ ის ეკრანის გარეთ დაიხატა
 The map view as it is now	რუკის ხედი ახლა როგორიც არის
 The map's extent isn't known yet	რუკის ფარგლები ჯერ უცნობია
 The map's view takes {n} of Overture's {ty} files (up to {max}): zoom in, or add the theme as map tiles	რუკის ხედი მოიცავს Overture-ის {n} {ty} ფაილს (მაქს. {max}): გაადიდეთ ან დაამატეთ თემა რუკის ფილებად
@@ -3146,7 +3146,7 @@ The sign-in expired or was revoked. Sign in again.	შესვლის ვა�
 The sign-in is kept in the app's settings folder, for your user account only, and never in a project file.	შესვლის მონაცემები ინახება აპის პარამეტრების საქაღალდეში, მხოლოდ თქვენი მომხმარებლის ანგარიშისთვის, და არასოდეს პროექტის ფაილში.
 The significance level is a number, such as 0.05	მნიშვნელოვნობის დონე რიცხვია, მაგალითად 0.05
 The start-up project {path} didn't open: {error}	საწყისი პროექტი {path} ვერ გაიხსნა: {error}
-The start-up project {path} isn't a RustGIS project file.	საწყისი პროექტი {path} არ არის RustGIS-ის პროექტის ფაილი.
+The start-up project {path} isn't a RustGIS project file.	საწყისი პროექტი {path} არ არის ARutGIS-ის პროექტის ფაილი.
 The step's layer {name} isn't in the map.	საფეხურის ფენა {name} რუკაზე არ არის.
 The store has no variables with two or more dimensions.	საცავში არ არის ორი ან მეტი განზომილების ცვლადები.
 the store is gone	საცავი აღარ არსებობს
@@ -3189,7 +3189,7 @@ This map has no layers yet.	ამ რუკას ჯერ ფენები 
 This map's thumbnail, from an image.	ამ რუკის მინიატურა სურათიდან.
 This map's thumbnail, from the view.	ამ რუკის მინიატურა ხედიდან.
 This plugin can:	ამ დანამატს შეუძლია:
-This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	ეს დანამატი მუშაობს როგორც პროგრამა თქვენს კომპიუტერზე, RustGIS-ის იზოლირებული გარემოს გარეთ. მას შეუძლია ყველაფერი, რაც თქვენ შეგიძლიათ: თქვენი ფაილების წაკითხვა და შეცვლა, ქსელის გამოყენება და სხვა პროგრამების გაშვება. დააინსტალირეთ მხოლოდ მაშინ, თუ მის ავტორს ენდობით.
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	ეს დანამატი მუშაობს როგორც პროგრამა თქვენს კომპიუტერზე, ARutGIS-ის იზოლირებული გარემოს გარეთ. მას შეუძლია ყველაფერი, რაც თქვენ შეგიძლიათ: თქვენი ფაილების წაკითხვა და შეცვლა, ქსელის გამოყენება და სხვა პროგრამების გაშვება. დააინსტალირეთ მხოლოდ მაშინ, თუ მის ავტორს ენდობით.
 This request has no one-time allow option.	ამ მოთხოვნას ერთჯერადი დაშვების ვარიანტი არ აქვს.
 This request uses an unsupported capability. Check the parameter and change the request.	ეს მოთხოვნა მხარდაუჭერელ შესაძლებლობას იყენებს. შეამოწმეთ პარამეტრი და შეცვალეთ მოთხოვნა.
 This result is kept	ეს შედეგი შენარჩუნებულია
@@ -3303,7 +3303,7 @@ Units	ერთეულები
 Units per step	ერთეული ნაბიჯზე
 unknown (an older project)	უცნობი (ძველი პროექტი)
 UNKNOWN TOOL	უცნობი ხელსაწყო
-Unload the GeoLibre tools and stop loading them when RustGIS starts.	GeoLibre-ის ხელსაწყოების გამოტვირთვა და RustGIS-ის გაშვებისას მათი ჩატვირთვის შეწყვეტა.
+Unload the GeoLibre tools and stop loading them when RustGIS starts.	GeoLibre-ის ხელსაწყოების გამოტვირთვა და ARutGIS-ის გაშვებისას მათი ჩატვირთვის შეწყვეტა.
 Unsaved changes	შეუნახავი ცვლილებები
 Unsupervised classes (k-means)	უკონტროლო კლასები (k-means)
 Unsupervised classes (k-means).	უკონტროლო კლასები (k-means).
@@ -3425,13 +3425,13 @@ Web Tool	ვებ ხელსაწყო
 Website	ვებსაიტი
 Weekly usage	კვირის გამოყენება
 Weights	წონები
-Welcome to RustGIS	მოგესალმებით RustGIS-ში
+Welcome to RustGIS	მოგესალმებით ARutGIS-ში
 West	დასავლეთი
 WFS	WFS
 WGS 84 / Globe	WGS 84 / გლობუსი
 WGS 84 / Web Mercator	WGS 84 / ვებ მერკატორი
-What RustGIS opens with: the World Atlas sample or a blank map.	რას გახსნის RustGIS გაშვებისას: World Atlas-ის ნიმუშს ან ცარიელ რუკას.
-What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	რას გახსნის RustGIS გაშვებისას: World Atlas-ის ნიმუშს, ცარიელ რუკას, თქვენ მიერ არჩეულ პროექტს ან ბოლოს გახსნილ ან შენახულ პროექტს.
+What RustGIS opens with: the World Atlas sample or a blank map.	რას გახსნის ARutGIS გაშვებისას: World Atlas-ის ნიმუშს ან ცარიელ რუკას.
+What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	რას გახსნის ARutGIS გაშვებისას: World Atlas-ის ნიმუშს, ცარიელ რუკას, თქვენ მიერ არჩეულ პროექტს ან ბოლოს გახსნილ ან შენახულ პროექტს.
 What to do, where to find it and why	რა გავაკეთოთ, სად ვიპოვოთ და რატომ
 What's near a point	რა არის წერტილის ახლოს
 WHERE	WHERE

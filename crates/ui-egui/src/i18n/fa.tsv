@@ -42,8 +42,8 @@ A line for the Script pane	یک خط برای پنل Script
 A magnifying lens that follows the pointer.	یک لنز بزرگنمایی که نشانگر را دنبال می‌کند.
 A map, feature or coverage service's address: WMS, WMTS, WFS, WCS, OGC API Features or Tiles, or an ArcGIS FeatureServer, MapServer, ImageServer or VectorTileServer (or a services directory, to browse).	آدرس یک سرویس نقشه، عنصر یا پوشش: WMS، WMTS، WFS، WCS، OGC API Features or Tiles، یا یک FeatureServer، MapServer، ImageServer یا VectorTileServer ArcGIS (یا یک فهرست سرویس، برای مرور).
 a name, or owner/name such as giswqs/geospatial	یک نام، یا مالک/نامی مانند giswqs/geospatial
-A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	یک نقطه پایانی نام‌دار که می‌توانید دوباره استفاده کنید. کلیدها و توکن‌ها تا بسته‌شدن RustGIS نگه داشته می‌شوند و هرگز ذخیره نمی‌شوند.
-A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	یک نقطه پایانی نام‌دار که می‌توانید دوباره استفاده کنید. کلیدها تا بسته‌شدن RustGIS نگه داشته می‌شوند، مگر اینکه به خاطر سپردنشان روی این رایانه را انتخاب کنید؛ خود اتصال هرگز آن‌ها را نگه نمی‌دارد.
+A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	یک نقطه پایانی نام‌دار که می‌توانید دوباره استفاده کنید. کلیدها و توکن‌ها تا بسته‌شدن ARutGIS نگه داشته می‌شوند و هرگز ذخیره نمی‌شوند.
+A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	یک نقطه پایانی نام‌دار که می‌توانید دوباره استفاده کنید. کلیدها تا بسته‌شدن ARutGIS نگه داشته می‌شوند، مگر اینکه به خاطر سپردنشان روی این رایانه را انتخاب کنید؛ خود اتصال هرگز آن‌ها را نگه نمی‌دارد.
 A named endpoint you can reuse. Passwords last for this session unless you choose to remember them in this computer's password store.	یک نقطه پایانی نام‌دار که می‌توانید دوباره استفاده کنید. رمزها برای همین نشست می‌مانند، مگر اینکه به خاطر سپردنشان در انبار رمز این رایانه را انتخاب کنید.
 A node cannot connect to itself.	یک گره نمی‌تواند به خودش متصل شود.
 A notebook of text and command cells.	یک دفترچه متنی از سلول‌های متن و دستور.
@@ -79,8 +79,8 @@ A5 Grid	شبکه A5
 A5's equal-area pentagonal cells at a resolution, over the map's extent, a layer or the world, as polygons with their ids.	سلول‌های پنج‌ضلعی هم‌مساحت A5 در یک تفکیک‌پذیری، روی گستره نقشه، یک لایه یا کل جهان، به‌صورت چندضلعی همراه با شناسه‌هایشان.
 About	درباره
 About plugins	درباره‌ی افزونه‌ها
-About RustGIS	درباره‌ی RustGIS
-About RustGIS.	درباره‌ی RustGIS.
+About RustGIS	درباره‌ی ARutGIS
+About RustGIS.	درباره‌ی ARutGIS.
 Above	بالا
 Above Left	بالا چپ
 Above Right	بالا راست
@@ -244,7 +244,7 @@ Agent input queue is full or disconnected; stop the agent and try again.	صف و
 Agent threads	رشته‌های گفت‌وگوی ایجنت
 Agent work	کار ایجنت
 Agents have full access: they may run scripts, tasks, models and plugins. Click to stop the MCP relay	ایجنت‌ها دسترسی کامل دارند: آن‌ها می‌توانند اسکریپت، وظیفه، مدل و افزونه اجرا کنند. برای متوقف کردن رله MCP کلیک کنید
-Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	ایجنت‌های روی این رایانه که متصل می‌شوند (Claude Code، Codex، Cursor و دیگران) روی نقشه باز این‌جا با ابزارهای RustGIS کار می‌کنند: می‌توانند فایل‌ها را باز و ذخیره کنند و از وب استفاده کنند. اسکریپت‌ها و مدیریت افزونه‌ها خاموش می‌مانند.
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	ایجنت‌های روی این رایانه که متصل می‌شوند (Claude Code، Codex، Cursor و دیگران) روی نقشه باز این‌جا با ابزارهای ARutGIS کار می‌کنند: می‌توانند فایل‌ها را باز و ذخیره کنند و از وب استفاده کنند. اسکریپت‌ها و مدیریت افزونه‌ها خاموش می‌مانند.
 Agents then run commands, change files and use the web on this computer without asking you.	آنگاه ایجنت‌ها بدون پرسیدن از شما، روی این رایانه دستور اجرا می‌کنند، فایل‌ها را تغییر می‌دهند و از وب استفاده می‌کنند.
 Aggregate Points to A5	تجمیع نقاط در A5
 Aggregation	تراکم
@@ -269,7 +269,7 @@ Allow Feature Selection	اجازه انتخاب عنصر
 Allow only certain combinations of values across fields.	فقط ترکیب‌های خاصی از مقادیر در بین فیلدها را مجاز کن.
 Allow such actions for this conversation	اجازه چنین اقداماتی را برای این گفت‌وگو بده
 Allow this action?	این عمل مجاز است؟
-Allow this agent's RustGIS action?	اجازه عمل RustGIS این ایجنت را بدهید؟
+Allow this agent's RustGIS action?	اجازه عمل ARutGIS این ایجنت را بدهید؟
 Along lines	در امتداد خطوط
 Along Selected Line	در امتاز خط انتخاب شده
 Alt+	Alt+
@@ -277,7 +277,7 @@ Alternating bar	نوار متناوب
 Altitude	ارتفاع
 Always allow	همیشه اجازه بده
 Amazon S3	Amazon S3
-Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3، یا یک سرویس سازگار با S3 (MinIO، Cloudflare R2، Wasabi…) از طریق نقطه پایانی آن. کلیدها تا بسته‌شدن RustGIS نگه داشته می‌شوند؛ یک اتصال ذخیره‌شده نام، نقطه پایانی و منطقه خود را نگه می‌دارد، هرگز اطلاعات محرمانه‌اش را.
+Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3، یا یک سرویس سازگار با S3 (MinIO، Cloudflare R2، Wasabi…) از طریق نقطه پایانی آن. کلیدها تا بسته‌شدن ARutGIS نگه داشته می‌شوند؛ یک اتصال ذخیره‌شده نام، نقطه پایانی و منطقه خود را نگه می‌دارد، هرگز اطلاعات محرمانه‌اش را.
 amenity=cafe, shop	امنیت=کافه، فروشگاه
 An agent on this computer asks to:	ایجنتی روی این رایانه درخواست می‌کند:
 An AWS profile	پروفایل AWS
@@ -320,7 +320,7 @@ Areas (name, land use, area)	مساحت‌ها (نام، کاربری اراضی
 Arrange	چینش
 Arrow	فلش
 Arrowheads	نوک فلش‌ها
-Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	در مورد داده‌های خود سوال بپرسید یا توضیح دهید که می‌خواهید با نقشه چه کنید. دستیار RustGIS دستورات را برای شما اجرا می‌کند؛ هر تغییری قابل بازگشت است.
+Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	در مورد داده‌های خود سوال بپرسید یا توضیح دهید که می‌خواهید با نقشه چه کنید. دستیار ARutGIS دستورات را برای شما اجرا می‌کند؛ هر تغییری قابل بازگشت است.
 Ask about the map, or tell it what to do…	در مورد نقشه بپرسید یا بگویید که می‌خواهید چه کاری انجام دهد…
 Ask about your data, or tell the assistant what to do with the map.	در مورد داده‌های خود سوال بپرسید یا به دستیار بگویید که می‌خواهید با نقشه چه کاری انجام دهد.
 Asking NASA's CMR…	در حال پرسیدن از CMR ناسا…
@@ -635,7 +635,7 @@ Color Vision Simulator	شبیه‌ساز دید رنگی
 Colorbar	نوار رنگ
 Colormap	رنگ‌نگاشت
 Colors from the raster's own color table.	رنگ‌ها از جدول رنگ خود رستر.
-Colour ramps (RustGIS, QGIS, GDAL, GMT)	طیف‌های رنگی (RustGIS، QGIS، GDAL، GMT)
+Colour ramps (RustGIS, QGIS, GDAL, GMT)	طیف‌های رنگی (ARutGIS، QGIS، GDAL، GMT)
 Columns named like longitude/latitude, easting/northing or geometry are picked for you.	ستون‌هایی که نامشان مثل longitude/latitude، easting/northing یا geometry باشد خودکار انتخاب می‌شوند.
 Combinations from the box above, one per line	ترکیب‌های داخل کادر بالا، هر خط یکی
 COMID {comid}	COMID {comid}
@@ -831,7 +831,7 @@ Delete selected rows	حذف ردیف‌های انتخاب‌شده
 Delete Style	حذف Style
 Delete Task	حذف تسک
 Delete Task Step	حذف گام تسک
-Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	اجراکننده GeoLibre‌ای که RustGIS نصب کرده را حذف می‌کند. هر وقت بخواهید می‌توانید دوباره نصبش کنید.
+Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	اجراکننده GeoLibre‌ای که ARutGIS نصب کرده را حذف می‌کند. هر وقت بخواهید می‌توانید دوباره نصبش کنید.
 Delete the layout {name}?	صفحه‌آرایی {name} حذف شود؟
 Delete the map {name}?	نقشه {name} حذف شود؟
 Delete the selected features.	عناصر انتخاب‌شده را حذف می‌کند.
@@ -1020,7 +1020,7 @@ Element Properties	ویژگی‌های عنصر
 Elevation	ارتفاع
 Elevation model	مدل ارتفاعی
 Elevation profiles along lines, cross sections and more.	نیم‌رخ‌های ارتفاعی در طول خط‌ها، مقاطع عرضی و بیشتر.
-Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	درخواست‌های واجد شرایط در RustGIS از طرح ChatGPT شما استفاده می‌کنند. مصرف را می‌توانید در تنظیمات ChatGPT مدیریت کنید.
+Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	درخواست‌های واجد شرایط در ARutGIS از طرح ChatGPT شما استفاده می‌کنند. مصرف را می‌توانید در تنظیمات ChatGPT مدیریت کنید.
 Ellipse	بیضی
 Embeddings	Embeddings
 Ember	Ember
@@ -1197,7 +1197,7 @@ Find and run geoprocessing tools.	یافتن و اجرای ابزارهای زم
 Find any command by name (Ctrl+K).	یافتن هر دستوری با نام (Ctrl+K).
 Find Items	یافتن آیتم‌ها
 Find Place	یافتن مکان
-Find plugins in the RustGIS plugin registry.	یافتن افزونه‌ها در فهرست افزونه‌های RustGIS.
+Find plugins in the RustGIS plugin registry.	یافتن افزونه‌ها در فهرست افزونه‌های ARutGIS.
 Find Similar	یافتن مشابه‌ها
 Find Tools	یافتن ابزارها
 Finding routes…	در حال یافتن مسیرها…
@@ -1233,7 +1233,7 @@ Forget Earthdata Login Token	فراموش‌کردن توکن ورود Earthdata
 Forget Saved Keys	فراموش‌کردن کلیدهای ذخیره‌شده
 Forget Saved Password	فراموش‌کردن رمز ذخیره‌شده
 Format	فرمت
-Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	پیدا شد: {names}. ایجنتی از طریق ابزارهای RustGIS روی این نقشه کار می‌کند و از ابزارهای خودش (وب، اسکریپت، فایل) در پوشه مخصوص به خود استفاده می‌کند که در Documents › RustGIS › Agent work نگه‌داری می‌شود. پیش از هر اقدام از شما می‌پرسد.
+Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	پیدا شد: {names}. ایجنتی از طریق ابزارهای ARutGIS روی این نقشه کار می‌کند و از ابزارهای خودش (وب، اسکریپت، فایل) در پوشه مخصوص به خود استفاده می‌کند که در Documents › ARutGIS › Agent work نگه‌داری می‌شود. پیش از هر اقدام از شما می‌پرسد.
 Frame rate	نرخ فریم
 Frame rate, draw time, data size and memory.	نرخ فریم، زمان ترسیم، حجم داده و حافظه.
 France	فرانسه
@@ -1438,7 +1438,7 @@ In memory	در حافظه
 In Progress	در حال انجام
 in progress	در حال انجام
 In project	در پروژه
-In RustGIS, it can:	در RustGIS می‌تواند:
+In RustGIS, it can:	در ARutGIS می‌تواند:
 In the browser, pick the .shp and .dbf together, with any sidecars, or pick a ZIP. The override applies to every Shapefile in the ZIP.	در مرورگر، فایل‌های .shp و .dbf را همراه با هر فایل جانبی با هم انتخاب کنید، یا یک ZIP برگزینید. این جایگزینی روی همه Shapefileهای داخل ZIP اعمال می‌شود.
 In use	در حال استفاده
 Indexes	اندیس‌ها
@@ -1509,7 +1509,7 @@ It's too large to keep in the browser: install it again on your next visit.	بر
 Italic	ایتالیک
 Item Pop-ups	پاپ‌آپ‌های آیتم
 Item {id}	آیتم {id}
-Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	فایروال آن ({firewall}) RustGIS را مسدود کرد. ممکن است سرویس فقط به بعضی برنامه‌ها اجازه بدهد: با مدیر آن تماس بگیرید و جزئیات زیر را برایش بفرستید.
+Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	فایروال آن ({firewall}) ARutGIS را مسدود کرد. ممکن است سرویس فقط به بعضی برنامه‌ها اجازه بدهد: با مدیر آن تماس بگیرید و جزئیات زیر را برایش بفرستید.
 Its tool isn't available now (a plugin's, not loaded, or a suite's, not installed)	ابزار آن اکنون در دسترس نیست (ابزار یک افزونه که بارگذاری نشده، یا یک مجموعه که نصب نشده)
 Jobs	کارها
 JOIN	JOIN
@@ -1609,7 +1609,7 @@ Legend	شرح
 Legend label. Clear it to show the value again.	برچسب راهنما. برای نمایش دوباره مقدار، آن را پاک کنید.
 Length {length} · gain {gain} · loss {loss}	طول {length} · افزایش {gain} · کاهش {loss}
 Let the assistant hand tasks to agents on this computer	اجازه بده دستیار کارها را به ایجنت‌های این رایانه بسپارد
-Let your Agents Control RustGIS	اجازه دهید ایجنت‌های شما RustGIS را کنترل کنند
+Let your Agents Control RustGIS	اجازه دهید ایجنت‌های شما ARutGIS را کنترل کنند
 Letter spacing	فاصله حروف
 Level	سطح
 Library	کتابخانه
@@ -1660,7 +1660,7 @@ List The National Map Services	فهرست سرویس‌های The National Map
 List the provider's models	فهرست مدل‌های ارائه‌دهنده
 List this layer in the legend	این لایه در راهنما فهرست شود
 List what it holds	فهرست محتویاتش
-Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	برای شناسایی فهرست شده: RustGIS هنوز این مجموعه داده را نمی‌خواند. داده و مقاله آن بالا پیوند شده‌اند.
+Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	برای شناسایی فهرست شده: ARutGIS هنوز این مجموعه داده را نمی‌خواند. داده و مقاله آن بالا پیوند شده‌اند.
 Listing…	در حال فهرست‌کردن…
 Lit	روشن‌شده
 Live summary of the features in view.	خلاصه زنده عناصر داخل نما.
@@ -1695,7 +1695,7 @@ Look for {name}, outlined on the ribbon.	ابزار {name} را پیدا کنی�
 Looking up the place…	در حال جستجوی مکان…
 Loop	حلقه
 Lower Priority	اولویت پایین‌تر
-Made in RustGIS: samples, drawings and tool outputs	ساخته‌شده در RustGIS: نمونه‌ها، ترسیم‌ها و خروجی ابزارها
+Made in RustGIS: samples, drawings and tool outputs	ساخته‌شده در ARutGIS: نمونه‌ها، ترسیم‌ها و خروجی ابزارها
 Magnifier	ذره‌بین
 Major Lakes	دریاچه‌های بزرگ
 Major Rivers	رودهای بزرگ
@@ -1927,7 +1927,7 @@ No COMID was returned for this point.	برای این نقطه هیچ COMIDای 
 no command	بدون دستور
 No data at the points picked.	در نقاط انتخاب‌شده داده‌ای نیست.
 No datasets match.	هیچ مجموعه داده‌ای مطابقت ندارد.
-No datasets with data RustGIS can add	هیچ مجموعه داده‌ای با داده قابل افزودن به RustGIS نیست
+No datasets with data RustGIS can add	هیچ مجموعه داده‌ای با داده قابل افزودن به ARutGIS نیست
 no date in the name	تاریخی در نام نیست
 No edits since the project was saved	از ذخیره پروژه ویرایشی نبوده است
 No features are selected in this layer.	هیچ عنصری در این لایه انتخاب نشده است.
@@ -1986,8 +1986,8 @@ North\nArrow	فلش\nشمال
 North Polar Stereographic	قطبی استریوگرافیک شمالی
 NOT	NOT
 not a picture	تصویر نیست
-not a RustGIS layout	صفحه‌آرایی RustGIS نیست
-not a RustGIS project	پروژه RustGIS نیست
+not a RustGIS layout	صفحه‌آرایی ARutGIS نیست
+not a RustGIS project	پروژه ARutGIS نیست
 Not applied yet.	هنوز اعمال نشده است.
 Not for texts: a text is edited in the Format pane.	برای متن‌ها نیست: متن در پنل Format ویرایش می‌شود.
 not needed	لازم نیست
@@ -2045,8 +2045,8 @@ Open a .rgis project	بازکردن یک پروژه .rgis
 open a layout first	اول یک صفحه‌آرایی باز کنید
 Open a model file (*.model.json)	بازکردن یک فایل مدل (*.model.json)
 Open a model of this project	بازکردن مدلی از این پروژه
-Open a RustGIS or Jupyter notebook.	بازکردن یک Notebook از RustGIS یا Jupyter.
-Open a RustGIS project.	بازکردن یک پروژه RustGIS.
+Open a RustGIS or Jupyter notebook.	بازکردن یک Notebook از ARutGIS یا Jupyter.
+Open a RustGIS project.	بازکردن یک پروژه ARutGIS.
 Open an offline area to edit.	بازکردن یک پهنه آفلاین برای ویرایش.
 Open browser again	بازکردن دوباره مرورگر
 Open Custom Template	بازکردن قالب سفارشی
@@ -2074,7 +2074,7 @@ Open the layer's attribute table.	بازکردن جدول ویژگی لایه.
 Open the layer's table.	بازکردن جدول لایه.
 Open the plugin's panel.	بازکردن پنل افزونه.
 Open the Release Page	بازکردن صفحه انتشار
-Open the RustGIS user guide.	بازکردن راهنمای کاربر RustGIS.
+Open the RustGIS user guide.	بازکردن راهنمای کاربر ARutGIS.
 Open the selected layer's table.	بازکردن جدول لایه انتخاب‌شده.
 Open the Symbology pane.	بازکردن پنل Symbology.
 Open the task's steps	بازکردن گام‌های تسک
@@ -2230,7 +2230,7 @@ Plugin registry	فهرست افزونه‌ها
 Plugins	افزونه‌ها
 Plugins are .rgplugin files. Install only plugins from people you trust.	افزونه‌ها فایل‌های .rgplugin هستند. فقط افزونه‌های افراد مورد اعتماد را نصب کنید.
 Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	افزونه‌های «بدون سندباکس» به‌جای آن، مثل یک برنامه روی رایانه شما اجرا می‌شوند و هر کاری را که شما می‌توانید، می‌کنند.
-Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	افزونه‌ها در سندباکس اجرا می‌شوند: به فایل‌ها یا شبکه شما دسترسی ندارند و پروژه را فقط از طریق دستورهای خود RustGIS و در محدوده مجوزهایی که می‌پذیرید تغییر می‌دهند.
+Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	افزونه‌ها در سندباکس اجرا می‌شوند: به فایل‌ها یا شبکه شما دسترسی ندارند و پروژه را فقط از طریق دستورهای خود ARutGIS و در محدوده مجوزهایی که می‌پذیرید تغییر می‌دهند.
 PMTiles archive	بایگانی PMTiles
 PNG frames (zip)	فریم‌های PNG (zip)
 PNG image	تصویر PNG
@@ -2299,7 +2299,7 @@ Project templates: start projects from a saved setup.	قالب‌های پروژ
 project's path is required	مسیر پروژه الزامی است
 Projection	تصویر نقشه
 Projections	تصویرها
-Projects (RustGIS, QGIS)	پروژه‌ها (RustGIS، QGIS)
+Projects (RustGIS, QGIS)	پروژه‌ها (ARutGIS، QGIS)
 Properties	ویژگی‌ها
 Property	ویژگی
 Proportional Symbols	نمادهای تناسبی
@@ -2355,7 +2355,7 @@ Read and write files on this computer	خواندن و نوشتن فایل‌ها
 Read the bands picked for the view (at most about 6 km a side)	خواندن باند انتخاب‌شده برای نما (حداکثر حدود 6 کیلومتر هر طرف)
 Read the map's layers and features	خواندن لایه‌ها و عناصر نقشه
 Read the points in the view, coloured by their principal components	خواندن نقاط داخل نما، رنگ‌آمیزی‌شده با مؤلفه‌های اصلی‌شان
-Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	خواندن فایل‌های یک گرانول به توکن ورود Earthdata نیاز دارد که برای همه DAACهای ناسا کار می‌کند. این توکن تا بسته‌شدن RustGIS نگه داشته می‌شود، هرگز داخل پروژه ذخیره نمی‌شود و فقط به سرورهای داده Earthdata ناسا فرستاده می‌شود.
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	خواندن فایل‌های یک گرانول به توکن ورود Earthdata نیاز دارد که برای همه DAACهای ناسا کار می‌کند. این توکن تا بسته‌شدن ARutGIS نگه داشته می‌شود، هرگز داخل پروژه ذخیره نمی‌شود و فقط به سرورهای داده Earthdata ناسا فرستاده می‌شود.
 Reading the catalog: {n} documents read, {m} items found…	در حال خواندن فهرست: {n} سند خوانده شد، {m} آیتم پیدا شد…
 Reading the catalog…	در حال خواندن فهرست…
 Reading the embeddings…	در حال خواندن Embeddings…
@@ -2516,30 +2516,30 @@ Run Tool	اجرای ابزار
 Run {name}	اجرای {name}
 Running the query for the map…	در حال اجرای پرس‌وجو برای نقشه…
 Running…	در حال اجرا…
-RustGIS	RustGIS
-RustGIS bookmarks	نشانک‌های RustGIS
-RustGIS could not confirm that any previously saved key was deleted from the system keychain.	RustGIS نتوانست تأیید کند که کلیدهای ذخیره‌شده قبلی از جاکلیدی سیستم حذف شده‌اند.
-RustGIS couldn't reach the server.	دسترسی RustGIS به سرور ممکن نشد.
-RustGIS deep learning package	بسته یادگیری عمیق RustGIS
-RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	دفعهٔ پیش RustGIS به‌درستی بسته نشد، بنابراین به‌جای پروژهٔ آغازین شما با اطلس جهانی شروع کرد. هر وقت آماده بودید، پروژه را از منوی Project باز کنید.
-RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	این ابزار در RustGIS موجود نیست. ابزارهایی را که از آن‌ها می‌آید نصب کنید، یا گره را حذف کنید.
-RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	یک GIS آزاد و متن‌باز که به Rust خالص نوشته شده است: RustGIS روی دسکتاپ و در مرورگر اجرا می‌شود و هر اقدام آن، دستوری است که می‌توانید از خط فرمان هم اجرا کنید.
-RustGIS layer file	فایل لایه RustGIS
-RustGIS layers, maps and projects	لایه‌ها، نقشه‌ها و پروژه‌های RustGIS
-RustGIS layout	صفحه‌آرایی RustGIS
-RustGIS maps and projects	نقشه‌ها و پروژه‌های RustGIS
-RustGIS model	مدل RustGIS
-RustGIS or Jupyter notebook	نوت‌بوک RustGIS یا Jupyter
-RustGIS plugin	افزونه RustGIS
-RustGIS presentation	ارائهٔ RustGIS
-RustGIS project	پروژه RustGIS
-RustGIS project template	قالب پروژه RustGIS
-RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	دفعهٔ پیش RustGIS به خطای داخلی خورد. جزئیات در {path} است؛ لطفاً آن را به گزارش اشکال ضمیمه کنید.
-RustGIS report or report template	گزارش یا قالب گزارش RustGIS
-RustGIS styles	استایل‌های RustGIS
-RustGIS task	تسک RustGIS
-RustGIS {latest} is available.	به‌روزرسانی RustGIS {latest} در دسترس است.
-RustGIS {version} is the latest version.	آخرین نسخه، RustGIS {version} است.
+RustGIS	ARutGIS
+RustGIS bookmarks	نشانک‌های ARutGIS
+RustGIS could not confirm that any previously saved key was deleted from the system keychain.	ARutGIS نتوانست تأیید کند که کلیدهای ذخیره‌شده قبلی از جاکلیدی سیستم حذف شده‌اند.
+RustGIS couldn't reach the server.	دسترسی ARutGIS به سرور ممکن نشد.
+RustGIS deep learning package	بسته یادگیری عمیق ARutGIS
+RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	دفعهٔ پیش ARutGIS به‌درستی بسته نشد، بنابراین به‌جای پروژهٔ آغازین شما با اطلس جهانی شروع کرد. هر وقت آماده بودید، پروژه را از منوی Project باز کنید.
+RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	این ابزار در ARutGIS موجود نیست. ابزارهایی را که از آن‌ها می‌آید نصب کنید، یا گره را حذف کنید.
+RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	یک GIS آزاد و متن‌باز که به Rust خالص نوشته شده است: ARutGIS روی دسکتاپ و در مرورگر اجرا می‌شود و هر اقدام آن، دستوری است که می‌توانید از خط فرمان هم اجرا کنید.
+RustGIS layer file	فایل لایه ARutGIS
+RustGIS layers, maps and projects	لایه‌ها، نقشه‌ها و پروژه‌های ARutGIS
+RustGIS layout	صفحه‌آرایی ARutGIS
+RustGIS maps and projects	نقشه‌ها و پروژه‌های ARutGIS
+RustGIS model	مدل ARutGIS
+RustGIS or Jupyter notebook	نوت‌بوک ARutGIS یا Jupyter
+RustGIS plugin	افزونه ARutGIS
+RustGIS presentation	ارائهٔ ARutGIS
+RustGIS project	پروژه ARutGIS
+RustGIS project template	قالب پروژه ARutGIS
+RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	دفعهٔ پیش ARutGIS به خطای داخلی خورد. جزئیات در {path} است؛ لطفاً آن را به گزارش اشکال ضمیمه کنید.
+RustGIS report or report template	گزارش یا قالب گزارش ARutGIS
+RustGIS styles	استایل‌های ARutGIS
+RustGIS task	تسک ARutGIS
+RustGIS {latest} is available.	به‌روزرسانی ARutGIS {latest} در دسترس است.
+RustGIS {version} is the latest version.	آخرین نسخه، ARutGIS {version} است.
 RUSTGIS_ASSISTANT_MODEL	RUSTGIS_ASSISTANT_MODEL
 RUSTGIS_ASSISTANT_PROVIDER	RUSTGIS_ASSISTANT_PROVIDER
 RUSTGIS_GPU	RUSTGIS_GPU
@@ -2548,7 +2548,7 @@ S3 Buckets	باکت‌های S3
 S3 Connections	اتصال‌های S3
 S3…	S3…
 Sample data (Natural Earth)	داده نمونه (Natural Earth)
-Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	داده نمونه © Natural Earth (مالکیت عمومی). RustGIS با مجوز Apache-2.0 منتشر شده است.
+Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	داده نمونه © Natural Earth (مالکیت عمومی). ARutGIS با مجوز Apache-2.0 منتشر شده است.
 Sample data: Natural Earth (public domain). Licensed under Apache-2.0.	داده نمونه: Natural Earth (مالکیت عمومی). با مجوز Apache-2.0.
 Sans-serif	بدون سریف
 Satellite Embedding Datasets	مجموعه داده Embedding ماهواره‌ای
@@ -2677,7 +2677,7 @@ Sections	بخش‌ها
 See and set the camera's position and scale.	دیدن و تنظیم موقعیت و مقیاس دوربین.
 See the map as people with colour vision deficiencies do.	دیدن نقشه همان‌طور که افراد با اختلال دید رنگی می‌بینند.
 See the tools you've run.	دیدن ابزارهایی که اجرا کرده‌اید.
-See whether a newer RustGIS has been released.	ببینید آیا RustGIS تازه‌تری منتشر شده است.
+See whether a newer RustGIS has been released.	ببینید آیا ARutGIS تازه‌تری منتشر شده است.
 SELECT	SELECT
 Select	انتخاب
 Select (click)	انتخاب (کلیک)
@@ -2843,7 +2843,7 @@ Sign-in	ورود
 Sign-in cancelled.	ورود لغو شد.
 Sign-in timed out. Start again and allow the browser to reach this computer's loopback address.	ورود با وقفه زمانی مواجه شد. دوباره شروع کنید و اجازه دهید مرورگر به نشانی loopback این رایانه دسترسی داشته باشد.
 signed in	وارد شده
-Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	روی این رایانه خارج شدید، ولی OpenAI آن را تأیید نکرد. می‌توانید RustGIS را در تنظیمات ChatGPT قطع کنید.
+Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	روی این رایانه خارج شدید، ولی OpenAI آن را تأیید نکرد. می‌توانید ARutGIS را در تنظیمات ChatGPT قطع کنید.
 Significance level	سطح معناداری
 Signing in with ChatGPT works in the desktop app.	ورود با ChatGPT در برنامه دسکتاپ کار می‌کند.
 Signing the asset (Planetary Computer)…	در حال امضای asset (Planetary Computer)…
@@ -3067,7 +3067,7 @@ The connection failed; trying again in {seconds} s.	اتصال ناموفق بو
 the connection has no id	اتصال شناسه ندارد
 The country list couldn't be read ({e}): type a country's code	فهرست کشورها خوانده نشد ({e}): کد یک کشور را بنویسید
 The current elevation stays in effect while you edit inputs. Click Apply elevation to apply the value and units.	ارتفاع فعلی هنگام ویرایش ورودی‌ها برقرار می‌ماند. برای اعمال مقدار و واحدها روی «اعمال ارتفاع» کلیک کنید.
-The dataset has nothing RustGIS can add	این مجموعه داده چیزی برای افزودن به RustGIS ندارد
+The dataset has nothing RustGIS can add	این مجموعه داده چیزی برای افزودن به ARutGIS ندارد
 The environment (AWS_ACCESS_KEY_ID…)	محیط (AWS_ACCESS_KEY_ID…)
 The features where the map is	عنصرهای موجود در محل نقشه
 The first 1,000 entries; narrow it down a folder at a time.	هزار ورودی اول؛ هر بار یک پوشه محدودش کنید.
@@ -3088,10 +3088,10 @@ The layer's file couldn't be read: {error}	فایل لایه خوانده نشد
 The layer's strokes	ضربه‌های لایه
 the layout export failed unexpectedly	برون‌بری صفحه‌آرایی به‌طور غیرمنتظره‌ای ناموفق شد
 The link doesn't say its STAC API: Find Items searches {api}	پیوند، API STAC خودش را نگفته: Find Items در {api} جستجو می‌کند
-The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	فهرست افزونه‌ها برای مرور. برای فهرست افزونه RustGIS، خالی بگذارید.
+The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	فهرست افزونه‌ها برای مرور. برای فهرست افزونه ARutGIS، خالی بگذارید.
 the map has no layers	نقشه لایه‌ای ندارد
 The map is drawn in this coordinate system; layers are projected on the fly.	نقشه در این سیستم مختصات ترسیم می‌شود؛ لایه‌ها به‌صورت لحظه‌ای تصویر می‌شوند.
-the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	نقشه در صفحه RustGIS نیست (صفحه‌آرایی یا فهرست نمایش داده می‌شود)، پس بیرون از دید ترسیم شد
+the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	نقشه در صفحه ARutGIS نیست (صفحه‌آرایی یا فهرست نمایش داده می‌شود)، پس بیرون از دید ترسیم شد
 The map view as it is now	نمای نقشه، همان‌طور که الان است
 The map's extent isn't known yet	گستره نقشه هنوز معلوم نیست
 The map's view takes {n} of Overture's {ty} files (up to {max}): zoom in, or add the theme as map tiles	نمای نقشه {n} فایل {ty} اوورت را می‌گیرد (تا {max}): بزرگ‌نمایی کنید، یا تم را به‌عنوان کاشی نقشه اضافه کنید
@@ -3146,7 +3146,7 @@ The sign-in expired or was revoked. Sign in again.	ورود منقضی یا با
 The sign-in is kept in the app's settings folder, for your user account only, and never in a project file.	اطلاعات ورود در پوشه تنظیمات برنامه نگه‌داری می‌شود، فقط برای حساب کاربری شما، و هرگز در فایل پروژه ذخیره نمی‌شود.
 The significance level is a number, such as 0.05	سطح معناداری یک عدد است، مانند 0.05
 The start-up project {path} didn't open: {error}	پروژه آغازین {path} باز نشد: {error}
-The start-up project {path} isn't a RustGIS project file.	پروژه آغازین {path} یک فایل پروژه RustGIS نیست.
+The start-up project {path} isn't a RustGIS project file.	پروژه آغازین {path} یک فایل پروژه ARutGIS نیست.
 The step's layer {name} isn't in the map.	لایه گام، یعنی {name}، در نقشه نیست.
 The store has no variables with two or more dimensions.	مخزن هیچ متغیری با دو بعد یا بیشتر ندارد.
 the store is gone	مخزن از دست رفته است
@@ -3189,7 +3189,7 @@ This map has no layers yet.	این نقشه هنوز لایه‌ای ندارد.
 This map's thumbnail, from an image.	تصویر بندانگشتی این نقشه، از یک تصویر.
 This map's thumbnail, from the view.	تصویر بندانگشتی این نقشه، از نما.
 This plugin can:	این افزونه می‌تواند:
-This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	این افزونه مثل یک برنامه روی رایانه شما، بیرون از سندباکس RustGIS اجرا می‌شود. هر کاری را که شما می‌توانید می‌کند: خواندن و تغییر فایل‌هایتان، استفاده از شبکه و اجرای برنامه‌های دیگر. فقط اگر به نویسنده‌اش اعتماد دارید نصبش کنید.
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	این افزونه مثل یک برنامه روی رایانه شما، بیرون از سندباکس ARutGIS اجرا می‌شود. هر کاری را که شما می‌توانید می‌کند: خواندن و تغییر فایل‌هایتان، استفاده از شبکه و اجرای برنامه‌های دیگر. فقط اگر به نویسنده‌اش اعتماد دارید نصبش کنید.
 This request has no one-time allow option.	این درخواست گزینه اجازه یک‌باره ندارد.
 This request uses an unsupported capability. Check the parameter and change the request.	این درخواست از قابلیتی پشتیبانی‌نشده استفاده می‌کند. پارامتر را بررسی کنید و درخواست را تغییر دهید.
 This result is kept	این نتیجه نگه داشته می‌شود
@@ -3303,7 +3303,7 @@ Units	واحدها
 Units per step	واحد در هر گام
 unknown (an older project)	نامشخص (یک پروژه قدیمی‌تر)
 UNKNOWN TOOL	ابزار ناشناخته
-Unload the GeoLibre tools and stop loading them when RustGIS starts.	تخلیه ابزارهای GeoLibre و توقف بارگذاری‌شان هنگام راه‌اندازی RustGIS.
+Unload the GeoLibre tools and stop loading them when RustGIS starts.	تخلیه ابزارهای GeoLibre و توقف بارگذاری‌شان هنگام راه‌اندازی ARutGIS.
 Unsaved changes	تغییرات ذخیره‌نشده
 Unsupervised classes (k-means)	طبقه‌های بدون نظارت (k-means)
 Unsupervised classes (k-means).	طبقه‌های بدون نظارت (k-means).
@@ -3425,13 +3425,13 @@ Web Tool	ابزار وب
 Website	وب‌سایت
 Weekly usage	مصرف هفتگی
 Weights	وزن‌ها
-Welcome to RustGIS	به RustGIS خوش آمدید
+Welcome to RustGIS	به ARutGIS خوش آمدید
 West	غرب
 WFS	WFS
 WGS 84 / Globe	کره (WGS 84)
 WGS 84 / Web Mercator	مرکاتور وب (WGS 84)
-What RustGIS opens with: the World Atlas sample or a blank map.	شروع RustGIS با چه چیزی باشد: نمونهٔ اطلس جهانی یا یک نقشهٔ خالی.
-What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	شروع RustGIS با چه چیزی باشد: نمونهٔ اطلس جهانی، یک نقشهٔ خالی، پروژه‌ای که خودتان انتخاب می‌کنید، یا آخرین پروژهٔ باز یا ذخیره‌شده.
+What RustGIS opens with: the World Atlas sample or a blank map.	شروع ARutGIS با چه چیزی باشد: نمونهٔ اطلس جهانی یا یک نقشهٔ خالی.
+What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	شروع ARutGIS با چه چیزی باشد: نمونهٔ اطلس جهانی، یک نقشهٔ خالی، پروژه‌ای که خودتان انتخاب می‌کنید، یا آخرین پروژهٔ باز یا ذخیره‌شده.
 What to do, where to find it and why	چه کاری انجام شود، کجا پیدایش کنید و چرا
 What's near a point	چه چیزهایی نزدیک یک نقطه است
 WHERE	WHERE
