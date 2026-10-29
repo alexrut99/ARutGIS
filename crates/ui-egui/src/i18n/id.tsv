@@ -3576,3 +3576,4 @@ Saves the layer's edits to its table in one transaction. When a row you changed 
 Loads the layer's rows again as they are in the database now. Its edits that weren't saved are dropped (Undo brings them back).	Memuat ulang baris layer sesuai isi database saat ini. Edit yang belum disimpan dibuang (Undo bisa mengembalikannya).
 Connect PostGIS	Hubungkan PostGIS
 Add PostGIS Layer	Tambah Layer PostGIS
+Developed from	Dikembangkan dari

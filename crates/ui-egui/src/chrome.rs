@@ -1071,13 +1071,14 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
     }
 }
 
-/// The project's website and source code, opened in a new tab in the browser build so the app
-/// (and its map) stays open.
+/// ARutGIS's source code, and RustGIS, the project it is developed from, opened in a new tab in
+/// the browser build so the app (and its map) stays open.
 pub(crate) fn project_links(ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
-        ui.add(egui::Hyperlink::from_label_and_url(tl!("Website"), "https://rustgis.app").open_in_new_tab(true));
+        ui.add(egui::Hyperlink::from_label_and_url(tl!("GitHub"), "https://github.com/alexrut99/ARustGIS").open_in_new_tab(true));
         ui.label("·");
-        ui.add(egui::Hyperlink::from_label_and_url(tl!("GitHub"), "https://github.com/opengeos/RustGIS").open_in_new_tab(true));
+        ui.label(egui::RichText::new(tl!("Developed from")).weak());
+        ui.add(egui::Hyperlink::from_label_and_url("RustGIS (Qiusheng Wu)", "https://github.com/opengeos/RustGIS").open_in_new_tab(true));
     });
 }
 

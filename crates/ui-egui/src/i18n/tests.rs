@@ -54,9 +54,10 @@ fn bengali_registration_and_fallback() {
 
 #[test]
 fn the_interface_calls_the_app_arutgis() {
+    // In logical order: Persian's display form has its Latin runs reversed.
     for lang in Lang::all() {
-        assert!(tr(lang, "RustGIS").contains("ARutGIS"), "{}", lang.code());
-        let about = tr(lang, "About RustGIS");
+        assert!(tr_raw(lang, "RustGIS").contains("ARutGIS"), "{}", lang.code());
+        let about = tr_raw(lang, "About RustGIS");
         assert!(about.contains("ARutGIS") && !about.contains("RustGIS project"), "{}: {about}", lang.code());
     }
     assert_eq!(tr(Lang::EN, "About RustGIS"), "About ARutGIS");
