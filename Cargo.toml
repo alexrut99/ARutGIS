@@ -52,6 +52,9 @@ bytemuck = { version = "1", features = ["derive"] }
 lyon = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 ab_glyph = "0.2"
+# Thai text in exports shaped as the map view (egui) shapes it: tone marks stacked over the vowels
+# written above, and moved clear of tall consonants. Already in the tree through egui.
+harfrust = "0.12"
 # A label curved along a line: its text cut into the characters drawn as one (a letter with its
 # accents).
 unicode-segmentation = "1.13"

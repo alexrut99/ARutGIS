@@ -7,7 +7,7 @@ fn original_measure(text: &str, size: f32, bold: bool) -> f32 {
     let Some(f) = font(bold) else {
         return text.chars().count() as f32 * size * 0.6;
     };
-    shape(text, size * 1.33, f, None).1
+    shape(text, size * 1.33, f, None, bold).1
 }
 
 /// Compares cold and warm widths bit for bit across scripts, missing glyphs, kerning and sizes.

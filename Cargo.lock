@@ -4875,6 +4875,7 @@ dependencies = [
  "base64 0.23.1",
  "bytemuck",
  "epaint_default_fonts",
+ "harfrust",
  "image",
  "log",
  "lyon",

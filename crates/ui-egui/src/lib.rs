@@ -1212,6 +1212,28 @@ impl RustGisApp {
         }
     }
 
+    /// On the desktop, an installed Thai face as a fallback, so Thai text (place names and
+    /// attributes in data, labels on the map) renders whatever the interface language: the
+    /// interface faces have no Thai letters. Its bold, where the family has one, draws the
+    /// semibold text ([`theme::THAI_BOLD`]). The bytes are borrowed from the font cache, not
+    /// copied.
+    fn add_thai_fallback(&mut self) {
+        use rustgis_engine::render::fonts::thai_font;
+        let (Some(regular), bold) = (thai_font(false), thai_font(true)) else { return };
+        let bold = bold.filter(|b| !std::ptr::eq(*b, regular));
+        // The bold first: the semibold family takes both, and the first one that has a glyph wins.
+        for (name, found) in [(theme::THAI_BOLD, bold), ("thai-fallback", Some(regular))] {
+            if self.extra_fonts.iter().any(|(n, _, _)| n == name) {
+                continue;
+            }
+            if let Some((bytes, index)) = found {
+                let mut face = egui::FontData::from_static(bytes);
+                face.index = *index;
+                self.extra_fonts.push((name.into(), std::sync::Arc::new(face), None));
+            }
+        }
+    }
+
     /// On the desktop, an installed symbol face as a last-resort fallback, so marks the interface
     /// faces lack (Segoe UI has no "✓") don't draw as boxes. The bytes are borrowed from the font
     /// cache, not copied.
@@ -3878,6 +3900,7 @@ impl RustGisApp {
         }
         if self.fonts_frames == 0 {
             self.add_cjk_fallback();
+            self.add_thai_fallback();
             self.add_symbol_fallback();
             self.installed_region = self.current_region();
             theme::install_fonts(ctx, &self.extra_fonts, self.installed_region);

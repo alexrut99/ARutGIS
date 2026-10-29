@@ -132,6 +132,10 @@ pub fn semibold(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("semibold".into()))
 }
 
+/// The name of the installed Thai family's bold face among the extra fonts: it draws the
+/// semibold text only, ahead of its regular.
+pub(crate) const THAI_BOLD: &str = "thai-fallback-bold";
+
 /// Installs the interface fonts: an installed system sans-serif when available, then `extra`
 /// faces (name, bytes, collection index) as fallbacks for scripts it lacks, such as CJK.
 pub fn install_fonts(
@@ -163,8 +167,15 @@ pub fn install_fonts(
         // Arabic script goes ahead of the interface face: egui shapes each run of one face on its
         // own, so a Persian line reads in order only when this face draws its Latin words too.
         let first = primary && *region == Some(rustgis_engine::render::fonts::ScriptFont::Arabic);
-        for fam in [FontFamily::Proportional, FontFamily::Name("semibold".into())] {
-            if let Some(v) = fonts.families.get_mut(&fam) {
+        // A bold fallback draws semibold text only.
+        let bold_only = name == THAI_BOLD;
+        let families: &[FontFamily] = if bold_only {
+            &[FontFamily::Name("semibold".into())]
+        } else {
+            &[FontFamily::Proportional, FontFamily::Name("semibold".into())]
+        };
+        for fam in families {
+            if let Some(v) = fonts.families.get_mut(fam) {
                 if first {
                     v.insert(0, name.clone());
                 } else if primary {
@@ -177,7 +188,7 @@ pub fn install_fonts(
         }
         // Monospace text (the status bar's bearing and pitch, code boxes) falls back to them too,
         // after Hack, so translated or CJK text in it doesn't draw as boxes.
-        if let Some(v) = fonts.families.get_mut(&FontFamily::Monospace) {
+        if let Some(v) = fonts.families.get_mut(&FontFamily::Monospace).filter(|_| !bold_only) {
             v.push(name.clone());
         }
     }

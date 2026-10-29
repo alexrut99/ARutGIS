@@ -186,10 +186,30 @@ fn cjk_order(c: char) -> [CjkRegion; 3] {
     }
 }
 
+/// An installed Thai face of `bold`'s weight, parsed once; `None` when there is none (or on the
+/// web).
+fn thai(bold: bool) -> Option<&'static FontRef<'static>> {
+    static FACES: [OnceLock<Option<FontRef<'static>>>; 2] = [OnceLock::new(), OnceLock::new()];
+    FACES[usize::from(bold)]
+        .get_or_init(|| crate::fonts::thai_font(bold).and_then(|(b, i)| FontRef::try_from_slice_and_index(b, *i).ok()))
+        .as_ref()
+}
+
+/// Whether `c` is in the Thai block.
+fn is_thai(c: char) -> bool {
+    matches!(c, '\u{0E00}'..='\u{0E7F}')
+}
+
 /// The face and glyph that draw `c`: `f` when it has the glyph, else `sans` (the label font a
-/// serif text falls back to: an arrow or a script the serif lacks), else the first installed CJK
-/// font that does. `None` when nothing covers it, so no missing-glyph box is drawn.
-fn glyph(c: char, f: &'static FontRef<'static>, sans: Option<&'static FontRef<'static>>) -> Option<(&'static FontRef<'static>, GlyphId)> {
+/// serif text falls back to: an arrow or a script the serif lacks), else the installed Thai face
+/// of `bold`'s weight for a Thai character, else the first installed CJK font that does. `None`
+/// when nothing covers it, so no missing-glyph box is drawn.
+fn glyph(
+    c: char,
+    f: &'static FontRef<'static>,
+    sans: Option<&'static FontRef<'static>>,
+    bold: bool,
+) -> Option<(&'static FontRef<'static>, GlyphId)> {
     let id = f.glyph_id(c);
     if id.0 != 0 || invisible(c) {
         return (id.0 != 0).then_some((f, id));
@@ -198,6 +218,14 @@ fn glyph(c: char, f: &'static FontRef<'static>, sans: Option<&'static FontRef<'s
         let id = s.glyph_id(c);
         if id.0 != 0 {
             return Some((s, id));
+        }
+    }
+    if is_thai(c)
+        && let Some(t) = thai(bold)
+    {
+        let id = t.glyph_id(c);
+        if id.0 != 0 {
+            return Some((t, id));
         }
     }
     cjk_order(c).into_iter().filter_map(cjk).find_map(|f| {
@@ -210,34 +238,113 @@ fn glyph(c: char, f: &'static FontRef<'static>, sans: Option<&'static FontRef<'s
 /// every character of `text`, invisible characters aside.
 pub fn covers(text: &str, bold: bool) -> bool {
     let Some(f) = font(bold) else { return true };
-    text.chars().all(|c| invisible(c) || glyph(c, f, None).is_some())
+    text.chars().all(|c| invisible(c) || glyph(c, f, None, bold).is_some())
 }
 
-/// Lays out `text` at `px` pixels in `face` (with `sans` for the characters it lacks, as
-/// [`glyph`] takes them): each drawable glyph with its face and pen position (from 0), and the
-/// total advance. Characters no font covers are left out.
-fn shape(
-    text: &str,
-    px: f32,
-    face: &'static FontRef<'static>,
-    sans: Option<&'static FontRef<'static>>,
-) -> (Vec<(&'static FontRef<'static>, GlyphId, f32)>, f32) {
-    let mut out = Vec::new();
+/// A glyph laid out by [`shape`]: its face, its pen position from the line's start (`y` down from
+/// the baseline, for a mark moved up or down), and the letter it belongs to (a Thai vowel or tone
+/// mark belongs to its consonant's), so letter spacing goes between letters, not inside one.
+#[derive(Clone, Copy, Debug)]
+struct Placed {
+    f: &'static FontRef<'static>,
+    id: GlyphId,
+    x: f32,
+    y: f32,
+    letter: usize,
+}
+
+/// Lays out `text` at `px` pixels in `face` (with `sans` for the characters it lacks, and the
+/// fallbacks of `bold`'s weight, as [`glyph`] takes them): each drawable glyph, and the total
+/// advance. A run of Thai drawn in the installed Thai face is shaped ([`thai_run`]); characters
+/// no font covers are left out.
+fn shape(text: &str, px: f32, face: &'static FontRef<'static>, sans: Option<&'static FontRef<'static>>, bold: bool) -> (Vec<Placed>, f32) {
+    let mut out: Vec<Placed> = Vec::new();
     let mut x = 0.0;
+    let mut letter = 0;
     let mut prev: Option<(&'static FontRef<'static>, GlyphId)> = None;
-    for ch in text.chars().take(500) {
-        let Some((f, id)) = glyph(ch, face, sans) else { continue };
+    let thai_face = thai(bold);
+    let chars: Vec<(usize, char)> = text.char_indices().take(500).collect();
+    let mut i = 0;
+    while let Some(&(at, ch)) = chars.get(i) {
+        i += 1;
+        let Some((f, id)) = glyph(ch, face, sans, bold) else { continue };
+        if let Some(t) = thai_face.filter(|t| is_thai(ch) && std::ptr::eq(*t, f)) {
+            // The run: this character and the Thai ones after it that the Thai face draws too.
+            let mut end = i;
+            while chars.get(end).is_some_and(|&(_, c)| is_thai(c) && glyph(c, face, sans, bold).is_some_and(|(g, _)| std::ptr::eq(g, t))) {
+                end += 1;
+            }
+            let stop = chars.get(end).map_or(text.len(), |&(b, _)| b);
+            if let Some(run) = text.get(at..stop).and_then(|run| thai_run(run, t, bold, px)) {
+                for (id, dx, dy, advance) in run {
+                    // A glyph that doesn't advance (a vowel or tone mark) is part of the letter before.
+                    let first = out.is_empty();
+                    if advance != 0.0 && !first {
+                        letter += 1;
+                    }
+                    out.push(Placed { f: t, id, x: x + dx, y: dy, letter });
+                    x += advance;
+                }
+                i = end;
+                prev = None;
+                continue;
+            }
+        }
         let sf = f.as_scaled(em(f, px));
         if let Some((pf, pid)) = prev
             && std::ptr::eq(pf, f)
         {
             x += sf.kern(pid, id);
         }
-        out.push((f, id, x));
+        if !out.is_empty() {
+            letter += 1;
+        }
+        out.push(Placed { f, id, x, y: 0.0, letter });
         x += sf.h_advance(id);
         prev = Some((f, id));
     }
     (out, x)
+}
+
+/// The installed Thai face of `bold`'s weight as the shaper reads it, with its parsed layout
+/// tables, built once.
+fn thai_shaper(bold: bool) -> Option<&'static (harfrust::FontRef<'static>, harfrust::ShaperData)> {
+    static SHAPERS: [OnceLock<Option<(harfrust::FontRef<'static>, harfrust::ShaperData)>>; 2] = [OnceLock::new(), OnceLock::new()];
+    SHAPERS[usize::from(bold)]
+        .get_or_init(|| {
+            let (bytes, index) = crate::fonts::thai_font(bold)?;
+            let font = harfrust::FontRef::from_index(bytes, *index).ok()?;
+            let data = harfrust::ShaperData::new(&font);
+            Some((font, data))
+        })
+        .as_ref()
+}
+
+/// `run`, Thai text the installed Thai face `t` draws, shaped at `px` as the map view shapes it
+/// (the face's own rules stack a tone mark over a vowel written above and move marks clear of a
+/// tall consonant, which drawing each character on its own doesn't): each glyph with its offset
+/// from the pen (`y` down) and the pen's advance after it, in pixels. `None` when the face can't be
+/// shaped, so the run is drawn a character at a time.
+fn thai_run(run: &str, t: &'static FontRef<'static>, bold: bool, px: f32) -> Option<Vec<(GlyphId, f32, f32, f32)>> {
+    let (font, data) = thai_shaper(bold)?;
+    let shaper = data.shaper(font).build();
+    let mut buffer = harfrust::UnicodeBuffer::new();
+    buffer.push_str(run);
+    buffer.guess_segment_properties();
+    let shaped = shaper.shape(buffer, harfrust::ShapeOptions::new());
+    let sf = t.as_scaled(em(t, px));
+    let (kx, ky) = (sf.h_scale_factor(), sf.v_scale_factor());
+    let glyphs = shaped
+        .glyph_infos()
+        .iter()
+        .zip(shaped.glyph_positions())
+        .filter_map(|(info, pos)| {
+            let id = GlyphId(u16::try_from(info.glyph_id).ok()?);
+            // The shaper's y is up; the pixmap's is down.
+            Some((id, pos.x_offset as f32 * kx, -(pos.y_offset as f32) * ky, pos.x_advance as f32 * kx))
+        })
+        .collect();
+    Some(glyphs)
 }
 
 /// Most lines a label draws: its text comes from files and attributes.
@@ -268,7 +375,7 @@ fn measure_uncached(text: &str, size: f32, bold: bool) -> f32 {
     let Some(f) = font(bold) else {
         return text.chars().count() as f32 * size * 0.6;
     };
-    shape(text, size * 1.33, f, None).1
+    shape(text, size * 1.33, f, None, bold).1
 }
 
 /// [`measure`] in `face`: a label in a named family is as wide as that family draws it.
@@ -284,7 +391,7 @@ pub fn measure_in(text: &str, size: f32, face: Face) -> f32 {
         let Some((f, _)) = face_font(face) else {
             return text.chars().count() as f32 * size * 0.6;
         };
-        shape(text, size * 1.33, f, sans_beside(f, face)).1
+        shape(text, size * 1.33, f, sans_beside(f, face), face.bold).1
     })
 }
 
@@ -412,7 +519,7 @@ fn letters_of(line: &str, face: Face) -> usize {
         return *n;
     }
     let n = match face_font(face) {
-        Some((f, _)) => shape(line, 12.0, f, sans_beside(f, face)).0.len(),
+        Some((f, _)) => shape(line, 12.0, f, sans_beside(f, face), face.bold).0.last().map_or(0, |g| g.letter + 1),
         None => line.chars().count(),
     };
     let mut kept = kept.lock().unwrap_or_else(|e| e.into_inner());
@@ -504,11 +611,11 @@ fn blend(pm: &mut Pixmap, x: i32, y: i32, c: Rgba, cov: f32) {
 fn draw_text(pm: &mut Pixmap, text: &str, cx: f32, cy: f32, px_size: f32, color: Rgba, bold: bool, offset: (f32, f32)) {
     let Some(f) = font(bold) else { return };
     let sf = f.as_scaled(em(f, px_size));
-    let (glyphs, width) = shape(text, px_size, f, None);
+    let (glyphs, width) = shape(text, px_size, f, None, bold);
     let x0 = cx - width / 2.0 + offset.0;
     let base = cy + (sf.ascent() + sf.descent()) / 2.0 + offset.1;
-    for (f, id, x) in glyphs {
-        let g = id.with_scale_and_position(em(f, px_size), ab_glyph::point(x0 + x, base));
+    for Placed { f, id, x, y, .. } in glyphs {
+        let g = id.with_scale_and_position(em(f, px_size), ab_glyph::point(x0 + x, base + y));
         if let Some(og) = f.outline_glyph(g) {
             let bb = og.px_bounds();
             og.draw(|gx, gy, cov| blend(pm, bb.min.x as i32 + gx as i32, bb.min.y as i32 + gy as i32, color, cov));
@@ -527,12 +634,12 @@ pub fn styled_extent(text: &str, px: f32, face: Face, spacing: f32) -> (f32, f32
     let Some((f, slanted)) = face_font(face) else { return (0.0, 0.0) };
     let sf = f.as_scaled(em(f, px));
     let base = (sf.ascent() + sf.descent()) / 2.0;
-    let (glyphs, _) = shape(text, px, f, sans_beside(f, face));
+    let (glyphs, _) = shape(text, px, f, sans_beside(f, face), face.bold);
     let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
-    for (i, (gf, id, x)) in glyphs.into_iter().enumerate() {
+    for Placed { f: gf, id, x, y, letter } in glyphs {
         // Measured as `styled_at` draws it.
         let italic = leans(face, f, slanted, gf);
-        let g = id.with_scale_and_position(em(gf, px), ab_glyph::point(x + spacing * i as f32, base));
+        let g = id.with_scale_and_position(em(gf, px), ab_glyph::point(x + spacing * letter as f32, base + y));
         let Some(og) = gf.outline_glyph(g) else { continue };
         let bb = og.px_bounds();
         let (lean_top, lean_bottom) = if italic { (SLANT * (base - bb.min.y), SLANT * (base - bb.max.y)) } else { (0.0, 0.0) };
@@ -553,10 +660,10 @@ pub fn styled_at(pm: &mut Pixmap, text: &str, left: f32, cy: f32, px: f32, color
     let Some((f, slanted)) = face_font(face) else { return };
     let sf = f.as_scaled(em(f, px));
     let base = cy + (sf.ascent() + sf.descent()) / 2.0;
-    let (glyphs, _) = shape(text, px, f, sans_beside(f, face));
-    for (i, (gf, id, x)) in glyphs.into_iter().enumerate() {
+    let (glyphs, _) = shape(text, px, f, sans_beside(f, face), face.bold);
+    for Placed { f: gf, id, x, y, letter } in glyphs {
         let italic = leans(face, f, slanted, gf);
-        let g = id.with_scale_and_position(em(gf, px), ab_glyph::point(left + x + spacing * i as f32, base));
+        let g = id.with_scale_and_position(em(gf, px), ab_glyph::point(left + x + spacing * letter as f32, base + y));
         let Some(og) = gf.outline_glyph(g) else { continue };
         let bb = og.px_bounds();
         if italic {
@@ -1140,6 +1247,40 @@ mod coverage_tests {
         assert!(pm.pixels().iter().any(|p| p.alpha() > 0), "the fallback glyph was not drawn");
     }
 
+    /// Thai text is drawn in an installed Thai face, shaped: a tone mark over a vowel written
+    /// above sits higher than one over a bare consonant, rather than on top of the vowel, and
+    /// letter spacing keeps the marks on their consonant.
+    #[test]
+    fn thai_is_drawn_in_an_installed_thai_face_and_shaped() {
+        use super::{Face, font, shape, thai};
+        // Only meaningful on a computer with a Thai font (Windows has Leelawadee UI and Tahoma).
+        let (Some(label), Some(t)) = (font(false), thai(false)) else { return };
+        for bold in [false, true] {
+            assert!(super::covers("กรุงเทพมหานคร", bold));
+            assert!(super::covers("Bangkok กรุงเทพฯ 2567", bold));
+        }
+        // Thai takes room, so a Thai label is measured and centred correctly.
+        assert!(super::measure("เชียงใหม่", 10.0, false) > 20.0);
+        // The tone mark's top, in "ที่" (over the vowel ี) and in "ท่" (over the consonant).
+        let tone_top = |text: &str| {
+            let (glyphs, _) = shape(text, 40.0, label, None, false);
+            assert!(glyphs.iter().all(|g| std::ptr::eq(g.f, t)), "{text} drawn in the Thai face");
+            let g = glyphs.last().unwrap();
+            let og = g.f.outline_glyph(g.id.with_scale_and_position(40.0, ab_glyph::point(g.x, 50.0 + g.y))).unwrap();
+            og.px_bounds().min.y
+        };
+        use ab_glyph::Font;
+        assert!(tone_top("ที่") < tone_top("ท่") - 2.0, "the tone mark stacks over the vowel");
+        // The vowel and tone mark belong to the consonant's letter.
+        let (glyphs, _) = shape("ปี่ปา", 40.0, label, None, false);
+        assert_eq!(glyphs.iter().map(|g| g.letter).collect::<Vec<_>>().last(), Some(&2));
+        assert_eq!(super::letters_of("ปี่ปา", Face::default()), 3);
+        // And it is drawn.
+        let mut pm = tiny_skia::Pixmap::new(200, 60).unwrap();
+        super::styled_at(&mut pm, "ญี่ปุ่น", 4.0, 30.0, 32.0, rustgis_map::Rgba::rgb(0, 0, 0), Face::default(), 0.0);
+        assert!(pm.pixels().iter().any(|p| p.alpha() > 0), "the Thai glyphs were not drawn");
+    }
+
     /// A text asking for a serif (#517) where none is installed is drawn in the label font, slanted
     /// as before for italic: nothing goes blank, and the result is the same on every machine.
     #[test]
@@ -1176,8 +1317,8 @@ mod coverage_tests {
         // A character the serif lacks and the sans has: drawn from the sans.
         let sans = italic;
         let c = ('\u{100}'..='\u{2FFF}').find(|&c| regular.glyph_id(c).0 == 0 && sans.glyph_id(c).0 != 0).expect("a character Hack lacks");
-        let (glyphs, _) = shape(&format!("a{c}"), 24.0, regular, Some(sans));
-        assert!(glyphs.len() == 2 && std::ptr::eq(glyphs[1].0, sans), "{c:?} left out");
+        let (glyphs, _) = shape(&format!("a{c}"), 24.0, regular, Some(sans), false);
+        assert!(glyphs.len() == 2 && std::ptr::eq(glyphs[1].f, sans), "{c:?} left out");
         // In a real italic, a glyph from another face leans; the italic's own don't.
         let it = Face { italic: true, serif: true, ..Face::default() };
         assert!(!leans(it, italic, false, italic) && leans(it, italic, false, regular));
@@ -1201,7 +1342,7 @@ mod coverage_tests {
             serif: false,
         };
         let (f, slanted) = family_font(&fam, Face::default()).unwrap();
-        assert_eq!(shape("iiii", 20.0, f, None).1, shape("MMMM", 20.0, f, None).1);
+        assert_eq!(shape("iiii", 20.0, f, None, false).1, shape("MMMM", 20.0, f, None, false).1);
         assert!(std::ptr::eq(f, family_font(&fam, Face::default()).unwrap().0), "parsed once");
         assert!(!slanted && family_font(&fam, Face { italic: true, ..Face::default() }).unwrap().1, "no italic face: slanted");
         // A family that isn't installed measures and draws as the label font.
@@ -1237,8 +1378,8 @@ mod coverage_tests {
         let sans = font(false).unwrap();
         let lacking = ('\u{2190}'..='\u{2BFF}').find(|&c| serif.0.glyph_id(c).0 == 0 && sans.glyph_id(c).0 != 0);
         if let Some(c) = lacking {
-            let (glyphs, _) = super::shape(&c.to_string(), 24.0, &serif.0, super::sans_beside(&serif.0, Face::default()));
-            assert!(glyphs.len() == 1 && std::ptr::eq(glyphs[0].0, sans), "{c:?} left out");
+            let (glyphs, _) = super::shape(&c.to_string(), 24.0, &serif.0, super::sans_beside(&serif.0, Face::default()), false);
+            assert!(glyphs.len() == 1 && std::ptr::eq(glyphs[0].f, sans), "{c:?} left out");
         }
     }
 }

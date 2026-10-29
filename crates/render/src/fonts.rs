@@ -360,6 +360,105 @@ pub fn script_font(script: ScriptFont) -> Option<&'static (Vec<u8>, u32)> {
     }
 }
 
+/// Installed Thai faces: (regular file, its face index, bold file or ""), in order of preference.
+/// The interface faces (Segoe UI, SF, Inter, Noto Sans, DejaVu Sans) have no Thai letters, so
+/// Thai place names and attributes drew as boxes without one of these.
+const THAI_CANDIDATES: &[(&str, u32, &str)] = &[
+    ("C:\\Windows\\Fonts\\LeelawUI.ttf", 0, "C:\\Windows\\Fonts\\LeelaUIb.ttf"),
+    ("C:\\Windows\\Fonts\\leelawad.ttf", 0, "C:\\Windows\\Fonts\\leelawdb.ttf"),
+    ("C:\\Windows\\Fonts\\tahoma.ttf", 0, "C:\\Windows\\Fonts\\tahomabd.ttf"),
+    ("/System/Library/Fonts/Thonburi.ttc", 0, ""),
+    ("/System/Library/Fonts/Supplemental/Tahoma.ttf", 0, "/System/Library/Fonts/Supplemental/Tahoma Bold.ttf"),
+    ("/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf", 0, "/usr/share/fonts/truetype/noto/NotoSansThai-Bold.ttf"),
+    ("/usr/share/fonts/truetype/noto/NotoSansThaiUI-Regular.ttf", 0, "/usr/share/fonts/truetype/noto/NotoSansThaiUI-Bold.ttf"),
+    ("/usr/share/fonts/noto/NotoSansThai-Regular.ttf", 0, "/usr/share/fonts/noto/NotoSansThai-Bold.ttf"),
+    ("/usr/share/fonts/google-noto/NotoSansThai-Regular.ttf", 0, "/usr/share/fonts/google-noto/NotoSansThai-Bold.ttf"),
+    ("/usr/share/fonts/truetype/tlwg/Loma.ttf", 0, "/usr/share/fonts/truetype/tlwg/Loma-Bold.ttf"),
+    ("/usr/share/fonts/opentype/tlwg/Loma.otf", 0, "/usr/share/fonts/opentype/tlwg/Loma-Bold.otf"),
+    ("/usr/share/fonts/TTF/Loma.ttf", 0, "/usr/share/fonts/TTF/Loma-Bold.ttf"),
+    ("/usr/share/fonts/thai-scalable/Loma.ttf", 0, "/usr/share/fonts/thai-scalable/Loma-Bold.ttf"),
+    ("/usr/share/fonts/truetype/tlwg/Garuda.ttf", 0, "/usr/share/fonts/truetype/tlwg/Garuda-Bold.ttf"),
+];
+
+/// Whether a face draws Thai: consonants, a following vowel, the vowel written above and a tone
+/// mark (the marks are what a face with a few borrowed Thai letters lacks).
+fn covers_thai(bytes: &[u8], index: u32) -> bool {
+    use ab_glyph::Font;
+    ab_glyph::FontRef::try_from_slice_and_index(bytes, index)
+        .is_ok_and(|f| ['\u{E01}', '\u{E32}', '\u{E35}', '\u{E48}', '\u{E33}'].iter().all(|c| f.glyph_id(*c).0 != 0))
+}
+
+/// An installed Thai face (its regular, and its bold where the family has one), found once.
+pub struct ThaiFonts {
+    pub regular: (Vec<u8>, u32),
+    pub bold: Option<(Vec<u8>, u32)>,
+    /// File the regular face came from.
+    pub source: String,
+}
+
+/// The installed Thai faces, found once: `None` on the web, when none is installed, or with
+/// `RUSTGIS_BUILTIN_FONTS` set, so tests draw alike on every machine.
+pub fn thai_fonts() -> Option<&'static ThaiFonts> {
+    static F: OnceLock<Option<ThaiFonts>> = OnceLock::new();
+    F.get_or_init(|| {
+        if std::env::var_os("RUSTGIS_BUILTIN_FONTS").is_some() {
+            return None;
+        }
+        THAI_CANDIDATES
+            .iter()
+            .find_map(|(r, i, b)| {
+                let regular = read_face(r).filter(|bytes| covers_thai(bytes, *i))?;
+                let bold = read_face(b).filter(|bytes| covers_thai(bytes, 0)).map(|bytes| (bytes, 0));
+                Some(ThaiFonts { regular: (regular, *i), bold, source: (*r).to_string() })
+            })
+            .or_else(|| variable_noto_thai(&FONT_ROOTS))
+    })
+    .as_ref()
+}
+
+/// The Thai face of `bold`'s weight (the regular where the family has no bold), bytes and face
+/// index.
+pub fn thai_font(bold: bool) -> Option<&'static (Vec<u8>, u32)> {
+    let f = thai_fonts()?;
+    Some(if bold { f.bold.as_ref().unwrap_or(&f.regular) } else { &f.regular })
+}
+
+/// A font file of any face count (a collection too), up to 64 MiB; "" is none.
+fn read_face(path: &str) -> Option<Vec<u8>> {
+    if path.is_empty() {
+        return None;
+    }
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > 64 << 20 {
+        return None;
+    }
+    std::fs::read(path).ok()
+}
+
+/// Noto Sans Thai as recent distributions ship it: a variable font (`NotoSansThai[wdth,wght].ttf`)
+/// in a package folder under one of `roots`, looked for when no static face is installed. Found by
+/// its name's start, whatever axes it lists; bold text draws in its default (regular) weight.
+fn variable_noto_thai(roots: &[&str]) -> Option<ThaiFonts> {
+    for root in roots {
+        let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir(root)
+            .map(|e| e.flatten().take(10_000).map(|e| e.path()).filter(|p| p.is_dir()).collect())
+            .unwrap_or_default();
+        dirs.sort();
+        for dir in dirs.into_iter().take(1000) {
+            let mut files: Vec<std::path::PathBuf> =
+                std::fs::read_dir(&dir).map(|e| e.flatten().take(10_000).map(|e| e.path()).collect()).unwrap_or_default();
+            files.sort();
+            let found = files
+                .iter()
+                .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("NotoSansThai[") && n.ends_with(".ttf")));
+            let Some(path) = found.and_then(|p| p.to_str()) else { continue };
+            let Some(regular) = read_face(path).filter(|b| covers_thai(b, 0)) else { continue };
+            return Some(ThaiFonts { regular: (regular, 0), bold: None, source: path.to_string() });
+        }
+    }
+    None
+}
+
 /// Installed faces with the symbols the interface marks things with (checked by
 /// [`covers_symbols`]): the interface faces lack some, Segoe UI the check mark among them.
 const SYMBOL_CANDIDATES: &[&str] = &[
@@ -425,6 +524,44 @@ mod tests {
         assert!(f.variable && f.bold.is_none() && f.bold_italic.is_none(), "the bold is the same file, kept once");
         assert_eq!(f.italic.as_deref(), Some(epaint_default_fonts::UBUNTU_LIGHT));
         assert!(super::variable_noto_serif(&["/no/such/folder"]).is_none());
+    }
+
+    #[test]
+    fn a_thai_face_needs_thai_letters_and_marks() {
+        // Ubuntu Light and Hack have no Thai; junk is no font at all.
+        assert!(!super::covers_thai(epaint_default_fonts::UBUNTU_LIGHT, 0));
+        assert!(!super::covers_thai(epaint_default_fonts::HACK_REGULAR, 0));
+        assert!(!super::covers_thai(b"not a font", 0));
+        assert!(super::read_face("").is_none());
+        // Noto Sans Thai and Loma have them, where they are installed.
+        for (r, i, _) in super::THAI_CANDIDATES.iter().filter(|(p, _, _)| p.contains("NotoSansThai-") || p.contains("Loma")) {
+            if let Ok(b) = std::fs::read(r) {
+                assert!(super::covers_thai(&b, *i), "{r}");
+            }
+        }
+    }
+
+    /// A variable Noto Sans Thai is found in a package folder by its name's start, and only when
+    /// the file draws Thai.
+    #[test]
+    fn a_variable_noto_sans_thai_is_found() {
+        let Some(thai) =
+            super::THAI_CANDIDATES.iter().find_map(|(r, i, _)| std::fs::read(r).ok().filter(|b| *i == 0 && super::covers_thai(b, 0)))
+        else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("rustgis-thai-{}", std::process::id()));
+        let dir = root.join("google-noto-sans-thai-vf");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("NotoSansThai[wdth,wght].ttf"), &thai).unwrap();
+        let found = super::variable_noto_thai(&[root.to_str().unwrap()]);
+        // A file of that name without Thai letters is passed over.
+        std::fs::write(dir.join("NotoSansThai[wdth,wght].ttf"), epaint_default_fonts::UBUNTU_LIGHT).unwrap();
+        let junk = super::variable_noto_thai(&[root.to_str().unwrap()]);
+        let _ = std::fs::remove_dir_all(&root);
+        let f = found.expect("found");
+        assert!(f.source.ends_with("NotoSansThai[wdth,wght].ttf") && f.bold.is_none(), "{}", f.source);
+        assert!(junk.is_none());
     }
 
     #[test]
