@@ -41,7 +41,27 @@ pub const PRESETS: &[(&str, &str, &str)] = &[
     ),
     ("vn2000Utm48", "VN-2000 / UTM zone 48N", concat!("+proj=utm +zone=48 +ellps=WGS84 ", vn2000_towgs84!(), " +units=m +no_defs")),
     ("vn2000Utm49", "VN-2000 / UTM zone 49N", concat!("+proj=utm +zone=49 +ellps=WGS84 ", vn2000_towgs84!(), " +units=m +no_defs")),
+    // Thailand: west of 102°E is UTM zone 47, east of it zone 48. WGS 84 for GPS, satellite and
+    // new government data (EPSG:32647, 32648); Indian 1975 for older cadastral and topographic
+    // maps (EPSG:24047, 24048, with EPSG's transformation to WGS 84, good to a few metres).
+    ("thaiUtm47", "WGS 84 / UTM zone 47N (Thailand)", "+proj=utm +zone=47 +datum=WGS84 +units=m +no_defs"),
+    ("thaiUtm48", "WGS 84 / UTM zone 48N (Thailand)", "+proj=utm +zone=48 +datum=WGS84 +units=m +no_defs"),
+    (
+        "indian1975Utm47",
+        "Indian 1975 / UTM zone 47N (Thailand)",
+        "+proj=utm +zone=47 +a=6377276.345 +b=6356075.41314024 +towgs84=210,814,289,0,0,0,0 +units=m +no_defs",
+    ),
+    (
+        "indian1975Utm48",
+        "Indian 1975 / UTM zone 48N (Thailand)",
+        "+proj=utm +zone=48 +a=6377276.345 +b=6356075.41314024 +towgs84=210,814,289,0,0,0,0 +units=m +no_defs",
+    ),
 ];
+
+/// The Thai presets and the EPSG systems they are, whose definitions they repeat.
+#[cfg(test)]
+const THAI_PRESET_EPSG: &[(&str, u16)] =
+    &[("thaiUtm47", 32647), ("thaiUtm48", 32648), ("indian1975Utm47", 24047), ("indian1975Utm48", 24048)];
 
 /// The VN-2000 presets and the EPSG systems they are: a name `Crs::parse` reads as one of these
 /// (`VN-2000 / UTM zone 48N`, `vn2000_utm48`…) picks the preset too.
@@ -977,7 +997,21 @@ mod tests {
         assert!(lookup("epsg:+3035").unwrap_err().contains("unknown"));
         // Every preset is classified: the regional grids alone take nothing.
         for (id, _, _) in PRESETS {
-            assert_eq!(preset_params(id).is_empty(), ["europeEqualArea", "usaAlbers", "vn2000Utm48", "vn2000Utm49"].contains(id), "{id}");
+            assert_eq!(
+                preset_params(id).is_empty(),
+                [
+                    "europeEqualArea",
+                    "usaAlbers",
+                    "vn2000Utm48",
+                    "vn2000Utm49",
+                    "thaiUtm47",
+                    "thaiUtm48",
+                    "indian1975Utm47",
+                    "indian1975Utm48"
+                ]
+                .contains(id),
+                "{id}"
+            );
         }
         for bad in [
             "robinson +lon_0=181",
@@ -1123,12 +1157,24 @@ mod tests {
             let p = Projector::new(id).unwrap_or_else(|e| panic!("{id}: {e}"));
             let c = match *id {
                 "vn2000tm3" | "vn2000Utm48" | "vn2000Utm49" => Coord::new(105.0, 21.0),
+                "thaiUtm47" | "indian1975Utm47" => Coord::new(100.5, 13.75),
+                "thaiUtm48" | "indian1975Utm48" => Coord::new(104.0, 15.0),
                 _ => Coord::new(10.0, if id.contains("south") { -75.0 } else { 50.0 }),
             };
             let m = p.forward(c).unwrap_or_else(|| panic!("{id}"));
             let back = p.inverse(m).unwrap();
             assert!((back.x - c.x).abs() < 1e-6 && (back.y - c.y).abs() < 1e-6, "{id}: {back:?}");
         }
+        // The Thai presets draw Bangkok where their EPSG systems do: within a millimetre.
+        for (id, code) in THAI_PRESET_EPSG {
+            let (preset, epsg) = (Projector::new(id).unwrap(), Projector::new(&format!("EPSG:{code}")).unwrap());
+            let bangkok = Coord::new(100.5018, 13.7563);
+            let (a, b) = (preset.forward(bangkok).unwrap(), epsg.forward(bangkok).unwrap());
+            assert!((a.x - b.x).abs() < 1e-3 && (a.y - b.y).abs() < 1e-3, "{id}: {a:?} vs {b:?}");
+        }
+        // Bangkok in WGS 84 / UTM zone 47N (EPSG:32647), as the UTM formulas give it.
+        let m = Projector::new("thaiUtm47").unwrap().forward(Coord::new(100.5018, 13.7563)).unwrap();
+        assert!((m.x - 662_366.6).abs() < 0.5 && (m.y - 1_521_280.7).abs() < 0.5, "{m:?}");
         assert_eq!(preset_params("vn2000tm3"), &[LON_0]);
         assert_eq!(preset_params("vn2000"), &[]);
         assert!(Projector::new("EPSG:3035").is_ok());

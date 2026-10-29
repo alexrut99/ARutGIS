@@ -2018,6 +2018,14 @@ fn crs_details(ui: &mut egui::Ui, chosen: &str, current: &str, t: &Tokens) {
         "vn2000Utm49" => {
             (tl!("Vietnam national coordinate system (VN-2000) UTM zone 49N (108°E–114°E, central meridian 111°E)."), Some("3406".into()))
         }
+        "thaiUtm47" => (tl!("Thailand west of 102°E (WGS 84): GPS, satellite imagery and current government data."), Some("32647".into())),
+        "thaiUtm48" => (tl!("Thailand east of 102°E (WGS 84): GPS, satellite imagery and current government data."), Some("32648".into())),
+        "indian1975Utm47" => {
+            (tl!("Thailand west of 102°E on the Indian 1975 datum: older cadastral and topographic maps."), Some("24047".into()))
+        }
+        "indian1975Utm48" => {
+            (tl!("Thailand east of 102°E on the Indian 1975 datum: older cadastral and topographic maps."), Some("24048".into()))
+        }
         _ => (tl!("A projected coordinate system."), epsg.clone()),
     };
     let page = page.filter(|_| !tuned);

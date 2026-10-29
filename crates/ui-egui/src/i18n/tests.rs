@@ -53,6 +53,22 @@ fn bengali_registration_and_fallback() {
 }
 
 #[test]
+fn thai_registration_and_fallback() {
+    let th = Lang::from_code("th").unwrap_or(Lang::EN);
+    assert_eq!(th.name(), "ไทย");
+    assert_eq!(th.english(), "Thai");
+    assert_eq!(th.script(), Script::Thai);
+    assert_eq!(lang_from_tag("th_TH.UTF-8").map(Lang::code), Some("th"));
+    assert_eq!(tr(th, "Open"), "เปิด");
+    assert_eq!(tr(th, "A string not in the Thai catalog"), "A string not in the Thai catalog");
+    // Every interface string has a Thai entry.
+    let (de, _) = parse(Lang::from_code("de").unwrap_or(Lang::EN).0.source);
+    let (thai, _) = parse(th.0.source);
+    let missing: Vec<&String> = de.keys().filter(|k| !thai.contains_key(*k)).take(5).collect();
+    assert!(missing.is_empty(), "missing from th.tsv: {missing:?}");
+}
+
+#[test]
 fn polish_registration_and_fallback() {
     let pl = Lang::from_code("pl").unwrap_or(Lang::EN);
     assert_eq!(pl.name(), "Polski");

@@ -233,7 +233,7 @@ English strings and their translations, written exactly as they appear in `plugi
   and toolboxes, parameter labels and `choice` values, the tab, group and menu labels, and the
   panel's title, help and widget labels. A string with no translation shows in English.
 - Alongside English (`en`), RustGIS's interface languages are `de`, `es`, `fr`, `it`, `nl`,
-  `pt`, `ru`, `tr`, `az`, `id`, `vi`, `fa`, `zh`, `ja`, `ko` and `ka`. A code with a region
+  `pt`, `ru`, `tr`, `az`, `id`, `vi`, `fa`, `zh`, `ja`, `ko`, `ka`, `bn` and `th`. A code with a region
   matches its language: `zh-CN` serves `zh`.
 - The registry copies the name and description translations into `registry.json`, so the
   Plugin Manager lists plugins in the interface language before they are installed.

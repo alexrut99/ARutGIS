@@ -8,7 +8,8 @@
 //! Settings › Language picks one by hand.
 //!
 //! The language set follows GeoLibre's, minus scripts egui can't yet shape or lay out
-//! (Hebrew, Hindi, Thai). Persian is included: egui shapes its script and lays out a
+//! (Hebrew, Hindi), plus Thai: egui shapes it, so tone marks stack over the vowels written above,
+//! and the Thai catalog puts spaces between phrases, where long text wraps. Persian is included: egui shapes its script and lays out a
 //! line whose first strong character is of it back to front, which pure Persian
 //! survives; [`rtl`] fixes the Latin runs and brackets inside such lines, and the
 //! Persian catalog starts its lines with Persian text, for a line that starts with a
@@ -44,6 +45,9 @@ pub enum Script {
     Arabic,
     /// Bengali: an Indic script with a face discovered on the desktop where available.
     Bengali,
+    /// Thai: shaped by the toolkit (tone marks over vowels), in an installed Thai face found on
+    /// the desktop where available.
+    Thai,
 }
 
 /// Which CJK face reads best for a language (the glyph shapes differ by region).
@@ -83,7 +87,7 @@ macro_rules! lang {
 }
 
 /// The registry. English first: it is the source language and the fallback.
-pub static LANGUAGES: [LangInfo; 19] = [
+pub static LANGUAGES: [LangInfo; 20] = [
     LangInfo {
         code: "en",
         name: "English",
@@ -111,6 +115,7 @@ pub static LANGUAGES: [LangInfo; 19] = [
     lang!("ko", "한국어", "Korean", Script::Cjk(CjkFont::Korean), "ko.tsv"),
     lang!("ka", "ქართული", "Georgian", Script::Alphabetic, "ka.tsv"),
     lang!("bn", "বাংলা", "Bengali", Script::Bengali, "bn.tsv"),
+    lang!("th", "ไทย", "Thai", Script::Thai, "th.tsv"),
 ];
 
 fn unescape(s: &str) -> String {

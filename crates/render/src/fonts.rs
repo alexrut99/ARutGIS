@@ -306,6 +306,9 @@ pub enum ScriptFont {
     Arabic,
     /// Bengali glyph coverage only; the current text stack does not shape Indic conjuncts.
     Bengali,
+    /// Thai: the installed Thai face ([`thai_fonts`]), which the interface already falls back to
+    /// for Thai text whatever its language.
+    Thai,
 }
 
 const BENGALI_CANDIDATES: &[&str] = &[
@@ -357,6 +360,7 @@ pub fn script_font(script: ScriptFont) -> Option<&'static (Vec<u8>, u32)> {
             static FOUND: OnceLock<Option<(Vec<u8>, u32)>> = OnceLock::new();
             FOUND.get_or_init(|| BENGALI_CANDIDATES.iter().find_map(|p| read(p).filter(|b| covers_bengali(b)).map(|b| (b, 0)))).as_ref()
         }
+        ScriptFont::Thai => thai_font(false),
     }
 }
 
@@ -485,14 +489,14 @@ pub fn symbol_font() -> Option<&'static (Vec<u8>, u32)> {
     FOUND.get_or_init(|| SYMBOL_CANDIDATES.iter().find_map(|p| read(p).filter(|b| covers_symbols(b, 0)).map(|b| (b, 0)))).as_ref()
 }
 
-/// Where the web app downloads a verified face for `script` from. Bengali has no verified hosted
-/// asset yet, so it is discovered only among installed desktop fonts.
+/// Where the web app downloads a verified face for `script` from. Bengali and Thai have no
+/// verified hosted asset yet, so they are discovered only among installed desktop fonts.
 pub fn script_font_url(script: ScriptFont) -> Option<&'static str> {
     match script {
         ScriptFont::Cjk(region) => Some(cjk_font_url(region)),
         ScriptFont::Arabic => Some("https://assets.rustgis.app/fonts/Vazirmatn-Regular.ttf"),
         // No verified Bengali asset is hosted by RustGIS; don't guess a URL.
-        ScriptFont::Bengali => None,
+        ScriptFont::Bengali | ScriptFont::Thai => None,
     }
 }
 
@@ -503,6 +507,7 @@ mod tests {
         assert!(!super::covers_bengali(epaint_default_fonts::UBUNTU_LIGHT));
         assert!(!super::covers_bengali(b"not a font"));
         assert_eq!(super::script_font_url(super::ScriptFont::Bengali), None);
+        assert_eq!(super::script_font_url(super::ScriptFont::Thai), None);
     }
 
     /// A variable Noto Serif (one file for every weight, its italic beside it) is found in a

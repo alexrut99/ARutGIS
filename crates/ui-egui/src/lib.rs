@@ -1262,6 +1262,7 @@ impl RustGisApp {
             i18n::Script::Cjk(i18n::CjkFont::Korean) => Some(ScriptFont::Cjk(CjkRegion::Korean)),
             i18n::Script::Arabic => Some(ScriptFont::Arabic),
             i18n::Script::Bengali => Some(ScriptFont::Bengali),
+            i18n::Script::Thai => Some(ScriptFont::Thai),
             i18n::Script::Alphabetic => None,
         }
     }
@@ -1281,6 +1282,11 @@ impl RustGisApp {
             return;
         }
         self.fonts_requested.push(name.clone());
+        // Thai is drawn by the Thai fallback faces, its bold for semibold text: a regular face put
+        // ahead of them would draw that text too.
+        if region == rustgis_engine::render::fonts::ScriptFont::Thai && self.extra_fonts.iter().any(|(n, _, _)| n == "thai-fallback") {
+            return;
+        }
         if let Some((bytes, index)) = script_font(region) {
             let mut face = egui::FontData::from_static(bytes);
             face.index = *index;
@@ -3796,7 +3802,7 @@ impl RustGisApp {
             let region = [CjkRegion::SimplifiedChinese, CjkRegion::Japanese, CjkRegion::Korean]
                 .map(ScriptFont::Cjk)
                 .into_iter()
-                .chain([ScriptFont::Arabic, ScriptFont::Bengali])
+                .chain([ScriptFont::Arabic, ScriptFont::Bengali, ScriptFont::Thai])
                 .find(|r| script_font_url(*r) == Some(url.as_str()));
             if bytes.is_empty() || !valid_font(&bytes, 0) {
                 // A failed download: say so; picking the language again retries.

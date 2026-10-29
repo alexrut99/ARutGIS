@@ -1,0 +1,3571 @@
+# th interface catalog: English<TAB>translation
+ by 	 ×
+'{b}' isn't a bucket name	'{b}' ไม่ใช่ชื่อบักเก็ต
+'{text}' isn't a scale: type one such as 1:12,345	'{text}' ไม่ใช่มาตราส่วน: พิมพ์ค่า เช่น 1:12,345
+(b4-b3)/(b4+b3)	(b4-b3)/(b4+b3)
+(filtered)	(กรองแล้ว)
+({selected} of {total})	({selected} จาก {total})
++ Add Stop	+ เพิ่มจุดแวะ
++ Input	+ อินพุต
++ New expression	+ นิพจน์ใหม่
++ Output	+ เอาต์พุต
+/F	/F
+/PID	/PID
+/T	/T
+00:00 UTC	00:00 UTC
+06:00 UTC	06:00 UTC
+12:00 UTC	12:00 UTC
+18:00 UTC	18:00 UTC
+3035, vn2000tm3	3035, vn2000tm3
+3D mesh	เมช 3 มิติ
+<None>	<ไม่มี>
+A .qgs or .qgz project as a map	โปรเจกต์ .qgs หรือ .qgz เป็นแผนที่
+A 3D globe seen from space.	ลูกโลก 3 มิติที่มองจากอวกาศ
+A blank map with a basemap	แผนที่เปล่าพร้อมแผนที่ฐาน
+A call for the rustgis Python package	การเรียกใช้แพ็กเกจ Python rustgis
+A catalogue's (CSW 2.0.2) address: search its records by words and, if you like, the map's area, then add the services and files they link to.	ที่อยู่ของแค็ตตาล็อก (CSW 2.0.2): ค้นหาเรคคอร์ดด้วยคำค้น และตามพื้นที่ของแผนที่หากต้องการ แล้วเพิ่มบริการและไฟล์ที่ลิงก์ไว้
+A ChatGPT plan or app usage limit was reached. Review Weekly usage before trying again.	ถึงขีดจำกัดการใช้งานของแผน ChatGPT หรือแอปแล้ว ตรวจสอบการใช้งานรายสัปดาห์ก่อนลองอีกครั้ง
+A ChatGPT sign-in can only be used with the OpenAI API.	การลงชื่อเข้าใช้ด้วย ChatGPT ใช้ได้กับ OpenAI API เท่านั้น
+A connection has this name: give this one another name to remember its keys.	มีการเชื่อมต่อชื่อนี้อยู่แล้ว: ตั้งชื่ออื่นให้การเชื่อมต่อนี้เพื่อจดจำคีย์
+A country's administrative boundaries from geoBoundaries (CC BY 4.0): the country itself (ADM0), its first-level divisions (ADM1, such as states) and finer ones.	ขอบเขตการปกครองของประเทศจาก geoBoundaries (CC BY 4.0): ตัวประเทศ (ADM0) เขตการปกครองระดับที่หนึ่ง (ADM1 เช่น รัฐ) และระดับที่ละเอียดกว่า
+A custom stretch is in this raster's own units: pick another stretch type to save it as the default.	การยืดค่าแบบกำหนดเองใช้หน่วยของแรสเตอร์นี้เอง: เลือกการยืดค่าประเภทอื่นเพื่อบันทึกเป็นค่าเริ่มต้น
+A fast, free and open-source GIS written in pure Rust, for mapping, analyzing and sharing geospatial data on the desktop and in the browser.	GIS ที่รวดเร็ว ฟรี และโอเพนซอร์ส เขียนด้วย Rust ล้วน สำหรับทำแผนที่ วิเคราะห์ และแชร์ข้อมูลเชิงพื้นที่ บนเดสก์ท็อปและในเบราว์เซอร์
+A field (known once the model runs)	ฟิลด์ (ทราบเมื่อโมเดลทำงานแล้ว)
+A flat scene centred on the view (azimuthal equidistant).	ฉากแบนราบที่มีศูนย์กลางอยู่ที่มุมมอง (azimuthal equidistant)
+A GeoLens server's datasets, read as features (the first 1,000 of each).	ชุดข้อมูลของเซิร์ฟเวอร์ GeoLens อ่านเป็นฟีเจอร์ (1,000 รายการแรกของแต่ละชุด)
+A globe scene.	ฉากลูกโลก
+A hidden class leaves its features unlabelled.	คลาสที่ซ่อนไว้จะไม่ติดป้ายชื่อให้ฟีเจอร์ของคลาสนั้น
+A latitude and longitude (40.7, -74.0 or 40°42'N 74°0'W), a layer, a bookmark or a value in a layer's table. Enter picks the highlighted row; Search places looks the text up as a place	ละติจูดและลองจิจูด (40.7, -74.0 หรือ 40°42'N 74°0'W) ชั้นข้อมูล บุ๊กมาร์ก หรือค่าในตารางของชั้นข้อมูล Enter เลือกแถวที่ไฮไลต์ ส่วน ค้นหาสถานที่ จะค้นข้อความเป็นชื่อสถานที่
+A layer keeps at most {max} label classes besides Default.	ชั้นข้อมูลหนึ่งมีคลาสป้ายชื่อได้ไม่เกิน {max} คลาส นอกเหนือจากคลาส Default
+A layer the model reads	ชั้นข้อมูลที่โมเดลอ่าน
+A line for the Script pane	บรรทัดสำหรับแผงสคริปต์
+A magnifying lens that follows the pointer.	แว่นขยายที่เคลื่อนตามตัวชี้เมาส์
+A map, feature or coverage service's address: WMS, WMTS, WFS, WCS, OGC API Features or Tiles, or an ArcGIS FeatureServer, MapServer, ImageServer or VectorTileServer (or a services directory, to browse).	ที่อยู่ของบริการแผนที่ ฟีเจอร์ หรือ coverage: WMS, WMTS, WFS, WCS, OGC API Features หรือ Tiles หรือ ArcGIS FeatureServer, MapServer, ImageServer หรือ VectorTileServer (หรือไดเรกทอรีบริการ เพื่อเรียกดู)
+a name, or owner/name such as giswqs/geospatial	ชื่อ หรือ owner/name เช่น giswqs/geospatial
+A named endpoint you can reuse. Keys and tokens are kept until RustGIS closes, never saved.	ปลายทาง (endpoint) ที่ตั้งชื่อไว้และนำกลับมาใช้ได้ คีย์และโทเค็นจะถูกเก็บไว้จนกว่าจะปิด RustGIS และจะไม่ถูกบันทึก
+A named endpoint you can reuse. Keys are kept until RustGIS closes unless you choose to remember them on this computer; the connection itself never keeps them.	ปลายทาง (endpoint) ที่ตั้งชื่อไว้และนำกลับมาใช้ได้ คีย์จะถูกเก็บไว้จนกว่าจะปิด RustGIS เว้นแต่คุณเลือกให้จดจำไว้ในคอมพิวเตอร์เครื่องนี้ ตัวการเชื่อมต่อเองจะไม่เก็บคีย์
+A named endpoint you can reuse. Passwords last for this session unless you choose to remember them in this computer's password store.	ปลายทาง (endpoint) ที่ตั้งชื่อไว้และนำกลับมาใช้ได้ รหัสผ่านจะใช้ได้ตลอดเซสชันนี้ เว้นแต่คุณเลือกให้จดจำไว้ในที่เก็บรหัสผ่านของคอมพิวเตอร์เครื่องนี้
+A node cannot connect to itself.	โหนดเชื่อมต่อกับตัวเองไม่ได้
+A notebook of text and command cells.	สมุดโน้ตที่มีเซลล์ข้อความและเซลล์คำสั่ง
+A password or token in the address was left out of the saved connection definition.	รหัสผ่านหรือโทเค็นในที่อยู่ถูกตัดออกจากข้อกำหนดการเชื่อมต่อที่บันทึกไว้
+A place or an address	สถานที่หรือที่อยู่
+A previously saved key is still kept unencrypted in the app's preferences until it can be moved to the system keychain.	คีย์ที่บันทึกไว้ก่อนหน้านี้ยังถูกเก็บแบบไม่เข้ารหัสในการตั้งค่าของแอป จนกว่าจะย้ายไปยังพวงกุญแจของระบบได้
+A project keeps at least one map	โปรเจกต์ต้องมีแผนที่อย่างน้อยหนึ่งแผนที่
+A projected coordinate system.	ระบบพิกัดแบบฉาย (projected)
+A report listing the selected layer's records, page after page.	รายงานแสดงเรคคอร์ดของชั้นข้อมูลที่เลือก ทีละหน้า
+A result that only feeds other tools is removed once the model has run; add an output to keep it.	ผลลัพธ์ที่ใช้ป้อนให้เครื่องมืออื่นเท่านั้นจะถูกนำออกเมื่อโมเดลทำงานเสร็จ เพิ่มเอาต์พุตเพื่อเก็บไว้
+A result the model keeps, under a name	ผลลัพธ์ที่โมเดลเก็บไว้ภายใต้ชื่อหนึ่ง
+A rustgis-cli command, for a POSIX shell (macOS, Linux, WSL, Git Bash)	คำสั่ง rustgis-cli สำหรับเชลล์ POSIX (macOS, Linux, WSL, Git Bash)
+A saved key could not be read. A key entered now will be kept for this session only.	อ่านคีย์ที่บันทึกไว้ไม่ได้ คีย์ที่ป้อนตอนนี้จะถูกเก็บไว้สำหรับเซสชันนี้เท่านั้น
+A service import or refresh is already running.	การนำเข้าหรือรีเฟรชบริการกำลังทำงานอยู่แล้ว
+A service's layers stay in their service group.	ชั้นข้อมูลของบริการจะอยู่ในกลุ่มบริการของตน
+A task holds at most 200 steps: stop recording to make it, then record the rest as another task.	งานหนึ่งมีได้ไม่เกิน 200 ขั้นตอน: หยุดบันทึกเพื่อสร้างงาน แล้วบันทึกส่วนที่เหลือเป็นอีกงานหนึ่ง
+A template with the first selected feature's values	เทมเพลตที่มีค่าของฟีเจอร์แรกที่เลือก
+A tile layer per grid tile, each following the time slider through its dates.	ชั้นข้อมูลไทล์หนึ่งชั้นต่อกริดไทล์หนึ่งช่อง แต่ละชั้นเปลี่ยนตามแถบเวลาไปตามวันที่ของตน
+A tile service's address: raster tiles with {z}/{x}/{y} (or {-y}, {q}, {bbox-epsg-3857} for WMS), vector tiles (.pbf) or TileJSON, a MapLibre style, a PMTiles archive (a web address, or a file on this computer), or an MBTiles file on this computer.	ที่อยู่ของบริการไทล์: ไทล์แรสเตอร์ที่มี {z}/{x}/{y} (หรือ {-y}, {q}, {bbox-epsg-3857} สำหรับ WMS) ไทล์เวกเตอร์ (.pbf) หรือ TileJSON สไตล์ MapLibre ไฟล์ PMTiles (ที่อยู่เว็บ หรือไฟล์ในคอมพิวเตอร์เครื่องนี้) หรือไฟล์ MBTiles ในคอมพิวเตอร์เครื่องนี้
+A token is set.	ตั้งค่าโทเค็นแล้ว
+A value, a field, or two of them joined by + − × ÷. Applies to the selected rows, or every row when none is selected.	ค่า ฟิลด์ หรือสองอย่างนี้ที่เชื่อมด้วย + − × ÷ ใช้กับแถวที่เลือก หรือทุกแถวหากไม่ได้เลือกไว้
+a vector a pixel	เวกเตอร์ต่อพิกเซล
+a vector an image patch	เวกเตอร์ต่อแพตช์ภาพ
+A Zarr store (format 2 or 3) by its web address, with consolidated metadata, or a folder on this computer. A variable's map is read for the steps picked of its other dimensions, such as time.	Zarr store (รูปแบบ 2 หรือ 3) ตามที่อยู่เว็บ ที่มี consolidated metadata หรือโฟลเดอร์ในคอมพิวเตอร์เครื่องนี้ แผนที่ของตัวแปรจะอ่านตามขั้นที่เลือกของมิติอื่น เช่น เวลา
+A Zarr variable's values through time at points clicked on the map.	ค่าของตัวแปร Zarr ตามช่วงเวลา ณ จุดที่คลิกบนแผนที่
+A2 landscape sheet	กระดาษ A2 แนวนอน
+A2 portrait sheet	กระดาษ A2 แนวตั้ง
+A3 landscape sheet	กระดาษ A3 แนวนอน
+A3 portrait sheet	กระดาษ A3 แนวตั้ง
+A4 landscape sheet	กระดาษ A4 แนวนอน
+A4 portrait sheet	กระดาษ A4 แนวตั้ง
+A5 Grid	กริด A5
+A5's equal-area pentagonal cells at a resolution, over the map's extent, a layer or the world, as polygons with their ids.	เซลล์ห้าเหลี่ยมพื้นที่เท่ากันของ A5 ที่ความละเอียดที่กำหนด ครอบคลุมขอบเขตแผนที่ ชั้นข้อมูล หรือทั้งโลก เป็นรูปหลายเหลี่ยมพร้อม id
+About	เกี่ยวกับ
+About plugins	เกี่ยวกับปลั๊กอิน
+About RustGIS	เกี่ยวกับ RustGIS
+About RustGIS.	เกี่ยวกับ RustGIS
+Above	ด้านบน
+Above Left	ด้านบนซ้าย
+Above Right	ด้านบนขวา
+Access key ID	Access key ID (รหัสคีย์การเข้าถึง)
+Accessibility	การช่วยการเข้าถึง
+Accessing the system keychain…	กำลังเข้าถึงพวงกุญแจของระบบ…
+Account	บัญชี
+Activate Map	เปิดใช้งานแผนที่
+Add	เพิ่ม
+Add\nData	เพิ่ม\nข้อมูล
+Add ({n})	เพิ่ม ({n})
+Add a bar chart of a layer's numeric field.	เพิ่มแผนภูมิแท่งของฟิลด์ตัวเลขในชั้นข้อมูล
+Add a circle.	เพิ่มวงกลม
+Add a class with this one's field, text symbol, placement and range.	เพิ่มคลาสที่มีฟิลด์ สัญลักษณ์ข้อความ ตำแหน่งวาง และช่วงเดียวกับคลาสนี้
+Add a colorbar of a raster layer's colour scale in the map frame.	เพิ่มแถบสีของสเกลสีชั้นข้อมูลแรสเตอร์ในกรอบแผนที่
+Add a description.	เพิ่มคำอธิบาย
+Add a field.	เพิ่มฟิลด์
+Add a file path	เพิ่มพาธไฟล์
+Add a group…	เพิ่มกลุ่ม…
+Add a legend of the map frame's layers.	เพิ่มคำอธิบายสัญลักษณ์ของชั้นข้อมูลในกรอบแผนที่
+Add a map frame showing a map of the project.	เพิ่มกรอบแผนที่ที่แสดงแผนที่ของโปรเจกต์
+Add a new map to the project.	เพิ่มแผนที่ใหม่ลงในโปรเจกต์
+Add a north arrow for the map frame.	เพิ่มลูกศรทิศเหนือสำหรับกรอบแผนที่
+Add a page	เพิ่มหน้า
+Add a page layout for printing and exporting the map.	เพิ่มเลย์เอาต์หน้ากระดาษสำหรับพิมพ์และส่งออกแผนที่
+Add a page to the presentation.	เพิ่มหน้าลงในงานนำเสนอ
+Add a PNG or JPEG picture to the page.	เพิ่มรูปภาพ PNG หรือ JPEG ลงในหน้า
+Add a presentation file.	เพิ่มไฟล์งานนำเสนอ
+Add a raster and a polygon layer to calculate zonal statistics.	เพิ่มชั้นข้อมูลแรสเตอร์และรูปหลายเหลี่ยมเพื่อคำนวณสถิติตามโซน
+Add a rectangle, to frame or highlight part of the page.	เพิ่มสี่เหลี่ยมผืนผ้า เพื่อใส่กรอบหรือเน้นบางส่วนของหน้า
+Add a report file, or a report template for the selected layer.	เพิ่มไฟล์รายงาน หรือเทมเพลตรายงานสำหรับชั้นข้อมูลที่เลือก
+Add a scale bar for the map frame.	เพิ่มแถบมาตราส่วนสำหรับกรอบแผนที่
+add a second map first (Data › New Map)	เพิ่มแผนที่ที่สองก่อน (ข้อมูล › แผนที่ใหม่)
+Add a second map frame first	เพิ่มกรอบแผนที่ที่สองก่อน
+Add a straight line.	เพิ่มเส้นตรง
+Add a text element.	เพิ่มองค์ประกอบข้อความ
+Add a web basemap over the others instead of replacing them, to blend it with them. Click one that shows to take it off.	เพิ่มแผนที่ฐานจากเว็บซ้อนทับแผนที่ฐานอื่นแทนการแทนที่ เพื่อผสมเข้าด้วยกัน คลิกแผนที่ฐานที่แสดงอยู่เพื่อนำออก
+Add a Zarr variable first (Add Data › Zarr…).	เพิ่มตัวแปร Zarr ก่อน (เพิ่มข้อมูล › Zarr…)
+Add Administrative Boundaries	เพิ่มขอบเขตการปกครอง
+Add an arrow. Turn it with the round handle above it, or set its angle in its properties.	เพิ่มลูกศร หมุนได้ด้วยจุดจับกลมด้านบน หรือกำหนดมุมในคุณสมบัติ
+Add an Earthdata Login token (Earthdata Login, above) to put NASA GeoTIFFs on the map.	เพิ่มโทเค็น Earthdata Login (Earthdata Login ด้านบน) เพื่อแสดง GeoTIFF ของ NASA บนแผนที่
+Add an elevation raster first.	เพิ่มแรสเตอร์ความสูงก่อน
+Add an elevation raster to the map first	เพิ่มแรสเตอร์ความสูงลงในแผนที่ก่อน
+Add an ellipse.	เพิ่มวงรี
+Add an empty layer with a ready-made schema, to draw into.	เพิ่มชั้นข้อมูลว่างที่มีสคีมาสำเร็จรูป เพื่อวาดลงไป
+Add an input for each layer the model reads.	เพิ่มอินพุตสำหรับแต่ละชั้นข้อมูลที่โมเดลอ่าน
+Add an output to keep a result under a name.	เพิ่มเอาต์พุตเพื่อเก็บผลลัพธ์ไว้ภายใต้ชื่อหนึ่ง
+Add and Open	เพิ่มและเปิด
+Add and Open Notebook	เพิ่มและเปิดสมุดโน้ต
+Add Archive	เพิ่มไฟล์เก็บถาวร
+Add as Time Series	เพิ่มเป็นอนุกรมเวลา
+add at least two keyframes	เพิ่มคีย์เฟรมอย่างน้อยสองเฟรม
+Add Cell	เพิ่มเซลล์
+Add Color Ramp File…	เพิ่มไฟล์ชุดไล่สี…
+Add Color Ramps	เพิ่มชุดไล่สี
+Add color ramps to the project from a .rgisramp file, a QGIS style, a GDAL color file or a GMT palette.	เพิ่มชุดไล่สีลงในโปรเจกต์จากไฟล์ .rgisramp สไตล์ QGIS ไฟล์สี GDAL หรือพาเลต GMT
+Add Commands	เพิ่มคำสั่ง
+Add Data	เพิ่มข้อมูล
+Add Data (from file contents)	เพิ่มข้อมูล (จากเนื้อหาไฟล์)
+Add Data (from text)	เพิ่มข้อมูล (จากข้อความ)
+Add Data From Database	เพิ่มข้อมูลจากฐานข้อมูล
+Add data from public web services and catalogs.	เพิ่มข้อมูลจากบริการเว็บและแค็ตตาล็อกสาธารณะ
+Add Data From SQL	เพิ่มข้อมูลจาก SQL
+Add Data From URL	เพิ่มข้อมูลจาก URL
+Add Data From URL…	เพิ่มข้อมูลจาก URL…
+Add Data Store…	เพิ่มที่เก็บข้อมูล…
+Add Data…	เพิ่มข้อมูล…
+Add Delimited Text	เพิ่มข้อความแบบมีตัวคั่น
+Add Delimited Text…	เพิ่มข้อความแบบมีตัวคั่น…
+Add Downloaded Data	เพิ่มข้อมูลที่ดาวน์โหลด
+Add Element	เพิ่มองค์ประกอบ
+Add Encoded Polyline	เพิ่มเส้นแบบเข้ารหัส (Encoded Polyline)
+Add Field	เพิ่มฟิลด์
+Add field	เพิ่มฟิลด์
+Add field boundaries	เพิ่มขอบเขตแปลงเพาะปลูก
+Add field density	เพิ่มความหนาแน่นของแปลงเพาะปลูก
+Add Fields of the World	เพิ่ม Fields of the World
+Add Folder	เพิ่มโฟลเดอร์
+Add Folder…	เพิ่มโฟลเดอร์…
+Add folder…	เพิ่มโฟลเดอร์…
+Add From Database	เพิ่มจากฐานข้อมูล
+Add From Service	เพิ่มจากบริการ
+Add From Service…	เพิ่มจากบริการ…
+Add GeoJSON, CSV or Shapefile data to the map.	เพิ่มข้อมูล GeoJSON, CSV หรือ Shapefile ลงในแผนที่
+Add Graphic	เพิ่มกราฟิก
+Add Graphics Layer	เพิ่มชั้นข้อมูลกราฟิก
+Add Input	เพิ่มอินพุต
+Add Job	เพิ่มงาน
+Add Keyframe	เพิ่มคีย์เฟรม
+Add Label Class	เพิ่มคลาสป้ายชื่อ
+Add Layer File	เพิ่มไฟล์ชั้นข้อมูล
+Add Open Data	เพิ่มข้อมูลเปิด
+Add Output	เพิ่มเอาต์พุต
+Add Overture Maps Data	เพิ่มข้อมูล Overture Maps
+Add Page After	เพิ่มหน้าถัดจากหน้านี้
+Add Page Before	เพิ่มหน้าก่อนหน้านี้
+Add pages, layouts, related reports and related records to the report.	เพิ่มหน้า เลย์เอาต์ รายงานที่เกี่ยวข้อง และเรคคอร์ดที่เกี่ยวข้องลงในรายงาน
+Add Photos	เพิ่มรูปถ่าย
+Add Plugin Folder…	เพิ่มโฟลเดอร์ปลั๊กอิน…
+Add points	เพิ่มจุด
+Add raster tiles, vector tiles or a map style by address.	เพิ่มไทล์แรสเตอร์ ไทล์เวกเตอร์ หรือสไตล์แผนที่ตามที่อยู่
+Add Rule	เพิ่มกฎ
+Add sample countries	เพิ่มประเทศตัวอย่าง
+Add Sample Data	เพิ่มข้อมูลตัวอย่าง
+Add Satellite Embeddings	เพิ่ม Satellite Embeddings
+Add Selected ({n})	เพิ่มที่เลือก ({n})
+Add Service Layer	เพิ่มชั้นข้อมูลบริการ
+Add skill…	เพิ่มสกิล…
+Add STAC Asset	เพิ่มแอสเซ็ต STAC
+Add STAC Data Cube	เพิ่มดาต้าคิวบ์ STAC
+Add STAC Footprints	เพิ่มขอบเขตภาพ (footprint) ของ STAC
+Add Step	เพิ่มขั้นตอน
+Add Stroke	เพิ่มเส้น
+Add Style	เพิ่มสไตล์
+Add Style File…	เพิ่มไฟล์สไตล์…
+Add Task Step	เพิ่มขั้นตอนงาน
+Add Text	เพิ่มข้อความ
+Add text that updates: page, date, scale, map and more.	เพิ่มข้อความที่อัปเดตอัตโนมัติ: หน้า วันที่ มาตราส่วน แผนที่ และอื่น ๆ
+Add the attribute table of a layer in the map frame.	เพิ่มตารางแอตทริบิวต์ของชั้นข้อมูลในกรอบแผนที่
+Add the current view as a keyframe.	เพิ่มมุมมองปัจจุบันเป็นคีย์เฟรม
+Add the maps of a map file, map package, project or project package.	เพิ่มแผนที่จากไฟล์แผนที่ แพ็กเกจแผนที่ โปรเจกต์ หรือแพ็กเกจโปรเจกต์
+Add The National Map Service	เพิ่มบริการ The National Map
+Add this GeoTIFF to the map	เพิ่ม GeoTIFF นี้ลงในแผนที่
+Add this MCP server to your agent:	เพิ่มเซิร์ฟเวอร์ MCP นี้ให้เอเจนต์ของคุณ:
+Add Tile Layer	เพิ่มชั้นข้อมูลไทล์
+Add Tile Layer…	เพิ่มชั้นข้อมูลไทล์…
+Add To Current Selection	เพิ่มในการเลือกปัจจุบัน
+Add to Favourites	เพิ่มในรายการโปรด
+Add to Map	เพิ่มลงในแผนที่
+Add vector data.	เพิ่มข้อมูลเวกเตอร์
+Add view	เพิ่มมุมมอง
+Add With Options…	เพิ่มพร้อมตัวเลือก…
+Add Zarr Variable	เพิ่มตัวแปร Zarr
+Add Zarr Variable…	เพิ่มตัวแปร Zarr…
+Add ▾	เพิ่ม ▾
+Added	เพิ่มแล้ว
+Added Overture's {theme} as map tiles ({release}; some themes show only zoomed in): {attribution}	เพิ่ม {theme} ของ Overture เป็นไทล์แผนที่แล้ว ({release} บางธีมแสดงเฉพาะเมื่อซูมเข้า): {attribution}
+Added {name}	เพิ่ม {name} แล้ว
+Added {p} points, {l} lines and {g} polygons	เพิ่มจุด {p} รายการ เส้น {l} รายการ และรูปหลายเหลี่ยม {g} รายการแล้ว
+Added: {names}	เพิ่มแล้ว: {names}
+Adding…	กำลังเพิ่ม…
+Additional surrounds.	องค์ประกอบแผนที่เพิ่มเติม
+Address	ที่อยู่
+Address fields	ฟิลด์ที่อยู่
+Adds geodesic area (km²), length (km) or centroid coordinates as fields.	เพิ่มพื้นที่ (km²) ความยาว (km) แบบจีโอเดสิก หรือพิกัดเซนทรอยด์ เป็นฟิลด์
+ADM0	ADM0
+ADM0 — the country	ADM0 — ระดับประเทศ
+ADM1	ADM1
+ADM1 — states, provinces	ADM1 — รัฐ จังหวัด
+ADM2	ADM2
+ADM2 — districts, counties	ADM2 — อำเภอ เคาน์ตี
+ADM3	ADM3
+ADM4	ADM4
+ADM5	ADM5
+Administrative Boundaries	ขอบเขตการปกครอง
+After	หลัง
+After the event	หลังเหตุการณ์
+Agent input exceeds the protocol line limit.	อินพุตของเอเจนต์เกินขีดจำกัดความยาวบรรทัดของโปรโตคอล
+Agent input pipe closed.	ไปป์อินพุตของเอเจนต์ถูกปิด
+Agent input queue is full or disconnected; stop the agent and try again.	คิวอินพุตของเอเจนต์เต็มหรือขาดการเชื่อมต่อ หยุดเอเจนต์แล้วลองอีกครั้ง
+Agent threads	เธรดของเอเจนต์
+Agent work	งานของเอเจนต์
+Agents have full access: they may run scripts, tasks, models and plugins. Click to stop the MCP relay	เอเจนต์มีสิทธิ์เข้าถึงเต็มที่: สามารถเรียกใช้สคริปต์ งาน โมเดล และปลั๊กอินได้ คลิกเพื่อหยุดรีเลย์ MCP
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. Scripts and plugin management stay off.	เอเจนต์บนคอมพิวเตอร์เครื่องนี้ที่เชื่อมต่อเข้ามา (Claude Code, Codex, Cursor และอื่น ๆ) จะทำงานกับแผนที่ที่เปิดอยู่ที่นี่ด้วยเครื่องมือของ RustGIS: สามารถเปิดและบันทึกไฟล์ และใช้เว็บได้ ส่วนสคริปต์และการจัดการปลั๊กอินยังคงปิดอยู่
+Agents then run commands, change files and use the web on this computer without asking you.	จากนั้นเอเจนต์จะเรียกใช้คำสั่ง เปลี่ยนแปลงไฟล์ และใช้เว็บบนคอมพิวเตอร์เครื่องนี้โดยไม่ถามคุณ
+Aggregate Points to A5	รวมจุดเข้ากริด A5
+Aggregation	การรวมข้อมูล
+Agricultural field boundaries the Fields of the World model found in Sentinel-2 imagery, worldwide, a year at a time (2nd Edition, CC BY 4.0). These are model predictions, not surveyed parcels.	ขอบเขตแปลงเพาะปลูกที่โมเดล Fields of the World ตรวจพบในภาพถ่าย Sentinel-2 ทั่วโลก ทีละปี (ฉบับที่ 2, CC BY 4.0) ข้อมูลนี้เป็นผลการทำนายของโมเดล ไม่ใช่แปลงที่ได้จากการรังวัด
+AI	AI
+AI\nAssistant	ผู้ช่วย\nAI
+AI Assistant	ผู้ช่วย AI
+AI provider	ผู้ให้บริการ AI
+Albers Equal Area Conic	Albers Equal Area Conic
+Alignment	การจัดแนว
+All	ทั้งหมด
+All categories	ทุกหมวดหมู่
+All classes	ทุกคลาส
+All files	ไฟล์ทั้งหมด
+all of it	ทั้งหมด
+All Selected	ที่เลือกทั้งหมด
+All steps done.	ทำครบทุกขั้นตอนแล้ว
+All tables with geometry	ทุกตารางที่มีรูปทรงเรขาคณิต
+Allow	อนุญาต
+Allow ChatGPT plan use when signing in. If your workspace doesn't permit it, ask its admin or choose an API key provider.	อนุญาตให้ใช้แผน ChatGPT เมื่อลงชื่อเข้าใช้ หากพื้นที่ทำงานของคุณไม่อนุญาต ให้ติดต่อผู้ดูแล หรือเลือกผู้ให้บริการที่ใช้คีย์ API
+Allow Feature Selection	อนุญาตการเลือกฟีเจอร์
+Allow only certain combinations of values across fields.	อนุญาตเฉพาะชุดค่าบางชุดที่ประกอบกันข้ามฟิลด์
+Allow such actions for this conversation	อนุญาตการดำเนินการลักษณะนี้สำหรับการสนทนานี้
+Allow this action?	อนุญาตการดำเนินการนี้หรือไม่?
+Allow this agent's RustGIS action?	อนุญาตการดำเนินการใน RustGIS ของเอเจนต์นี้หรือไม่?
+Along lines	ตามแนวเส้น
+Along Selected Line	ตามแนวเส้นที่เลือก
+Alt+	Alt+
+Alternating bar	แถบสลับสี
+Altitude	ระดับความสูง
+Always allow	อนุญาตเสมอ
+Amazon S3	Amazon S3
+Amazon S3, or an S3-compatible service (MinIO, Cloudflare R2, Wasabi…) by its endpoint. Keys are kept until RustGIS closes; a saved connection keeps its name, endpoint and region, never its secret.	Amazon S3 หรือบริการที่เข้ากันได้กับ S3 (MinIO, Cloudflare R2, Wasabi…) ตามปลายทาง (endpoint) คีย์จะถูกเก็บไว้จนกว่าจะปิด RustGIS การเชื่อมต่อที่บันทึกไว้จะเก็บชื่อ ปลายทาง และภูมิภาค แต่ไม่เก็บรหัสลับ
+amenity=cafe, shop	amenity=cafe, shop
+An agent on this computer asks to:	เอเจนต์บนคอมพิวเตอร์เครื่องนี้ขอ:
+An AWS profile	โปรไฟล์ AWS
+Analysis	การวิเคราะห์
+Analyze	วิเคราะห์
+Analyze › AI	วิเคราะห์ › AI
+Analyze › Workflows	วิเคราะห์ › เวิร์กโฟลว์
+AND	AND
+Angle	มุม
+Animated GIF	GIF เคลื่อนไหว
+Animation	ภาพเคลื่อนไหว
+Another run is under way.	มีการเรียกใช้อื่นกำลังทำงานอยู่
+Any	ใดก็ได้
+anywhere in the records	ที่ใดก็ได้ในเรคคอร์ด
+API key	คีย์ API
+Apply	นำไปใช้
+Apply a function to a raster	ใช้ฟังก์ชันกับแรสเตอร์
+Apply Control Points	ใช้จุดควบคุม
+Apply elevation	ใช้ความสูง
+Apply Style	ใช้สไตล์
+Apply to layers	ใช้กับชั้นข้อมูล
+Apply to the selected layer	ใช้กับชั้นข้อมูลที่เลือก
+Approve agents' actions without asking	อนุมัติการดำเนินการของเอเจนต์โดยไม่ต้องถาม
+Approximate local-distance selection. The retained geographic prefilter can exclude features near the outline.	การเลือกตามระยะทางเฉพาะที่แบบประมาณ ตัวกรองเบื้องต้นเชิงภูมิศาสตร์ที่คงไว้อาจตัดฟีเจอร์ที่อยู่ใกล้เส้นขอบออก
+ArcGIS	ArcGIS
+ArcGIS Hub	ArcGIS Hub
+ArcGIS Portal	ArcGIS Portal
+ArcGIS Portal…	ArcGIS Portal…
+ArcGIS REST	ArcGIS REST
+Archive	เก็บถาวร
+Archive History	ประวัติการเก็บถาวร
+Archiving	การเก็บถาวร
+Area	พื้นที่
+Area of use: longitude {w}° to {e}°, latitude {s}° to {n}°	พื้นที่ใช้งาน: ลองจิจูด {w}° ถึง {e}° ละติจูด {s}° ถึง {n}°
+Area of use: the whole world	พื้นที่ใช้งาน: ทั่วโลก
+Area of use: within {r}° of the {lon}° meridian	พื้นที่ใช้งาน: ภายใน {r}° จากเส้นเมริเดียน {lon}°
+Area of use: within {r}° of {lon}°, {lat}°	พื้นที่ใช้งาน: ภายใน {r}° จาก {lon}°, {lat}°
+Area {area}   ·   Perimeter {perimeter}	พื้นที่ {area}   ·   เส้นรอบรูป {perimeter}
+Areas (name, land use, area)	พื้นที่ (ชื่อ การใช้ที่ดิน พื้นที่)
+Arrange	จัดเรียง
+Arrow	ลูกศร
+Arrowheads	หัวลูกศร
+Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	ถามคำถามเกี่ยวกับข้อมูลของคุณ หรืออธิบายสิ่งที่ต้องการทำกับแผนที่ ผู้ช่วยจะเรียกใช้คำสั่ง RustGIS ให้คุณ และทุกการเปลี่ยนแปลงสามารถเลิกทำได้
+Ask about the map, or tell it what to do…	ถามเกี่ยวกับแผนที่ หรือบอกสิ่งที่ต้องการให้ทำ…
+Ask about your data, or tell the assistant what to do with the map.	ถามเกี่ยวกับข้อมูลของคุณ หรือบอกผู้ช่วยว่าต้องทำอะไรกับแผนที่
+Asking NASA's CMR…	กำลังสอบถาม CMR ของ NASA…
+Asking the catalog…	กำลังสอบถามแค็ตตาล็อก…
+Asking the NLDI…	กำลังสอบถาม NLDI…
+Asset	แอสเซ็ต
+Assistant settings	การตั้งค่าผู้ช่วย
+At the end	ที่ตอนท้าย
+At the start	ที่ตอนต้น
+Atlas	แอตลาส
+Attachments	ไฟล์แนบ
+Attribute\nTable	ตาราง\nแอตทริบิวต์
+Attribute Rules	กฎแอตทริบิวต์
+Attribute Table	ตารางแอตทริบิวต์
+Attributes	แอตทริบิวต์
+Attribution	การระบุแหล่งที่มา
+Aurora	Aurora
+Auto	อัตโนมัติ
+Auto Cache	แคชอัตโนมัติ
+Auto-complete (2 clicks)	เติมอัตโนมัติ (2 คลิก)
+Auto-complete Profile	เติมโปรไฟล์อัตโนมัติ
+Autofill Fields	เติมฟิลด์อัตโนมัติ
+Automatic	อัตโนมัติ
+Automatic (m or km)	อัตโนมัติ (m หรือ km)
+Automatic (system language)	อัตโนมัติ (ภาษาของระบบ)
+Automatic (system time zone and region)	อัตโนมัติ (เขตเวลาและภูมิภาคของระบบ)
+Automatic ({kind})	อัตโนมัติ ({kind})
+Avoid	หลีกเลี่ยง
+AWS, anonymous	AWS แบบไม่ระบุตัวตน
+Azimuth	มุมแอซิมัท
+Back	ย้อนกลับ
+Back to the Map	กลับไปที่แผนที่
+Back to the map	กลับไปที่แผนที่
+Back to tools	กลับไปที่เครื่องมือ
+Backdrop	ฉากหลัง
+Band	แบนด์
+Band Combination	การผสมแบนด์
+Band must be a positive integer, list of bands, or 'all'.	แบนด์ต้องเป็นจำนวนเต็มบวก รายการแบนด์ หรือ 'all'
+Band values at a point	ค่าแบนด์ ณ จุดหนึ่ง
+Band {n}	แบนด์ {n}
+Bands	แบนด์
+Bands: blue green red NIR SWIR	แบนด์: น้ำเงิน เขียว แดง NIR SWIR
+Basemap	แผนที่ฐาน
+Basemaps	แผนที่ฐาน
+Basin from hydrolocation	ลุ่มน้ำจากตำแหน่งอุทกวิทยา (hydrolocation)
+Bearing	ทิศ
+Before	ก่อน
+Before the event	ก่อนเหตุการณ์
+Below	ด้านล่าง
+Below 1:5,000,000 show everything; beyond it only what matches:	ต่ำกว่า 1:5,000,000 แสดงทุกอย่าง เกินกว่านั้นแสดงเฉพาะที่ตรงกับ:
+Below Left	ด้านล่างซ้าย
+Below Right	ด้านล่างขวา
+Best	ดีที่สุด
+Bevel	มุมตัด
+Bike	จักรยาน
+Bilinear	ไบลิเนียร์ (Bilinear)
+Bind To Time Slider	ผูกกับแถบเวลา
+Bind to Time Slider	ผูกกับแถบเวลา
+Blank	ว่าง
+Blank for Amazon S3	เว้นว่างไว้สำหรับ Amazon S3
+Blank Letter page	หน้า Letter ว่าง
+Blank Map	แผนที่ว่าง
+Blank Page	หน้าว่าง
+Blend: {mode}	การผสม: {mode}
+Block Feature Selection	บล็อกการเลือกฟีเจอร์
+Blue	น้ำเงิน
+Bold	ตัวหนา
+Bold label text.	ทำให้ข้อความป้ายชื่อเป็นตัวหนา
+Bookmark Description	คำอธิบายบุ๊กมาร์ก
+Bookmarks	บุ๊กมาร์ก
+Bookmarks Pane	แผงบุ๊กมาร์ก
+Boolean	บูลีน
+Both ends	ทั้งสองปลาย
+Bottom	ด้านล่าง
+Boundaries…	ขอบเขตการปกครอง…
+Bounding\nGeometry	รูปทรง\nล้อมรอบ
+Brightness	ความสว่าง
+Brightness, contrast, saturation and sepia for the whole map.	ความสว่าง คอนทราสต์ ความอิ่มตัวของสี และโทนซีเปียสำหรับทั้งแผนที่
+Bring this bookmark's map into view to update it	แสดงแผนที่ของบุ๊กมาร์กนี้เพื่ออัปเดต
+Browse	เรียกดู
+Browse Connection	เรียกดูการเชื่อมต่อ
+Browse it in the Browser	เรียกดูในเบราว์เซอร์
+Browse Plugins	เรียกดูปลั๊กอิน
+Browse the geoprocessing toolbox.	เรียกดูกล่องเครื่องมือการประมวลผลเชิงพื้นที่
+Browse the project's maps, tables and folders.	เรียกดูแผนที่ ตาราง และโฟลเดอร์ของโปรเจกต์
+Browse this folder below	เรียกดูโฟลเดอร์นี้ด้านล่าง
+Browse with	เรียกดูด้วย
+Browse, install, update and remove plugins.	เรียกดู ติดตั้ง อัปเดต และนำปลั๊กอินออก
+Browser	เบราว์เซอร์
+Browser\nPane	แผง\nเบราว์เซอร์
+Browser View	มุมมองเบราว์เซอร์
+Bucket	บักเก็ต
+Bucket {bucket} at {endpoint}	บักเก็ต {bucket} ที่ {endpoint}
+Buckets	บักเก็ต
+Buffer	บัฟเฟอร์
+Buffer A Point	บัฟเฟอร์จุด
+Buffer the cities by 200 km	บัฟเฟอร์เมือง 200 กม.
+Buffer {distance}	บัฟเฟอร์ {distance}
+Buffer {distance} Here	บัฟเฟอร์ {distance} ที่นี่
+Build	สร้าง
+Build a surface model and mesh from elevation rasters	สร้างแบบจำลองพื้นผิวและเมชจากแรสเตอร์ความสูง
+Build Mosaic	สร้างโมเสก
+Built in	ในตัว
+Bundle the active map and its data.	รวมแผนที่ที่ใช้งานอยู่และข้อมูลของแผนที่เป็นชุดเดียว
+Bundle the geoprocessing history with the layers it made.	รวมประวัติการประมวลผลเชิงพื้นที่กับชั้นข้อมูลที่สร้างขึ้นเป็นชุดเดียว
+Bundle the project and its data into one file to share.	รวมโปรเจกต์และข้อมูลไว้ในไฟล์เดียวเพื่อแชร์
+Bundle the visible layers, with simplified geometry for phones and tablets.	รวมชั้นข้อมูลที่มองเห็นเป็นชุดเดียว พร้อมรูปทรงเรขาคณิตแบบย่อสำหรับโทรศัพท์และแท็บเล็ต
+By\nAttributes	ตาม\nแอตทริบิวต์
+By\nLocation	ตาม\nตำแหน่ง
+By layer	ตามชั้นข้อมูล
+by {author}	โดย {author}
+By {field}	ตาม {field}
+cached tiles	ไทล์ในแคช
+Calculate	คำนวณ
+Calculate\nGeometry	คำนวณ\nรูปทรงเรขาคณิต
+Calculate Field	คำนวณฟิลด์
+Calculate field	คำนวณฟิลด์
+Calculate field values.	คำนวณค่าฟิลด์
+Calculate fields and enforce conditions on every edit.	คำนวณฟิลด์และบังคับใช้เงื่อนไขทุกครั้งที่แก้ไข
+Calculate Geometry	คำนวณรูปทรงเรขาคณิต
+Calculate Geometry Attributes	คำนวณแอตทริบิวต์รูปทรงเรขาคณิต
+Calculate raster statistics per polygon	คำนวณสถิติแรสเตอร์ตามรูปหลายเหลี่ยม
+Calculate Statistics	คำนวณสถิติ
+Calculated {rows} features	คำนวณ {rows} ฟีเจอร์แล้ว
+Calculates raster summary statistics for each polygon feature.	คำนวณสถิติสรุปของแรสเตอร์สำหรับแต่ละฟีเจอร์รูปหลายเหลี่ยม
+Calculation	การคำนวณ
+Camera	กล้อง
+Camera Effect	เอฟเฟกต์กล้อง
+Can't read this folder	อ่านโฟลเดอร์นี้ไม่ได้
+Cancel	ยกเลิก
+Cancel Caching	ยกเลิกการแคช
+Cap	ปลายเส้น
+Capture To Clipboard	จับภาพไปยังคลิปบอร์ด
+CARGO_PKG_VERSION	CARGO_PKG_VERSION
+Cartography	การทำแผนที่
+Case Field	ฟิลด์จัดกลุ่ม
+Cast Shadow	ทอดเงา
+Catalog	แค็ตตาล็อก
+catalog is a static STAC catalog's catalog.json or collection.json	catalog คือ catalog.json หรือ collection.json ของแค็ตตาล็อก STAC แบบสแตติก
+Catalogue (CSW)	แค็ตตาล็อก (CSW)
+Catalogue search (CSW)	ค้นหาแค็ตตาล็อก (CSW)
+Category	หมวดหมู่
+Celestial Bodies	วัตถุท้องฟ้า
+Celestial Body	วัตถุท้องฟ้า
+Celestial body: {body}	วัตถุท้องฟ้า: {body}
+Cell size	ขนาดเซลล์
+cell size °	ขนาดเซลล์ °
+Cells	เซลล์
+Center	กึ่งกลาง
+Center Map Here	จัดแผนที่ให้อยู่กึ่งกลางที่นี่
+Centered	จัดกึ่งกลาง
+Central meridian	เมริเดียนกลาง
+Chain functions	เชื่อมฟังก์ชันต่อกัน
+Chain raster functions.	เชื่อมฟังก์ชันแรสเตอร์ต่อกัน
+Change dataset	เปลี่ยนชุดข้อมูล
+Change Detection	การตรวจจับการเปลี่ยนแปลง
+Change the map's backdrop.	เปลี่ยนพื้นหลังของแผนที่
+Change the map's coordinate system	เปลี่ยนระบบพิกัดของแผนที่
+Change the page size and orientation.	เปลี่ยนขนาดและแนวของหน้ากระดาษ
+Change the project (add layers, edit features, change symbology)	เปลี่ยนแปลงโปรเจกต์ (เพิ่มชั้นข้อมูล แก้ไขฟีเจอร์ เปลี่ยนสัญลักษณ์)
+Chart categories	หมวดหมู่แผนภูมิ
+Chart Frame	กรอบแผนภูมิ
+ChatGPT (sign in)	ChatGPT (ลงชื่อเข้าใช้)
+ChatGPT plan use is unavailable for this account or workspace.	ไม่สามารถใช้แพ็กเกจ ChatGPT กับบัญชีหรือพื้นที่ทำงานนี้
+ChatGPT sign-in failed. Check the connection and local settings, then try again.	ลงชื่อเข้าใช้ ChatGPT ไม่สำเร็จ ตรวจสอบการเชื่อมต่อและการตั้งค่าในเครื่อง แล้วลองอีกครั้ง
+ChatGPT usage is temporarily unavailable. Keep your sign-in and try again later.	ใช้งาน ChatGPT ไม่ได้ชั่วคราว การลงชื่อเข้าใช้ยังคงอยู่ โปรดลองอีกครั้งภายหลัง
+CHE	CHE
+Check	ตรวจสอบ
+Check Again	ตรวจสอบอีกครั้ง
+Check for\nUpdates	ตรวจหา\nอัปเดต
+Check for Updates	ตรวจหาอัปเดต
+Check for Updates…	ตรวจหาอัปเดต…
+Check the address and the service type.	ตรวจสอบที่อยู่และประเภทบริการ
+Check the address and your connection.	ตรวจสอบที่อยู่และการเชื่อมต่อของคุณ
+Check the address.	ตรวจสอบที่อยู่
+Check the clause, and count the features it takes.	ตรวจสอบเงื่อนไข และนับฟีเจอร์ที่ได้
+Check the integration's client, permissions, workspace policy and route configuration.	ตรวจสอบไคลเอนต์ สิทธิ์ นโยบายพื้นที่ทำงาน และการกำหนดค่าเส้นทางของการผสานรวม
+Checking for updates…	กำลังตรวจหาอัปเดต…
+China	จีน
+Choice Test	Choice Test
+Choose a band combination to display the raster layer.	เลือกชุดผสมแบนด์เพื่อแสดงชั้นข้อมูลแรสเตอร์
+Choose a contrast stretch for the raster layer.	เลือกการยืดคอนทราสต์สำหรับชั้นข้อมูลแรสเตอร์
+Choose a country	เลือกประเทศ
+Choose a delimited text file or a spreadsheet, then pick its columns.	เลือกไฟล์ข้อความแบบมีตัวคั่นหรือสเปรดชีต แล้วเลือกคอลัมน์
+Choose a destination	เลือกปลายทาง
+Choose a field to apply this renderer:	เลือกฟิลด์ที่จะใช้กับตัวเรนเดอร์นี้:
+choose a file first	เลือกไฟล์ก่อน
+Choose a layer…	เลือกชั้นข้อมูล…
+Choose a model.	เลือกโมเดล
+Choose a resampling type for the raster layer.	เลือกชนิดการรีแซมเปิลสำหรับชั้นข้อมูลแรสเตอร์
+Choose a saved S3 connection before opening this source.	เลือกการเชื่อมต่อ S3 ที่บันทึกไว้ก่อนเปิดแหล่งข้อมูลนี้
+Choose a start	เลือกจุดเริ่มต้น
+Choose a stop	เลือกจุดแวะ
+Choose a zipped Shapefile, or pick its .shp and .dbf together.	เลือก Shapefile ที่บีบอัดเป็น zip หรือเลือกไฟล์ .shp และ .dbf พร้อมกัน
+Choose an account	เลือกบัญชี
+Choose Connection	เลือกการเชื่อมต่อ
+Choose Connection…	เลือกการเชื่อมต่อ…
+Choose extra buttons for the Quick Access Toolbar.	เลือกปุ่มเพิ่มเติมสำหรับแถบเครื่องมือด่วน
+Choose File…	เลือกไฟล์…
+Choose how the flat map lays out the Earth.	เลือกวิธีที่แผนที่แบบแบนจัดวางโลก
+Choose how the layer is drawn.	เลือกวิธีวาดชั้นข้อมูล
+Choose how the raster is drawn.	เลือกวิธีวาดแรสเตอร์
+Choose polygon, lasso, or radius selection.	เลือกแบบรูปหลายเหลี่ยม แบบบ่วงบาศ หรือแบบรัศมี
+Choose Project…	เลือกโปรเจกต์…
+Choose S3 Connection	เลือกการเชื่อมต่อ S3
+Choose S3 connection	เลือกการเชื่อมต่อ S3
+Choose S3 connection…	เลือกการเชื่อมต่อ S3…
+Choose the interface language.	เลือกภาษาของอินเทอร์เฟซ
+Choose the source coordinate system before importing	เลือกระบบพิกัดต้นทางก่อนนำเข้า
+Choose the source coordinate system before importing. It replaces a missing or incorrect .prj without changing the original file.	เลือกระบบพิกัดต้นทางก่อนนำเข้า ระบบนี้จะใช้แทนไฟล์ .prj ที่หายไปหรือไม่ถูกต้อง โดยไม่เปลี่ยนไฟล์ต้นฉบับ
+Choose which layers a click identifies.	เลือกชั้นข้อมูลที่จะระบุข้อมูลเมื่อคลิก
+Choose which saved connection to use for this database. This choice lasts for this session.	เลือกการเชื่อมต่อที่บันทึกไว้ที่จะใช้กับฐานข้อมูลนี้ ตัวเลือกนี้มีผลตลอดเซสชันนี้
+Choose which tabs the ribbon shows.	เลือกแท็บที่จะแสดงบนริบบอน
+Circle	วงกลม
+Circle Radius (km)	รัศมีวงกลม (กม.)
+Class	คลาส
+Class color	สีของคลาส
+Class Style	สไตล์คลาส
+Class {n}	คลาส {n}
+Class {n} up to	คลาส {n} สูงสุดถึง
+Classes	คลาส
+Classes from training polygons.	คลาสจากรูปหลายเหลี่ยมตัวอย่างฝึกสอน
+Classic arrow	ลูกศรแบบคลาสสิก
+Classification\nTools	เครื่องมือ\nการจำแนก
+Classification\nWizard	วิซาร์ด\nการจำแนก
+Classification Tools	เครื่องมือการจำแนก
+Classification Wizard	วิซาร์ดการจำแนก
+Classify	จำแนก
+Classify from training polygons	จำแนกจากรูปหลายเหลี่ยมตัวอย่างฝึกสอน
+Claude Code and Codex connect through an ACP adapter. On first use, npx downloads and runs its pinned version from npm.	Claude Code และ Codex เชื่อมต่อผ่านอะแดปเตอร์ ACP เมื่อใช้งานครั้งแรก npx จะดาวน์โหลดและเรียกใช้เวอร์ชันที่ระบุไว้จาก npm
+Clear	ล้าง
+Clear\nLimits	ล้าง\nขีดจำกัด
+Clear Filters	ล้างตัวกรอง
+Clear Guides	ล้างเส้นไกด์
+Clear History	ล้างประวัติ
+Clear Limits	ล้างขีดจำกัด
+Clear mask	ล้างมาสก์
+Clear NLDI result	ล้างผลลัพธ์ NLDI
+Clear search	ล้างการค้นหา
+Clear Selection	ล้างการเลือก
+Clear selection	ล้างการเลือก
+Clear the filter to reorder	ล้างตัวกรองเพื่อจัดลำดับใหม่
+Clear the selection in every layer.	ล้างการเลือกในทุกชั้นข้อมูล
+Clear the selection.	ล้างการเลือก
+Clear Visibility Range	ล้างช่วงการมองเห็น
+Click a feature, then drag its vertices · click an edge to add one	คลิกฟีเจอร์ แล้วลากจุดยอด · คลิกขอบเพื่อเพิ่มจุดยอด
+Click a pixel on the map	คลิกพิกเซลบนแผนที่
+Click a point on the map	คลิกจุดบนแผนที่
+Click a source to add it, or to open its browser connected. Right-click for favourites.	คลิกแหล่งข้อมูลเพื่อเพิ่ม หรือเพื่อเปิดเบราว์เซอร์ที่เชื่อมต่อแล้ว คลิกขวาสำหรับรายการโปรด
+Click or drag a box to select features. Shift adds, Ctrl removes.	คลิกหรือลากกรอบเพื่อเลือกฟีเจอร์ Shift เพื่อเพิ่ม Ctrl เพื่อนำออก
+Click or drag a box · Shift adds · Ctrl removes	คลิกหรือลากกรอบ · Shift เพื่อเพิ่ม · Ctrl เพื่อนำออก
+Click points a smooth curve passes through; double-click to finish.	คลิกจุดที่เส้นโค้งเรียบผ่าน ดับเบิลคลิกเพื่อสิ้นสุด
+Click the corners of a polygon; double-click to close it.	คลิกมุมของรูปหลายเหลี่ยม ดับเบิลคลิกเพื่อปิดรูป
+Click the corners of the area · double-click to finish	คลิกมุมของพื้นที่ · ดับเบิลคลิกเพื่อสิ้นสุด
+Click the frame's corners · double-click to finish · Esc to stop	คลิกมุมของกรอบ · ดับเบิลคลิกเพื่อสิ้นสุด · Esc เพื่อหยุด
+Click the map to add a point	คลิกแผนที่เพื่อเพิ่มจุด
+Click the map to place a point	คลิกแผนที่เพื่อวางจุด
+Click the map to place text	คลิกแผนที่เพื่อวางข้อความ
+Click the map to place text.	คลิกแผนที่เพื่อวางข้อความ
+Click the map to trace a point	คลิกแผนที่เพื่อติดตามจุด
+Click the map: {n} of {total}	คลิกแผนที่: {n} จาก {total}
+Click the observer on the map	คลิกตำแหน่งผู้สังเกตบนแผนที่
+Click the observer, then the target	คลิกตำแหน่งผู้สังเกต แล้วคลิกเป้าหมาย
+Click the polygon's corners	คลิกมุมของรูปหลายเหลี่ยม
+Click the start, then the end	คลิกจุดเริ่มต้น แล้วคลิกจุดสิ้นสุด
+Click the vertices of a line; double-click to finish.	คลิกจุดยอดของเส้น ดับเบิลคลิกเพื่อสิ้นสุด
+Click to add points · double-click to finish · Esc to stop	คลิกเพื่อเพิ่มจุด · ดับเบิลคลิกเพื่อสิ้นสุด · Esc เพื่อหยุด
+Click to add vertices · double-click to close	คลิกเพื่อเพิ่มจุดยอด · ดับเบิลคลิกเพื่อปิดรูป
+Click to add vertices · double-click to close the polygon	คลิกเพื่อเพิ่มจุดยอด · ดับเบิลคลิกเพื่อปิดรูปหลายเหลี่ยม
+Click to add vertices · double-click to finish	คลิกเพื่อเพิ่มจุดยอด · ดับเบิลคลิกเพื่อสิ้นสุด
+Click to add vertices · double-click to finish the line	คลิกเพื่อเพิ่มจุดยอด · ดับเบิลคลิกเพื่อสิ้นสุดเส้น
+Click to edit the description	คลิกเพื่อแก้ไขคำอธิบาย
+Click to place a point graphic.	คลิกเพื่อวางกราฟิกจุด
+Click to select the node	คลิกเพื่อเลือกโหนด
+Click to select, double-click to add, right-click for more	คลิกเพื่อเลือก ดับเบิลคลิกเพื่อเพิ่ม คลิกขวาสำหรับตัวเลือกเพิ่มเติม
+Click to switch between decimal degrees and DMS	คลิกเพื่อสลับระหว่างองศาทศนิยมและ DMS
+Click vertices · click the start or double-click to select · Shift adds · Ctrl/Cmd removes · Esc cancels	คลิกจุดยอด · คลิกจุดเริ่มต้นหรือดับเบิลคลิกเพื่อเลือก · Shift เพื่อเพิ่ม · Ctrl/Cmd เพื่อนำออก · Esc เพื่อยกเลิก
+Clip	ตัด (Clip)
+Clip a raster to the view, or resample it.	ตัดแรสเตอร์ตามมุมมอง หรือรีแซมเปิล
+Clip Features	ตัดฟีเจอร์
+Clip or resample	ตัดหรือรีแซมเปิล
+Clip To Map View	ตัดตามมุมมองแผนที่
+Clip To Polygon	ตัดตามรูปหลายเหลี่ยม
+Clip to polygon layer	ตัดตามชั้นข้อมูลรูปหลายเหลี่ยม
+Clipboard	คลิปบอร์ด
+Close	ปิด
+Close (Esc)	ปิด (Esc)
+Close All	ปิดทั้งหมด
+Close all panes	ปิดแผงทั้งหมด
+Close ModelBuilder	ปิด ModelBuilder
+Close Others	ปิดรายการอื่น
+Close Table	ปิดตาราง
+Close table	ปิดตาราง
+Close the layout and show the map.	ปิดเลย์เอาต์และแสดงแผนที่
+Close the time slider (it stays on; Time Slider opens it again).	ปิดแถบเวลา (ยังคงทำงานอยู่ เปิดอีกครั้งได้จากแถบเวลา)
+Close thread	ปิดเธรด
+Close {name}	ปิด {name}
+Closest	ใกล้ที่สุด
+Coded values, one per line: code=description	ค่าแบบรหัส บรรทัดละหนึ่งค่า: รหัส=คำอธิบาย
+Collapse or Expand the Ribbon	ยุบหรือขยายริบบอน
+Collapse the ribbon (Ctrl+F1)	ยุบริบบอน (Ctrl+F1)
+Collection	คอลเลกชัน
+Collection {id}: choose dates and Find Items	คอลเลกชัน {id}: เลือกวันที่แล้วกดค้นหารายการ
+Collections	คอลเลกชัน
+Color	สี
+Color Infrared (4, 1, 2)	อินฟราเรดสี (4, 1, 2)
+Color Ramps	ชุดไล่สี
+Color Scheme	ชุดสี
+Color scheme	ชุดสี
+Color Vision	การมองเห็นสี
+Color Vision Simulator	ตัวจำลองการมองเห็นสี
+Colorbar	แถบสี
+Colormap	แผนที่สี
+Colors from the raster's own color table.	สีจากตารางสีของแรสเตอร์เอง
+Colour ramps (RustGIS, QGIS, GDAL, GMT)	ชุดไล่สี (RustGIS, QGIS, GDAL, GMT)
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	คอลัมน์ที่มีชื่ออย่าง longitude/latitude, easting/northing หรือ geometry จะถูกเลือกให้อัตโนมัติ
+Combinations from the box above, one per line	ชุดผสมจากกล่องด้านบน บรรทัดละหนึ่งชุด
+COMID {comid}	COMID {comid}
+Comma	จุลภาค
+Comma-separated (optional)	คั่นด้วยจุลภาค (ไม่บังคับ)
+Command\nSearch	ค้นหา\nคำสั่ง
+command is required	ต้องระบุ command
+Command Search	ค้นหาคำสั่ง
+Commands	คำสั่ง
+Commands on the Plugins tab: {commands} · Tools in the Tools pane: {tools}	คำสั่งบนแท็บปลั๊กอิน: {commands} · เครื่องมือในแผงเครื่องมือ: {tools}
+Commands…	คำสั่ง…
+Common scales	มาตราส่วนที่ใช้บ่อย
+Compact	กระชับ
+Compacted the earlier conversation.	ย่อบทสนทนาก่อนหน้าแล้ว
+Compare	เปรียบเทียบ
+Compare two rasters	เปรียบเทียบแรสเตอร์สองชุด
+Compass rose	เข็มทิศ
+Completed	เสร็จสมบูรณ์
+Confirm uninstall	ยืนยันการถอนการติดตั้ง
+Conic, conformal: true shapes across a mid-latitude region; set its meridian and parallels to the region.	กรวย คงรูป: รูปร่างถูกต้องทั่วบริเวณละติจูดกลาง ตั้งค่าเมริเดียนและเส้นขนานให้ตรงกับบริเวณนั้น
+Conic, equal-area: true sizes across a mid-latitude region; set its meridian and parallels to the region.	กรวย พื้นที่เท่า: ขนาดถูกต้องทั่วบริเวณละติจูดกลาง ตั้งค่าเมริเดียนและเส้นขนานให้ตรงกับบริเวณนั้น
+Connect	เชื่อมต่อ
+Connect a folder to the Browser.	เชื่อมต่อโฟลเดอร์เข้ากับเบราว์เซอร์
+Connect to S3	เชื่อมต่อกับ S3
+Connect, or pick a layer	เชื่อมต่อ หรือเลือกชั้นข้อมูล
+Connected to {kind} {title}	เชื่อมต่อกับ {kind} {title} แล้ว
+Connecting to {url}…	กำลังเชื่อมต่อกับ {url}…
+Connection	การเชื่อมต่อ
+connection.new returned no id	connection.new ไม่ได้ส่ง id กลับมา
+Connections	การเชื่อมต่อ
+Connections you add are listed here	การเชื่อมต่อที่คุณเพิ่มจะแสดงที่นี่
+Connections…	การเชื่อมต่อ…
+Constant	ค่าคงที่
+Constant height	ความสูงคงที่
+Constant…	ค่าคงที่…
+Contingent Values	ค่าแบบมีเงื่อนไข
+Continue	ดำเนินการต่อ
+Continue with ChatGPT	ดำเนินการต่อด้วย ChatGPT
+Contrast	คอนทราสต์
+Control Point Fit	ปรับพอดีด้วยจุดควบคุม
+Conversion	การแปลง
+Convert	แปลง
+Convert a layer to another format	แปลงชั้นข้อมูลเป็นรูปแบบอื่น
+Convert the selected layer's labels into an annotation layer.	แปลงป้ายชื่อของชั้นข้อมูลที่เลือกเป็นชั้นข้อมูลคำอธิบายประกอบ
+Convert this layer's labels into an annotation layer.	แปลงป้ายชื่อของชั้นข้อมูลนี้เป็นชั้นข้อมูลคำอธิบายประกอบ
+Convert To Annotation	แปลงเป็นคำอธิบายประกอบ
+Convert to Annotation	แปลงเป็นคำอธิบายประกอบ
+Converted data	ข้อมูลที่แปลงแล้ว
+Convert…	แปลง…
+Coordinate	พิกัด
+Coordinate System	ระบบพิกัด
+Coordinate system	ระบบพิกัด
+Coordinate System…	ระบบพิกัด…
+Copied the command.	คัดลอกคำสั่งแล้ว
+Copied the map to the clipboard	คัดลอกแผนที่ไปยังคลิปบอร์ดแล้ว
+Copied {path}	คัดลอก {path} แล้ว
+Copies the (selected) features of a layer to a new layer.	คัดลอกฟีเจอร์ (ที่เลือก) ของชั้นข้อมูลไปยังชั้นข้อมูลใหม่
+Copy	คัดลอก
+Copy / Cut / Paste features	คัดลอก / ตัด / วางฟีเจอร์
+Copy a model.run command that runs this model, for the Script pane or Python	คัดลอกคำสั่ง model.run ที่เรียกใช้โมเดลนี้ สำหรับแผงสคริปต์หรือ Python
+Copy Address	คัดลอกที่อยู่
+Copy address	คัดลอกที่อยู่
+Copy an image of the map to the clipboard.	คัดลอกภาพของแผนที่ไปยังคลิปบอร์ด
+Copy as CLI Command	คัดลอกเป็นคำสั่ง CLI
+Copy as Command	คัดลอกเป็นคำสั่ง
+Copy As GeoJSON	คัดลอกเป็น GeoJSON
+Copy as Python	คัดลอกเป็น Python
+Copy Command	คัดลอกคำสั่ง
+Copy coordinates to the clipboard	คัดลอกพิกัดไปยังคลิปบอร์ด
+Copy details	คัดลอกรายละเอียด
+Copy Group	คัดลอกกลุ่ม
+Copy Layer	คัดลอกชั้นข้อมูล
+Copy Layers	คัดลอกชั้นข้อมูล
+Copy Path	คัดลอกพาธ
+Copy Run As Code	คัดลอกการเรียกใช้เป็นโค้ด
+Copy sign-in link	คัดลอกลิงก์ลงชื่อเข้าใช้
+Copy the selected features (also as GeoJSON text).	คัดลอกฟีเจอร์ที่เลือก (รวมถึงเป็นข้อความ GeoJSON)
+Copy the selected features and delete them.	คัดลอกฟีเจอร์ที่เลือกแล้วลบออก
+Copy the selected layer's data source path.	คัดลอกพาธแหล่งข้อมูลของชั้นข้อมูลที่เลือก
+Copy this element (Ctrl+D, ⌘D on a Mac)	คัดลอกองค์ประกอบนี้ (Ctrl+D, ⌘D บน Mac)
+Copy this run as code, or open it in its tool	คัดลอกการเรียกใช้นี้เป็นโค้ด หรือเปิดในเครื่องมือของมัน
+Corrections	การแก้ไขค่า
+Cost	ต้นทุน
+could not draw the map	ไม่สามารถวาดแผนที่
+could not start the keychain worker	ไม่สามารถเริ่มตัวทำงานของ keychain
+Couldn't check for updates: {error}	ตรวจหาอัปเดตไม่ได้: {error}
+Couldn't download the font for {language}; pick the language again to retry.	ดาวน์โหลดฟอนต์สำหรับ {language} ไม่ได้ เลือกภาษาอีกครั้งเพื่อลองใหม่
+Couldn't load the plugin registry: {error}	โหลดรีจิสทรีปลั๊กอินไม่ได้: {error}
+Count, sum, mean, min, max and standard deviation of a field, optionally per case field.	จำนวน ผลรวม ค่าเฉลี่ย ค่าต่ำสุด ค่าสูงสุด และส่วนเบี่ยงเบนมาตรฐานของฟิลด์ เลือกแยกตามฟิลด์จัดกลุ่มได้
+Countries, cities, rivers and lakes	ประเทศ เมือง แม่น้ำ และทะเลสาบ
+Country	ประเทศ
+Counts a layer's points by the A5 cell holding them (cells of equal area, so the count is a density), with a field's sum and mean.	นับจุดของชั้นข้อมูลตามเซลล์ A5 ที่จุดนั้นอยู่ (เซลล์มีพื้นที่เท่ากัน จำนวนจึงเป็นความหนาแน่น) พร้อมผลรวมและค่าเฉลี่ยของฟิลด์
+Counts the points that fall inside each polygon.	นับจุดที่อยู่ภายในรูปหลายเหลี่ยมแต่ละรูป
+Counts, totals and top categories of what's in view.	จำนวน ยอดรวม และหมวดหมู่สูงสุดของสิ่งที่อยู่ในมุมมอง
+CPU	CPU
+Create	สร้าง
+Create (click points)	สร้าง (คลิกจุด)
+Create a new project or start from the World Atlas sample.	สร้างโปรเจกต์ใหม่หรือเริ่มจากตัวอย่าง World Atlas
+Create Feature	สร้างฟีเจอร์
+Create Hosted\nImagery	สร้างภาพถ่าย\nแบบโฮสต์
+Create Hosted Imagery	สร้างภาพถ่ายแบบโฮสต์
+Create Hosted Imagery…	สร้างภาพถ่ายแบบโฮสต์…
+Create Line	สร้างเส้น
+Create Point	สร้างจุด
+Create Polygon	สร้างรูปหลายเหลี่ยม
+Create Profile	สร้างโปรไฟล์
+Create Thumbnail	สร้างภาพขนาดย่อ
+Creates a point inside each input feature.	สร้างจุดภายในฟีเจอร์อินพุตแต่ละรายการ
+Creates points from a table's x and y coordinate fields.	สร้างจุดจากฟิลด์พิกัด x และ y ของตาราง
+Creates polygons around input features at a given distance.	สร้างรูปหลายเหลี่ยมรอบฟีเจอร์อินพุตตามระยะที่กำหนด
+Cross Section	ภาพตัดขวาง
+Cross Section (2 clicks)	ภาพตัดขวาง (คลิก 2 ครั้ง)
+CSV	CSV
+Ctrl+	Ctrl+
+Ctrl+Enter	Ctrl+Enter
+Ctrl+K	Ctrl+K
+Ctrl+T	Ctrl+T
+Cumulative	สะสม
+Current date	วันที่ปัจจุบัน
+Current Project	โปรเจกต์ปัจจุบัน
+Current scale ({scale})	มาตราส่วนปัจจุบัน ({scale})
+Current time	เวลาปัจจุบัน
+Curve	เส้นโค้ง
+Curved	โค้ง
+Custom	กำหนดเอง
+Custom Min/Max	ค่าต่ำสุด/สูงสุดกำหนดเอง
+Customize	ปรับแต่ง
+Cut	ตัด
+Cut a raster into web map tiles	ตัดแรสเตอร์เป็นไทล์แผนที่เว็บ
+Cut a raster into web map tiles (XYZ PNG) with a viewer page.	ตัดแรสเตอร์เป็นไทล์แผนที่เว็บ (XYZ PNG) พร้อมหน้าสำหรับดู
+Dark\nMode	โหมด\nมืด
+Dash	ขีด
+Dash and gap lengths in points, in turn, such as 4 2. Empty for a solid line.	ความยาวขีดและช่องว่างเป็นพอยต์ สลับกัน เช่น 4 2 เว้นว่างไว้สำหรับเส้นทึบ
+Dash-dot	เส้นประจุด
+Dashed	เส้นประ
+Data	ข้อมูล
+Data\nSources	แหล่ง\nข้อมูล
+Data Design	การออกแบบข้อมูล
+Data Engineering	วิศวกรรมข้อมูล
+Data Interop	การแลกเปลี่ยนข้อมูล
+Data Management	การจัดการข้อมูล
+Data privacy	ความเป็นส่วนตัวของข้อมูล
+Data Source	แหล่งข้อมูล
+Data Sources	แหล่งข้อมูล
+Data Sources Pane	แผงแหล่งข้อมูล
+Data Stores	ที่เก็บข้อมูล
+Data type	ชนิดข้อมูล
+Data you add is listed here	ข้อมูลที่คุณเพิ่มจะแสดงที่นี่
+data.gov and CKAN catalogues	แค็ตตาล็อก data.gov และ CKAN
+Database	ฐานข้อมูล
+Database connections are used by the desktop app	การเชื่อมต่อฐานข้อมูลใช้ได้ในแอปเดสก์ท็อป
+databases are read through DuckDB, a program the browser can't run	ฐานข้อมูลอ่านผ่าน DuckDB ซึ่งเป็นโปรแกรมที่เบราว์เซอร์เรียกใช้ไม่ได้
+Database…	ฐานข้อมูล…
+Dataset	ชุดข้อมูล
+Datasets on Hugging Face by name or owner/name; browse a dataset's files and add GeoTIFFs, GeoParquet, PMTiles, LiDAR and other files.	ชุดข้อมูลบน Hugging Face ตามชื่อหรือ owner/name เรียกดูไฟล์ของชุดข้อมูลและเพิ่ม GeoTIFF, GeoParquet, PMTiles, LiDAR และไฟล์อื่น ๆ
+Data…	ข้อมูล…
+Date	วันที่
+Dates	วันที่
+Dates a cell needs	จำนวนวันที่ที่เซลล์ต้องมี
+Dates a cell needs is a whole number, or empty for half	จำนวนวันที่ที่เซลล์ต้องมีต้องเป็นจำนวนเต็ม หรือเว้นว่างไว้สำหรับครึ่งหนึ่ง
+Day	วัน
+Day and night shading for a time.	แรเงากลางวันและกลางคืนตามเวลา
+Decimal	ทศนิยม
+Decline	ปฏิเสธ
+Deep Learning	การเรียนรู้เชิงลึก
+Deep Learning\nTools	เครื่องมือ\nการเรียนรู้เชิงลึก
+Deep Learning Package	แพ็กเกจการเรียนรู้เชิงลึก
+Deep Learning Tools	เครื่องมือการเรียนรู้เชิงลึก
+Default	ค่าเริ่มต้น
+Default can't be removed. You can rename or hide it.	ลบค่าเริ่มต้นไม่ได้ แต่เปลี่ยนชื่อหรือซ่อนได้
+Define Projection	กำหนดเส้นโครงแผนที่
+Define Projection…	กำหนดเส้นโครงแผนที่…
+Definition\nQuery	คิวรี\nกำหนดข้อมูล
+Definition Query	คิวรีกำหนดข้อมูล
+Definition query	คิวรีกำหนดข้อมูล
+Definition Query…	คิวรีกำหนดข้อมูล…
+Delete	ลบ
+Delete (or Backspace)	ลบ (หรือ Backspace)
+Delete Cell	ลบเซลล์
+Delete Color Ramp	ลบชุดไล่สี
+Delete Element	ลบองค์ประกอบ
+Delete Field	ลบฟิลด์
+Delete Job	ลบงานประมวลผล
+Delete Layout	ลบเลย์เอาต์
+Delete Map	ลบแผนที่
+Delete Model	ลบโมเดล
+Delete node	ลบโหนด
+Delete Notebook	ลบโน้ตบุ๊ก
+Delete Page	ลบหน้า
+Delete Presentation	ลบงานนำเสนอ
+Delete Report	ลบรายงาน
+Delete selected rows	ลบแถวที่เลือก
+Delete Style	ลบสไตล์
+Delete Task	ลบงาน
+Delete Task Step	ลบขั้นตอนของงาน
+Delete the GeoLibre runner that RustGIS installed. Install it again at any time.	ลบตัวเรียกใช้ GeoLibre ที่ RustGIS ติดตั้งไว้ ติดตั้งใหม่ได้ทุกเมื่อ
+Delete the layout {name}?	ลบเลย์เอาต์ {name} หรือไม่
+Delete the map {name}?	ลบแผนที่ {name} หรือไม่
+Delete the selected features.	ลบฟีเจอร์ที่เลือก
+Delete the step	ลบขั้นตอน
+Delimited Text	ข้อความแบบมีตัวคั่น
+Delimited text and spreadsheets	ข้อความแบบมีตัวคั่นและสเปรดชีต
+Delimited Text…	ข้อความแบบมีตัวคั่น…
+Depth Priority	ลำดับความสำคัญตามความลึก
+Descending	จากมากไปน้อย
+Describing	กำลังอธิบาย
+Description	คำอธิบาย
+Desktop and command line only	เฉพาะเดสก์ท็อปและบรรทัดคำสั่งเท่านั้น
+Destination	ปลายทาง
+Destination key	คีย์ปลายทาง
+Details	รายละเอียด
+Details of the selected layer.	รายละเอียดของชั้นข้อมูลที่เลือก
+Deviations	ส่วนเบี่ยงเบน
+DGGS	DGGS
+Diagnostic\nMonitor	ตัวตรวจสอบ\nการวินิจฉัย
+Diagnostic Monitor	ตัวตรวจสอบการวินิจฉัย
+Diagnostics	การวินิจฉัย
+Diagonal ↗	แนวทแยง ↗
+Diagonal ↘	แนวทแยง ↘
+Diamond	ข้าวหลามตัด
+Difference, ratio or percent change between two rasters.	ผลต่าง อัตราส่วน หรือร้อยละการเปลี่ยนแปลงระหว่างแรสเตอร์สองชุด
+Digit	Digit
+Directions	เส้นทาง
+Directions From Here	เส้นทางจากที่นี่
+Directions To Here	เส้นทางไปที่นี่
+Directions use an external routing server	เส้นทางใช้เซิร์ฟเวอร์คำนวณเส้นทางภายนอก
+Discard	ละทิ้ง
+Discard unsaved changes to the current model?	ละทิ้งการเปลี่ยนแปลงที่ยังไม่บันทึกของโมเดลปัจจุบันหรือไม่
+Disconnect	ตัดการเชื่อมต่อ
+Disconnect From S3	ตัดการเชื่อมต่อจาก S3
+Display	การแสดงผล
+Display Filters	ตัวกรองการแสดงผล
+Display Filters ({n})	ตัวกรองการแสดงผล ({n})
+Display Type	ประเภทการแสดงผล
+Dissolve	รวมรูปทรง (Dissolve)
+Dissolve Field	ฟิลด์สำหรับรวมรูปทรง
+Distance	ระยะทาง
+Distance (km)	ระยะทาง (กม.)
+Distance Coefficient P	สัมประสิทธิ์ระยะทาง P
+Distance units	หน่วยระยะทาง
+Distances along the surface, heights, areas and volumes.	ระยะทางตามพื้นผิว ความสูง พื้นที่ และปริมาตร
+DISTINCT	DISTINCT
+Distinct	ไม่ซ้ำกัน
+Diverging	แบบแยกสองทาง
+Divisions	จำนวนช่องแบ่ง
+DMS	DMS
+Do the exercise once: each command that changes the project becomes a step	ทำแบบฝึกหัดหนึ่งครั้ง: แต่ละคำสั่งที่เปลี่ยนแปลงโปรเจกต์จะกลายเป็นหนึ่งขั้นตอน
+Do the step for me	ทำขั้นตอนนี้ให้ฉัน
+Documents	เอกสาร
+Domains	โดเมน
+Done	เสร็จสิ้น
+Dotted	เส้นประจุด
+Double	ทศนิยม (Double)
+Double-click	ดับเบิลคลิก
+Double-click to add	ดับเบิลคลิกเพื่อเพิ่ม
+Download	ดาวน์โหลด
+Download\nMap	ดาวน์โหลด\nแผนที่
+Download its features in the view (up to the server's limit)	ดาวน์โหลดฟีเจอร์ในมุมมอง (ไม่เกินขีดจำกัดของเซิร์ฟเวอร์)
+Download Map	ดาวน์โหลดแผนที่
+Download OpenStreetMap Data	ดาวน์โหลดข้อมูล OpenStreetMap
+Download the GeoLibre runner	ดาวน์โหลดตัวรัน GeoLibre
+Downloaded {name}	ดาวน์โหลด {name} แล้ว
+Downloading {url}…	กำลังดาวน์โหลด {url}…
+Downloading…	กำลังดาวน์โหลด…
+Downloading… {mb} MB	กำลังดาวน์โหลด… {mb} MB
+DRA	DRA
+Drag / middle-drag	ลาก / ลากด้วยปุ่มกลาง
+Drag a box	ลากกรอบ
+Drag a box or click to zoom in	ลากกรอบหรือคลิกเพื่อขยาย
+Drag a box to draw an ellipse.	ลากกรอบเพื่อวาดวงรี
+Drag a box to zoom into.	ลากกรอบเพื่อขยายเข้าไป
+Drag a map frame to pan its map, wheel to zoom it · Esc to stop	ลากกรอบแผนที่เพื่อเลื่อนแผนที่ หมุนล้อเมาส์เพื่อซูม · Esc เพื่อหยุด
+Drag a rectangle, then pick a PNG or JPEG image to place in it.	ลากสี่เหลี่ยม แล้วเลือกภาพ PNG หรือ JPEG เพื่อวางในนั้น
+Drag a tool from the palette to start building, or add an input layer.	ลากเครื่องมือจากชุดเครื่องมือเพื่อเริ่มสร้าง หรือเพิ่มชั้นข้อมูลอินพุต
+Drag a vertex to move it · click an edge to add one · Delete removes the chosen vertex	ลากจุดยอดเพื่อย้าย · คลิกที่ขอบเพื่อเพิ่มจุดยอด · Delete เพื่อลบจุดยอดที่เลือก
+Drag an area · release to select · Shift adds · Ctrl/Cmd removes · Esc cancels	ลากพื้นที่ · ปล่อยเพื่อเลือก · Shift เพื่อเพิ่ม · Ctrl/Cmd เพื่อนำออก · Esc เพื่อยกเลิก
+Drag from a node's right port to another node's left port to connect them.	ลากจากพอร์ตด้านขวาของโหนดไปยังพอร์ตด้านซ้ายของอีกโหนดเพื่อเชื่อมต่อ
+Drag from the centre out	ลากจากจุดศูนย์กลางออกไป
+Drag from the centre to draw a circle.	ลากจากจุดศูนย์กลางเพื่อวาดวงกลม
+Drag from the centre · release to select · Shift adds · Ctrl/Cmd removes · Esc cancels	ลากจากจุดศูนย์กลาง · ปล่อยเพื่อเลือก · Shift เพื่อเพิ่ม · Ctrl/Cmd เพื่อนำออก · Esc เพื่อยกเลิก
+Drag inside map frames to pan their maps and turn the wheel to zoom them, instead of moving them.	ลากภายในกรอบแผนที่เพื่อเลื่อนแผนที่ และหมุนล้อเมาส์เพื่อซูม แทนการย้ายกรอบ
+Drag inside map frames to pan their maps and turn the wheel to zoom them, instead of moving them. Esc stops.	ลากภายในกรอบแผนที่เพื่อเลื่อนแผนที่ และหมุนล้อเมาส์เพื่อซูม แทนการย้ายกรอบ กด Esc เพื่อหยุด
+Drag the frame's outline · Esc to stop	ลากเส้นขอบของกรอบ · Esc เพื่อหยุด
+drag the picture's rectangle on the map first	ลากสี่เหลี่ยมของรูปภาพบนแผนที่ก่อน
+Drag the selected features' vertices to move them, click an edge to add one, Delete to remove one.	ลากจุดยอดของฟีเจอร์ที่เลือกเพื่อย้าย คลิกที่ขอบเพื่อเพิ่มจุดยอด กด Delete เพื่อลบจุดยอด
+Drag to an input to connect	ลากไปยังอินพุตเพื่อเชื่อมต่อ
+Drag to draw	ลากเพื่อวาด
+Drag to draw a freehand line.	ลากเพื่อวาดเส้นแบบอิสระ
+Drag to draw a freehand polygon.	ลากเพื่อวาดรูปหลายเหลี่ยมแบบอิสระ
+Drag to draw a rectangle.	ลากเพื่อวาดสี่เหลี่ยม
+Drag to resize the message box	ลากเพื่อปรับขนาดกล่องข้อความ
+Drag tools from the palette onto the canvas.	ลากเครื่องมือจากชุดเครื่องมือมาวางบนพื้นที่วาด
+Drag vertices on the map; click an edge to add one	ลากจุดยอดบนแผนที่ คลิกที่ขอบเพื่อเพิ่มจุดยอด
+Draw a halo around label text.	วาดขอบเรืองแสงรอบข้อความป้ายชื่อ
+Draw a labelled latitude/longitude grid over the map frame.	วาดกริดละติจูด/ลองจิจูดพร้อมป้ายชื่อบนกรอบแผนที่
+Draw a model: chain tools from input layers to the results to keep	วาดโมเดล: เชื่อมเครื่องมือต่อกันจากชั้นข้อมูลอินพุตไปยังผลลัพธ์ที่ต้องการเก็บ
+Draw a model: chain tools from input layers to the results to keep.	วาดโมเดล: เชื่อมเครื่องมือต่อกันจากชั้นข้อมูลอินพุตไปยังผลลัพธ์ที่ต้องการเก็บ
+Draw at its place in the stack, the bottom stroke first	วาดตามตำแหน่งในลำดับชั้น โดยวาดเส้นล่างสุดก่อน
+Draw every feature's strokes of one level before the next, so casings join under the cores where lines meet	วาดเส้นของทุกฟีเจอร์ในระดับเดียวกันก่อนระดับถัดไป เพื่อให้เส้นขอบนอกเชื่อมกันใต้เส้นแกนตรงจุดที่เส้นมาบรรจบกัน
+Draw labels at every scale and distance.	วาดป้ายชื่อที่ทุกมาตราส่วนและทุกระยะ
+Draw new features in the selected layer. Double-click to finish lines and polygons.	วาดฟีเจอร์ใหม่ในชั้นข้อมูลที่เลือก ดับเบิลคลิกเพื่อจบการวาดเส้นและรูปหลายเหลี่ยม
+Draw new single-band rasters with the inverted grey stretch again.	วาดแรสเตอร์แบนด์เดียวใหม่ด้วยการยืดสีเทาแบบกลับค่าอีกครั้ง
+Draw only polygon outlines, keeping their colors and widths.	วาดเฉพาะเส้นขอบของรูปหลายเหลี่ยม โดยคงสีและความกว้างไว้
+Draw points as bins coloured by how many fall in each.	วาดจุดเป็นช่องที่ระบายสีตามจำนวนจุดที่อยู่ในแต่ละช่อง
+Draw polygons as outlines only.	วาดรูปหลายเหลี่ยมเป็นเส้นขอบเท่านั้น
+Draw single-band rasters added from now on with this color scheme, stretch and resampling.	วาดแรสเตอร์แบนด์เดียวที่เพิ่มต่อจากนี้ด้วยชุดสี การยืดค่า และการสุ่มค่าใหม่นี้
+Draw strokes in levels	วาดเส้นตามระดับ
+Draw the layer at every scale.	วาดชั้นข้อมูลที่ทุกมาตราส่วน
+Draw the map on the GPU (beta; the globe, view effects and colour-vision simulation stay on the CPU renderer).	วาดแผนที่ด้วย GPU (เบต้า ลูกโลก เอฟเฟกต์มุมมอง และการจำลองการมองเห็นสียังคงใช้ตัวเรนเดอร์ CPU)
+Draw the selected layer above others.	วาดชั้นข้อมูลที่เลือกไว้เหนือชั้นข้อมูลอื่น
+Draw the selected layer below others.	วาดชั้นข้อมูลที่เลือกไว้ใต้ชั้นข้อมูลอื่น
+Drawing	การวาด
+Drawing Effects	เอฟเฟกต์การวาด
+Drawing Mode	โหมดการวาด
+Drawing Order	ลำดับการวาด
+drawn by the server	วาดโดยเซิร์ฟเวอร์
+Drive	ขับรถ
+Drone and aerial imagery shared on OpenAerialMap, newest first, added as cloud-optimised GeoTIFFs.	ภาพถ่ายจากโดรนและอากาศยานที่แชร์บน OpenAerialMap ใหม่สุดก่อน เพิ่มเป็น GeoTIFF แบบ cloud-optimised
+Duplicate	ทำสำเนา
+Duplicate Connection	ทำสำเนาการเชื่อมต่อ
+Duplicate Element	ทำสำเนาองค์ประกอบ
+Duplicate Layout	ทำสำเนาเลย์เอาต์
+Duplicate Map	ทำสำเนาแผนที่
+Dusk	พลบค่ำ
+Dynamic\nText	ข้อความ\nไดนามิก
+Dynamic Picture	รูปภาพไดนามิก
+Dynamic picture	รูปภาพไดนามิก
+Dynamic range adjustment (stretch the pixels in view)	ปรับช่วงไดนามิก (ยืดค่าพิกเซลในมุมมอง)
+Dynamic range adjustment: stretch using the pixels in view.	ปรับช่วงไดนามิก: ยืดค่าโดยใช้พิกเซลในมุมมอง
+Dynamical	Dynamical
+Dynamical…	Dynamical…
+e.g.  pop_est / 1000000   or   'Africa'   or   name	เช่น  pop_est / 1000000   หรือ   'Africa'   หรือ   name
+e.g. 0, 255, -9999	เช่น 0, 255, -9999
+e.g. continent = 'Europe'	เช่น continent = 'Europe'
+e.g. pop_est > 100000000 AND continent = 'Asia'	เช่น pop_est > 100000000 AND continent = 'Asia'
+e.g. pop_max > 1000000	เช่น pop_max > 1000000
+Each class labels the features its own clause matches, so a feature can get a label from more than one.	แต่ละคลาสติดป้ายชื่อให้ฟีเจอร์ที่ตรงกับเงื่อนไขของคลาสนั้น ดังนั้นฟีเจอร์หนึ่งอาจได้ป้ายชื่อจากมากกว่าหนึ่งคลาส
+Each geoprocessing run becomes a step, chained by its outputs	การรันการประมวลผลเชิงพื้นที่แต่ละครั้งจะกลายเป็นหนึ่งขั้นตอน เชื่อมต่อกันด้วยเอาต์พุต
+Earth Index has no points in the view	Earth Index ไม่มีจุดในมุมมอง
+Earth Search	Earth Search
+Earthdata Cloud	Earthdata Cloud
+Earthdata Cloud only	Earthdata Cloud เท่านั้น
+Earthdata footprints	ขอบเขตภาพของ Earthdata
+Earthdata GIS	Earthdata GIS
+Earthdata GIS…	Earthdata GIS…
+Earthdata Login Status	สถานะ Earthdata Login
+Earthdata Login Token	โทเค็น Earthdata Login
+Earthdata Login: no token	Earthdata Login: ไม่มีโทเค็น
+Earthdata Login: token expired	Earthdata Login: โทเค็นหมดอายุ
+Earthdata Login: token set	Earthdata Login: ตั้งค่าโทเค็นแล้ว
+East	ตะวันออก
+Eckert IV (equal-area world)	Eckert IV (พื้นที่เท่าทั่วโลก)
+Edge	ขอบ
+Edges	ขอบ
+Edit	แก้ไข
+Edit\nVertices	แก้ไข\nจุดยอด
+Edit and run the notebook.	แก้ไขและรันโน้ตบุ๊ก
+Edit Attribute	แก้ไขแอตทริบิวต์
+Edit Cell	แก้ไขเซลล์
+Edit Connection	แก้ไขการเชื่อมต่อ
+Edit Description	แก้ไขคำอธิบาย
+Edit Graphic	แก้ไขกราฟิก
+Edit Status	สถานะการแก้ไข
+Edit Steps	แก้ไขขั้นตอน
+Edit Task Step	แก้ไขขั้นตอนงาน
+Edit Text…	แก้ไขข้อความ…
+Edit the title and instructions	แก้ไขชื่อเรื่องและคำแนะนำ
+Edit Vertex	แก้ไขจุดยอด
+Edit Vertices	แก้ไขจุดยอด
+Editing	การแก้ไข
+Editing on	เปิดการแก้ไขอยู่
+Editing Settings	การตั้งค่าการแก้ไข
+Editing settings.	การตั้งค่าการแก้ไข
+Editor\nTools	เครื่องมือ\nแก้ไข
+Editor Tools	เครื่องมือแก้ไข
+Edits since the project was saved.	การแก้ไขตั้งแต่บันทึกโปรเจกต์ครั้งล่าสุด
+Edits the project	แก้ไขโปรเจกต์
+Edit…	แก้ไข…
+Effects	เอฟเฟกต์
+Element	องค์ประกอบ
+Element Properties	คุณสมบัติขององค์ประกอบ
+Elevation	ความสูง
+Elevation model	แบบจำลองความสูง
+Elevation profiles along lines, cross sections and more.	โพรไฟล์ความสูงตามแนวเส้น ภาพตัดขวาง และอื่น ๆ
+Eligible requests in RustGIS use your ChatGPT plan. You can manage usage in ChatGPT settings.	คำขอที่เข้าเกณฑ์ใน RustGIS จะใช้แพ็กเกจ ChatGPT ของคุณ คุณจัดการการใช้งานได้ในการตั้งค่า ChatGPT
+Ellipse	วงรี
+Embeddings	เอ็มเบดดิง
+Ember	ถ่านไฟ
+Empty	ว่าง
+Empty Cache	ล้างแคช
+Enable Lighting	เปิดใช้แสงเงา
+Enable Plugin	เปิดใช้ปลั๊กอิน
+Enabled	เปิดใช้งาน
+Encloses each feature, or all features, in its convex hull.	ครอบแต่ละฟีเจอร์ หรือฟีเจอร์ทั้งหมด ด้วยรูปหลายเหลี่ยมนูน (convex hull)
+Encoded polyline	พอลิไลน์แบบเข้ารหัส
+End	สิ้นสุด
+End date	วันที่สิ้นสุด
+Endpoint	ปลายทาง (Endpoint)
+Enhancement	การปรับปรุงภาพ
+Enter	Enter
+Enter an API key.	ป้อนคีย์ API
+Enter an EPSG code as a number, such as 32650	ป้อนรหัส EPSG เป็นตัวเลข เช่น 32650
+Enter the provider's address.	ป้อนที่อยู่ของผู้ให้บริการ
+Enter to send, Shift+Enter for a new line	Enter เพื่อส่ง Shift+Enter เพื่อขึ้นบรรทัดใหม่
+EnviroAtlas	EnviroAtlas
+EnviroAtlas…	EnviroAtlas…
+Environments	สภาพแวดล้อม
+EPSG	EPSG
+EPSG code	รหัส EPSG
+EPSG or ESRI code	รหัส EPSG หรือ ESRI
+EPSG:	EPSG:
+EPSG:2263	EPSG:2263
+EPSG:4326	EPSG:4326
+Equal	Equal
+Equal Earth	Equal Earth
+Equal Interval	ช่วงเท่ากัน
+Equirectangular (Plate Carrée)	Equirectangular (Plate Carrée)
+Erase	ลบออก (Erase)
+Erase Features	ลบฟีเจอร์
+Error	ข้อผิดพลาด
+Error Inspector	ตัวตรวจข้อผิดพลาด
+Error Inspector (validate)	ตัวตรวจข้อผิดพลาด (ตรวจสอบ)
+Esc	Esc
+Escape	Escape
+ESRI	ESRI
+ESRI:	ESRI:
+Europe Equal Area (ETRS89 LAEA)	Europe Equal Area (ETRS89 LAEA)
+Every band's value at a pixel.	ค่าของทุกแบนด์ที่พิกเซลหนึ่ง
+Every editing tool.	เครื่องมือแก้ไขทั้งหมด
+Every label setting of this layer, in the Labeling pane.	การตั้งค่าป้ายชื่อทั้งหมดของชั้นข้อมูลนี้ ในแผงการติดป้ายชื่อ
+Every layer, as FEMA draws them	ทุกชั้นข้อมูล ตามที่ FEMA วาด
+Every run, in order, as a script that opens the project	ทุกการรันตามลำดับ เป็นสคริปต์ที่เปิดโปรเจกต์
+every Socrata site, or one such as data.cityofnewyork.us	ทุกไซต์ Socrata หรือไซต์ใดไซต์หนึ่ง เช่น data.cityofnewyork.us
+Everywhere	ทุกที่
+Existing field	ฟิลด์ที่มีอยู่
+Existing Template	เทมเพลตที่มีอยู่
+exit rotary	ออกจากวงเวียน
+exit roundabout	ออกจากวงเวียน
+Expand Group	ขยายกลุ่ม
+Expand Legend	ขยายคำอธิบายสัญลักษณ์
+Expand the ribbon (Ctrl+F1)	ขยายริบบอน (Ctrl+F1)
+Explode	แยกส่วน (Explode)
+Exploratory 3D Analysis	การวิเคราะห์ 3D เชิงสำรวจ
+Exploratory Analysis	การวิเคราะห์เชิงสำรวจ
+Explore	สำรวจ
+Export	ส่งออก
+Export\nFeatures	ส่งออก\nฟีเจอร์
+Export\nLayout	ส่งออก\nเลย์เอาต์
+Export\nMap	ส่งออก\nแผนที่
+Export\nRaster	ส่งออก\nแรสเตอร์
+Export Animation	ส่งออกแอนิเมชัน
+Export Bookmarks	ส่งออกบุ๊กมาร์ก
+Export Bookmarks…	ส่งออกบุ๊กมาร์ก…
+Export CSV…	ส่งออก CSV…
+Export Features	ส่งออกฟีเจอร์
+Export Features (tool)	ส่งออกฟีเจอร์ (เครื่องมือ)
+Export Features needs a vector layer (Data › Export Raster writes a raster)	ส่งออกฟีเจอร์ต้องใช้ชั้นข้อมูลเวกเตอร์ (ข้อมูล › ส่งออกแรสเตอร์ ใช้เขียนแรสเตอร์)
+Export Features…	ส่งออกฟีเจอร์…
+Export Layout	ส่งออกเลย์เอาต์
+Export Map	ส่งออกแผนที่
+Export Map failed unexpectedly	ส่งออกแผนที่ล้มเหลวโดยไม่คาดคิด
+Export Map…	ส่งออกแผนที่…
+Export Mesh	ส่งออกเมช
+Export Mesh (OBJ)…	ส่งออกเมช (OBJ)…
+Export Model	ส่งออกโมเดล
+Export Presentation	ส่งออกงานนำเสนอ
+Export Presentation…	ส่งออกงานนำเสนอ…
+Export Raster	ส่งออกแรสเตอร์
+Export Raster…	ส่งออกแรสเตอร์…
+Export Report	ส่งออกรายงาน
+Export Report…	ส่งออกรายงาน…
+Export Table	ส่งออกตาราง
+Export the animation as PNG frames (zip).	ส่งออกแอนิเมชันเป็นเฟรม PNG (zip)
+Export the layer.	ส่งออกชั้นข้อมูล
+Export the layout as PDF or PNG.	ส่งออกเลย์เอาต์เป็น PDF หรือ PNG
+Export the map view as a PNG image (with labels and a scale bar).	ส่งออกมุมมองแผนที่เป็นภาพ PNG (พร้อมป้ายชื่อและแถบมาตราส่วน)
+Export the open layout as PDF or PNG.	ส่งออกเลย์เอาต์ที่เปิดอยู่เป็น PDF หรือ PNG
+Export the presentation as a slideshow or PDF, or save it as a file.	ส่งออกงานนำเสนอเป็นสไลด์โชว์หรือ PDF หรือบันทึกเป็นไฟล์
+Export the report, or save it as a report file or template.	ส่งออกรายงาน หรือบันทึกเป็นไฟล์รายงานหรือเทมเพลต
+Export the selected layer as a 3D model (OBJ), polygons extruded.	ส่งออกชั้นข้อมูลที่เลือกเป็นโมเดล 3D (OBJ) โดยยกรูปหลายเหลี่ยมขึ้นเป็นแท่ง
+Export the selected layer to GeoJSON or CSV.	ส่งออกชั้นข้อมูลที่เลือกเป็น GeoJSON หรือ CSV
+Export the steps as an animated GIF.	ส่งออกขั้นตอนเป็นภาพ GIF เคลื่อนไหว
+Export Time Animation	ส่งออกแอนิเมชันตามเวลา
+Export To 3D	ส่งออกเป็น 3D
+Export To 3D File	ส่งออกเป็นไฟล์ 3D
+Exported to {path}.	ส่งออกไปที่ {path} แล้ว
+exporting animations needs the desktop app	การส่งออกแอนิเมชันต้องใช้แอปเดสก์ท็อป
+exporting time animations needs the desktop app	การส่งออกแอนิเมชันตามเวลาต้องใช้แอปเดสก์ท็อป
+Export…	ส่งออก…
+Expression	นิพจน์
+Extent	ขอบเขต
+Extent Indicator	ตัวแสดงขอบเขต
+extent is [minLon, minLat, maxLon, maxLat], "view" or null	ขอบเขตคือ [minLon, minLat, maxLon, maxLat], "view" หรือ null
+Extent: {extent}	ขอบเขต: {extent}
+Extract	แยกข้อมูล
+Extracts the parts of input features that fall inside clip polygons.	ดึงส่วนของฟีเจอร์อินพุตที่อยู่ภายในรูปหลายเหลี่ยมที่ใช้ตัด
+Extruded shapes cast shadows on the map.	รูปทรงที่ยกขึ้นจะทอดเงาลงบนแผนที่
+Extrusion	การยกรูปทรง
+Face Culling	การคัดทิ้งหน้า (Face Culling)
+Faces	หน้า
+Factor	ตัวคูณ
+Failed	ล้มเหลว
+FALSE	FALSE
+Farthest	ไกลที่สุด
+Faster drawing: no antialiasing.	วาดเร็วขึ้น: ไม่ใช้การลบรอยหยัก
+Favourite Data Source	แหล่งข้อมูลโปรด
+Favourites	รายการโปรด
+Feature	ฟีเจอร์
+Feature\nAnalysis	การวิเคราะห์\nฟีเจอร์
+Feature\nTo Point	ฟีเจอร์\nเป็นจุด
+Feature Cache	แคชฟีเจอร์
+Feature Layer	ชั้นข้อมูลฟีเจอร์
+Feature Templates	เทมเพลตฟีเจอร์
+Feature templates: default values for new features.	เทมเพลตฟีเจอร์: ค่าเริ่มต้นสำหรับฟีเจอร์ใหม่
+Feature To Point	ฟีเจอร์เป็นจุด
+featured products	ผลิตภัณฑ์แนะนำ
+Features	ฟีเจอร์
+Features most like the selected one	ฟีเจอร์ที่คล้ายกับฟีเจอร์ที่เลือกมากที่สุด
+Feet	ฟุต
+FEMA NFHL	FEMA NFHL
+FEMA NFHL…	FEMA NFHL…
+FEMA's National Flood Hazard Layer: effective flood zones, floodways, base flood elevations, levees and map panels. Its flood layers are drawn only from zoom 15 (closer than about 1:36,000), its availability map only farther out.	National Flood Hazard Layer ของ FEMA: เขตน้ำท่วมที่มีผลบังคับ ทางน้ำหลาก ระดับน้ำท่วมฐาน คันกั้นน้ำ และแผ่นแผนที่ ชั้นข้อมูลน้ำท่วมจะวาดตั้งแต่ซูม 15 เท่านั้น (ใกล้กว่าประมาณ 1:36,000) ส่วนแผนที่ความพร้อมใช้งานจะวาดเฉพาะเมื่ออยู่ไกลกว่านั้น
+Ferries	เรือข้ามฟาก
+Fetch map tiles, data and web services from addresses it chooses	ดึงไทล์แผนที่ ข้อมูล และบริการเว็บจากที่อยู่ที่เลือกเอง
+Fetch the tiles and styles of the web layers again.	ดึงไทล์และสไตล์ของชั้นข้อมูลเว็บอีกครั้ง
+Field	ฟิลด์
+field * 2, 'text', a + b	field * 2, 'text', a + b
+Field boundaries	ขอบเขตแปลงเกษตร
+Field density	ความหนาแน่นของแปลงเกษตร
+Field name	ชื่อฟิลด์
+Field Prefix	คำนำหน้าฟิลด์
+Field to Sum and Average	ฟิลด์สำหรับหาผลรวมและค่าเฉลี่ย
+Fields	ฟิลด์
+Fields are drawn from zoom 9: zoom in to see them.	แปลงเกษตรจะวาดตั้งแต่ซูม 9: ซูมเข้าเพื่อดู
+Fields colored by score, drawn from zoom 9	แปลงเกษตรระบายสีตามคะแนน วาดตั้งแต่ซูม 9
+Fields of the World	Fields of the World
+Fields of the World…	Fields of the World…
+fields, comma separated	ฟิลด์ คั่นด้วยจุลภาค
+Fields, statistics, groups, pictures, attachments and charts in the report.	ฟิลด์ สถิติ กลุ่ม รูปภาพ ไฟล์แนบ และแผนภูมิในรายงาน
+Fields:	ฟิลด์:
+File	ไฟล์
+File bridge only	บริดจ์ไฟล์เท่านั้น
+File bridge: the script ran	บริดจ์ไฟล์: รันสคริปต์แล้ว
+File bridge: {error}	บริดจ์ไฟล์: {error}
+File name	ชื่อไฟล์
+file path	พาธไฟล์
+Files ({n})	ไฟล์ ({n})
+Fill	สีพื้น
+Fill Cache	สร้างแคช
+Fill the cache whenever the projection changes.	สร้างแคชทุกครั้งที่เส้นโครงแผนที่เปลี่ยน
+Film grain	เกรนฟิล์ม
+Filter	ตัวกรอง
+Filter bookmarks	กรองบุ๊กมาร์ก
+Filter layers	กรองชั้นข้อมูล
+Filter rows…	กรองแถว…
+Find a place by coordinates.	ค้นหาสถานที่ด้วยพิกัด
+Find a place or an address by name (OpenStreetMap).	ค้นหาสถานที่หรือที่อยู่ตามชื่อ (OpenStreetMap)
+Find and run geoprocessing tools.	ค้นหาและรันเครื่องมือการประมวลผลเชิงพื้นที่
+Find any command by name (Ctrl+K).	ค้นหาคำสั่งใดก็ได้ตามชื่อ (Ctrl+K)
+Find Items	ค้นหารายการ
+Find Place	ค้นหาสถานที่
+Find plugins in the RustGIS plugin registry.	ค้นหาปลั๊กอินในคลังปลั๊กอินของ RustGIS
+Find Similar	ค้นหาที่คล้ายกัน
+Find Tools	ค้นหาเครื่องมือ
+Finding routes…	กำลังค้นหาเส้นทาง…
+Finish Polygon	จบรูปหลายเหลี่ยม
+Finish Profile	จบโพรไฟล์
+Finish Tool Run	จบการรันเครื่องมือ
+Finished: {tool}	เสร็จสิ้น: {tool}
+Firewall	ไฟร์วอลล์
+First raster	แรสเตอร์แรก
+First standard parallel	เส้นขนานมาตรฐานที่หนึ่ง
+First-Person	มุมมองบุคคลที่หนึ่ง
+First-Person Navigation	การนำทางแบบมุมมองบุคคลที่หนึ่ง
+Fit	พอดี
+Fit To Map View	พอดีกับมุมมองแผนที่
+Fix the problems listed below first	แก้ไขปัญหาที่แสดงด้านล่างก่อน
+Fixed Zoom In	ขยายแบบคงที่
+Fixed Zoom Out	ย่อแบบคงที่
+Flat	แบน
+FlatGeobuf	FlatGeobuf
+Flip Line	กลับทิศเส้น
+Flowline	เส้นทางน้ำไหล
+Fog	หมอก
+Folder	โฟลเดอร์
+Folder Connections	การเชื่อมต่อโฟลเดอร์
+folder connections need the desktop app	การเชื่อมต่อโฟลเดอร์ต้องใช้แอปเดสก์ท็อป
+Folders	โฟลเดอร์
+Folder…	โฟลเดอร์…
+Follow the time slider	ติดตามแถบเวลา
+Font	ฟอนต์
+for a store that doesn't say	สำหรับสโตร์ที่ไม่ได้ระบุ
+Forest	ป่าไม้
+Forget Earthdata Login Token	ลืมโทเค็น Earthdata Login
+Forget Saved Keys	ลืมคีย์ที่บันทึกไว้
+Forget Saved Password	ลืมรหัสผ่านที่บันทึกไว้
+Format	รูปแบบ
+Found: {names}. An agent works on this map through RustGIS's tools and with its own (web, scripts, files) in a folder of its own, kept in Documents › RustGIS › Agent work. It asks you before each action.	พบ: {names} เอเจนต์จะทำงานกับแผนที่นี้ผ่านเครื่องมือของ RustGIS และเครื่องมือของตัวเอง (เว็บ สคริปต์ ไฟล์) ในโฟลเดอร์ของตัวเอง ซึ่งเก็บไว้ที่ เอกสาร › RustGIS › Agent work โดยจะถามคุณก่อนทุกการกระทำ
+Frame rate	อัตราเฟรม
+Frame rate, draw time, data size and memory.	อัตราเฟรม เวลาในการวาด ขนาดข้อมูล และหน่วยความจำ
+France	ฝรั่งเศส
+Free the prepared geometry.	ปล่อยรูปทรงเรขาคณิตที่เตรียมไว้
+Freehand	อิสระ
+FROM	FROM
+From	จาก
+From Selection	จากการเลือก
+From Service…	จากบริการ…
+From symbol	จากสัญลักษณ์
+From the address	จากที่อยู่
+from the address	จากที่อยู่
+from the service	จากบริการ
+From URL…	จาก URL…
+Full Extent	ขอบเขตทั้งหมด
+Full extent	ขอบเขตทั้งหมด
+Full lines	เส้นทึบ
+Full size	ขนาดเต็ม
+Function	ฟังก์ชัน
+Function Editor	ตัวแก้ไขฟังก์ชัน
+Gamma	แกมมา
+Gemini stopped the reply ({reason}).	Gemini หยุดการตอบกลับ ({reason})
+Generalization	การทำให้เป็นแบบทั่วไป
+Generate a token	สร้างโทเค็น
+geoBoundaries listed no countries: type a country's code	geoBoundaries ไม่มีรายชื่อประเทศ: พิมพ์รหัสประเทศ
+Geocode	แปลงที่อยู่เป็นพิกัด
+Geocode Addresses	แปลงที่อยู่เป็นพิกัด
+Geocode Addresses…	แปลงที่อยู่เป็นพิกัด…
+Geocoder	ตัวแปลงที่อยู่เป็นพิกัด
+Geocoding {n} addresses…	กำลังแปลงที่อยู่ {n} รายการเป็นพิกัด…
+Geodata Service	บริการข้อมูลภูมิสารสนเทศ
+Geodesic circles on a grid that show how the map's projection distorts scale, area and angles.	วงกลมจีโอเดสิกบนกริดที่แสดงว่าเส้นโครงแผนที่บิดเบือนมาตราส่วน พื้นที่ และมุมอย่างไร
+GeoJSON	GeoJSON
+GeoJSON, CSV, GeoParquet, FlatGeobuf, GeoPackage, zipped Shapefiles, KML, GPX or GeoTIFF, up to 256 MB; the server must allow requests from web pages (CORS).	GeoJSON, CSV, GeoParquet, FlatGeobuf, GeoPackage, Shapefile แบบ zip, KML, GPX หรือ GeoTIFF ขนาดไม่เกิน 256 MB เซิร์ฟเวอร์ต้องอนุญาตคำขอจากหน้าเว็บ (CORS)
+GeoJSON, CSV, GeoParquet, FlatGeobuf, GeoPackage, zipped Shapefiles, KML, GPX or GeoTIFF, up to 512 MB.	GeoJSON, CSV, GeoParquet, FlatGeobuf, GeoPackage, Shapefile แบบ zip, KML, GPX หรือ GeoTIFF ขนาดไม่เกิน 512 MB
+GeoLens	GeoLens
+GeoLens…	GeoLens…
+GeoLibre	GeoLibre
+GeoLibre Tools	เครื่องมือ GeoLibre
+Geometric Interval	ช่วงเรขาคณิต
+Geometry	รูปทรงเรขาคณิต
+Geometry lost during import cannot be recovered here. Use Import Original File to choose its coordinate system before reading it. Streamed layers must first be loaded into memory.	รูปทรงเรขาคณิตที่สูญหายระหว่างการนำเข้าไม่สามารถกู้คืนได้ที่นี่ ใช้ นำเข้าไฟล์ต้นฉบับ เพื่อเลือกระบบพิกัดก่อนอ่านไฟล์ ชั้นข้อมูลแบบสตรีมต้องโหลดเข้าหน่วยความจำก่อน
+GeoPackage	GeoPackage
+GeoParquet	GeoParquet
+Geoprocessing	การประมวลผลเชิงพื้นที่
+Geoprocessing history.	ประวัติการประมวลผลเชิงพื้นที่
+Georeference	การอ้างอิงพิกัดภาพ
+Geostatistical Wizard	ตัวช่วยสถิติเชิงพื้นที่
+GeoTIFF	GeoTIFF
+Get a key	รับคีย์
+Get it	ดาวน์โหลด
+GitHub	GitHub
+GitHub's latest release has no version number	รุ่นล่าสุดบน GitHub ไม่มีหมายเลขเวอร์ชัน
+GitHub's reply isn't a release	การตอบกลับจาก GitHub ไม่ใช่รุ่นเผยแพร่
+GitHub's reply names no release	การตอบกลับจาก GitHub ไม่ได้ระบุรุ่นเผยแพร่
+Give a Zarr store's address or folder	ระบุที่อยู่หรือโฟลเดอร์ของสโตร์ Zarr
+Give the catalogue's web address	ระบุที่อยู่เว็บของแค็ตตาล็อก
+Give the file's web address	ระบุที่อยู่เว็บของไฟล์
+Give the service's web address	ระบุที่อยู่เว็บของบริการ
+give the text's layer and row, or the lon and lat to place one	ระบุชั้นข้อมูลและแถวของข้อความ หรือลองจิจูดและละติจูดเพื่อวางข้อความ
+Global	ทั่วโลก
+Globe	ลูกโลก
+Go	ไป
+Go back a step.	ย้อนกลับหนึ่งขั้นตอน
+Go back to the previous extent.	กลับไปยังขอบเขตก่อนหน้า
+Go forward a step.	ไปข้างหน้าหนึ่งขั้นตอน
+Go forward to the next extent.	ไปยังขอบเขตถัดไป
+Go to a saved extent or save the current one.	ไปยังขอบเขตที่บันทึกไว้ หรือบันทึกขอบเขตปัจจุบัน
+Go To Bookmark	ไปที่บุ๊กมาร์ก
+Go to Date	ไปที่วันที่
+Go To Map Link	ไปที่ลิงก์แผนที่
+Go to the first step.	ไปที่ขั้นตอนแรก
+Go to the last step.	ไปที่ขั้นตอนสุดท้าย
+Go To XY	ไปที่ XY
+Go to {coordinate}	ไปที่ {coordinate}
+Google Gemini	Google Gemini
+Got it	รับทราบ
+GPU	GPU
+GPU\nRendering	การเรนเดอร์\nด้วย GPU
+GPX	GPX
+Graduated Colors	ไล่ระดับสี
+Granules	แกรนูล
+Graphic Style	สไตล์กราฟิก
+Graphics	กราฟิก
+Graphics and Text	กราฟิกและข้อความ
+Graphics Layer	ชั้นข้อมูลกราฟิก
+Graticule	เส้นกริดพิกัดภูมิศาสตร์
+Green	สีเขียว
+Greys	โทนสีเทา
+Grid	กริด
+Grid Spacing (degrees)	ระยะห่างกริด (องศา)
+Ground\nTo Grid	ภาคพื้นดิน\nเป็นกริด
+Ground To Grid	ภาคพื้นดินเป็นกริด
+Group	จัดกลุ่ม
+GROUP BY	GROUP BY
+Group features by an integer code, each with default values.	จัดกลุ่มฟีเจอร์ตามรหัสจำนวนเต็ม แต่ละกลุ่มมีค่าเริ่มต้นของตัวเอง
+Group Option	ตัวเลือกการจัดกลุ่ม
+Group Properties	คุณสมบัติของกลุ่ม
+Group Visibility Range	ช่วงการมองเห็นของกลุ่ม
+Groups	กลุ่ม
+Guided analysis: suitability, visibility, networks, interpolation and more.	การวิเคราะห์แบบมีคำแนะนำ: ความเหมาะสม การมองเห็น โครงข่าย การประมาณค่าในช่วง และอื่น ๆ
+Guides	เส้นไกด์
+Halo	ขอบเรืองแสง
+Harbour (qualitative)	ท่าเรือ (เชิงคุณภาพ)
+Hazards	ภัยพิบัติ
+Haze	หมอกควัน
+Haze, fog, rain or snow over the map.	หมอกควัน หมอก ฝน หรือหิมะบนแผนที่
+Height	ความสูง
+Height (mm)	ความสูง (มม.)
+Help	ช่วยเหลือ
+Help › Help	ช่วยเหลือ › ช่วยเหลือ
+Hexagons	หกเหลี่ยม
+Hide	ซ่อน
+Hide features far from the view's centre.	ซ่อนฟีเจอร์ที่อยู่ไกลจากจุดศูนย์กลางของมุมมอง
+Hide Group	ซ่อนกลุ่ม
+Hide labels when the viewer is closer than this.	ซ่อนป้ายชื่อเมื่อผู้ชมอยู่ใกล้กว่าค่านี้
+Hide labels when the viewer is farther than this.	ซ่อนป้ายชื่อเมื่อผู้ชมอยู่ไกลกว่าค่านี้
+Hide Layers	ซ่อนชั้นข้อมูล
+Hide other values	ซ่อนค่าอื่น ๆ
+Hide Steps	ซ่อนขั้นตอน
+Hide the description	ซ่อนคำอธิบาย
+Hide values (no data)	ซ่อนค่า (ไม่มีข้อมูล)
+Hide values inside a range	ซ่อนค่าที่อยู่ในช่วง
+Hide values outside a range	ซ่อนค่าที่อยู่นอกช่วง
+Hide walls facing away from you.	ซ่อนผนังที่หันออกจากคุณ
+Hides fields scoring below this. The score is the model's mean field probability × 100, a ranking rather than a calibrated probability.	ซ่อนฟิลด์ที่ได้คะแนนต่ำกว่าค่านี้ คะแนนคือค่าเฉลี่ยความน่าจะเป็นของฟิลด์จากโมเดล × 100 ใช้สำหรับจัดอันดับ ไม่ใช่ความน่าจะเป็นที่ปรับเทียบแล้ว
+High values of the first raster and low values of the second score best.	ค่าสูงของแรสเตอร์แรกและค่าต่ำของแรสเตอร์ที่สองได้คะแนนดีที่สุด
+Highways	ทางหลวง
+Histogram Equalize	ปรับฮิสโทแกรมให้เท่ากัน (Histogram Equalize)
+Histograms and correlations	ฮิสโทแกรมและสหสัมพันธ์
+History	ประวัติ
+Hold	พักไว้
+HOME	HOME
+Home	หน้าหลัก
+Home › Add	หน้าหลัก › เพิ่ม
+Home › Add Data	หน้าหลัก › เพิ่มข้อมูล
+Home › Inspect › Measure	หน้าหลัก › ตรวจสอบ › วัดระยะ
+Home › Navigate	หน้าหลัก › นำทาง
+Home › Navigate › Bookmarks	หน้าหลัก › นำทาง › บุ๊กมาร์ก
+Home › Web Data	หน้าหลัก › ข้อมูลเว็บ
+Home › Web Data › United States	หน้าหลัก › ข้อมูลเว็บ › สหรัฐอเมริกา
+Homepage	โฮมเพจ
+Horizontal	แนวนอน
+host=localhost dbname=gis user=postgres	host=localhost dbname=gis user=postgres
+host=… dbname=… user=…	host=… dbname=… user=…
+Hosted Imagery	ภาพถ่ายที่โฮสต์ไว้
+Hour	ชั่วโมง
+How the layer's colours combine with the tile layers and basemap beneath.	วิธีผสมสีของชั้นข้อมูลกับชั้นข้อมูลไทล์และแผนที่ฐานที่อยู่ด้านล่าง
+How the layer's colours combine with what's beneath.	วิธีผสมสีของชั้นข้อมูลกับสิ่งที่อยู่ด้านล่าง
+HUB Ocean's Ocean Data Platform: marine datasets, read as features (up to 10,000 each).	Ocean Data Platform ของ HUB Ocean: ชุดข้อมูลทางทะเล อ่านเป็นฟีเจอร์ (สูงสุด 10,000 รายการต่อชุด)
+hub.arcgis.com, or an organisation's Hub site	hub.arcgis.com หรือเว็บไซต์ Hub ขององค์กร
+Hugging Face	Hugging Face
+Hugging Face…	Hugging Face…
+Hydrography	อุทกศาสตร์
+Icechunk only, not read yet	Icechunk เท่านั้น ยังอ่านไม่ได้
+Id: {id}	รหัส: {id}
+Identify	ระบุข้อมูล
+Idle	ว่าง
+IDW\nInterpolation	การประมาณค่า\nแบบ IDW
+IDW Interpolation	การประมาณค่าในช่วงแบบ IDW
+IGN LiDAR HD	IGN LiDAR HD
+IGN LiDAR HD…	IGN LiDAR HD…
+IGN's LiDAR HD point clouds of France: 1 km tiles where the map is, added as COPC point clouds.	พอยต์คลาวด์ LiDAR HD ของ IGN ครอบคลุมฝรั่งเศส: ไทล์ขนาด 1 km ในบริเวณแผนที่ เพิ่มเป็นพอยต์คลาวด์ COPC
+Illumination	การส่องสว่าง
+Image Analysis	การวิเคราะห์ภาพ
+Image Classification	การจำแนกภาพ
+Image Page	หน้ารูปภาพ
+Imagery	ภาพถ่าย
+Imagery Sharing	การแชร์ภาพถ่าย
+Imagery Tools	เครื่องมือภาพถ่าย
+ImageServer	ImageServer
+Image…	รูปภาพ…
+Imperial	อิมพีเรียล
+Import	นำเข้า
+Import\nProject	นำเข้า\nโปรเจกต์
+Import All	นำเข้าทั้งหมด
+Import Bookmarks	นำเข้าบุ๊กมาร์ก
+Import Bookmarks…	นำเข้าบุ๊กมาร์ก…
+Import Deep Learning Package	นำเข้าแพ็กเกจ Deep Learning
+Import Layout	นำเข้าเลย์เอาต์
+Import Layout…	นำเข้าเลย์เอาต์…
+Import Model	นำเข้าโมเดล
+Import Original File…	นำเข้าไฟล์ต้นฉบับ…
+Import Package…	นำเข้าแพ็กเกจ…
+Import Presentation	นำเข้างานนำเสนอ
+Import QGIS Project	นำเข้าโปรเจกต์ QGIS
+Import QGIS Style	นำเข้าสไตล์ QGIS
+Import QGIS Style…	นำเข้าสไตล์ QGIS…
+Import Report	นำเข้ารายงาน
+Import Service	นำเข้าบริการ
+Import Shapefile with Projection	นำเข้า Shapefile พร้อมเส้นโครงแผนที่
+Import Shapefile with Projection…	นำเข้า Shapefile พร้อมเส้นโครงแผนที่…
+Import Styles	นำเข้าสไตล์
+Import Styles From…	นำเข้าสไตล์จาก…
+Import Task	นำเข้างาน
+Import Task…	นำเข้างาน…
+Import Thumbnail	นำเข้าภาพขนาดย่อ
+Import…	นำเข้า…
+IN	IN
+In Beyond	ซ่อนเมื่อขยายเกิน
+In memory	ในหน่วยความจำ
+In Progress	กำลังดำเนินการ
+in progress	กำลังดำเนินการ
+In project	ในโปรเจกต์
+In RustGIS, it can:	ใน RustGIS สามารถ:
+In the browser, pick the .shp and .dbf together, with any sidecars, or pick a ZIP. The override applies to every Shapefile in the ZIP.	ในเบราว์เซอร์ ให้เลือกไฟล์ .shp และ .dbf พร้อมกัน รวมถึงไฟล์ประกอบอื่น ๆ หรือเลือกไฟล์ ZIP การกำหนดทับจะใช้กับ Shapefile ทุกไฟล์ใน ZIP
+In use	ใช้งานอยู่
+Indexes	ดัชนี
+Indices	ดัชนี
+Infographics	อินโฟกราฟิก
+Information	ข้อมูล
+INPUT	อินพุต
+Input	อินพุต
+Input Features	ฟีเจอร์อินพุต
+Input Layer	ชั้นข้อมูลอินพุต
+Input Points	จุดอินพุต
+Input Polygons	รูปหลายเหลี่ยมอินพุต
+Input Raster	แรสเตอร์อินพุต
+Input Rows	แถวอินพุต
+Input Summary Features	ฟีเจอร์สรุปอินพุต
+Input Table	ตารางอินพุต
+Insert	แทรก
+Insert Dynamic Text	แทรกข้อความไดนามิก
+Inspect	ตรวจสอบ
+Install	ติดตั้ง
+Install a plugin	ติดตั้งปลั๊กอิน
+Install a plugin from a .rgplugin file.	ติดตั้งปลั๊กอินจากไฟล์ .rgplugin
+Install from a file	ติดตั้งจากไฟล์
+Install From File	ติดตั้งจากไฟล์
+Install From File…	ติดตั้งจากไฟล์…
+Install GeoLibre Tools	ติดตั้งเครื่องมือ GeoLibre
+Install Plugin	ติดตั้งปลั๊กอิน
+Install Plugin From Registry	ติดตั้งปลั๊กอินจากรีจิสทรี
+Install the Basemaps plugin	ติดตั้งปลั๊กอิน Basemaps
+Install Whitebox and GeoLibre tools	ติดตั้งเครื่องมือ Whitebox และ GeoLibre
+Install {name} {version}?	ติดตั้ง {name} {version} หรือไม่
+Installed	ติดตั้งแล้ว
+Installed plugins are kept in {folder}	ปลั๊กอินที่ติดตั้งจะเก็บไว้ใน {folder}
+Installed with Homebrew, winget, the AUR or COPR? Update it there.	ติดตั้งผ่าน Homebrew, winget, AUR หรือ COPR ใช่หรือไม่ ให้อัปเดตจากที่นั่น
+Installed {name} {version}. Find it on the Plugins tab; its tools are also in the Tools pane.	ติดตั้ง {name} {version} แล้ว ดูได้ที่แท็บปลั๊กอิน และเครื่องมือของปลั๊กอินจะอยู่ในแผงเครื่องมือด้วย
+Installing it downloads Python {version} and the packages it needs from the internet.	การติดตั้งจะดาวน์โหลด Python {version} และแพ็กเกจที่จำเป็นจากอินเทอร์เน็ต
+Integer field: values are rounded.	ฟิลด์จำนวนเต็ม: ค่าจะถูกปัดเศษ
+Interface font: {font}	ฟอนต์ของอินเทอร์เฟซ: {font}
+Interpolate a surface from points (IDW)	ประมาณค่าพื้นผิวจากจุด (IDW)
+Interpolates a 2-band raster surface (Prediction and Variance) from point features using Ordinary Kriging.	ประมาณค่าพื้นผิวแรสเตอร์ 2 แบนด์ (ค่าทำนายและความแปรปรวน) จากฟีเจอร์จุดด้วยวิธีคริกกิงแบบธรรมดา (Ordinary Kriging)
+Interpolates a raster surface from feature values by inverse distance weighting, as QGIS does.	ประมาณค่าพื้นผิวแรสเตอร์จากค่าของฟีเจอร์ด้วยวิธีถ่วงน้ำหนักผกผันกับระยะทาง (IDW) แบบเดียวกับ QGIS
+Interpolation	การประมาณค่าในช่วง
+Interpolation Attribute	แอตทริบิวต์สำหรับประมาณค่า
+Interpret the layer's native coordinates in this coordinate system. This changes where it draws; the source file is unchanged.	ตีความพิกัดดั้งเดิมของชั้นข้อมูลในระบบพิกัดนี้ ซึ่งจะเปลี่ยนตำแหน่งที่แสดงผล โดยไฟล์ต้นทางไม่เปลี่ยนแปลง
+Interval	ช่วงห่าง
+invalid child id	รหัสลูกไม่ถูกต้อง
+Invalid selection outline · draw a smaller area	เส้นขอบการเลือกไม่ถูกต้อง · วาดพื้นที่ให้เล็กลง
+Invalid selection outline · draw a smaller radius	เส้นขอบการเลือกไม่ถูกต้อง · วาดรัศมีให้เล็กลง
+Invalid: {error}	ไม่ถูกต้อง: {error}
+Invert	กลับค่า
+Invert color scheme	กลับชุดสี
+Invert the selection.	กลับการเลือก
+IS	IS
+IS NULL	IS NULL
+it connects to an address on the internet	เชื่อมต่อกับที่อยู่บนอินเทอร์เน็ต
+It has no code: nothing in it runs.	ไม่มีโค้ด: ไม่มีสิ่งใดในนี้ที่ทำงาน
+It is locked, or one of its surrounds is: unlock it first	รายการนี้หรือองค์ประกอบรอบแผนที่ของรายการนี้ถูกล็อกอยู่: ให้ปลดล็อกก่อน
+it is reserved to you (plugins, scripts, tasks, models and the GeoLibre runner)	สงวนไว้สำหรับคุณเท่านั้น (ปลั๊กอิน สคริปต์ งาน โมเดล และตัวรัน GeoLibre)
+it needs input: open it from its pane or button, or run it from a script or the assistant	ต้องมีอินพุต: เปิดจากแผงหรือปุ่มของคำสั่ง หรือเรียกใช้จากสคริปต์หรือผู้ช่วย
+it reads or writes files on this computer	อ่านหรือเขียนไฟล์บนคอมพิวเตอร์เครื่องนี้
+it replaces the open project	แทนที่โปรเจกต์ที่เปิดอยู่
+it runs a plugin's command	เรียกใช้คำสั่งของปลั๊กอิน
+It runs in a sandbox with no other access to your computer or the network.	ทำงานในแซนด์บ็อกซ์โดยไม่มีสิทธิ์เข้าถึงคอมพิวเตอร์หรือเครือข่ายอื่น ๆ
+It runs: {program}	เรียกใช้: {program}
+It's in the Symbology pane, open on the step's layer.	อยู่ในแผงสัญลักษณ์ ซึ่งเปิดที่ชั้นข้อมูลของขั้นตอนนี้
+It's installed but turned off: turn it on in the Plugin Manager.	ติดตั้งแล้วแต่ปิดใช้งานอยู่: เปิดใช้งานได้ในตัวจัดการปลั๊กอิน
+It's too large to keep in the browser: install it again on your next visit.	มีขนาดใหญ่เกินกว่าจะเก็บไว้ในเบราว์เซอร์: ติดตั้งอีกครั้งในการเข้าใช้ครั้งถัดไป
+Italic	ตัวเอียง
+Item Pop-ups	ป๊อปอัปของรายการ
+Item {id}	รายการ {id}
+Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	ไฟร์วอลล์ของบริการ ({firewall}) บล็อก RustGIS บริการนี้อาจอนุญาตเฉพาะบางแอปพลิเคชัน: ติดต่อผู้ดูแลระบบและส่งรายละเอียดด้านล่างให้
+Its tool isn't available now (a plugin's, not loaded, or a suite's, not installed)	เครื่องมือของรายการนี้ใช้งานไม่ได้ในขณะนี้ (เป็นของปลั๊กอินที่ยังไม่โหลด หรือของชุดเครื่องมือที่ยังไม่ได้ติดตั้ง)
+Jobs	งาน
+JOIN	JOIN
+Join	เชื่อม
+Join Features	เชื่อมฟีเจอร์
+Join Operation	การดำเนินการเชื่อม
+Joins attributes from a join layer to a target layer based on their spatial relationship.	เชื่อมแอตทริบิวต์จากชั้นข้อมูลที่จะเชื่อมไปยังชั้นข้อมูลเป้าหมายตามความสัมพันธ์เชิงพื้นที่
+Journal figure, 1 column (90 mm)	ภาพประกอบวารสาร 1 คอลัมน์ (90 mm)
+Journal figure, 1.5 columns (140 mm)	ภาพประกอบวารสาร 1.5 คอลัมน์ (140 mm)
+Journal figure, 2 columns (190 mm)	ภาพประกอบวารสาร 2 คอลัมน์ (190 mm)
+Keep a history of every edit to the layer, to look back or restore.	เก็บประวัติการแก้ไขทุกครั้งของชั้นข้อมูล เพื่อย้อนดูหรือกู้คืน
+Keep an archive of edits	เก็บคลังประวัติการแก้ไข
+keep current	คงค่าปัจจุบัน
+Keep it from being moved, resized, deleted or edited by mistake	ป้องกันการย้าย ปรับขนาด ลบ หรือแก้ไขโดยไม่ตั้งใจ
+Keep one value of each point's vector as its value field	เก็บค่าหนึ่งค่าของเวกเตอร์ของแต่ละจุดเป็นฟิลด์ค่า
+Keep Result	เก็บผลลัพธ์
+Keep the labelled features fixed as the map moves.	ตรึงฟีเจอร์ที่ติดป้ายชื่อไว้ขณะเลื่อนแผนที่
+Keep the last drawing tool active after each graphic.	ให้เครื่องมือวาดล่าสุดยังทำงานอยู่หลังวาดกราฟิกแต่ละชิ้น
+Keep the last tool active	ให้เครื่องมือล่าสุดทำงานต่อไป
+Keep this endpoint under Data Sources › Connections, without its password or keys	เก็บปลายทางนี้ไว้ใน แหล่งข้อมูล › การเชื่อมต่อ โดยไม่เก็บรหัสผ่านหรือคีย์
+Keep this result	เก็บผลลัพธ์นี้
+Keep Tool	คงเครื่องมือไว้
+Keep value	คงค่าไว้
+Keeps the access key ID and secret access key in this computer's credential store, never in the connection or the project.	เก็บ access key ID และ secret access key ไว้ในที่เก็บข้อมูลรับรองของคอมพิวเตอร์เครื่องนี้ ไม่เก็บไว้ในการเชื่อมต่อหรือโปรเจกต์
+Key	คีย์
+Keyboard Shortcuts	แป้นพิมพ์ลัด
+Keyboard shortcuts.	แป้นพิมพ์ลัด
+Keys are available for this session but were not remembered on this computer.	คีย์ใช้ได้ในเซสชันนี้ แต่ไม่ได้จดจำไว้บนคอมพิวเตอร์เครื่องนี้
+Keys are kept for this session only: there is no credential store to remember them in here.	คีย์จะเก็บไว้เฉพาะเซสชันนี้: ไม่มีที่เก็บข้อมูลรับรองสำหรับจดจำคีย์ที่นี่
+Keys from	คีย์จาก
+Keys were saved for this connection, but there is no credential store here to read them from.	มีการบันทึกคีย์สำหรับการเชื่อมต่อนี้ แต่ไม่มีที่เก็บข้อมูลรับรองที่นี่ให้อ่านคีย์
+Kilometers	กิโลเมตร
+kind is required	ต้องระบุ kind
+KML	KML
+KMZ	KMZ
+Label	ป้ายชื่อ
+Label Class	คลาสป้ายชื่อ
+Label Distance Range	ช่วงระยะการแสดงป้ายชื่อ
+Label features in this layer	ติดป้ายชื่อฟีเจอร์ในชั้นข้อมูลนี้
+Label Field	ฟิลด์ป้ายชื่อ
+Label font	ฟอนต์ป้ายชื่อ
+Label Fonts	ฟอนต์ป้ายชื่อ
+Label only the features that match.	ติดป้ายชื่อเฉพาะฟีเจอร์ที่ตรงเงื่อนไข
+Label Placement	การวางป้ายชื่อ
+Label Range	ช่วงป้ายชื่อ
+Label the cities with their names	ติดป้ายชื่อเมืองด้วยชื่อของเมือง
+Label Visibility Range	ช่วงการมองเห็นป้ายชื่อ
+Labeling	การติดป้ายชื่อ
+Labeling Pane	แผงการติดป้ายชื่อ
+Labeling Properties…	คุณสมบัติการติดป้ายชื่อ…
+Labels	ป้ายชื่อ
+labels are drawn for feature layers, not rasters	ป้ายชื่อแสดงได้เฉพาะชั้นข้อมูลฟีเจอร์ ไม่ใช่แรสเตอร์
+Labels are drawn for feature layers, not rasters.	ป้ายชื่อแสดงได้เฉพาะชั้นข้อมูลฟีเจอร์ ไม่ใช่แรสเตอร์
+Labels are off for this layer: the clause applies once they are on.	ป้ายชื่อของชั้นข้อมูลนี้ปิดอยู่: เงื่อนไขจะมีผลเมื่อเปิดป้ายชื่อ
+Labels of the classes listed first are placed first when they compete for room.	ป้ายชื่อของคลาสที่อยู่ลำดับแรกจะได้วางก่อนเมื่อแย่งพื้นที่กัน
+Lagoon	ลากูน
+Lambert Conformal Conic	Lambert Conformal Conic
+Lambert Cylindrical Equal Area	Lambert Cylindrical Equal Area
+Landscape	แนวนอน
+Language	ภาษา
+Lasso	บ่วงบาศ
+Lasso (draw)	บ่วงบาศ (วาด)
+Last agent call failed: {call} ({secs} s ago)	การเรียกเอเจนต์ครั้งล่าสุดล้มเหลว: {call} ({secs} วินาทีที่แล้ว)
+Last agent call: {call} ({secs} s ago)	การเรียกเอเจนต์ครั้งล่าสุด: {call} ({secs} วินาทีที่แล้ว)
+Last map render time	เวลาเรนเดอร์แผนที่ครั้งล่าสุด
+Last Project	โปรเจกต์ล่าสุด
+Latitude	ละติจูด
+Latitude (Y)	ละติจูด (Y)
+Lay the nodes out along the flow	จัดวางโหนดตามทิศทางการไหล
+Layer	ชั้นข้อมูล
+Layer\nTemplates	แม่แบบ\nชั้นข้อมูล
+Layer Blend	การผสมชั้นข้อมูล
+Layer Extrusion	การยกชั้นข้อมูลเป็น 3 มิติ
+Layer File	ไฟล์ชั้นข้อมูล
+Layer From\nSelection	ชั้นข้อมูล\nจากการเลือก
+Layer not found	ไม่พบชั้นข้อมูล
+Layer Template	แม่แบบชั้นข้อมูล
+Layer Templates	แม่แบบชั้นข้อมูล
+layer {id}	ชั้นข้อมูล {id}
+Layers	ชั้นข้อมูล
+Layers ({n})	ชั้นข้อมูล ({n})
+Layers and Table Views	ชั้นข้อมูลและมุมมองตาราง
+Layers, a date each	ชั้นข้อมูล หนึ่งวันที่ต่อชั้น
+Layout	เลย์เอาต์
+Layout\nFile	ไฟล์\nเลย์เอาต์
+Layout after: {name}	เลย์เอาต์หลัง: {name}
+Layout before: {name}	เลย์เอาต์ก่อน: {name}
+Layout File…	ไฟล์เลย์เอาต์…
+Layout name	ชื่อเลย์เอาต์
+Layout: {kind}	เลย์เอาต์: {kind}
+Layouts	เลย์เอาต์
+Learn	เรียนรู้
+Learning\nResources	แหล่ง\nเรียนรู้
+Leave the keys blank to log in with the keys saved on this computer, or type others, then Save.	เว้นคีย์ว่างไว้เพื่อลงชื่อเข้าใช้ด้วยคีย์ที่บันทึกไว้บนคอมพิวเตอร์เครื่องนี้ หรือพิมพ์คีย์อื่น แล้วกด บันทึก
+Left	ซ้าย
+Legend	คำอธิบายสัญลักษณ์
+Legend label. Clear it to show the value again.	ป้ายในคำอธิบายสัญลักษณ์ ล้างข้อความเพื่อแสดงค่าอีกครั้ง
+Length {length} · gain {gain} · loss {loss}	ความยาว {length} · ขึ้น {gain} · ลง {loss}
+Let the assistant hand tasks to agents on this computer	ให้ผู้ช่วยส่งต่องานให้เอเจนต์บนคอมพิวเตอร์เครื่องนี้
+Let your Agents Control RustGIS	ให้เอเจนต์ของคุณควบคุม RustGIS
+Letter spacing	ระยะห่างตัวอักษร
+Level	ระดับ
+Library	ไลบรารี
+Light and Shadow	แสงและเงา
+Light the extruded shapes from the north-west.	ส่องแสงรูปทรงที่ยกขึ้นจากทิศตะวันตกเฉียงเหนือ
+Lighting	การจัดแสง
+LIKE	LIKE
+LIMIT	LIMIT
+Limit a field to coded values or a range.	จำกัดฟิลด์ให้มีเฉพาะค่าที่กำหนดรหัสไว้หรือค่าในช่วง
+Limit to map view	จำกัดเฉพาะมุมมองแผนที่
+Limit where tools work, and the cell size of new rasters.	จำกัดพื้นที่ที่เครื่องมือทำงาน และขนาดเซลล์ของแรสเตอร์ใหม่
+Limit which features draw with a SQL expression.	จำกัดฟีเจอร์ที่แสดงผลด้วยนิพจน์ SQL
+Limits	ขีดจำกัด
+Line	เส้น
+Line color	สีเส้น
+Line Of Sight	แนวสายตา
+Line of sight between two points	แนวสายตาระหว่างสองจุด
+Line Of Sight From Here	แนวสายตาจากจุดนี้
+Line Strokes	ลายเส้น
+Line width	ความกว้างเส้น
+Line {n} isn't four numbers (column row lon lat)	บรรทัด {n} ไม่ใช่ตัวเลขสี่ค่า (column row lon lat)
+Lines	เส้น
+Lines and ticks	เส้นและขีดแบ่ง
+LineString	LineString
+Link	ลิงก์
+Link Cursors	ลิงก์เคอร์เซอร์
+Link Views	ลิงก์มุมมอง
+List	รายการ
+List a Dataset's Files	แสดงรายการไฟล์ของชุดข้อมูล
+List by data source	แสดงตามแหล่งข้อมูล
+List by drawing order	แสดงตามลำดับการวาด
+List by selection	แสดงตามการเลือก
+List Columns in File	แสดงรายการคอลัมน์ในไฟล์
+List Commands	แสดงรายการคำสั่ง
+List Connections	แสดงรายการการเชื่อมต่อ
+List Data Sources	แสดงรายการแหล่งข้อมูล
+List Database Columns	แสดงรายการคอลัมน์ฐานข้อมูล
+List Database Tables	แสดงรายการตารางฐานข้อมูล
+List geoBoundaries Countries	แสดงรายการประเทศใน geoBoundaries
+List Layers in File	แสดงรายการชั้นข้อมูลในไฟล์
+List Products	แสดงรายการผลิตภัณฑ์
+List S3 Bucket	แสดงรายการใน S3 Bucket
+List Source Cooperative Files	แสดงรายการไฟล์ Source Cooperative
+List Source Cooperative Products	แสดงรายการผลิตภัณฑ์ Source Cooperative
+List STAC Collections	แสดงรายการคอลเลกชัน STAC
+List Tables	แสดงรายการตาราง
+List The National Map Services	แสดงรายการบริการ The National Map
+List the provider's models	แสดงรายการโมเดลของผู้ให้บริการ
+List this layer in the legend	แสดงชั้นข้อมูลนี้ในคำอธิบายสัญลักษณ์
+List what it holds	แสดงรายการสิ่งที่อยู่ภายใน
+Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper are linked above.	แสดงไว้เพื่อการค้นพบ: RustGIS ยังอ่านชุดข้อมูลนี้ไม่ได้ ลิงก์ไปยังข้อมูลและบทความอยู่ด้านบน
+Listing…	กำลังแสดงรายการ…
+Lit	ด้านรับแสง
+Live summary of the features in view.	สรุปฟีเจอร์ในมุมมองแบบสด
+Load All Features	โหลดฟีเจอร์ทั้งหมด
+Load an unpacked plugin from its folder while you develop it.	โหลดปลั๊กอินที่ยังไม่ได้แพ็กจากโฟลเดอร์ระหว่างการพัฒนา
+Load more	โหลดเพิ่ม
+Load sources & plot	โหลดแหล่งข้อมูลและพล็อต
+Load Whitebox and GeoLibre tools	โหลดเครื่องมือ Whitebox และ GeoLibre
+Loaded {name} from its folder.	โหลด {name} จากโฟลเดอร์แล้ว
+Loading the GeoLibre tools…	กำลังโหลดเครื่องมือ GeoLibre…
+Loading…	กำลังโหลด…
+Loads map tiles from the web	โหลดไทล์แผนที่จากเว็บ
+Local	ในเครื่อง
+Locate	ค้นหาตำแหน่ง
+Locate GeoLibre Runner	ระบุตำแหน่งตัวรัน GeoLibre
+Locate the GeoLibre runner	ระบุตำแหน่งตัวรัน GeoLibre
+Locate…	ค้นหาตำแหน่ง…
+Location	ตำแหน่ง
+Locator	ตัวระบุตำแหน่ง
+Lock	ล็อก
+Locked	ล็อกแล้ว
+Locked: unlock it in the Format pane to move or change it	ล็อกอยู่: ปลดล็อกในแผงรูปแบบเพื่อย้ายหรือเปลี่ยนแปลง
+Log In to Connection	ลงชื่อเข้าใช้การเชื่อมต่อ
+Log In to {name}…	ลงชื่อเข้าใช้ {name}…
+Log In…	ลงชื่อเข้าใช้…
+Logged in for this session	ลงชื่อเข้าใช้แล้วสำหรับเซสชันนี้
+Long	จำนวนเต็มยาว (Long)
+Long dash	เส้นประยาว
+Longitude	ลองจิจูด
+Longitude (X)	ลองจิจูด (X)
+Look for {name}, outlined on the ribbon.	มองหา {name} ที่มีกรอบเน้นบนริบบอน
+Looking up the place…	กำลังค้นหาสถานที่…
+Loop	วนซ้ำ
+Lower Priority	ลดลำดับความสำคัญ
+Made in RustGIS: samples, drawings and tool outputs	สร้างใน RustGIS: ตัวอย่าง ภาพวาด และผลลัพธ์จากเครื่องมือ
+Magnifier	แว่นขยาย
+Major Lakes	ทะเลสาบสำคัญ
+Major Rivers	แม่น้ำสายหลัก
+Make a new layer of the selected features.	สร้างชั้นข้อมูลใหม่จากฟีเจอร์ที่เลือก
+Make a task of the steps recorded	สร้างงานจากขั้นตอนที่บันทึกไว้
+Make Layer From Selected Features	สร้างชั้นข้อมูลจากฟีเจอร์ที่เลือก
+Manage	จัดการ
+Manage Bookmarks	จัดการบุ๊กมาร์ก
+Manage Edits	จัดการการแก้ไข
+Manage Templates	จัดการแม่แบบ
+Mann–Kendall	Mann–Kendall
+Manual	กำหนดเอง
+Map	แผนที่
+Map\nFrame	กรอบ\nแผนที่
+Map (the current view)	แผนที่ (มุมมองปัจจุบัน)
+map by date	แผนที่ตามวันที่
+Map centre	จุดกึ่งกลางแผนที่
+Map draw	การวาดแผนที่
+Map Extent	ขอบเขตแผนที่
+Map File	ไฟล์แผนที่
+Map Frame	กรอบแผนที่
+Map Frames	กรอบแผนที่
+Map frames per second (live while the map moves)	จำนวนเฟรมต่อวินาทีของแผนที่ (แสดงสดขณะแผนที่เคลื่อนที่)
+Map Labeling	การติดป้ายชื่อแผนที่
+Map Link	ลิงก์แผนที่
+Map name	ชื่อแผนที่
+Map Page	หน้าแผนที่
+Map scale	มาตราส่วนแผนที่
+Map Series	ชุดแผนที่
+Map Series Page	หน้าชุดแผนที่
+Map series page name	ชื่อหน้าชุดแผนที่
+Map style (JSON)	สไตล์แผนที่ (JSON)
+Map Surrounds	องค์ประกอบรอบแผนที่
+Map Thumbnail	ภาพขนาดย่อของแผนที่
+Map tiles of the whole world	ไทล์แผนที่ทั่วโลก
+Map Tool: {tool}	เครื่องมือแผนที่: {tool}
+Map View	มุมมองแผนที่
+map.goToXY {"lon": 2.35, "lat": 48.85, "scale": 5000000}\nselect.byAttributes {"layer": "Cities", "where": "pop_max > 1000000"}	map.goToXY {"lon": 2.35, "lat": 48.85, "scale": 5000000}\nselect.byAttributes {"layer": "Cities", "where": "pop_max > 1000000"}
+Map: {kind}	แผนที่: {kind}
+Mapping	การทำแผนที่
+Maps	แผนที่
+Maps move together.	แผนที่เคลื่อนที่ไปพร้อมกัน
+MapServer	MapServer
+Marker	มาร์กเกอร์
+Mask Values	ค่าที่มาสก์
+Masking	การมาสก์
+Match Option	ตัวเลือกการจับคู่
+Matching places	สถานที่ที่ตรงกัน
+Max	สูงสุด
+Max %	สูงสุด %
+Max Neighbors	จำนวนเพื่อนบ้านสูงสุด
+Maximum zoom	ระดับซูมสูงสุด
+MCP Relay	รีเลย์ MCP
+MCP relay is already listening on 127.0.0.1:{port}; stop it first to use port {asked}	รีเลย์ MCP กำลังรอรับการเชื่อมต่อที่ 127.0.0.1:{port} อยู่แล้ว ให้หยุดก่อนจึงจะใช้พอร์ต {asked} ได้
+MCP relay listening on 127.0.0.1:{port}	รีเลย์ MCP กำลังรอรับการเชื่อมต่อที่ 127.0.0.1:{port}
+MCP relay stopped	หยุดรีเลย์ MCP แล้ว
+MCP relay · full access · {n} attached	รีเลย์ MCP · สิทธิ์เต็ม · เชื่อมต่อ {n} รายการ
+MCP relay · {n} attached	รีเลย์ MCP · เชื่อมต่อ {n} รายการ
+Mean	ค่าเฉลี่ย
+Measure	วัดระยะ
+Measure Area	วัดพื้นที่
+Measure Distance	วัดระยะทาง
+Measure geodesic distances and areas on the map.	วัดระยะทางและพื้นที่แบบจีโอเดสิกบนแผนที่
+Measure on this body, with one of its basemaps.	วัดบนเทห์ฟากฟ้านี้ ด้วยแผนที่ฐานแผนที่หนึ่งของเทห์ฟากฟ้านั้น
+Measure with an elevation raster	วัดด้วยแรสเตอร์ความสูง
+Measurement units	หน่วยการวัด
+Measurement units must be metric or imperial	หน่วยการวัดต้องเป็นเมตริกหรืออิมพีเรียล
+Measurements so far.	ผลการวัดจนถึงตอนนี้
+Mensuration	การรังวัด
+Mensuration Tools	เครื่องมือรังวัด
+Merge	ผสาน
+Merge elevation rasters into a surface model and export a 3D mesh.	ผสานแรสเตอร์ความสูงเป็นแบบจำลองพื้นผิว และส่งออกเป็นเมช 3 มิติ
+Merges polygons that share a field value into one feature per value.	ผสานรูปหลายเหลี่ยมที่มีค่าฟิลด์เดียวกันเป็นหนึ่งฟีเจอร์ต่อหนึ่งค่า
+Messages appear here.	ข้อความจะแสดงที่นี่
+Meters	เมตร
+Method	วิธีการ
+Metric	เมตริก
+Midnight	เที่ยงคืน
+Miles	ไมล์
+Miller Cylindrical	Miller Cylindrical
+Min	ต่ำสุด
+Min %	ต่ำสุด %
+Min must be less than Max	ค่าต่ำสุดต้องน้อยกว่าค่าสูงสุด
+Min must not be more than Max	ค่าต่ำสุดต้องไม่มากกว่าค่าสูงสุด
+Minimum Bounding Geometry	รูปทรงเรขาคณิตขอบเขตต่ำสุด (Minimum Bounding Geometry)
+Minimum Maximum	ต่ำสุด-สูงสุด
+Minus	Minus
+Minutes	นาที
+minutes ago	นาทีที่แล้ว
+Miter	มุมแหลม (Miter)
+Mobile Map	แผนที่มือถือ
+Mod+	Mod+
+Mod+C	Mod+C
+Mod+D	Mod+D
+Mod+Equals	Mod+Equals
+Mod+F1	Mod+F1
+Mod+K	Mod+K
+Mod+Minus	Mod+Minus
+Mod+N	Mod+N
+Mod+O	Mod+O
+Mod+Plus	Mod+Plus
+Mod+S	Mod+S
+Mod+Shift+S	Mod+Shift+S
+Mod+Shift+Z	Mod+Shift+Z
+Mod+T	Mod+T
+Mod+V	Mod+V
+Mod+X	Mod+X
+Mod+Y	Mod+Y
+Mod+Z	Mod+Z
+Model	โมเดล
+Model\nBuilder	Model\nBuilder
+model id	รหัสโมเดล
+Model output	ผลลัพธ์ของโมเดล
+ModelBuilder	ModelBuilder
+Models	โมเดล
+Modified Mann–Kendall (Hamed & Rao)	Mann–Kendall แบบปรับปรุง (Hamed & Rao)
+Modified Mann–Kendall (Yue & Wang)	Mann–Kendall แบบปรับปรุง (Yue & Wang)
+Modify	ปรับเปลี่ยน
+Modify Selected Features	ปรับเปลี่ยนฟีเจอร์ที่เลือก
+Mollweide (equal-area world)	Mollweide (โลกแบบพื้นที่เท่ากัน)
+Month	เดือน
+Months	เดือน
+Months are numbers from 1 to 12 (12, 1, 2 for December to February)	เดือนเป็นตัวเลข 1 ถึง 12 (12, 1, 2 คือธันวาคมถึงกุมภาพันธ์)
+More	เพิ่มเติม
+More basemaps:	แผนที่ฐานเพิ่มเติม:
+More than one saved connection could read these buckets. Choose the one that reads each; the project's sources that read it stay closed until you do.	มีการเชื่อมต่อที่บันทึกไว้มากกว่าหนึ่งรายการที่อ่าน bucket เหล่านี้ได้ เลือกการเชื่อมต่อที่ใช้อ่านแต่ละ bucket แหล่งข้อมูลของโปรเจกต์ที่อ่าน bucket นั้นจะยังปิดอยู่จนกว่าคุณจะเลือก
+Mosaic images into an orthomosaic	ต่อภาพเป็นภาพออร์โธโมเสก
+Mosaic Rasters	ต่อภาพแรสเตอร์ (Mosaic)
+Mosaic the visible rasters into an orthomosaic.	ต่อแรสเตอร์ที่มองเห็นเป็นภาพออร์โธโมเสก
+Most cloud cover (%)	เมฆปกคลุมสูงสุด (%)
+Mouse wheel	ล้อเมาส์
+Move	ย้าย
+Move Bookmark	ย้ายบุ๊กมาร์ก
+Move Down	เลื่อนลง
+Move down	เลื่อนลง
+Move Group	ย้ายกลุ่ม
+Move Label Class	ย้ายคลาสป้ายชื่อ
+Move Task Step	ย้ายขั้นตอนของงาน
+Move To Bottom	ย้ายไปล่างสุด
+Move To Group	ย้ายไปยังกลุ่ม
+Move To Top	ย้ายไปบนสุด
+Move To {group}	ย้ายไปยัง {group}
+Move Up	เลื่อนขึ้น
+Move up	เลื่อนขึ้น
+Move, rotate, scale, merge, explode, split or flip the selected features.	ย้าย หมุน ปรับขนาด ผสาน แยกส่วน แบ่ง หรือพลิกฟีเจอร์ที่เลือก
+Move, Rotate, Scale…	ย้าย หมุน ปรับขนาด…
+MultiLineString	MultiLineString
+MultiPolygon	MultiPolygon
+My Buckets	Bucket ของฉัน
+My OGC Layer	ชั้นข้อมูล OGC ของฉัน
+MySQL/MariaDB	MySQL/MariaDB
+N/S/E/W	N/S/E/W
+Name	ชื่อ
+name the plugin whose panel to open: {"id": plugin id}	ระบุปลั๊กอินที่จะเปิดแผง: {"id": plugin id}
+NASA Earthaccess	NASA Earthaccess
+NASA Earthaccess…	NASA Earthaccess…
+NASA Earthdata	NASA Earthdata
+NASA Earthdata through Earthaccess's search: find a dataset, then its granules where the map is, drawn as footprints. GeoTIFFs are added as COGs, read in place. Searching needs no account.	NASA Earthdata ผ่านการค้นหาของ Earthaccess: ค้นหาชุดข้อมูล แล้วค้นหา granule ในบริเวณแผนที่ แสดงเป็นรอยขอบเขต (footprint) ไฟล์ GeoTIFF จะเพิ่มเป็น COG และอ่านจากที่เดิมโดยตรง การค้นหาไม่ต้องใช้บัญชี
+NASA Earthdata…	NASA Earthdata…
+NASA's CMR has no dataset named {name}	CMR ของ NASA ไม่มีชุดข้อมูลชื่อ {name}
+NASA's Earthdata GIS: imagery, maps, features and web maps of Earth science data.	Earthdata GIS ของ NASA: ภาพถ่าย แผนที่ ฟีเจอร์ และเว็บแมปของข้อมูลวิทยาศาสตร์โลก
+NASA's Global Imagery Browse Services (GIBS): over a thousand layers of satellite imagery and science data, most of them daily.	Global Imagery Browse Services (GIBS) ของ NASA: ภาพถ่ายดาวเทียมและข้อมูลวิทยาศาสตร์กว่าหนึ่งพันชั้นข้อมูล ส่วนใหญ่อัปเดตรายวัน
+Natural Breaks (Jenks)	Natural Breaks (Jenks)
+Natural Color (1, 2, 3)	สีธรรมชาติ (1, 2, 3)
+Natural Earth	Natural Earth
+Natural Earth's public domain map data (countries, states, coastlines, rivers, lakes, roads and more) on Source Cooperative. PMTiles are added as tile layers, other files as layers.	ข้อมูลแผนที่สาธารณสมบัติของ Natural Earth (ประเทศ รัฐ แนวชายฝั่ง แม่น้ำ ทะเลสาบ ถนน และอื่นๆ) บน Source Cooperative ไฟล์ PMTiles จะเพิ่มเป็นชั้นข้อมูลไทล์ ไฟล์อื่นเพิ่มเป็นชั้นข้อมูล
+Natural Earth…	Natural Earth…
+Navigate	นำทาง
+Navigate with the mouse (planar) or walk with W A S D, Q and E (first-person).	นำทางด้วยเมาส์ (ระนาบ) หรือเดินด้วย W A S D, Q และ E (มุมมองบุคคลที่หนึ่ง)
+Navigation	การนำทาง
+Navigation Mode	โหมดการนำทาง
+Navigator	ตัวนำทาง
+NDVI, NDWI, SAVI, NBR, NDBI, EVI.	NDVI, NDWI, SAVI, NBR, NDBI, EVI.
+Nearest Neighbor	เพื่อนบ้านใกล้ที่สุด (Nearest Neighbor)
+Neatline	เส้นกรอบ (Neatline)
+Needs three or more bands.	ต้องมีอย่างน้อยสามแบนด์
+Neighborhood Explorer	สำรวจย่านใกล้เคียง
+Network Analysis	การวิเคราะห์โครงข่าย
+New	ใหม่
+New\nLayout	เลย์เอาต์\nใหม่
+New\nMap	แผนที่\nใหม่
+New\nNotebook	โน้ตบุ๊ก\nใหม่
+New\nPresentation	งานนำเสนอ\nใหม่
+New\nReport	รายงาน\nใหม่
+New\nWorkspace	พื้นที่ทำงาน\nใหม่
+New Bookmark	บุ๊กมาร์กใหม่
+New Bookmark…	บุ๊กมาร์กใหม่…
+New Connection	การเชื่อมต่อใหม่
+New Connection ▾	การเชื่อมต่อใหม่ ▾
+New conversation	การสนทนาใหม่
+New Custom Template	เทมเพลตกำหนดเองใหม่
+New Custom Template…	เทมเพลตกำหนดเองใหม่…
+New features use this template's values	ฟีเจอร์ใหม่จะใช้ค่าจากเทมเพลตนี้
+New field	ฟิลด์ใหม่
+New Group	กลุ่มใหม่
+New job name	ชื่องานใหม่
+New Layout	เลย์เอาต์ใหม่
+New Map	แผนที่ใหม่
+New Model From History	โมเดลใหม่จากประวัติ
+New Notebook	โน้ตบุ๊กใหม่
+New Presentation	งานนำเสนอใหม่
+New Project	โปรเจกต์ใหม่
+New project	โปรเจกต์ใหม่
+New Publication Layout	เลย์เอาต์สิ่งพิมพ์ใหม่
+New Relationship…	ความสัมพันธ์ใหม่…
+New Report	รายงานใหม่
+New Selection	การเลือกใหม่
+New Style	สไตล์ใหม่
+New Style From Layer	สไตล์ใหม่จากชั้นข้อมูล
+New Task	งานใหม่
+New Task From History	งานใหม่จากประวัติ
+New Template	เทมเพลตใหม่
+New Template (a layout page)	เทมเพลตใหม่ (หน้าเลย์เอาต์)
+New Workspace	พื้นที่ทำงานใหม่
+New Workspace From Visible Rasters	พื้นที่ทำงานใหม่จากแรสเตอร์ที่มองเห็น
+Next	ถัดไป
+Next Extent	ขอบเขตถัดไป
+Next Page	หน้าถัดไป
+NLDI result cleared.	ล้างผลลัพธ์ NLDI แล้ว
+NLDI returned no plottable navigation source.	NLDI ไม่ได้ส่งแหล่งการนำทางที่พล็อตได้กลับมา
+No	ไม่
+No agents that speak ACP (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Cursor, OpenCode, goose) were found on this computer.	ไม่พบเอเจนต์ที่รองรับ ACP (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Cursor, OpenCode, goose) บนคอมพิวเตอร์นี้
+No AlphaEarth layer on the map	ไม่มีชั้นข้อมูล AlphaEarth บนแผนที่
+No bookmark matches the filter.	ไม่มีบุ๊กมาร์กที่ตรงกับตัวกรอง
+No bookmarks yet	ยังไม่มีบุ๊กมาร์ก
+No bookmarks yet. New Bookmark saves the current view of the map.	ยังไม่มีบุ๊กมาร์ก บุ๊กมาร์กใหม่ จะบันทึกมุมมองปัจจุบันของแผนที่
+No catalogs below this one: Find Items lists its items	ไม่มีแค็ตตาล็อกย่อยใต้แค็ตตาล็อกนี้: ค้นหารายการ จะแสดงรายการของแค็ตตาล็อกนี้
+No COMID was returned for this point.	ไม่ได้รับ COMID สำหรับจุดนี้
+no command	ไม่มีคำสั่ง
+No data at the points picked.	ไม่มีข้อมูลที่จุดที่เลือก
+No datasets match.	ไม่มีชุดข้อมูลที่ตรงกัน
+No datasets with data RustGIS can add	ไม่มีชุดข้อมูลที่มีข้อมูลซึ่ง RustGIS เพิ่มได้
+no date in the name	ไม่มีวันที่ในชื่อ
+No edits since the project was saved	ไม่มีการแก้ไขตั้งแต่บันทึกโปรเจกต์
+No features are selected in this layer.	ไม่มีฟีเจอร์ที่ถูกเลือกในชั้นข้อมูลนี้
+No field of this layer holds dates.	ไม่มีฟิลด์ใดของชั้นข้อมูลนี้ที่เก็บวันที่
+No Fill	ไม่มีสีพื้น
+No geometry to calculate	ไม่มีรูปทรงเรขาคณิตให้คำนวณ
+No granules in this view and date range.	ไม่มีแกรนูลในมุมมองและช่วงวันที่นี้
+no home folder	ไม่มีโฟลเดอร์หลักของผู้ใช้
+no layer	ไม่มีชั้นข้อมูล
+No layer has a field of dates.	ไม่มีชั้นข้อมูลใดที่มีฟิลด์วันที่
+no layer has a field of dates: add one that has, or a tile layer whose address has a date (map.addTiles)	ไม่มีชั้นข้อมูลใดที่มีฟิลด์วันที่: เพิ่มชั้นข้อมูลที่มีฟิลด์วันที่ หรือชั้นข้อมูลไทล์ที่ที่อยู่มีวันที่ (map.addTiles)
+No layer selected	ไม่ได้เลือกชั้นข้อมูล
+No layers match	ไม่มีชั้นข้อมูลที่ตรงกัน
+No layers match your search.	ไม่มีชั้นข้อมูลที่ตรงกับการค้นหา
+No mask	ไม่มีมาสก์
+No models are available for this account.	ไม่มีโมเดลที่ใช้ได้สำหรับบัญชีนี้
+No notebooks yet. Analyze › New Notebook starts one, or Add and Open Notebook opens one.	ยังไม่มีโน้ตบุ๊ก วิเคราะห์ › โน้ตบุ๊กใหม่ จะสร้างโน้ตบุ๊ก หรือ เพิ่มและเปิดโน้ตบุ๊ก จะเปิดโน้ตบุ๊กที่มีอยู่
+No offline areas	ไม่มีพื้นที่ออฟไลน์
+No other reports	ไม่มีรายงานอื่น
+No place found	ไม่พบสถานที่
+No place matches that address.	ไม่มีสถานที่ที่ตรงกับที่อยู่นั้น
+No plugin panel is open.	ไม่มีแผงปลั๊กอินที่เปิดอยู่
+No plugins are installed. Browse the plugin registry, or install a .rgplugin file.	ยังไม่ได้ติดตั้งปลั๊กอิน เรียกดูรีจิสทรีปลั๊กอิน หรือติดตั้งไฟล์ .rgplugin
+No plugins match.	ไม่มีปลั๊กอินที่ตรงกัน
+No polygon layer available in the map.	ไม่มีชั้นข้อมูลรูปหลายเหลี่ยมในแผนที่
+No Pop-ups	ไม่มีป๊อปอัป
+No presentations yet. Publish › New Presentation starts one.	ยังไม่มีงานนำเสนอ เผยแพร่ › งานนำเสนอใหม่ จะสร้างงานนำเสนอ
+No products	ไม่มีผลิตภัณฑ์
+No project opened or saved yet	ยังไม่ได้เปิดหรือบันทึกโปรเจกต์
+No project sources are waiting for an S3 connection.	ไม่มีแหล่งข้อมูลของโปรเจกต์ที่รอการเชื่อมต่อ S3
+No properties	ไม่มีคุณสมบัติ
+No relationships (Data Design › Relationships)	ไม่มีความสัมพันธ์ (การออกแบบข้อมูล › ความสัมพันธ์)
+No relationships yet	ยังไม่มีความสัมพันธ์
+No reports yet. Publish › New Report lists the selected layer's records.	ยังไม่มีรายงาน เผยแพร่ › รายงานใหม่ จะแสดงเรคคอร์ดของชั้นข้อมูลที่เลือก
+no row	ไม่มีแถว
+No saved S3 keys. Enter accessKeyId and secretAccessKey.	ไม่มีคีย์ S3 ที่บันทึกไว้ ป้อน accessKeyId และ secretAccessKey
+No serif font is installed, so this text is drawn in the sans-serif	ไม่ได้ติดตั้งฟอนต์แบบมีเชิง (serif) ข้อความนี้จึงแสดงด้วยฟอนต์ไม่มีเชิง (sans-serif)
+no service or file links	ไม่มีลิงก์บริการหรือไฟล์
+No services match your search.	ไม่มีบริการที่ตรงกับการค้นหา
+No standalone tables	ไม่มีตารางเดี่ยว
+No styles yet	ยังไม่มีสไตล์
+no system keychain in this build	บิลด์นี้ไม่มีพวงกุญแจของระบบ (keychain)
+No tasks yet. Record one, or make one from your geoprocessing history with Analyze › Task.	ยังไม่มีงาน บันทึกงานขึ้นมา หรือสร้างจากประวัติการประมวลผลเชิงพื้นที่ด้วย วิเคราะห์ › งาน
+no text graphic there	ไม่มีกราฟิกข้อความที่ตำแหน่งนั้น
+No tools match your search.	ไม่มีเครื่องมือที่ตรงกับการค้นหา
+no yearly series	ไม่มีอนุกรมรายปี
+NoData	NoData
+Nominatim	Nominatim
+None	ไม่มี
+None (public buckets)	ไม่มี (บักเก็ตสาธารณะ)
+none, a .duckdb file, or host=… dbname=… user=…	ไม่มี, ไฟล์ .duckdb หรือ host=… dbname=… user=…
+none, or from PGPASSWORD, MYSQL_PWD or SQLCMDPASSWORD	ไม่มี หรือจาก PGPASSWORD, MYSQL_PWD หรือ SQLCMDPASSWORD
+None. Add one by address, or from a basemap plugin.	ไม่มี เพิ่มด้วยที่อยู่ หรือจากปลั๊กอินแผนที่ฐาน
+North	ทิศเหนือ
+North\nArrow	ลูกศร\nทิศเหนือ
+North Polar Stereographic	North Polar Stereographic
+NOT	NOT
+not a picture	ไม่ใช่รูปภาพ
+not a RustGIS layout	ไม่ใช่เลย์เอาต์ RustGIS
+not a RustGIS project	ไม่ใช่โปรเจกต์ RustGIS
+Not applied yet.	ยังไม่ได้นำไปใช้
+Not for texts: a text is edited in the Format pane.	ไม่ใช้กับข้อความ: แก้ไขข้อความได้ในแผงรูปแบบ
+not needed	ไม่จำเป็น
+Not sandboxed	ไม่อยู่ในแซนด์บ็อกซ์
+Not saved yet	ยังไม่ได้บันทึก
+Not searched, as they didn't load: {folders}	ไม่ได้ค้นหา เนื่องจากโหลดไม่สำเร็จ: {folders}
+Not Selectable	เลือกไม่ได้
+Notebook	โน้ตบุ๊ก
+Notebook Pane	แผงโน้ตบุ๊ก
+Nothing found	ไม่พบข้อมูล
+Nothing found where the map is	ไม่พบข้อมูลในบริเวณแผนที่
+Nothing here	ไม่มีรายการ
+Nothing named {name} to rename	ไม่มีรายการชื่อ {name} ให้เปลี่ยนชื่อ
+Nothing shared yet. Publish › Share As makes web maps, layers, styles, scenes and more.	ยังไม่มีสิ่งที่แชร์ เผยแพร่ › แชร์เป็น ใช้สร้างเว็บแมป ชั้นข้อมูล สไตล์ ฉาก และอื่นๆ
+Nothing to add here	ไม่มีสิ่งที่จะเพิ่มที่นี่
+Nothing to test	ไม่มีสิ่งที่จะทดสอบ
+Nothing was found at this address.	ไม่พบข้อมูลที่ที่อยู่นี้
+Nothing was recorded, so no task was made.	ไม่มีการบันทึกใดๆ จึงไม่ได้สร้างงาน
+Now	ตอนนี้
+Nugget	นักเก็ต (Nugget)
+NULL	NULL
+Nulls	ค่าว่าง (Null)
+Observations (observer, date, species, count)	การสังเกต (ผู้สังเกต วันที่ ชนิดพันธุ์ จำนวน)
+observer height m	ความสูงผู้สังเกต (ม.)
+Ocean	มหาสมุทร
+Ocean Data Platform	Ocean Data Platform
+Ocean Data Platform…	Ocean Data Platform…
+of a geometry that doesn't say	ของรูปทรงเรขาคณิตที่ไม่ได้ระบุ
+Off	ปิด
+Off, west and south are negative: -112.5°.	ปิด: ทิศตะวันตกและทิศใต้เป็นค่าลบ: -112.5°
+Offline	ออฟไลน์
+Offline area	พื้นที่ออฟไลน์
+Offset	ระยะเลื่อน (Offset)
+OGC API	OGC API
+OGC API Features and Tiles	OGC API Features และ Tiles
+OID	OID
+Ollama (local)	Ollama (ภายในเครื่อง)
+On	เปิด
+On Hold	พักไว้
+on hold	พักไว้
+On the desktop, the key can also come from {vars}.	บนเดสก์ท็อป คีย์อาจมาจาก {vars} ได้ด้วย
+On-screen compass, zoom slider and pan pad.	เข็มทิศบนหน้าจอ แถบเลื่อนซูม และแผงเลื่อนแผนที่
+One command per line: id {json}. Lines starting with # are comments.	หนึ่งคำสั่งต่อบรรทัด: id {json} บรรทัดที่ขึ้นต้นด้วย # เป็นหมายเหตุ
+One DuckDB SELECT: DuckDB Spatial's ST_ functions, files and web addresses (read_parquet('…')), and the tables of the database below. Ctrl+Enter runs it.	คำสั่ง DuckDB SELECT หนึ่งคำสั่ง: ใช้ฟังก์ชัน ST_ ของ DuckDB Spatial ไฟล์และที่อยู่เว็บ (read_parquet('…')) และตารางของฐานข้อมูลด้านล่างได้ กด Ctrl+Enter เพื่อรัน
+One layer: a Zarr variable or a raster's bands	หนึ่งชั้นข้อมูล: ตัวแปร Zarr หรือแบนด์ของแรสเตอร์
+One page per feature of an index layer.	หนึ่งหน้าต่อหนึ่งฟีเจอร์ของชั้นข้อมูลดัชนี
+One per line: code=name	หนึ่งรายการต่อบรรทัด: code=name
+One stroke, from the symbol. Add strokes for casings, parallel lines and offsets.	เส้นเดียวจากสัญลักษณ์ เพิ่มเส้นสำหรับเส้นขอบนอก เส้นขนาน และระยะเลื่อน
+Only features matching this expression draw in {layer}.	เฉพาะฟีเจอร์ที่ตรงกับนิพจน์นี้เท่านั้นที่จะแสดงใน {layer}
+Only selected polygons will be included in the output.	เฉพาะรูปหลายเหลี่ยมที่เลือกเท่านั้นที่จะรวมอยู่ในผลลัพธ์
+Only where the map is	เฉพาะบริเวณแผนที่
+Opacity	ความทึบ
+Open	เปิด
+Open a .rgis project	เปิดโปรเจกต์ .rgis
+open a layout first	เปิดเลย์เอาต์ก่อน
+Open a model file (*.model.json)	เปิดไฟล์โมเดล (*.model.json)
+Open a model of this project	เปิดโมเดลของโปรเจกต์นี้
+Open a RustGIS or Jupyter notebook.	เปิดโน้ตบุ๊ก RustGIS หรือ Jupyter
+Open a RustGIS project.	เปิดโปรเจกต์ RustGIS
+Open an offline area to edit.	เปิดพื้นที่ออฟไลน์เพื่อแก้ไข
+Open browser again	เปิดเบราว์เซอร์อีกครั้ง
+Open Custom Template	เปิดเทมเพลตกำหนดเอง
+Open Custom Template…	เปิดเทมเพลตกำหนดเอง…
+Open data catalogs registered with Portolan: pick a publisher's catalog, then Find Items for its collections.	แค็ตตาล็อกข้อมูลเปิดที่ลงทะเบียนกับ Portolan: เลือกแค็ตตาล็อกของผู้เผยแพร่ แล้วใช้ ค้นหารายการ เพื่อดูคอลเลกชัน
+Open data catalogues searched by text. Files are added by their address (read in place when they can be); a service opens Add From Service to pick its layer.	แค็ตตาล็อกข้อมูลเปิดที่ค้นหาด้วยข้อความ ไฟล์จะเพิ่มด้วยที่อยู่ (อ่านจากต้นทางโดยตรงเมื่อทำได้) ส่วนบริการจะเปิด เพิ่มจากบริการ เพื่อเลือกชั้นข้อมูล
+Open data products on Source Cooperative. GeoParquet, FlatGeobuf, cloud-optimised GeoTIFFs and PMTiles are read in place; other files are downloaded.	ผลิตภัณฑ์ข้อมูลเปิดบน Source Cooperative ไฟล์ GeoParquet, FlatGeobuf, GeoTIFF แบบ cloud-optimised และ PMTiles อ่านจากต้นทางโดยตรง ไฟล์อื่นจะถูกดาวน์โหลด
+Open folder	เปิดโฟลเดอร์
+Open In Geoprocessing…	เปิดในการประมวลผลเชิงพื้นที่…
+Open in ModelBuilder	เปิดใน ModelBuilder
+Open in Tool	เปิดในเครื่องมือ
+Open Layout	เปิดเลย์เอาต์
+Open ModelBuilder	เปิด ModelBuilder
+Open Notebook	เปิดโน้ตบุ๊ก
+Open Offline Map	เปิดแผนที่ออฟไลน์
+Open Presentation	เปิดงานนำเสนอ
+Open Project	เปิดโปรเจกต์
+Open project	เปิดโปรเจกต์
+Open Project (from text)	เปิดโปรเจกต์ (จากข้อความ)
+Open Project…	เปิดโปรเจกต์…
+Open Report	เปิดรายงาน
+Open the attribute table of the selected layer.	เปิดตารางแอตทริบิวต์ของชั้นข้อมูลที่เลือก
+Open the Basemaps tab	เปิดแท็บแผนที่ฐาน
+Open the layer's attribute table.	เปิดตารางแอตทริบิวต์ของชั้นข้อมูล
+Open the layer's table.	เปิดตารางของชั้นข้อมูล
+Open the plugin's panel.	เปิดแผงของปลั๊กอิน
+Open the Release Page	เปิดหน้าเผยแพร่เวอร์ชัน
+Open the RustGIS user guide.	เปิดคู่มือผู้ใช้ RustGIS
+Open the selected layer's table.	เปิดตารางของชั้นข้อมูลที่เลือก
+Open the Symbology pane.	เปิดแผงสัญลักษณ์
+Open the task's steps	เปิดขั้นตอนของงาน
+Open this granule in Earthdata Search	เปิดแกรนูลนี้ใน Earthdata Search
+Open {code} on epsg.io	เปิด {code} บน epsg.io
+Open, save and create projects	เปิด บันทึก และสร้างโปรเจกต์
+OpenAerialMap	OpenAerialMap
+OpenAerialMap…	OpenAerialMap…
+OpenAI-compatible	ที่เข้ากันได้กับ OpenAI
+Opened {name} for printing	เปิด {name} เพื่อพิมพ์แล้ว
+OpenFreeMap Bright	OpenFreeMap Bright
+OpenFreeMap Dark	OpenFreeMap Dark
+OpenFreeMap Fiord	OpenFreeMap Fiord
+OpenFreeMap Liberty	OpenFreeMap Liberty
+OpenFreeMap Positron	OpenFreeMap Positron
+OpenFreeMap © OpenMapTiles Data from OpenStreetMap	OpenFreeMap © OpenMapTiles ข้อมูลจาก OpenStreetMap
+Opening {url}…	กำลังเปิด {url}…
+OpenStreetMap	OpenStreetMap
+OpenStreetMap data where the map is, from an Overpass server: a preset, or tag filters such as amenity=cafe, shop. The area can be up to about 50 × 50 km. © OpenStreetMap contributors (ODbL).	ข้อมูล OpenStreetMap ในบริเวณแผนที่ จากเซิร์ฟเวอร์ Overpass: เลือกค่าที่ตั้งไว้ หรือตัวกรองแท็ก เช่น amenity=cafe, shop พื้นที่มีขนาดได้ถึงประมาณ 50 × 50 กม. © ผู้ร่วมพัฒนา OpenStreetMap (ODbL)
+OpenStreetMap's public server	เซิร์ฟเวอร์สาธารณะของ OpenStreetMap
+OpenStreetMap, Esri, USGS, NASA and more, from the plugin registry.	OpenStreetMap, Esri, USGS, NASA และอื่นๆ จากรีจิสทรีปลั๊กอิน
+OpenStreetMap…	OpenStreetMap…
+Open…	เปิด…
+Optional	ไม่บังคับ
+Optional. Shift+Enter starts a new line.	ไม่บังคับ กด Shift+Enter เพื่อขึ้นบรรทัดใหม่
+Options	ตัวเลือก
+OR	OR
+Or	หรือ
+Or run in a POSIX shell, for Claude Code or Codex:	หรือรันใน POSIX shell สำหรับ Claude Code หรือ Codex:
+Or run in PowerShell, for Claude Code or Codex:	หรือรันใน PowerShell สำหรับ Claude Code หรือ Codex:
+Or run, for Claude Code or Codex:	หรือรันคำสั่งนี้ สำหรับ Claude Code หรือ Codex:
+ORDER BY	ORDER BY
+Ordinary Kriging	คริกกิงแบบธรรมดา (Ordinary Kriging)
+Orientation	การวางแนว
+Origin	ต้นทาง
+Origin key	คีย์ต้นทาง
+Ortho Mapping	การทำแผนที่ภาพออร์โธ
+Other	อื่นๆ
+Other Data	ข้อมูลอื่นๆ
+Out Beyond	ซ่อนเมื่อย่อเกิน
+Outline	เส้นขอบ
+Outline another frame's extent in this map frame.	แสดงเส้นขอบเขตของกรอบแผนที่อื่นในกรอบแผนที่นี้
+Outline color	สีเส้นขอบ
+Outline width	ความกว้างเส้นขอบ
+Outlines {frame}	แสดงเส้นขอบของ {frame}
+OUTPUT	ผลลัพธ์
+Output	ผลลัพธ์
+output layer name	ชื่อชั้นข้อมูลผลลัพธ์
+Output Name	ชื่อผลลัพธ์
+Over 1,000 raster, vector, LiDAR, hydrology and terrain tools that run in the browser, from a one-time download of about 25 MB.	เครื่องมือแรสเตอร์ เวกเตอร์ LiDAR อุทกวิทยา และภูมิประเทศกว่า 1,000 รายการที่ทำงานในเบราว์เซอร์ ดาวน์โหลดครั้งเดียวประมาณ 25 MB
+Over 1,000 raster, vector, LiDAR, hydrology and terrain tools, from an optional download of about 20 MB.	เครื่องมือแรสเตอร์ เวกเตอร์ LiDAR อุทกวิทยา และภูมิประเทศกว่า 1,000 รายการ ดาวน์โหลดเพิ่มเติมได้ (ไม่บังคับ) ประมาณ 20 MB
+Overlapping	ทับซ้อนกัน
+Overlay	การซ้อนทับ
+overlay	การซ้อนทับ
+Overlay (a transparent layer kept on top, such as labels or roads)	การซ้อนทับ (ชั้นข้อมูลโปร่งใสที่วางอยู่ด้านบนเสมอ เช่น ป้ายชื่อหรือถนน)
+Overture has no {ty} data where the map is	Overture ไม่มีข้อมูล {ty} ในบริเวณแผนที่
+Overture Maps	Overture Maps
+Overture Maps' open data: buildings, places, transportation, administrative divisions, base layers and addresses. Where the map is, its features are read in place from Overture's GeoParquet files (zoom to a city or smaller); the whole world comes as map tiles.	ข้อมูลเปิดของ Overture Maps: อาคาร สถานที่ การคมนาคม เขตการปกครอง ชั้นข้อมูลพื้นฐาน และที่อยู่ ในบริเวณแผนที่ ฟีเจอร์จะอ่านจากไฟล์ GeoParquet ของ Overture โดยตรง (ซูมไปที่เมืองหรือพื้นที่เล็กกว่า) ส่วนทั้งโลกจะแสดงเป็นไทล์แผนที่
+Overture Maps…	Overture Maps…
+Overwrite existing values	เขียนทับค่าที่มีอยู่
+Package	แพ็กเกจ
+Package a trained deep learning model.	สร้างแพ็กเกจโมเดลการเรียนรู้เชิงลึกที่ฝึกแล้ว
+Package Map	แพ็กเกจแผนที่
+Package Project	แพ็กเกจโปรเจกต์
+Package Results	แพ็กเกจผลลัพธ์
+Page	หน้า
+Page\nSize	ขนาด\nหน้า
+Page after: {name}	หน้าหลังเนื้อหา: {name}
+Page before: {name}	หน้าก่อนเนื้อหา: {name}
+Page number	เลขหน้า
+Page Properties	คุณสมบัติหน้า
+Page Setup	ตั้งค่าหน้า
+Page Size	ขนาดหน้า
+Page text	ข้อความในหน้า
+Page title	ชื่อหน้า
+Page {n} of {total}	หน้า {n} จาก {total}
+Page {n} of {total}: {name}	หน้า {n} จาก {total}: {name}
+Pages of maps, text, images and videos, shown one after another.	หน้าของแผนที่ ข้อความ รูปภาพ และวิดีโอ แสดงต่อกันทีละหน้า
+Pan	เลื่อนแผนที่
+Pan (Explore) · any tool	เลื่อนแผนที่ (สำรวจ) · เครื่องมือใดก็ได้
+Pan and Zoom Map	เลื่อนและซูมแผนที่
+Pan To	เลื่อนไปที่
+Pan to a longitude/latitude.	เลื่อนไปยังลองจิจูด/ละติจูด
+Pan with the mouse, zoom with the wheel and click features to see their attributes.	เลื่อนแผนที่ด้วยเมาส์ ซูมด้วยล้อเลื่อน และคลิกฟีเจอร์เพื่อดูแอตทริบิวต์
+Pan/Zoom\nMap	เลื่อน/ซูม\nแผนที่
+Pane Sets	ชุดแผง
+Paper	บทความวิจัย
+Parallel	ขนาน
+Parent folder	โฟลเดอร์แม่
+parks, bike lanes, flood zones…	สวนสาธารณะ ทางจักรยาน เขตน้ำท่วม…
+Password	รหัสผ่าน
+Paste	วาง
+Paste a token	วางโทเค็น
+Paste copied features into the selected layer, or as a new layer.	วางฟีเจอร์ที่คัดลอกลงในชั้นข้อมูลที่เลือก หรือเป็นชั้นข้อมูลใหม่
+Paste Group	วางกลุ่ม
+Paste Groups	วางกลุ่ม
+Paste Layer	วางชั้นข้อมูล
+Paste Layers	วางชั้นข้อมูล
+Paste Special	วางแบบพิเศษ
+Paste Special (as a new layer)	วางแบบพิเศษ (เป็นชั้นข้อมูลใหม่)
+paste your key	วางคีย์ของคุณ
+Pause	หยุดชั่วคราว
+Pause.	หยุดชั่วคราว
+PDF	PDF
+PDF or PNG	PDF หรือ PNG
+PDF, PNG or SVG	PDF, PNG หรือ SVG
+Percent Clip	ตัดตามเปอร์เซ็นต์ (Percent Clip)
+Perceptually Uniform	สม่ำเสมอตามการรับรู้
+Performance	ประสิทธิภาพ
+Phase	เฟส
+Photon	Photon
+Pick a live value, such as the scale or date, then click the map to place it.	เลือกค่าแบบสด เช่น มาตราส่วนหรือวันที่ แล้วคลิกแผนที่เพื่อวาง
+Pick a Point	เลือกจุด
+Pick a point on the map to see the variable's values through time there.	เลือกจุดบนแผนที่เพื่อดูค่าของตัวแปรตามช่วงเวลาที่จุดนั้น
+Pick a route in the list, or click a grey route on the map.	เลือกเส้นทางในรายการ หรือคลิกเส้นทางสีเทาบนแผนที่
+Pick a single layer.	เลือกชั้นข้อมูลเดียว
+Pick it on the map	เลือกบนแผนที่
+Pick one…	เลือกหนึ่งรายการ…
+Picture	รูปภาพ
+Pictures	รูปภาพ
+Pictures, attachments and chart	รูปภาพ ไฟล์แนบ และแผนภูมิ
+Pipe	ขีดตั้ง (|)
+Pitch	มุมก้ม
+Pixel	พิกเซล
+Pixel Editor	ตัวแก้ไขพิกเซล
+Pixel Size (°)	ขนาดพิกเซล (°)
+Pixel type	ชนิดพิกเซล
+Place a raster on the map	วางแรสเตอร์บนแผนที่
+Place a raster on the map from control points or the view.	วางแรสเตอร์บนแผนที่จากจุดควบคุมหรือจากมุมมอง
+Placement	ตำแหน่งการวาง
+Places	สถานที่
+Places (name, category, address, rating)	สถานที่ (ชื่อ หมวดหมู่ ที่อยู่ คะแนน)
+Plan a route between places and follow it turn by turn (Valhalla, on OpenStreetMap data).	วางแผนเส้นทางระหว่างสถานที่และนำทางทีละจุดเลี้ยว (Valhalla บนข้อมูล OpenStreetMap)
+Planar	ระนาบ
+Planar Navigation	การนำทางแบบระนาบ
+Planet Open Data	Planet Open Data
+Planet Open Data…	Planet Open Data…
+Planet's imagery of disasters (CC BY-NC), a static STAC catalog on Source Cooperative: pick an event, then Find Items.	ภาพถ่ายภัยพิบัติของ Planet (CC BY-NC) แค็ตตาล็อก STAC แบบคงที่บน Source Cooperative: เลือกเหตุการณ์ แล้วใช้ ค้นหารายการ
+Planetary Computer	Planetary Computer
+Planning a route sends its start, stops and destination to a routing server, and looking up a place by name sends the name to OpenStreetMap's Nominatim.	การวางแผนเส้นทางจะส่งจุดเริ่มต้น จุดแวะ และจุดหมายไปยังเซิร์ฟเวอร์หาเส้นทาง และการค้นหาสถานที่ด้วยชื่อจะส่งชื่อนั้นไปยัง Nominatim ของ OpenStreetMap
+Play	เล่น
+Play the animation.	เล่นภาพเคลื่อนไหว
+Play through the steps.	เล่นตามขั้นตอน
+Plot another navigation layer	พล็อตชั้นข้อมูลการนำทางอื่น
+Plotted {n} {source} features.	พล็อตฟีเจอร์ {source} แล้ว {n} รายการ
+Plugin	ปลั๊กอิน
+Plugin\nManager	ตัวจัดการ\nปลั๊กอิน
+Plugin folder	โฟลเดอร์ปลั๊กอิน
+Plugin Manager	ตัวจัดการปลั๊กอิน
+Plugin Manager…	ตัวจัดการปลั๊กอิน…
+Plugin Panel State	สถานะแผงปลั๊กอิน
+Plugin registry	รีจิสทรีปลั๊กอิน
+Plugins	ปลั๊กอิน
+Plugins are .rgplugin files. Install only plugins from people you trust.	ปลั๊กอินคือไฟล์ .rgplugin ติดตั้งเฉพาะปลั๊กอินจากผู้ที่คุณไว้วางใจ
+Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	ปลั๊กอินที่ระบุว่า ไม่อยู่ในแซนด์บ็อกซ์ จะทำงานเป็นโปรแกรมบนคอมพิวเตอร์ของคุณแทน และทำได้ทุกอย่างที่คุณทำได้
+Plugins run in a sandbox: they can't reach your files or the network, and they change the project only through RustGIS's own commands, within the permissions you accept.	ปลั๊กอินทำงานในแซนด์บ็อกซ์: เข้าถึงไฟล์หรือเครือข่ายของคุณไม่ได้ และเปลี่ยนแปลงโปรเจกต์ได้ผ่านคำสั่งของ RustGIS เท่านั้น ภายในสิทธิ์ที่คุณยอมรับ
+PMTiles archive	ไฟล์เก็บถาวร PMTiles
+PNG frames (zip)	เฟรม PNG (zip)
+PNG image	ภาพ PNG
+Point	จุด
+Points	จุด
+points each	จุดต่อพื้นที่
+Polar, conformal: Antarctica and the Southern Ocean.	ขั้วโลก คงรูป: แอนตาร์กติกาและมหาสมุทรใต้
+Polar, conformal: the Arctic and the northern lands.	ขั้วโลก คงรูป: อาร์กติกและดินแดนทางเหนือ
+Polygon	รูปหลายเหลี่ยม
+Polygon (draw)	รูปหลายเหลี่ยม (วาด)
+Polygon layer	ชั้นข้อมูลรูปหลายเหลี่ยม
+Polygons	รูปหลายเหลี่ยม
+Polyline	เส้นหลายส่วน (Polyline)
+Pop-up Mode	โหมดป๊อปอัป
+pop_max > 1000000	pop_max > 1000000
+Popular datasets…	ชุดข้อมูลยอดนิยม…
+Populated Places	แหล่งชุมชน
+Portal	พอร์ทัล
+Portolan	Portolan
+Portolan…	Portolan…
+Portrait	แนวตั้ง
+Position	ตำแหน่ง
+PostgreSQL/PostGIS	PostgreSQL/PostGIS
+Postprocessing	การประมวลผลภายหลัง
+power 2	กำลัง 2
+Precision 6 (OSRM, Valhalla)	ความละเอียด 6 (OSRM, Valhalla)
+Prefix	คำนำหน้า
+Prepare	เตรียม
+Prepare every layer's geometry for this projection.	เตรียมรูปทรงเรขาคณิตของทุกชั้นข้อมูลสำหรับเส้นโครงแผนที่นี้
+Prepare Plugin Environment	เตรียมสภาพแวดล้อมปลั๊กอิน
+Preparing its Python environment…	กำลังเตรียมสภาพแวดล้อม Python…
+Presentation	งานนำเสนอ
+Presentation File	ไฟล์งานนำเสนอ
+Presentation Pane	แผงงานนำเสนอ
+Preset	ค่าที่ตั้งไว้
+Press Load sources & plot first	กด โหลดแหล่งข้อมูลและพล็อต ก่อน
+Preview and set up the report.	แสดงตัวอย่างและตั้งค่ารายงาน
+Preview, edit and play the presentation.	แสดงตัวอย่าง แก้ไข และเล่นงานนำเสนอ
+Previous	ก่อนหน้า
+Previous Extent	ขอบเขตก่อนหน้า
+Previous Page	หน้าก่อนหน้า
+Primary\nSymbology	สัญลักษณ์\nหลัก
+Primary symbology	สัญลักษณ์หลัก
+Print	พิมพ์
+Print\nLayout	พิมพ์\nเลย์เอาต์
+Print Map	พิมพ์แผนที่
+Print the layout.	พิมพ์เลย์เอาต์
+Print the map view (through the system's PDF viewer).	พิมพ์มุมมองแผนที่ (ผ่านโปรแกรมดู PDF ของระบบ)
+Print the open layout (through the system's PDF viewer).	พิมพ์เลย์เอาต์ที่เปิดอยู่ (ผ่านโปรแกรมดู PDF ของระบบ)
+printing failed unexpectedly	การพิมพ์ล้มเหลวโดยไม่คาดคิด
+printing needs the desktop app	การพิมพ์ต้องใช้แอปเดสก์ท็อป
+Process	ประมวลผล
+Products	ผลิตภัณฑ์
+Profile	โปรไฟล์
+Profile Along a Line	โปรไฟล์ตามแนวเส้น
+Profile Along Selected Lines	โปรไฟล์ตามเส้นที่เลือก
+Profile every field	สรุปข้อมูลทุกฟิลด์
+Profile Viewing	การดูโปรไฟล์
+PROJ definition	นิยาม PROJ
+Project	โปรเจกต์
+Project\nPackage	แพ็กเกจ\nโปรเจกต์
+Project Info	ข้อมูลโปรเจกต์
+project is "sample", "blank", "last" or {"path": a project file}	project คือ "sample", "blank", "last" หรือ {"path": a project file} (พาธไฟล์โปรเจกต์)
+Project Template	เทมเพลตโปรเจกต์
+Project templates: start projects from a saved setup.	เทมเพลตโปรเจกต์: เริ่มโปรเจกต์จากการตั้งค่าที่บันทึกไว้
+project's path is required	ต้องระบุ path ของโปรเจกต์
+Projection	เส้นโครงแผนที่
+Projections	เส้นโครงแผนที่
+Projects (RustGIS, QGIS)	โปรเจกต์ (RustGIS, QGIS)
+Properties	คุณสมบัติ
+Property	คุณสมบัติ
+Proportional Symbols	สัญลักษณ์แบบสัดส่วน
+Provider	ผู้ให้บริการ
+Provinces:	จังหวัด:
+Proximity	ความใกล้เคียง
+Public GIS portals of US counties and cities, by state.	พอร์ทัล GIS สาธารณะของเคาน์ตีและเมืองในสหรัฐอเมริกา แยกตามรัฐ
+Public GIS portals of US federal agencies, by department.	พอร์ทัล GIS สาธารณะของหน่วยงานรัฐบาลกลางสหรัฐอเมริกา แยกตามกระทรวง
+Public GIS portals of US states and the District of Columbia.	พอร์ทัล GIS สาธารณะของรัฐต่าง ๆ ในสหรัฐอเมริกาและ District of Columbia
+Public layers on ArcGIS Online or another ArcGIS portal: feature, map, image and vector tile services, web maps and GeoJSON files.	ชั้นข้อมูลสาธารณะบน ArcGIS Online หรือพอร์ทัล ArcGIS อื่น: บริการฟีเจอร์ แผนที่ ภาพ และไทล์เวกเตอร์ เว็บแมป และไฟล์ GeoJSON
+Publication Layout	เลย์เอาต์สำหรับตีพิมพ์
+Publish	เผยแพร่
+Publish › Output	เผยแพร่ › ผลลัพธ์
+Put the layer back as it was then	คืนชั้นข้อมูลกลับเป็นสถานะ ณ ตอนนั้น
+Python environment failed: {error}	เตรียมสภาพแวดล้อม Python ไม่สำเร็จ: {error}
+Python environment not prepared	ยังไม่ได้เตรียมสภาพแวดล้อม Python
+Python environment ready	สภาพแวดล้อม Python พร้อมใช้งาน
+Python script	สคริปต์ Python
+QGIS layer style	สไตล์ชั้นข้อมูล QGIS
+QGIS project	โปรเจกต์ QGIS
+QGIS Project…	โปรเจกต์ QGIS…
+Qualitative	เชิงคุณภาพ
+Quantile	ควอนไทล์
+Query files, web addresses and databases with DuckDB Spatial; add results to the map.	คิวรีไฟล์ ที่อยู่เว็บ และฐานข้อมูลด้วย DuckDB Spatial แล้วเพิ่มผลลัพธ์ลงในแผนที่
+Quick\nAccess	เข้าถึง\nด่วน
+Quick Access Toolbar	แถบเครื่องมือเข้าถึงด่วน
+Quick actions	การดำเนินการด่วน
+Quick Analysis	การวิเคราะห์ด่วน
+radius km	รัศมี km
+radius m	รัศมี m
+Radius {distance} (approximate)	รัศมี {distance} (โดยประมาณ)
+Rain	ฝน
+Raise polygons by a height or a field.	ยกรูปหลายเหลี่ยมขึ้นตามความสูงหรือตามฟิลด์
+Raise Priority	เพิ่มลำดับความสำคัญ
+Random points in polygons	จุดสุ่มในรูปหลายเหลี่ยม
+Range	ช่วง
+Range (Degrees)	ช่วง (องศา)
+range: 0, 0.9	ช่วง: 0, 0.9
+Raster	แรสเตอร์
+Raster\nAnalysis	การวิเคราะห์\nแรสเตอร์
+Raster\nInformation	ข้อมูล\nแรสเตอร์
+Raster Data	ข้อมูลแรสเตอร์
+Raster data is unavailable.	ไม่มีข้อมูลแรสเตอร์
+Raster Effects	เอฟเฟกต์แรสเตอร์
+Raster Functions	ฟังก์ชันแรสเตอร์
+Raster has bands 1 to {count}.	แรสเตอร์มีแบนด์ 1 ถึง {count}
+Raster Information	รายละเอียดแรสเตอร์
+Raster Layer	ชั้นข้อมูลแรสเตอร์
+Raster layer	ชั้นข้อมูลแรสเตอร์
+Raster tiles (XYZ)	ไทล์แรสเตอร์ (XYZ)
+Raster · {w} × {h} · {n} bands · {renderer}	แรสเตอร์ · {w} × {h} · {n} แบนด์ · {renderer}
+Read and write files on this computer	อ่านและเขียนไฟล์บนคอมพิวเตอร์เครื่องนี้
+Read the bands picked for the view (at most about 6 km a side)	อ่านแบนด์ที่เลือกสำหรับมุมมอง (ด้านละไม่เกินประมาณ 6 km)
+Read the map's layers and features	อ่านชั้นข้อมูลและฟีเจอร์ของแผนที่
+Read the points in the view, coloured by their principal components	อ่านจุดในมุมมอง โดยระบายสีตามองค์ประกอบหลัก
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes, never in the project, and sent only to NASA's Earthdata data servers.	การอ่านไฟล์ของ granule ต้องใช้โทเค็น Earthdata Login ซึ่งใช้ได้กับ NASA DAAC ทุกแห่ง โทเค็นจะถูกเก็บไว้จนกว่าจะปิด RustGIS ไม่เก็บในโปรเจกต์ และส่งไปยังเซิร์ฟเวอร์ข้อมูล Earthdata ของ NASA เท่านั้น
+Reading the catalog: {n} documents read, {m} items found…	กำลังอ่านแค็ตตาล็อก: อ่านแล้ว {n} เอกสาร พบ {m} รายการ…
+Reading the catalog…	กำลังอ่านแค็ตตาล็อก…
+Reading the embeddings…	กำลังอ่านเอ็มเบดดิง…
+Reading the installed fonts…	กำลังอ่านฟอนต์ที่ติดตั้งไว้…
+Reading the store… ({n} files to go)	กำลังอ่านที่เก็บข้อมูล… (เหลืออีก {n} ไฟล์)
+Reading the tileset of	กำลังอ่านชุดไทล์ของ
+Reading {n} of Overture's {ty} files where the map is: {attribution}	กำลังอ่านไฟล์ {ty} ของ Overture จำนวน {n} ไฟล์ในบริเวณแผนที่: {attribution}
+Reading {url} page by page…	กำลังอ่าน {url} ทีละหน้า…
+Reading {url}…	กำลังอ่าน {url}…
+Reads and writes files	อ่านและเขียนไฟล์
+Reads the map	อ่านแผนที่
+Reality Mapping	Reality Mapping
+Recent	ล่าสุด
+Record Task	บันทึกงาน
+Recorded Task	งานที่บันทึกไว้
+Recording stopped: another project opened, and its {n} steps were for the previous one.	หยุดบันทึกแล้ว: มีการเปิดโปรเจกต์อื่น และ {n} ขั้นตอนที่บันทึกไว้เป็นของโปรเจกต์ก่อนหน้า
+Recording: {n} steps	กำลังบันทึก: {n} ขั้นตอน
+Rectangle	สี่เหลี่ยมผืนผ้า
+Red	แดง
+Redo	ทำซ้ำ
+Redo (Ctrl+Y)	ทำซ้ำ (Ctrl+Y)
+Redo the change you undid.	ทำซ้ำการเปลี่ยนแปลงที่เลิกทำไป
+Redo {action}	ทำซ้ำ {action}
+Red–Blue	แดง–น้ำเงิน
+Reference Scale	มาตราส่วนอ้างอิง
+Reference scale	มาตราส่วนอ้างอิง
+Refine the search to see {n} more	ค้นหาให้เจาะจงขึ้นเพื่อดูอีก {n} รายการ
+Refresh	รีเฟรช
+Refresh every connection's lists	รีเฟรชรายการของทุกการเชื่อมต่อ
+Refresh Map Series	รีเฟรชชุดแผนที่
+Refresh the map series from its index layer.	รีเฟรชชุดแผนที่จากชั้นข้อมูลดัชนี
+Region	ภูมิภาค
+Regional, equal-area: the contiguous United States.	ระดับภูมิภาค พื้นที่เท่ากัน: สหรัฐอเมริกาภาคพื้นทวีปที่ติดกัน
+Regional, equal-area: the European standard for statistics.	ระดับภูมิภาค พื้นที่เท่ากัน: มาตรฐานยุโรปสำหรับงานสถิติ
+Relate	สัมพันธ์
+Related\nData	ข้อมูล\nที่สัมพันธ์
+Related Data	ข้อมูลที่สัมพันธ์
+Related Report	รายงานที่สัมพันธ์
+Related report: {name}	รายงานที่สัมพันธ์: {name}
+Relationship	ความสัมพันธ์
+Relationship name	ชื่อความสัมพันธ์
+Relationships	ความสัมพันธ์
+Release	รุ่นที่เผยแพร่
+Reload	โหลดใหม่
+Reload Web Layers	โหลดชั้นข้อมูลเว็บใหม่
+Remember on this computer	จดจำไว้บนคอมพิวเตอร์เครื่องนี้
+Remember the key on this computer	จดจำคีย์ไว้บนคอมพิวเตอร์เครื่องนี้
+Remove	นำออก
+Remove All	นำออกทั้งหมด
+Remove All Label Classes	นำคลาสป้ายชื่อออกทั้งหมด
+Remove an offline area.	นำพื้นที่ออฟไลน์ออก
+Remove Bookmark	นำบุ๊กมาร์กออก
+Remove Connection	นำการเชื่อมต่อออก
+Remove Data Source	นำแหล่งข้อมูลออก
+Remove every guide from this layout.	นำเส้นไกด์ทั้งหมดออกจากเลย์เอาต์นี้
+Remove Extent Indicator	นำตัวบ่งชี้ขอบเขตออก
+Remove Folder	นำโฟลเดอร์ออก
+Remove From Current Selection	นำออกจากการเลือกปัจจุบัน
+Remove from Favourites	นำออกจากรายการโปรด
+Remove From Group	นำออกจากกลุ่ม
+Remove Group	นำกลุ่มออก
+Remove Keyframe	นำคีย์เฟรมออก
+Remove Label Class	นำคลาสป้ายชื่อออก
+Remove Section	นำส่วนออก
+Remove Table	นำตารางออก
+Remove the clause.	นำเงื่อนไขนี้ออก
+Remove the last keyframe.	นำคีย์เฟรมสุดท้ายออก
+Remove the layer from the map.	นำชั้นข้อมูลออกจากแผนที่
+Remove the strokes and draw the symbol's line alone	นำเส้นออกแล้ววาดเฉพาะเส้นของสัญลักษณ์
+Remove this class's own strokes and draw it with the layer's	นำเส้นของคลาสนี้ออกแล้ววาดด้วยเส้นของชั้นข้อมูล
+Remove this stop	นำจุดแวะนี้ออก
+Remove Tile Layer	นำชั้นข้อมูลไทล์ออก
+Remove token	นำโทเค็นออก
+Remove {name}	นำ {name} ออก
+Removes the parts of polygon features that overlap erase polygons.	ลบส่วนของฟีเจอร์รูปหลายเหลี่ยมที่ซ้อนทับกับรูปหลายเหลี่ยมสำหรับลบออก
+Removes vertices that deviate less than a tolerance (Douglas–Peucker).	ลบจุดยอดที่เบี่ยงเบนน้อยกว่าค่าความคลาดเคลื่อนที่ยอมรับ (Douglas–Peucker)
+Rename	เปลี่ยนชื่อ
+Rename Bookmark	เปลี่ยนชื่อบุ๊กมาร์ก
+Rename Group	เปลี่ยนชื่อกลุ่ม
+Rename it to save it: a connection has this name	เปลี่ยนชื่อก่อนบันทึก: มีการเชื่อมต่อที่ใช้ชื่อนี้แล้ว
+Rename Label Class	เปลี่ยนชื่อคลาสป้ายชื่อ
+Rename Layer	เปลี่ยนชื่อชั้นข้อมูล
+Rename Layout	เปลี่ยนชื่อเลย์เอาต์
+Rename Map	เปลี่ยนชื่อแผนที่
+Rename Project	เปลี่ยนชื่อโปรเจกต์
+Rename Service Group	เปลี่ยนชื่อกลุ่มบริการ
+Rename…	เปลี่ยนชื่อ…
+Rendering	การเรนเดอร์
+Replace Web Layer	แทนที่ชั้นข้อมูลเว็บ
+Replay the route as a drive the map follows	เล่นเส้นทางซ้ำเหมือนขับรถโดยให้แผนที่เคลื่อนตาม
+Report	รายงาน
+Report File	ไฟล์รายงาน
+Report Pane	แผงรายงาน
+Report Properties	คุณสมบัติรายงาน
+Report Section	ส่วนของรายงาน
+Report Template	เทมเพลตรายงาน
+Request ID	รหัสคำขอ
+Requests go to the OpenAI API and use your ChatGPT plan.	คำขอจะส่งไปยัง OpenAI API และใช้แพ็กเกจ ChatGPT ของคุณ
+Requests send your message and the map's layer names, fields and the rows the assistant reads to the provider.	คำขอจะส่งข้อความของคุณ รวมทั้งชื่อชั้นข้อมูล ฟิลด์ และแถวที่ผู้ช่วยอ่านจากแผนที่ ไปยังผู้ให้บริการ
+Resample	สุ่มตัวอย่างใหม่
+Resampling	การสุ่มตัวอย่างใหม่
+Resampling Type	ประเภทการสุ่มตัวอย่างใหม่
+Reset	รีเซ็ต
+Reset brightness, contrast and gamma.	รีเซ็ตความสว่าง คอนทราสต์ และแกมมา
+Reset Default	รีเซ็ตเป็นค่าเริ่มต้น
+Reset Effects	รีเซ็ตเอฟเฟกต์
+Reset North	รีเซ็ตทิศเหนือ
+Reset north	รีเซ็ตทิศเหนือ
+Resolution (0–30)	ความละเอียด (0–30)
+Response	การตอบกลับ
+Restore	คืนค่า
+Restore From Archive	คืนค่าจากที่เก็บถาวร
+Result name	ชื่อผลลัพธ์
+Results	ผลลัพธ์
+Resume	ดำเนินการต่อ
+Retry	ลองอีกครั้ง
+Retry after	ลองอีกครั้งหลังจาก
+Reverse	กลับทิศทาง
+RGB	RGB
+Ribbon	ริบบอน
+Right	ขวา
+Right-click a source to add it here	คลิกขวาที่แหล่งข้อมูลเพื่อเพิ่มที่นี่
+Right-click for more	คลิกขวาเพื่อดูเพิ่มเติม
+Robinson	Robinson
+Rotate	หมุน
+Rotate (°)	หมุน (°)
+Rotate 90°	หมุน 90°
+Rotate Map	หมุนแผนที่
+Rotation	การหมุน
+Rotation Type	ประเภทการหมุน
+rotation °	การหมุน °
+Round	มน
+roundabout turn	เลี้ยวที่วงเวียน
+Routes (name, surface, length)	เส้นทาง (ชื่อ พื้นผิวถนน ความยาว)
+Routes by Valhalla (FOSSGIS) on OpenStreetMap data. Travel times don't include live traffic.	เส้นทางจาก Valhalla (FOSSGIS) บนข้อมูล OpenStreetMap เวลาเดินทางไม่รวมสภาพจราจรแบบเรียลไทม์
+Rows	แถว
+Rule	กฎ
+Rule name	ชื่อกฎ
+Rulers	ไม้บรรทัด
+Run	เรียกใช้
+Run #{n} ({secs} s)	การเรียกใช้ #{n} ({secs} s)
+Run a query whose result has a geometry column	เรียกใช้คิวรีที่ผลลัพธ์มีคอลัมน์รูปทรงเรขาคณิต
+Run All	เรียกใช้ทั้งหมด
+Run All Steps	เรียกใช้ทุกขั้นตอน
+Run Cells	เรียกใช้เซลล์
+Run Chain	เรียกใช้สายงาน
+Run commands from text, one per line.	เรียกใช้คำสั่งจากข้อความ บรรทัดละหนึ่งคำสั่ง
+Run failed: {error}	เรียกใช้ไม่สำเร็จ: {error}
+Run finished.	เรียกใช้เสร็จแล้ว
+Run finished. Layers kept: {names}.	เรียกใช้เสร็จแล้ว ชั้นข้อมูลที่เก็บไว้: {names}
+Run Model	เรียกใช้โมเดล
+Run Script	เรียกใช้สคริปต์
+Run SQL Query	เรียกใช้คิวรี SQL
+Run Task	เรียกใช้งาน
+Run the model	เรียกใช้โมเดล
+Run the script ({keys})	เรียกใช้สคริปต์ ({keys})
+Run Tool	เรียกใช้เครื่องมือ
+Run {name}	เรียกใช้ {name}
+Running the query for the map…	กำลังเรียกใช้คิวรีสำหรับแผนที่…
+Running…	กำลังเรียกใช้…
+RustGIS	RustGIS
+RustGIS bookmarks	บุ๊กมาร์ก RustGIS
+RustGIS could not confirm that any previously saved key was deleted from the system keychain.	RustGIS ไม่สามารถยืนยันได้ว่าคีย์ที่เคยบันทึกไว้ถูกลบออกจากพวงกุญแจของระบบแล้ว
+RustGIS couldn't reach the server.	RustGIS ติดต่อเซิร์ฟเวอร์ไม่ได้
+RustGIS deep learning package	แพ็กเกจการเรียนรู้เชิงลึกของ RustGIS
+RustGIS didn't close properly last time, so it started with the World Atlas instead of your start-up project. Open the project from the Project menu when you're ready.	RustGIS ปิดไม่สมบูรณ์ในครั้งก่อน จึงเริ่มต้นด้วย World Atlas แทนโปรเจกต์เริ่มต้นของคุณ เปิดโปรเจกต์จากเมนูโปรเจกต์เมื่อพร้อม
+RustGIS doesn't have this tool. Install the tools it comes from, or delete the node.	RustGIS ไม่มีเครื่องมือนี้ ติดตั้งชุดเครื่องมือที่เป็นต้นทางของเครื่องมือนี้ หรือลบโหนดนี้
+RustGIS is a free and open-source GIS written in pure Rust. It runs on the desktop and in the browser, and every action is a command you can also run from the command line.	RustGIS เป็น GIS ฟรีและโอเพนซอร์สที่เขียนด้วย Rust ล้วน ทำงานได้ทั้งบนเดสก์ท็อปและในเบราว์เซอร์ และทุกการดำเนินการเป็นคำสั่งที่เรียกใช้จากบรรทัดคำสั่งได้ด้วย
+RustGIS layer file	ไฟล์ชั้นข้อมูล RustGIS
+RustGIS layers, maps and projects	ชั้นข้อมูล แผนที่ และโปรเจกต์ RustGIS
+RustGIS layout	เลย์เอาต์ RustGIS
+RustGIS maps and projects	แผนที่และโปรเจกต์ RustGIS
+RustGIS model	โมเดล RustGIS
+RustGIS or Jupyter notebook	สมุดบันทึก RustGIS หรือ Jupyter
+RustGIS plugin	ปลั๊กอิน RustGIS
+RustGIS presentation	งานนำเสนอ RustGIS
+RustGIS project	โปรเจกต์ RustGIS
+RustGIS project template	เทมเพลตโปรเจกต์ RustGIS
+RustGIS ran into an internal error last time. The details are in {path}; please attach them to a bug report.	RustGIS พบข้อผิดพลาดภายในในครั้งก่อน รายละเอียดอยู่ใน {path} โปรดแนบไฟล์นี้ไปกับรายงานข้อบกพร่อง
+RustGIS report or report template	รายงานหรือเทมเพลตรายงาน RustGIS
+RustGIS styles	สไตล์ RustGIS
+RustGIS task	งาน RustGIS
+RustGIS {latest} is available.	RustGIS {latest} พร้อมให้ใช้งานแล้ว
+RustGIS {version} is the latest version.	RustGIS {version} เป็นเวอร์ชันล่าสุด
+RUSTGIS_ASSISTANT_MODEL	RUSTGIS_ASSISTANT_MODEL
+RUSTGIS_ASSISTANT_PROVIDER	RUSTGIS_ASSISTANT_PROVIDER
+RUSTGIS_GPU	RUSTGIS_GPU
+S3	S3
+S3 Buckets	บักเก็ต S3
+S3 Connections	การเชื่อมต่อ S3
+S3…	S3…
+Sample data (Natural Earth)	ข้อมูลตัวอย่าง (Natural Earth)
+Sample data © Natural Earth (public domain). RustGIS is licensed under Apache-2.0.	ข้อมูลตัวอย่าง © Natural Earth (สาธารณสมบัติ) RustGIS ใช้สัญญาอนุญาต Apache-2.0
+Sample data: Natural Earth (public domain). Licensed under Apache-2.0.	ข้อมูลตัวอย่าง: Natural Earth (สาธารณสมบัติ) ใช้สัญญาอนุญาต Apache-2.0
+Sans-serif	Sans-serif
+Satellite Embedding Datasets	ชุดข้อมูลเอ็มเบดดิงดาวเทียม
+Satellite Embeddings	เอ็มเบดดิงดาวเทียม
+Satellite Embeddings…	เอ็มเบดดิงดาวเทียม…
+Saturation	ความอิ่มตัวของสี
+Save	บันทึก
+Save As	บันทึกเป็น
+Save as Connection	บันทึกเป็นการเชื่อมต่อ
+Save as Default	บันทึกเป็นค่าเริ่มต้น
+Save as Default Raster Style	บันทึกเป็นสไตล์แรสเตอร์เริ่มต้น
+Save as Layer	บันทึกเป็นชั้นข้อมูล
+Save As Presentation File…	บันทึกเป็นไฟล์งานนำเสนอ…
+Save as Python Script…	บันทึกเป็นสคริปต์ Python…
+Save As Report File…	บันทึกเป็นไฟล์รายงาน…
+Save As Report Template…	บันทึกเป็นเทมเพลตรายงาน…
+Save as {name}	บันทึกเป็น {name}
+Save As…	บันทึกเป็น…
+Save Color Ramps	บันทึกชุดไล่สี
+Save Data Source	บันทึกแหล่งข้อมูล
+Save History As Python Script	บันทึกประวัติเป็นสคริปต์ Python
+Save Layer File	บันทึกไฟล์ชั้นข้อมูล
+Save Layout File	บันทึกไฟล์เลย์เอาต์
+Save Map File	บันทึกไฟล์แผนที่
+Save Model	บันทึกโมเดล
+Save Notebook	บันทึกสมุดบันทึก
+save or load a pane set by name	บันทึกหรือโหลดชุดแผงตามชื่อ
+Save Project	บันทึกโปรเจกต์
+Save project	บันทึกโปรเจกต์
+Save Project As	บันทึกโปรเจกต์เป็น
+Save Project As…	บันทึกโปรเจกต์เป็น…
+Save Project Template	บันทึกเทมเพลตโปรเจกต์
+Save Style Items	บันทึกรายการสไตล์
+Save Task Item	บันทึกรายการงาน
+Save the active map (with its data) as a map file.	บันทึกแผนที่ที่ใช้งานอยู่ (พร้อมข้อมูล) เป็นไฟล์แผนที่
+Save the last task as a task file.	บันทึกงานล่าสุดเป็นไฟล์งาน
+Save the layout as a layout file.	บันทึกเลย์เอาต์เป็นไฟล์เลย์เอาต์
+Save the model as a file (*.model.json)	บันทึกโมเดลเป็นไฟล์ (*.model.json)
+Save the model in the project	บันทึกโมเดลไว้ในโปรเจกต์
+Save the open layout as a layout file.	บันทึกเลย์เอาต์ที่เปิดอยู่เป็นไฟล์เลย์เอาต์
+Save the panes you have open, and switch back to them.	บันทึกแผงที่เปิดอยู่ แล้วสลับกลับมาใช้ได้ภายหลัง
+Save the project too: the script opens its saved file, without changes made since.	บันทึกโปรเจกต์ด้วย: สคริปต์จะเปิดไฟล์ที่บันทึกไว้ โดยไม่มีการเปลี่ยนแปลงที่ทำหลังจากนั้น
+Save the project under a new name.	บันทึกโปรเจกต์ด้วยชื่อใหม่
+Save the project with your edits.	บันทึกโปรเจกต์พร้อมการแก้ไขของคุณ
+Save the project's custom color ramps to a color ramp file.	บันทึกชุดไล่สีที่กำหนดเองของโปรเจกต์เป็นไฟล์ชุดไล่สี
+Save the project's setup, without its features, as a template.	บันทึกการตั้งค่าของโปรเจกต์โดยไม่รวมฟีเจอร์ เป็นเทมเพลต
+Save the project's styles to a style file.	บันทึกสไตล์ของโปรเจกต์เป็นไฟล์สไตล์
+Save the raster as a GeoTIFF.	บันทึกแรสเตอร์เป็น GeoTIFF
+Save the selected layer with its symbology as a layer file.	บันทึกชั้นข้อมูลที่เลือกพร้อมสัญลักษณ์เป็นไฟล์ชั้นข้อมูล
+Save Web Link Chart	บันทึกแผนภูมิลิงก์บนเว็บ
+Save Web Map	บันทึกเว็บแมป
+Save Web Scene	บันทึกเว็บซีน
+Saved	บันทึกแล้ว
+Saved as the connection {name}	บันทึกเป็นการเชื่อมต่อ {name} แล้ว
+Saved as the default style for new single-band rasters.	บันทึกเป็นสไตล์เริ่มต้นสำหรับแรสเตอร์แบนด์เดียวใหม่แล้ว
+Saved connection	การเชื่อมต่อที่บันทึกไว้
+Saved keys	คีย์ที่บันทึกไว้
+Saved keys are kept unencrypted in the browser's storage.	คีย์ที่บันทึกไว้จะเก็บในที่เก็บข้อมูลของเบราว์เซอร์โดยไม่เข้ารหัส
+Saved keys unavailable	ใช้คีย์ที่บันทึกไว้ไม่ได้
+Saved keys: leave the keys blank to log in with those this computer keeps.	คีย์ที่บันทึกไว้: เว้นช่องคีย์ว่างไว้เพื่อเข้าสู่ระบบด้วยคีย์ที่คอมพิวเตอร์เครื่องนี้เก็บไว้
+Saved models	โมเดลที่บันทึกไว้
+Saved password	รหัสผ่านที่บันทึกไว้
+Saved S3 keys are unavailable. Enter the keys for this session.	ใช้คีย์ S3 ที่บันทึกไว้ไม่ได้ ป้อนคีย์สำหรับเซสชันนี้
+Saved S3 keys could not be forgotten. The connection was not changed.	ลืมคีย์ S3 ที่บันทึกไว้ไม่สำเร็จ การเชื่อมต่อไม่มีการเปลี่ยนแปลง
+Saved S3 keys could not be used. Enter the keys again.	ใช้คีย์ S3 ที่บันทึกไว้ไม่ได้ ป้อนคีย์อีกครั้ง
+Saved symbology: apply it to the selected layer, or save the layer's.	สัญลักษณ์ที่บันทึกไว้: นำไปใช้กับชั้นข้อมูลที่เลือก หรือบันทึกสัญลักษณ์ของชั้นข้อมูล
+Saved View	มุมมองที่บันทึกไว้
+Saved {name}	บันทึก {name} แล้ว
+Saved {name}.	บันทึก {name} แล้ว
+Saved {path}	บันทึก {path} แล้ว
+saving failed unexpectedly	การบันทึกล้มเหลวโดยไม่คาดคิด
+Scale	มาตราส่วน
+Scale\nBar	แถบ\nมาตราส่วน
+Scale (×)	มาตราส่วน (×)
+scale 0.9996	ตัวคูณมาตราส่วน 0.9996
+Scale 1:	มาตราส่วน 1:
+Scale and rotate entered distances and directions to the grid.	ปรับมาตราส่วนและหมุนระยะทางและทิศทางที่ป้อนให้เข้ากับกริด
+Scale ×2	มาตราส่วน ×2
+Scale ×½	มาตราส่วน ×½
+Scene	ซีน
+Score threshold	เกณฑ์คะแนน
+Score two rasters 1–10 and weight them	ให้คะแนนแรสเตอร์สองชุด 1–10 และถ่วงน้ำหนัก
+Script	สคริปต์
+Scroll the ribbon left	เลื่อนริบบอนไปทางซ้าย
+Scroll the ribbon right	เลื่อนริบบอนไปทางขวา
+Scroll the tabs left	เลื่อนแท็บไปทางซ้าย
+Scroll the tabs right	เลื่อนแท็บไปทางขวา
+Search	ค้นหา
+Search (this portal needs words)…	ค้นหา (พอร์ทัลนี้ต้องระบุคำค้น)…
+Search Catalogue	ค้นหาแค็ตตาล็อก
+Search commands — e.g. buffer, basemap, labels	ค้นหาคำสั่ง เช่น buffer, basemap, labels
+Search datasets, e.g. GEDI biomass	ค้นหาชุดข้อมูล เช่น GEDI biomass
+Search Distance	ระยะค้นหา
+Search every command and its parameters	ค้นหาทุกคำสั่งและพารามิเตอร์ของคำสั่ง
+Search fonts	ค้นหาฟอนต์
+Search layers (e.g. temperature)	ค้นหาชั้นข้อมูล (เช่น temperature)
+Search layers, places, lat/lon…	ค้นหาชั้นข้อมูล สถานที่ ละติจูด/ลองจิจูด…
+Search layers…	ค้นหาชั้นข้อมูล…
+Search NASA Earthdata Collections	ค้นหา NASA Earthdata Collections
+Search NASA Earthdata Granules	ค้นหา NASA Earthdata Granules
+Search Open Data	ค้นหาข้อมูลเปิด
+Search Open Data…	ค้นหาข้อมูลเปิด…
+Search places for “{query}”	ค้นหาสถานที่สำหรับ “{query}”
+Search plugins	ค้นหาปลั๊กอิน
+Search results © OpenStreetMap contributors	ผลการค้นหา © ผู้ร่วมพัฒนา OpenStreetMap
+Search Satellite Embeddings	ค้นหาเอ็มเบดดิงดาวเทียม
+Search services and layers…	ค้นหาบริการและชั้นข้อมูล…
+Search services…	ค้นหาบริการ…
+Search the map	ค้นหาในแผนที่
+Search this view	ค้นหาในมุมมองนี้
+Search tools	ค้นหาเครื่องมือ
+Search where the map is	ค้นหาในบริเวณแผนที่
+Search {name}…	ค้นหา {name}…
+Searching places…	กำลังค้นหาสถานที่…
+Searching the folders…	กำลังค้นหาในโฟลเดอร์…
+Searching works here, but NASA's data servers don't let web pages read their files (no CORS), so GeoTIFFs and downloads of protected data need the desktop app. Download opens a file in a new tab, where Earthdata Login asks you to sign in.	ค้นหาได้ที่นี่ แต่เซิร์ฟเวอร์ข้อมูลของ NASA ไม่อนุญาตให้หน้าเว็บอ่านไฟล์ (ไม่มี CORS) ดังนั้น GeoTIFF และการดาวน์โหลดข้อมูลที่มีการป้องกันต้องใช้แอปเดสก์ท็อป การดาวน์โหลดจะเปิดไฟล์ในแท็บใหม่ ซึ่ง Earthdata Login จะขอให้คุณลงชื่อเข้าใช้
+Searching…	กำลังค้นหา…
+Searching… try again in a moment.	กำลังค้นหา… โปรดลองอีกครั้งในอีกสักครู่
+Seasonal Mann–Kendall	Seasonal Mann–Kendall
+Seasons a year	จำนวนฤดูกาลต่อปี
+Second raster	แรสเตอร์ชุดที่สอง
+Second standard parallel	เส้นขนานมาตรฐานที่สอง
+Seconds	วินาที
+Secret access key	คีย์การเข้าถึงลับ
+Sections	ส่วน
+See and set the camera's position and scale.	ดูและตั้งค่าตำแหน่งและมาตราส่วนของกล้อง
+See the map as people with colour vision deficiencies do.	ดูแผนที่แบบที่ผู้มีภาวะบกพร่องในการมองเห็นสีมองเห็น
+See the tools you've run.	ดูเครื่องมือที่คุณเรียกใช้ไปแล้ว
+See whether a newer RustGIS has been released.	ตรวจสอบว่ามี RustGIS เวอร์ชันใหม่กว่าออกมาแล้วหรือไม่
+SELECT	SELECT
+Select	เลือก
+Select (click)	เลือก (คลิก)
+Select (rectangle)	เลือก (สี่เหลี่ยม)
+Select a direction…	เลือกทิศทาง…
+Select a feature layer in the Layers pane	เลือกชั้นข้อมูลฟีเจอร์ในแผงชั้นข้อมูล
+Select a field	เลือกฟิลด์
+Select a layer in Layers to style it.	เลือกชั้นข้อมูลในแผงชั้นข้อมูลเพื่อกำหนดสไตล์
+Select a layer in the Layers pane	เลือกชั้นข้อมูลในแผงชั้นข้อมูล
+select a layer in the Layers pane first	เลือกชั้นข้อมูลในแผงชั้นข้อมูลก่อน
+Select a layer in the Layers pane.	เลือกชั้นข้อมูลในแผงชั้นข้อมูล
+Select a navigation method after tracing a point.	เลือกวิธีการนำทางหลังจากติดตามจุด
+Select All	เลือกทั้งหมด
+Select an element to format it.	เลือกองค์ประกอบเพื่อจัดรูปแบบ
+Select By\nAttributes	เลือกตาม\nแอตทริบิวต์
+Select By\nLocation	เลือกตาม\nตำแหน่ง
+Select By Attributes	เลือกตามแอตทริบิวต์
+Select by Lasso	เลือกด้วยบ่วงบาศ
+Select by Polygon	เลือกด้วยรูปหลายเหลี่ยม
+Select by Radius	เลือกด้วยรัศมี
+Select every feature.	เลือกทุกฟีเจอร์
+Select features by their spatial relationship.	เลือกฟีเจอร์ตามความสัมพันธ์เชิงพื้นที่
+Select features that intersect another layer.	เลือกฟีเจอร์ที่ตัดกับชั้นข้อมูลอื่น
+Select features with a SQL expression.	เลือกฟีเจอร์ด้วยนิพจน์ SQL
+Select Layer	เลือกชั้นข้อมูล
+Select Layer By Attribute	เลือกชั้นข้อมูลตามแอตทริบิวต์
+Select Layer By Location	เลือกชั้นข้อมูลตามตำแหน่ง
+Select one text on the map, or a layout element, to format it.	เลือกข้อความหนึ่งรายการบนแผนที่ หรือองค์ประกอบของเลย์เอาต์ เพื่อจัดรูปแบบ
+Select options	เลือกตัวเลือก
+Select Related	เลือกรายการที่สัมพันธ์
+Select Rows	เลือกแถว
+Select rows with a SQL expression.	เลือกแถวด้วยนิพจน์ SQL
+Select Subset From Current Selection	เลือกบางส่วนจากการเลือกปัจจุบัน
+Select the rows related to the selection.	เลือกแถวที่สัมพันธ์กับการเลือก
+Selectable	เลือกได้
+Selectable Layers	ชั้นข้อมูลที่เลือกได้
+Selectable on the map: the Select tool picks its features	เลือกได้บนแผนที่: เครื่องมือเลือกจะเลือกฟีเจอร์ของชั้นข้อมูลนี้
+Selected	ที่เลือก
+Selected Features: {n}	ฟีเจอร์ที่เลือก: {n}
+Selected in Layers	ที่เลือกในแผงชั้นข้อมูล
+Selected only	เฉพาะที่เลือก
+Selected records only	เฉพาะเรคคอร์ดที่เลือก
+Selecting Features	การเลือกฟีเจอร์
+Selection	การเลือก
+Selection outline is outside the supported map surface; draw a smaller area.	เส้นขอบการเลือกอยู่นอกพื้นผิวแผนที่ที่รองรับ โปรดวาดพื้นที่ให้เล็กลง
+Selection outline is too complex; draw a simpler area.	เส้นขอบการเลือกซับซ้อนเกินไป โปรดวาดพื้นที่ที่เรียบง่ายกว่านี้
+Selection Type	ประเภทการเลือก
+Selects features that intersect features in another layer.	เลือกฟีเจอร์ที่ตัดกับฟีเจอร์ในชั้นข้อมูลอื่น
+Selects features with a SQL where clause, e.g. pop_est > 1000000.	เลือกฟีเจอร์ด้วยเงื่อนไข SQL where เช่น pop_est > 1000000
+Semicolon	อัฒภาค
+Send	ส่ง
+Send offline edits back and refresh.	ส่งการแก้ไขแบบออฟไลน์กลับและรีเฟรช
+Sent as	ส่งในรูปแบบ
+Sentinel-2 Explorer	Sentinel-2 Explorer
+Sentinel-2 Explorer…	Sentinel-2 Explorer…
+Sentinel-2 scenes (Collection 1, Level-2A) from Earth Search, clearest first: add the true colour image (visual) or a band.	ฉาก Sentinel-2 (Collection 1, Level-2A) จาก Earth Search เรียงจากที่ชัดที่สุด: เพิ่มภาพสีจริง (visual) หรือแบนด์
+Separator	ตัวคั่น
+Sepia	ซีเปีย
+Sequential	ลำดับต่อเนื่อง
+Serif	Serif
+Server	เซิร์ฟเวอร์
+Service Group	กลุ่มบริการ
+Service group data exceeds 64 MB.	ข้อมูลกลุ่มบริการเกิน 64 MB
+Service Import Requests	คำขอนำเข้าบริการ
+Service Layers	ชั้นข้อมูลของบริการ
+Session token	โทเค็นเซสชัน
+Set	ตั้งค่า
+Set Cell Size	กำหนดขนาดเซลล์
+Set Domain	กำหนดโดเมน
+Set Filter	กำหนดตัวกรอง
+Set Geometry	กำหนดรูปทรงเรขาคณิต
+Set Map Tool	กำหนดเครื่องมือแผนที่
+Set Scale	กำหนดมาตราส่วน
+Set Subtypes	กำหนดประเภทย่อย
+Set the pixels inside a polygon	กำหนดค่าพิกเซลภายในรูปหลายเหลี่ยม
+Set the pixels inside a polygon.	กำหนดค่าพิกเซลภายในรูปหลายเหลี่ยม
+Settings	การตั้งค่า
+Shade walls by the way they face the light.	แรเงาผนังตามทิศที่หันเข้าหาแสง
+Shaded	แรเงา
+Shaded Relief	ภาพนูนต่ำแรเงา
+Shape	รูปร่าง
+Shapefile	Shapefile
+Shapes	รูปทรง
+Share	แชร์
+Share As	แชร์เป็น
+Share every layer and table as OGC API Features collections.	แชร์ทุกชั้นข้อมูลและตารางเป็นคอลเลกชัน OGC API Features
+Share the last model as a tool file.	แชร์โมเดลล่าสุดเป็นไฟล์เครื่องมือ
+Share the map as a web page that needs no server.	แชร์แผนที่เป็นหน้าเว็บที่ไม่ต้องใช้เซิร์ฟเวอร์
+Share the map in 3D (glTF), polygons extruded.	แชร์แผนที่แบบ 3D (glTF) โดยยกรูปหลายเหลี่ยมขึ้นเป็นแท่ง
+Share the map's relationships as a link chart page.	แชร์ความสัมพันธ์ของแผนที่เป็นหน้าแผนภูมิลิงก์
+Share the selected layer as an OGC API Features collection with its style.	แชร์ชั้นข้อมูลที่เลือกเป็นคอลเลกชัน OGC API Features พร้อมสไตล์
+Share the selected layer's names as a place-search locator.	แชร์ชื่อของชั้นข้อมูลที่เลือกเป็นตัวระบุตำแหน่งสำหรับค้นหาสถานที่
+Share the selected layer's symbology as a MapLibre style.	แชร์สัญลักษณ์ของชั้นข้อมูลที่เลือกเป็นสไตล์ MapLibre
+Shared	แชร์แล้ว
+Shared Items	รายการที่แชร์
+Shares made, with Manage tools to update them.	รายการที่แชร์ไว้ พร้อมเครื่องมือจัดการเพื่ออัปเดต
+sharp left	เลี้ยวซ้ายหักศอก
+sharp right	เลี้ยวขวาหักศอก
+Shift+	Shift+
+Shift+drag	Shift+ลาก
+Shift+Enter starts a new line.	Shift+Enter ขึ้นบรรทัดใหม่
+Shifts the stroke sideways: positive to the right of the line's direction, negative to the left	เลื่อนเส้นไปด้านข้าง: ค่าบวกไปทางขวาของทิศทางเส้น ค่าลบไปทางซ้าย
+Shortcuts	ปุ่มลัด
+Shortest route over a line network	เส้นทางที่สั้นที่สุดบนโครงข่ายเส้น
+Show	แสดง
+Show a second map beside this one.	แสดงแผนที่ที่สองข้างแผนที่นี้
+Show all values	แสดงค่าทั้งหมด
+Show details when hovering items in the Browser view.	แสดงรายละเอียดเมื่อชี้เมาส์ที่รายการในมุมมองเบราว์เซอร์
+Show different features at different scales.	แสดงฟีเจอร์ต่างกันที่มาตราส่วนต่างกัน
+Show grid	แสดงกริด
+Show Group	แสดงกลุ่ม
+Show labels	แสดงป้ายชื่อ
+Show latitude/longitude lines on the basemap.	แสดงเส้นละติจูด/ลองจิจูดบนแผนที่ฐาน
+Show Layers	แสดงชั้นข้อมูล
+Show layers through time: only the features whose date falls in the slider's window, and dated imagery for its date.	แสดงชั้นข้อมูลตามเวลา: เฉพาะฟีเจอร์ที่วันที่อยู่ในช่วงของแถบเวลา และภาพถ่ายที่มีวันที่ตรงกับวันที่นั้น
+Show Map	แสดงแผนที่
+Show Me	แสดงตำแหน่ง
+Show or hide	แสดงหรือซ่อน
+Show or hide the AI Assistant.	แสดงหรือซ่อนผู้ช่วย AI
+Show or hide the Bookmarks pane: every map's bookmarks.	แสดงหรือซ่อนแผงบุ๊กมาร์ก: บุ๊กมาร์กของทุกแผนที่
+Show or hide the Browser pane.	แสดงหรือซ่อนแผงเบราว์เซอร์
+Show or hide the Data Sources pane: favourites, recent data, saved services, databases and STAC APIs, and a library of public sources.	แสดงหรือซ่อนแผงแหล่งข้อมูล: รายการโปรด ข้อมูลล่าสุด บริการที่บันทึกไว้ ฐานข้อมูลและ STAC API รวมถึงคลังแหล่งข้อมูลสาธารณะ
+Show or hide the group's layers	แสดงหรือซ่อนชั้นข้อมูลของกลุ่ม
+Show or hide the layer.	แสดงหรือซ่อนชั้นข้อมูล
+Show or hide the Layers pane.	แสดงหรือซ่อนแผงชั้นข้อมูล
+Show or hide the Tools pane.	แสดงหรือซ่อนแผงเครื่องมือ
+Show rulers. Drag from a ruler to add a guide; drag a guide back onto it to remove it.	แสดงไม้บรรทัด ลากจากไม้บรรทัดเพื่อเพิ่มเส้นไกด์ ลากเส้นไกด์กลับไปที่ไม้บรรทัดเพื่อนำออก
+Show the bands picked, read in place as the map needs them	แสดงแบนด์ที่เลือก โดยอ่านจากที่เดิมเฉพาะส่วนที่แผนที่ต้องใช้
+Show the description	แสดงคำอธิบาย
+Show the Labeling pane for the selected layer.	แสดงแผงการติดป้ายชื่อของชั้นข้อมูลที่เลือก
+Show the labels that don't fit, in red.	แสดงป้ายชื่อที่วางไม่พอเป็นสีแดง
+Show the layer only inside another layer's polygons.	แสดงชั้นข้อมูลเฉพาะภายในรูปหลายเหลี่ยมของชั้นข้อมูลอื่น
+Show the layer only left of a divider, to compare it with what's beneath.	แสดงชั้นข้อมูลเฉพาะด้านซ้ายของเส้นแบ่ง เพื่อเปรียบเทียบกับสิ่งที่อยู่ด้านล่าง
+Show the map as a 3D globe, or as a flat map again.	แสดงแผนที่เป็นลูกโลก 3 มิติ หรือกลับเป็นแผนที่แบนราบ
+Show the next map series page.	แสดงหน้าถัดไปของชุดแผนที่
+Show the pointer's place on the other map.	แสดงตำแหน่งของตัวชี้บนแผนที่อีกฝั่ง
+Show the previous map series page.	แสดงหน้าก่อนหน้าของชุดแผนที่
+Show the Symbology pane for the selected layer.	แสดงแผงสัญลักษณ์ของชั้นข้อมูลที่เลือก
+Show the whole model	แสดงทั้งโมเดล
+Show these bands and stretch on the AlphaEarth layers on the map	แสดงแบนด์และการยืดค่าเหล่านี้บนชั้นข้อมูล AlphaEarth ในแผนที่
+Show vertices	แสดงจุดยอด
+Show where this step's command is, to do it yourself	แสดงตำแหน่งคำสั่งของขั้นตอนนี้ เพื่อทำด้วยตนเอง
+Show {n} Steps	แสดง {n} ขั้นตอน
+showing everything through {to}	แสดงทั้งหมดจนถึง {to}
+showing {date}	แสดง {date}
+showing {from} to {to}	แสดง {from} ถึง {to}
+Showing {n} datasets.	แสดง {n} ชุดข้อมูล
+Showing {n} granules, newest first.	แสดง {n} granule ใหม่สุดก่อน
+Showing {n} items	แสดง {n} รายการ
+Showing {n} items (more match: narrow the search)	แสดง {n} รายการ (ยังมีรายการที่ตรงอีก: จำกัดการค้นหาให้แคบลง)
+Showing {n} items (some catalogs were too deep or too large to read: pick a catalog further down)	แสดง {n} รายการ (บางแค็ตตาล็อกลึกหรือใหญ่เกินกว่าจะอ่านได้: เลือกแค็ตตาล็อกที่อยู่ลึกลงไป)
+Showing {n} items (stopped after reading {r} documents: pick a catalog further down)	แสดง {n} รายการ (หยุดหลังจากอ่าน {r} เอกสาร: เลือกแค็ตตาล็อกที่อยู่ลึกลงไป)
+Showing {n} items ({f} documents couldn't be read)	แสดง {n} รายการ (อ่านเอกสารไม่ได้ {f} รายการ)
+Showing {n} of {m}	แสดง {n} จาก {m}
+Showing {n} of {m} items (narrow the search for others)	แสดง {n} จาก {m} รายการ (จำกัดการค้นหาให้แคบลงเพื่อดูรายการอื่น)
+Showing {n} of {total} on {portal}	แสดง {n} จาก {total} บน {portal}
+Side by Side	เคียงข้างกัน
+Side labels	ป้ายชื่อด้านข้าง
+Sign in to choose a model.	ลงชื่อเข้าใช้เพื่อเลือกโมเดล
+Sign in with your ChatGPT account.	ลงชื่อเข้าใช้ด้วยบัญชี ChatGPT ของคุณ
+Sign out	ออกจากระบบ
+Sign-in	การลงชื่อเข้าใช้
+Sign-in cancelled.	ยกเลิกการลงชื่อเข้าใช้แล้ว
+Sign-in timed out. Start again and allow the browser to reach this computer's loopback address.	การลงชื่อเข้าใช้หมดเวลา เริ่มใหม่และอนุญาตให้เบราว์เซอร์เข้าถึงที่อยู่ loopback ของคอมพิวเตอร์นี้
+signed in	ลงชื่อเข้าใช้แล้ว
+Signed out on this computer, but OpenAI didn't confirm it. You can disconnect RustGIS in ChatGPT's settings.	ออกจากระบบบนคอมพิวเตอร์นี้แล้ว แต่ OpenAI ไม่ได้ยืนยัน คุณสามารถยกเลิกการเชื่อมต่อ RustGIS ได้ในการตั้งค่าของ ChatGPT
+Significance level	ระดับนัยสำคัญ
+Signing in with ChatGPT works in the desktop app.	การลงชื่อเข้าใช้ด้วย ChatGPT ใช้ได้ในแอปเดสก์ท็อป
+Signing the asset (Planetary Computer)…	กำลังลงนามแอสเซ็ต (Planetary Computer)…
+Sill	ค่า Sill
+Simplify	ทำให้เรียบง่าย
+Simulate the drive, or save the route as a layer.	จำลองการขับขี่ หรือบันทึกเส้นทางเป็นชั้นข้อมูล
+Simulation	การจำลอง
+Single line	เส้นเดี่ยว
+Single Symbol	สัญลักษณ์เดียว
+Size	ขนาด
+Size, bands, statistics and coordinate system.	ขนาด แบนด์ สถิติ และระบบพิกัด
+Skill (SKILL.md or .zip)	สกิล (SKILL.md หรือ .zip)
+Skills	สกิล
+Skills for the AI Assistant: {names}	สกิลสำหรับผู้ช่วย AI: {names}
+Slideshow, PDF or PNG	สไลด์โชว์ PDF หรือ PNG
+slight left	เบี่ยงซ้าย
+slight right	เบี่ยงขวา
+Slope per	ความลาดชันต่อ
+Slope, aspect, hillshade, NDVI, band math, thresholds.	ความลาดชัน ทิศด้านลาด ภาพเงาภูมิประเทศ NDVI การคำนวณแบนด์ ค่าเกณฑ์
+Slope, hillshade, NDVI and more.	ความลาดชัน ภาพเงาภูมิประเทศ NDVI และอื่นๆ
+Small scales	มาตราส่วนเล็ก
+Snap	สแนป
+Snap elements to guides, the page and each other as you move or resize them. Hold Alt to place one freely.	สแนปองค์ประกอบเข้ากับเส้นไกด์ หน้ากระดาษ และกันและกันขณะย้ายหรือปรับขนาด กด Alt ค้างไว้เพื่อวางอย่างอิสระ
+Snap new vertices to nearby vertices, edges and line ends.	สแนปจุดยอดใหม่เข้ากับจุดยอด ขอบ และปลายเส้นที่อยู่ใกล้
+Snap Point	จุดสแนป
+Snapping	การสแนป
+Snow	หิมะ
+Socrata	Socrata
+Solid	เส้นทึบ
+Some of the project's S3 sources wait for you to choose the saved connection that reads them	แหล่งข้อมูล S3 บางรายการของโปรเจกต์รอให้คุณเลือกการเชื่อมต่อที่บันทึกไว้สำหรับอ่านข้อมูล
+Sort	เรียงลำดับ
+Sort: {field}	เรียงลำดับ: {field}
+Source	แหล่งข้อมูล
+Source Cooperative	Source Cooperative
+Source Cooperative…	Source Cooperative…
+Source coordinate system	ระบบพิกัดต้นทาง
+Source coordinate system is required	ต้องระบุระบบพิกัดต้นทาง
+South	ใต้
+South Polar Stereographic	South Polar Stereographic
+Spatial Join	การเชื่อมเชิงพื้นที่
+Speaker notes	บันทึกของผู้นำเสนอ
+Spectral Analysis	การวิเคราะห์สเปกตรัม
+Spectral indices	ดัชนีสเปกตรัม
+Speed	ความเร็ว
+Speed Display	แสดงผลแบบเร็ว
+Split	แยก
+Split (click the line)	แยก (คลิกที่เส้น)
+Split the widest class	แยกคลาสที่กว้างที่สุด
+SQL	SQL
+SQL Pane	แผง SQL
+SQL queries run through DuckDB, a program the desktop app calls: open this project in the desktop app to query it.	คิวรี SQL ทำงานผ่าน DuckDB ซึ่งเป็นโปรแกรมที่แอปเดสก์ท็อปเรียกใช้: เปิดโปรเจกต์นี้ในแอปเดสก์ท็อปเพื่อคิวรี
+SQL Server	SQL Server
+SQL that must be true, e.g. pop > 0	SQL ที่ต้องเป็นจริง เช่น pop > 0
+Square	สี่เหลี่ยมจัตุรัส
+Squares	สี่เหลี่ยมจัตุรัส
+ST_Area	ST_Area
+ST_AsGeoJSON	ST_AsGeoJSON
+ST_AsText	ST_AsText
+ST_Buffer	ST_Buffer
+ST_Centroid	ST_Centroid
+ST_Contains	ST_Contains
+ST_ConvexHull	ST_ConvexHull
+ST_Difference	ST_Difference
+ST_Distance	ST_Distance
+ST_Envelope	ST_Envelope
+ST_GeometryType	ST_GeometryType
+ST_GeomFromGeoJSON	ST_GeomFromGeoJSON
+ST_GeomFromText	ST_GeomFromText
+ST_Intersection	ST_Intersection
+ST_Intersects	ST_Intersects
+ST_IsValid	ST_IsValid
+ST_Length	ST_Length
+ST_MakeLine	ST_MakeLine
+ST_MakePolygon	ST_MakePolygon
+ST_NPoints	ST_NPoints
+ST_Perimeter	ST_Perimeter
+ST_Point	ST_Point
+ST_Read	ST_Read
+ST_SetCRS	ST_SetCRS
+ST_Simplify	ST_Simplify
+ST_Touches	ST_Touches
+ST_Transform	ST_Transform
+ST_Union	ST_Union
+ST_Union_Agg	ST_Union_Agg
+ST_Within	ST_Within
+ST_X	ST_X
+ST_XMax	ST_XMax
+ST_XMin	ST_XMin
+ST_Y	ST_Y
+ST_YMax	ST_YMax
+ST_YMin	ST_YMin
+STAC API	STAC API
+STAC APIs	STAC API
+STAC catalog	แค็ตตาล็อก STAC
+STAC Search	ค้นหา STAC
+STAC Search…	ค้นหา STAC…
+Stack another stroke on top	ซ้อนเส้นอีกเส้นไว้ด้านบน
+Stack on the current basemaps	ซ้อนบนแผนที่ฐานปัจจุบัน
+Standalone Tables	ตารางเดี่ยว
+Standard Deviation	ส่วนเบี่ยงเบนมาตรฐาน
+Star	ดาว
+Stars	ดวงดาว
+Start	เริ่ม
+Start an empty model	เริ่มโมเดลเปล่า
+Start date	วันที่เริ่มต้น
+Start Over	เริ่มใหม่
+Start over at the end while playing.	เริ่มใหม่ตั้งแต่ต้นเมื่อเล่นถึงจุดสิ้นสุด
+Start With	เริ่มต้นด้วย
+Start-up	การเริ่มต้นโปรแกรม
+starting with a project file needs the desktop app	การเริ่มต้นด้วยไฟล์โปรเจกต์ต้องใช้แอปเดสก์ท็อป
+Statistic	สถิติ
+Statistics	สถิติ
+Statistics Field	ฟิลด์สถิติ
+Status	สถานะ
+Status Bar	แถบสถานะ
+Std. Dev.	ส่วนเบี่ยงเบนมาตรฐาน
+Step	ขั้น
+Step back	ถอยหลังหนึ่งขั้น
+Step forward	เดินหน้าหนึ่งขั้น
+Step through a task.	ทำงานทีละขั้นตอน
+Step Time	เวลาต่อขั้น
+Step {n} done	ขั้นตอนที่ {n} เสร็จแล้ว
+Stepped line	เส้นแบบขั้นบันได
+Stop	หยุด
+Stop drawing labels, for faster navigation.	หยุดวาดป้ายชื่อ เพื่อให้เลื่อนดูแผนที่ได้เร็วขึ้น
+Stop filling the cache.	หยุดเติมแคช
+Stop MCP relay	หยุดรีเลย์ MCP
+Stop Recording	หยุดบันทึก
+Stopped after {steps} steps; say "continue" to go on.	หยุดหลังจาก {steps} ขั้นตอน พิมพ์ "continue" เพื่อทำต่อ
+Stopped.	หยุดแล้ว
+street, city, country	ถนน เมือง ประเทศ
+Stretch	การยืดค่า
+Stretch\nType	ประเภท\nการยืดค่า
+Stretch it over the map view, or give control points (one per line: column row lon lat).	ยืดให้เต็มมุมมองแผนที่ หรือระบุจุดควบคุม (บรรทัดละหนึ่งจุด: column row lon lat)
+Stretch Type	ประเภทการยืดค่า
+Stretch type	ประเภทการยืดค่า
+Stroke Levels	ระดับของเส้น
+Stroke {n}	เส้นที่ {n}
+Strokes	เส้น
+Strokes for	เส้นสำหรับ
+Style	สไตล์
+Style Items	รายการสไตล์
+Style this layer as a QGIS layer style file (.qml) does	กำหนดสไตล์ชั้นข้อมูลนี้ตามไฟล์สไตล์ชั้นข้อมูล QGIS (.qml)
+Style › Drawing	สไตล์ › การวาด
+Styles	สไตล์
+Subreport	รายงานย่อย
+Subreport: {name}	รายงานย่อย: {name}
+Subtypes	ชนิดย่อย
+Subtypes, one per line: code=name	ชนิดย่อย บรรทัดละหนึ่งรายการ: code=name
+Suitability Modeler	ตัวสร้างแบบจำลองความเหมาะสม
+Summarise	สรุป
+Summarise a Data Cube over Time	สรุป Data Cube ตามช่วงเวลา
+Summarise over time	สรุปตามช่วงเวลา
+Summarise the conversation so far, so a long chat stays within the model's context	สรุปบทสนทนาที่ผ่านมา เพื่อให้แชตที่ยาวยังอยู่ในขอบเขตบริบทของโมเดล
+Summarise Zarr Over Time	สรุป Zarr ตามช่วงเวลา
+Summarising the earlier conversation to keep it within the model's context…	กำลังสรุปบทสนทนาก่อนหน้า เพื่อให้อยู่ในขอบเขตบริบทของโมเดล…
+Summarize	สรุป
+Summarize\nWithin	สรุป\nภายใน
+Summarize Within	สรุปภายใน
+Summary\nStatistics	สถิติ\nสรุป
+Summary Statistics	สถิติสรุป
+Supplemental Page	หน้าเสริม
+Supplemental Page After	หน้าเสริมด้านหลัง
+Surface	พื้นผิว
+Surface: {layer}	พื้นผิว: {layer}
+Swap	สลับ
+Swap the start and the destination	สลับจุดเริ่มต้นและจุดหมาย
+Swipe	ปัดเทียบ
+Switch	สลับ
+Switch between GPU and CPU map rendering	สลับระหว่างการเรนเดอร์แผนที่ด้วย GPU และ CPU
+Switch between light and dark themes.	สลับระหว่างธีมสว่างและธีมมืด
+Switch Selection	สลับการเลือก
+Switch selection	สลับการเลือก
+Switch to a dark basemap	เปลี่ยนเป็นแผนที่ฐานสีเข้ม
+Symbol	สัญลักษณ์
+Symbol Color	สีสัญลักษณ์
+Symbology	สัญลักษณ์
+Symbology Pane	แผงสัญลักษณ์
+Symbology Pane…	แผงสัญลักษณ์…
+Sync	ซิงค์
+Tab	แท็บ
+tab is required	ต้องระบุ tab
+Table	ตาราง
+Table Frame	กรอบตาราง
+Table or layer	ตารางหรือชั้นข้อมูล
+Tables	ตาราง
+Tags	แท็ก
+Take the data in view offline, to edit and sync back later.	นำข้อมูลในมุมมองไปใช้แบบออฟไลน์ เพื่อแก้ไขแล้วซิงค์กลับภายหลัง
+Take this bound out	นำขอบเขตนี้ออก
+Target Features	ฟีเจอร์เป้าหมาย
+Target Records	เรคคอร์ดเป้าหมาย
+Task	งาน
+Task Item	รายการงาน
+Task name	ชื่องาน
+Tasks	งาน
+Tasks: guided steps that each run a command.	งาน: ขั้นตอนแนะนำที่แต่ละขั้นเรียกใช้คำสั่ง
+Template name	ชื่อเทมเพลต
+Templates	เทมเพลต
+Temporary credentials (with a session token) are kept for this session only.	ข้อมูลรับรองชั่วคราว (ที่มีโทเค็นเซสชัน) จะเก็บไว้สำหรับเซสชันนี้เท่านั้น
+Temporary credentials are session-only. Previously saved keys are unchanged.	ข้อมูลรับรองชั่วคราวใช้ได้เฉพาะเซสชันนี้ คีย์ที่บันทึกไว้ก่อนหน้าไม่เปลี่ยนแปลง
+Tennessee GIS	Tennessee GIS
+Tennessee GIS…	Tennessee GIS…
+Tennessee's public GIS data (Tennessee GeoData, geodata.tn.gov): property boundaries, transportation, health, hydrology and more.	ข้อมูล GIS สาธารณะของรัฐเทนเนสซี (Tennessee GeoData, geodata.tn.gov): ขอบเขตแปลงที่ดิน การคมนาคม สุขภาพ อุทกวิทยา และอื่นๆ
+Terrain	ภูมิประเทศ
+Test	ทดสอบ
+Test Connection	ทดสอบการเชื่อมต่อ
+Testing…	กำลังทดสอบ…
+Text	ข้อความ
+Text Symbol	สัญลักษณ์ข้อความ
+That connection would create a loop.	การเชื่อมต่อนั้นจะทำให้เกิดวงวน
+The active project or map changed; reopen Define Projection for the intended layer.	โปรเจกต์หรือแผนที่ที่ใช้งานอยู่เปลี่ยนไป เปิด "กำหนดเส้นโครงแผนที่" ใหม่สำหรับชั้นข้อมูลที่ต้องการ
+The address fields are empty in every row.	ฟิลด์ที่อยู่ว่างเปล่าในทุกแถว
+The answer isn't UTF-8 text	คำตอบไม่ใช่ข้อความ UTF-8
+the answer isn't UTF-8 text	คำตอบไม่ใช่ข้อความ UTF-8
+The assistant follows a skill's instructions when it uses it. Whatever they say, its commands that need your approval still ask.	ผู้ช่วยจะทำตามคำแนะนำของสกิลเมื่อใช้สกิลนั้น ไม่ว่าคำแนะนำจะระบุอย่างไร คำสั่งที่ต้องได้รับการอนุมัติจากคุณจะยังคงถามก่อนเสมอ
+The assistant is busy; stop it or wait for it to finish.	ผู้ช่วยกำลังทำงานอยู่ หยุดผู้ช่วยหรือรอให้ทำงานเสร็จ
+The assistant wants to run this, and {why}:	ผู้ช่วยต้องการเรียกใช้สิ่งนี้ และ {why}:
+The Basemaps plugin's tab of public basemaps.	แท็บแผนที่ฐานสาธารณะของปลั๊กอิน Basemaps
+the capture failed unexpectedly	การจับภาพล้มเหลวโดยไม่คาดคิด
+The connection failed; trying again in {seconds} s.	การเชื่อมต่อล้มเหลว จะลองใหม่ใน {seconds} วินาที
+the connection has no id	การเชื่อมต่อไม่มี id
+The country list couldn't be read ({e}): type a country's code	อ่านรายชื่อประเทศไม่ได้ ({e}): พิมพ์รหัสประเทศ
+The current elevation stays in effect while you edit inputs. Click Apply elevation to apply the value and units.	ความสูงปัจจุบันยังมีผลขณะที่คุณแก้ไขข้อมูลนำเข้า คลิก "ใช้ความสูง" เพื่อใช้ค่าและหน่วย
+The dataset has nothing RustGIS can add	ชุดข้อมูลไม่มีสิ่งที่ RustGIS เพิ่มได้
+The environment (AWS_ACCESS_KEY_ID…)	ตัวแปรสภาพแวดล้อม (AWS_ACCESS_KEY_ID…)
+The features where the map is	ฟีเจอร์ในบริเวณที่แผนที่แสดงอยู่
+The first 1,000 entries; narrow it down a folder at a time.	1,000 รายการแรก จำกัดให้แคบลงทีละโฟลเดอร์
+The first {n} are listed.	แสดงรายการ {n} รายการแรก
+The first {n} are shown: search to narrow them.	แสดง {n} รายการแรก: ค้นหาเพื่อจำกัดให้แคบลง
+The first {n} rows	{n} แถวแรก
+The flowtrace didn't answer: the whole flowline nearest the point is shown.	flowtrace ไม่ตอบกลับ: แสดงเส้นการไหลทั้งเส้นที่ใกล้จุดที่สุดแทน
+The installed GeoLibre runner lists no tools.	ตัวเรียกใช้ GeoLibre ที่ติดตั้งไว้ไม่มีเครื่องมือใดเลย
+The job covers the map view	งานครอบคลุมมุมมองแผนที่
+The key is kept for this session only.	คีย์จะเก็บไว้สำหรับเซสชันนี้เท่านั้น
+The key is kept for this session only; it has not been remembered.	คีย์จะเก็บไว้สำหรับเซสชันนี้เท่านั้น และไม่ได้ถูกจดจำไว้
+The key is saved in the system keychain.	คีย์ถูกบันทึกไว้ในพวงกุญแจของระบบ
+the keychain backend stopped unexpectedly	แบ็กเอนด์พวงกุญแจหยุดทำงานโดยไม่คาดคิด
+the keychain worker stopped	ตัวทำงานพวงกุญแจหยุดทำงาน
+The keys saved on this computer were forgotten; a login in this session keeps working.	ลืมคีย์ที่บันทึกไว้ในคอมพิวเตอร์นี้แล้ว การเข้าสู่ระบบในเซสชันนี้ยังใช้งานได้
+The layer shows the step the time slider is at, and turns the slider on over the variable's dates.	ชั้นข้อมูลแสดงขั้นที่แถบเวลาอยู่ และเปิดแถบเวลาตามช่วงวันที่ของตัวแปร
+The layer's file couldn't be read: {error}	อ่านไฟล์ของชั้นข้อมูลไม่ได้: {error}
+The layer's strokes	เส้นของชั้นข้อมูล
+the layout export failed unexpectedly	การส่งออกเลย์เอาต์ล้มเหลวโดยไม่คาดคิด
+The link doesn't say its STAC API: Find Items searches {api}	ลิงก์ไม่ได้ระบุ STAC API: "ค้นหารายการ" จะค้นหาใน {api}
+The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	รายการปลั๊กอินสำหรับเรียกดู เว้นว่างไว้เพื่อใช้รีจิสทรีปลั๊กอินของ RustGIS
+the map has no layers	แผนที่ไม่มีชั้นข้อมูล
+The map is drawn in this coordinate system; layers are projected on the fly.	แผนที่วาดในระบบพิกัดนี้ ชั้นข้อมูลจะถูกแปลงพิกัดขณะแสดงผล
+the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	แผนที่ไม่ได้แสดงบนหน้าจอใน RustGIS (กำลังแสดงเลย์เอาต์หรือแค็ตตาล็อก) จึงวาดนอกหน้าจอ
+The map view as it is now	มุมมองแผนที่ในขณะนี้
+The map's extent isn't known yet	ยังไม่ทราบขอบเขตของแผนที่
+The map's view takes {n} of Overture's {ty} files (up to {max}): zoom in, or add the theme as map tiles	มุมมองแผนที่ครอบคลุม {n} ไฟล์ {ty} ของ Overture (สูงสุด {max}): ซูมเข้า หรือเพิ่มธีมเป็นไทล์แผนที่
+the MCP relay couldn't start	ไม่สามารถเริ่มรีเลย์ MCP ได้
+The MCP relay couldn't start; agents can still use the file bridge. Click to turn agents off	ไม่สามารถเริ่มรีเลย์ MCP ได้ เอเจนต์ยังใช้ไฟล์บริดจ์ได้ คลิกเพื่อปิดเอเจนต์
+The model answering; click to change it	โมเดลที่ตอบอยู่ คลิกเพื่อเปลี่ยน
+The model declined this request.	โมเดลปฏิเสธคำขอนี้
+The model declined this request: {why}	โมเดลปฏิเสธคำขอนี้: {why}
+The model is ready to run.	โมเดลพร้อมทำงาน
+The model sent an empty reply; ask again, or try another model.	โมเดลส่งคำตอบว่างเปล่า ลองถามอีกครั้ง หรือลองใช้โมเดลอื่น
+The National Map	The National Map
+The National Map…	The National Map…
+the NLDI's answer isn't UTF-8 text	คำตอบของ NLDI ไม่ใช่ข้อความ UTF-8
+the page is too large to draw	หน้ามีขนาดใหญ่เกินกว่าจะวาดได้
+The password was refused. Type a password to try again.	รหัสผ่านถูกปฏิเสธ พิมพ์รหัสผ่านเพื่อลองอีกครั้ง
+the picture is too large to show	ภาพมีขนาดใหญ่เกินกว่าจะแสดงได้
+the picture is too large to show, or isn't one	ภาพมีขนาดใหญ่เกินกว่าจะแสดงได้ หรือไม่ใช่ภาพ
+The places leave this device for the public Valhalla server at {server}, run by FOSSGIS. Don't continue if your project is bound by data privacy or data sovereignty rules.	สถานที่จะถูกส่งออกจากอุปกรณ์นี้ไปยังเซิร์ฟเวอร์ Valhalla สาธารณะที่ {server} ซึ่งดำเนินการโดย FOSSGIS อย่าดำเนินการต่อหากโปรเจกต์ของคุณอยู่ภายใต้กฎความเป็นส่วนตัวของข้อมูลหรืออธิปไตยทางข้อมูล
+the presentation export failed unexpectedly	การส่งออกงานนำเสนอล้มเหลวโดยไม่คาดคิด
+the preview failed unexpectedly	การแสดงตัวอย่างล้มเหลวโดยไม่คาดคิด
+The project downloads as this file, to the folder your browser saves downloads in.	โปรเจกต์จะดาวน์โหลดเป็นไฟล์นี้ ไปยังโฟลเดอร์ที่เบราว์เซอร์ของคุณบันทึกไฟล์ดาวน์โหลด
+The project's items in place of the map.	รายการของโปรเจกต์แทนที่แผนที่
+The project's thumbnail, from an image.	ภาพขนาดย่อของโปรเจกต์ จากรูปภาพ
+The project's thumbnail, from the map view.	ภาพขนาดย่อของโปรเจกต์ จากมุมมองแผนที่
+The projection the map opens in.	เส้นโครงแผนที่ที่ใช้เมื่อเปิดแผนที่
+The provider's content filter stopped the reply.	ตัวกรองเนื้อหาของผู้ให้บริการหยุดคำตอบไว้
+The public server is free and shared by many: it answers light use, and may ask you to wait.	เซิร์ฟเวอร์สาธารณะใช้งานฟรีและใช้ร่วมกันหลายคน: รองรับการใช้งานเบาๆ และอาจขอให้คุณรอ
+The range is two numbers, low and high (0, 0.9)	ช่วงคือตัวเลขสองค่า ต่ำและสูง (0, 0.9)
+The raster's data couldn't be read.	อ่านข้อมูลของแรสเตอร์ไม่ได้
+The raster's data couldn't be read: {error}	อ่านข้อมูลของแรสเตอร์ไม่ได้: {error}
+the release isn't known	ไม่ทราบรุ่นที่เผยแพร่
+The reply reached its length limit.	คำตอบถึงขีดจำกัดความยาวแล้ว
+The reply stopped before completion; no actions were run.	คำตอบหยุดก่อนเสร็จสมบูรณ์ ไม่ได้เรียกใช้การกระทำใดๆ
+The reply stopped early ({reason}).	คำตอบหยุดก่อนกำหนด ({reason})
+the report export failed unexpectedly	การส่งออกรายงานล้มเหลวโดยไม่คาดคิด
+The request failed.	คำขอล้มเหลว
+The result wired into this output is added to the map under this name.	ผลลัพธ์ที่ต่อเข้ากับเอาต์พุตนี้จะถูกเพิ่มลงในแผนที่ภายใต้ชื่อนี้
+The saved password could not be used. Type a password to try again; check Remember on this computer to replace the saved password.	ใช้รหัสผ่านที่บันทึกไว้ไม่ได้ พิมพ์รหัสผ่านเพื่อลองอีกครั้ง และเลือก "จดจำไว้บนคอมพิวเตอร์เครื่องนี้" เพื่อแทนที่รหัสผ่านที่บันทึกไว้
+The saved S3 connection no longer matches this source.	การเชื่อมต่อ S3 ที่บันทึกไว้ไม่ตรงกับแหล่งข้อมูลนี้อีกต่อไป
+The saved sign-in changed. Select your account again.	การลงชื่อเข้าใช้ที่บันทึกไว้เปลี่ยนไป เลือกบัญชีของคุณอีกครั้ง
+The scale the layer's symbol and label sizes are set for. At other scales they grow and shrink with the map, as on paper.	มาตราส่วนที่ใช้กำหนดขนาดสัญลักษณ์และป้ายชื่อของชั้นข้อมูล ที่มาตราส่วนอื่นจะขยายและย่อตามแผนที่ เหมือนบนกระดาษ
+The server had a problem answering.	เซิร์ฟเวอร์เกิดปัญหาในการตอบกลับ
+The server is limiting requests.	เซิร์ฟเวอร์กำลังจำกัดจำนวนคำขอ
+The server refused the request.	เซิร์ฟเวอร์ปฏิเสธคำขอ
+The server took too long to answer.	เซิร์ฟเวอร์ใช้เวลาตอบนานเกินไป
+The service may be private or need a token.	บริการอาจเป็นแบบส่วนตัวหรือต้องใช้โทเค็น
+The service needs a sign-in or a token.	บริการต้องลงชื่อเข้าใช้หรือใช้โทเค็น
+The service's answer isn't UTF-8 text	คำตอบของบริการไม่ใช่ข้อความ UTF-8
+The Shapefile's files download as one zip.	ไฟล์ของ Shapefile จะดาวน์โหลดรวมเป็น zip ไฟล์เดียว
+The share of each cell covered by fields, for the zoomed-out view	สัดส่วนของแต่ละเซลล์ที่ถูกครอบคลุมด้วยแปลงเกษตร สำหรับมุมมองที่ย่อออก
+The sign-in expired or was revoked. Sign in again.	การลงชื่อเข้าใช้หมดอายุหรือถูกเพิกถอน ลงชื่อเข้าใช้อีกครั้ง
+The sign-in is kept in the app's settings folder, for your user account only, and never in a project file.	ข้อมูลการลงชื่อเข้าใช้จะเก็บไว้ในโฟลเดอร์การตั้งค่าของแอป สำหรับบัญชีผู้ใช้ของคุณเท่านั้น และไม่เคยเก็บไว้ในไฟล์โปรเจกต์
+The significance level is a number, such as 0.05	ระดับนัยสำคัญต้องเป็นตัวเลข เช่น 0.05
+The start-up project {path} didn't open: {error}	เปิดโปรเจกต์เริ่มต้น {path} ไม่ได้: {error}
+The start-up project {path} isn't a RustGIS project file.	โปรเจกต์เริ่มต้น {path} ไม่ใช่ไฟล์โปรเจกต์ RustGIS
+The step's layer {name} isn't in the map.	ชั้นข้อมูล {name} ของขั้นตอนไม่อยู่ในแผนที่
+The store has no variables with two or more dimensions.	สโตร์ไม่มีตัวแปรที่มีตั้งแต่สองมิติขึ้นไป
+the store is gone	สโตร์ไม่มีอยู่แล้ว
+The summary couldn't start: {error}	เริ่มการสรุปไม่ได้: {error}
+The summary failed unexpectedly	การสรุปล้มเหลวโดยไม่คาดคิด
+The summary finished after another project was opened, so it wasn't added	การสรุปเสร็จหลังจากเปิดโปรเจกต์อื่นแล้ว จึงไม่ได้เพิ่ม
+The system keychain could not complete the request.	พวงกุญแจของระบบดำเนินการตามคำขอไม่สำเร็จ
+The system keychain is locked or access was refused.	พวงกุญแจของระบบถูกล็อกหรือการเข้าถึงถูกปฏิเสธ
+The system keychain is unavailable.	พวงกุญแจของระบบใช้งานไม่ได้
+The task's steps changed, so the step being edited was closed: edit it again.	ขั้นตอนของงานเปลี่ยนไป จึงปิดขั้นตอนที่กำลังแก้ไข: แก้ไขอีกครั้ง
+the time slider is off	แถบเวลาปิดอยู่
+The token expires on {date}.	โทเค็นหมดอายุในวันที่ {date}
+The trend couldn't start: {error}	เริ่มการวิเคราะห์แนวโน้มไม่ได้: {error}
+The trend failed unexpectedly	การวิเคราะห์แนวโน้มล้มเหลวโดยไม่คาดคิด
+The trend finished after another project was opened, so it wasn't added	การวิเคราะห์แนวโน้มเสร็จหลังจากเปิดโปรเจกต์อื่นแล้ว จึงไม่ได้เพิ่มผลลัพธ์
+The values shown from black to white, the same for every date and tile (the band's own units). Empty: each file's own stretch.	ช่วงค่าที่แสดงจากสีดำถึงสีขาว ใช้เหมือนกันทุกวันที่และทุกไทล์ (ในหน่วยของแบนด์เอง) เว้นว่าง: ใช้การยืดค่าของแต่ละไฟล์เอง
+the view has no extent	มุมมองไม่มีขอบเขต
+The view is larger than one read: its centre was read (zoom in for the rest)	มุมมองใหญ่เกินกว่าจะอ่านได้ในครั้งเดียว: อ่านเฉพาะส่วนกลาง (ขยายเพื่อดูส่วนที่เหลือ)
+The web app always runs the latest release: reload the page to get it.	เว็บแอปใช้รุ่นล่าสุดเสมอ: โหลดหน้าเว็บใหม่เพื่อรับรุ่นนั้น
+the window's screenshot didn't come back in time, so the map was drawn offscreen	ภาพหน้าจอของหน้าต่างส่งกลับมาไม่ทันเวลา จึงวาดแผนที่นอกหน้าจอแทน
+the window's screenshot didn't hold the map, so it was drawn offscreen	ภาพหน้าจอของหน้าต่างไม่มีแผนที่อยู่ จึงวาดแผนที่นอกหน้าจอแทน
+Theme	ธีม
+There is no expression defined.	ยังไม่ได้กำหนดนิพจน์
+Thermal	ความร้อน
+Thesis figure, full page (160 × 225 mm)	ภาพประกอบวิทยานิพนธ์ เต็มหน้า (160 × 225 mm)
+Thesis figure, half page (160 × 110 mm)	ภาพประกอบวิทยานิพนธ์ ครึ่งหน้า (160 × 110 mm)
+Thinking…	กำลังคิด…
+Third-party licences	สัญญาอนุญาตของบุคคลที่สาม
+THIRD-PARTY-LICENSES.txt	THIRD-PARTY-LICENSES.txt
+this build can't download plugins	บิลด์นี้ดาวน์โหลดปลั๊กอินไม่ได้
+this build can't reach AI providers	บิลด์นี้เชื่อมต่อผู้ให้บริการ AI ไม่ได้
+this build saves projects with Save As	บิลด์นี้บันทึกโปรเจกต์ด้วย บันทึกเป็น
+This ChatGPT account was already saved. Next time, choose it in the list instead of adding it again.	บัญชี ChatGPT นี้บันทึกไว้แล้ว ครั้งหน้าให้เลือกจากรายการแทนการเพิ่มซ้ำ
+This class is drawn with the layer's strokes. Changing them here gives it its own.	คลาสนี้วาดด้วยเส้นของชั้นข้อมูล การเปลี่ยนเส้นที่นี่จะทำให้คลาสนี้มีเส้นของตัวเอง
+This class is hidden, so it labels nothing.	คลาสนี้ถูกซ่อนอยู่ จึงไม่ติดป้ายชื่อใดเลย
+This clause no longer reads, so no feature is labelled: {error}	อนุประโยคนี้อ่านไม่ได้แล้ว จึงไม่มีฟีเจอร์ใดถูกติดป้ายชื่อ: {error}
+This computer keeps keys for this connection: leave the keys blank to log in with them.	คอมพิวเตอร์เครื่องนี้เก็บคีย์ของการเชื่อมต่อนี้ไว้: เว้นคีย์ว่างไว้เพื่อเข้าสู่ระบบด้วยคีย์เหล่านั้น
+This computer keeps this connection's keys: logging in reads them.	คอมพิวเตอร์เครื่องนี้เก็บคีย์ของการเชื่อมต่อนี้ไว้: การเข้าสู่ระบบจะอ่านคีย์เหล่านั้น
+This map has no layers yet.	แผนที่นี้ยังไม่มีชั้นข้อมูล
+This map's thumbnail, from an image.	ภาพขนาดย่อของแผนที่นี้ จากรูปภาพ
+This map's thumbnail, from the view.	ภาพขนาดย่อของแผนที่นี้ จากมุมมอง
+This plugin can:	ปลั๊กอินนี้สามารถ:
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	ปลั๊กอินนี้ทำงานเป็นโปรแกรมบนคอมพิวเตอร์ของคุณ นอกแซนด์บ็อกซ์ของ RustGIS ปลั๊กอินทำได้ทุกอย่างที่คุณทำได้ ทั้งอ่านและแก้ไขไฟล์ ใช้เครือข่าย และเรียกใช้โปรแกรมอื่น ติดตั้งเฉพาะเมื่อคุณเชื่อถือผู้สร้างเท่านั้น
+This request has no one-time allow option.	คำขอนี้ไม่มีตัวเลือกอนุญาตครั้งเดียว
+This request uses an unsupported capability. Check the parameter and change the request.	คำขอนี้ใช้ความสามารถที่ไม่รองรับ ตรวจสอบพารามิเตอร์และเปลี่ยนคำขอ
+This result is kept	ผลลัพธ์นี้จะถูกเก็บไว้
+This run has no tool form to open	การรันนี้ไม่มีฟอร์มเครื่องมือให้เปิด
+This S3 connection choice is no longer available.	ตัวเลือกการเชื่อมต่อ S3 นี้ไม่มีให้ใช้แล้ว
+This step	ขั้นนี้
+This step names no tool to show.	ขั้นนี้ไม่ได้ระบุเครื่องมือที่จะแสดง
+Thumbnail	ภาพขนาดย่อ
+Tick length	ความยาวขีดแบ่ง
+Ticks	ขีดแบ่ง
+Ticks only	ขีดแบ่งเท่านั้น
+Tile archive	ไฟล์เก็บไทล์
+Tile Archive File…	ไฟล์เก็บไทล์…
+Tile layer has changed; search again	ชั้นข้อมูลไทล์เปลี่ยนไปแล้ว ค้นหาอีกครั้ง
+Tile Layer Properties	คุณสมบัติชั้นข้อมูลไทล์
+Tile Layers	ชั้นข้อมูลไทล์
+Tilt Map	เอียงแผนที่
+Tilt-shift	เอฟเฟกต์ Tilt-shift
+Tilt-shift blur and film grain.	เบลอแบบ Tilt-shift และเกรนฟิล์ม
+Time	เวลา
+Time\nSeries	อนุกรม\nเวลา
+Time\nSlider	แถบ\nเวลา
+Time Fields	ฟิลด์เวลา
+Time Series	อนุกรมเวลา
+Time series	อนุกรมเวลา
+Time Series at a Point	อนุกรมเวลา ณ จุด
+Time Slider	แถบเวลา
+Time Slider Settings	การตั้งค่าแถบเวลา
+Tint by elevation	แต้มสีตามความสูง
+Tissot's Indicatrix	Tissot's Indicatrix
+Title	ชื่อเรื่อง
+To	ถึง
+Toggle Dark Mode	สลับโหมดมืด
+Toggle GPU Rendering	สลับการเรนเดอร์ด้วย GPU
+Toggle Imperial Measurements	สลับหน่วยวัดแบบอิมพีเรียล
+Tolerance (km)	ค่าความคลาดเคลื่อนที่ยอมรับ (km)
+Tolls	ทางด่วนเก็บค่าผ่านทาง
+Tool Gallery	คลังเครื่องมือ
+Toolbox	กล่องเครื่องมือ
+Toolboxes	กล่องเครื่องมือ
+Tools	เครื่องมือ
+Tools\nPane	แผง\nเครื่องมือ
+Tools Pane	แผงเครื่องมือ
+Tools that analyse features.	เครื่องมือวิเคราะห์ฟีเจอร์
+Tools that analyse rasters.	เครื่องมือวิเคราะห์แรสเตอร์
+Tools you run appear here.	เครื่องมือที่คุณรันจะแสดงที่นี่
+Top	ด้านบน
+Top visible raster	แรสเตอร์ที่มองเห็นบนสุด
+Topmost Layer	ชั้นข้อมูลบนสุด
+Topographic and Bathymetric	ภูมิประเทศและความลึกท้องน้ำ
+Topology	โทโพโลยี
+Topology Options	ตัวเลือกโทโพโลยี
+Topology Options…	ตัวเลือกโทโพโลยี…
+Topology rules and the errors they find.	กฎโทโพโลยีและข้อผิดพลาดที่ตรวจพบ
+Total {total}   ·   Segment {segment}	รวม {total}   ·   ช่วง {segment}
+Trace	ติดตามเส้นทางน้ำ
+Trace a point first: click the map.	ติดตามจุดก่อน: คลิกบนแผนที่
+Track jobs and their status.	ติดตามงานและสถานะของงาน
+Train a neural network on training polygons	ฝึกโครงข่ายประสาทเทียมด้วยรูปหลายเหลี่ยมฝึกสอน
+Train a neural network on training polygons and classify every pixel.	ฝึกโครงข่ายประสาทเทียมด้วยรูปหลายเหลี่ยมฝึกสอน แล้วจำแนกทุกพิกเซล
+Train And Classify	ฝึกและจำแนก
+Train Deep Learning Model	ฝึกโมเดลการเรียนรู้เชิงลึก
+Trained models	โมเดลที่ฝึกแล้ว
+Training polygons	รูปหลายเหลี่ยมฝึกสอน
+Transparency	ความโปร่งใส
+Traverse	วงรอบ (Traverse)
+Trend Analysis	การวิเคราะห์แนวโน้ม
+Trend over a series of rasters	แนวโน้มของชุดแรสเตอร์
+Triangle	สามเหลี่ยม
+TRUE	TRUE
+Try again in a moment.	ลองใหม่อีกครั้งในอีกสักครู่
+Try again later.	ลองใหม่ภายหลัง
+Turn editing on or off for the map.	เปิดหรือปิดการแก้ไขสำหรับแผนที่
+Turn Labels Off	ปิดป้ายชื่อ
+Turn labels on or off for the selected layer.	เปิดหรือปิดป้ายชื่อของชั้นข้อมูลที่เลือก
+Turn labels on or off.	เปิดหรือปิดป้ายชื่อ
+Turn Off	ปิด
+Turn on the Basemaps plugin	เปิดปลั๊กอิน Basemaps
+Turn the time slider off: every feature shows again.	ปิดแถบเวลา: ทุกฟีเจอร์จะแสดงอีกครั้ง
+Turns a table's addresses into points: each row's address fields are joined with commas (such as street, city, country) and looked up. The public servers take up to 100 addresses a run, one a second; a server of your own takes more.	แปลงที่อยู่ในตารางเป็นจุด: ฟิลด์ที่อยู่ของแต่ละแถวจะถูกต่อกันด้วยจุลภาค (เช่น ถนน เมือง ประเทศ) แล้วนำไปค้นหา เซิร์ฟเวอร์สาธารณะรับได้สูงสุด 100 ที่อยู่ต่อการรัน วินาทีละหนึ่งรายการ เซิร์ฟเวอร์ของคุณเองรับได้มากกว่า
+Two layers are named {name}: the step names it, so it replays on the first of them. Rename one to tell them apart.	มีชั้นข้อมูลสองชั้นชื่อ {name}: ขั้นตอนอ้างอิงตามชื่อนี้ จึงจะเล่นซ้ำกับชั้นแรก เปลี่ยนชื่อชั้นหนึ่งเพื่อให้แยกกันได้
+Type	ประเภท
+type a file name	พิมพ์ชื่อไฟล์
+type a longitude and latitude, or click the map	พิมพ์ลองจิจูดและละติจูด หรือคลิกบนแผนที่
+Type a scale, such as 1:12,345, 12345 or 25k, and press Enter	พิมพ์มาตราส่วน เช่น 1:12,345, 12345 หรือ 25k แล้วกด Enter
+Type an address or coordinates and press Enter, or click the map.	พิมพ์ที่อยู่หรือพิกัดแล้วกด Enter หรือคลิกบนแผนที่
+Type numbers separated by commas	พิมพ์ตัวเลขคั่นด้วยจุลภาค
+Type the access key ID and the secret access key to remember them on this computer.	พิมพ์ access key ID และ secret access key เพื่อจดจำไว้ในคอมพิวเตอร์เครื่องนี้
+Type the keys to log in for this session, then Save.	พิมพ์คีย์เพื่อเข้าสู่ระบบสำหรับเซสชันนี้ แล้วกด บันทึก
+Type the password to remember it on this computer.	พิมพ์รหัสผ่านเพื่อจดจำไว้ในคอมพิวเตอร์เครื่องนี้
+Type the password, then Save. Remember on this computer is optional.	พิมพ์รหัสผ่าน แล้วกด บันทึก การจดจำในคอมพิวเตอร์เครื่องนี้เป็นตัวเลือกเสริม
+Typed below	พิมพ์ด้านล่าง
+UM	UM
+Unavailable: {reason}	ไม่พร้อมใช้งาน: {reason}
+Unbind From Time Slider	ยกเลิกการผูกกับแถบเวลา
+Unbind from Time Slider	ยกเลิกการผูกกับแถบเวลา
+Undo	เลิกทำ
+Undo (Ctrl+Z)	เลิกทำ (Ctrl+Z)
+Undo doesn't remove the recorded step: delete it in Edit Steps once you stop recording.	การเลิกทำไม่ได้ลบขั้นตอนที่บันทึกไว้: ลบขั้นตอนนั้นใน แก้ไขขั้นตอน เมื่อหยุดบันทึกแล้ว
+Undo the last change.	เลิกทำการเปลี่ยนแปลงล่าสุด
+Undo {action}	เลิกทำ {action}
+Ungroup	ยกเลิกการจัดกลุ่ม
+Uninstall	ถอนการติดตั้ง
+Uninstall GeoLibre Tools	ถอนการติดตั้ง GeoLibre Tools
+Uninstall Plugin	ถอนการติดตั้งปลั๊กอิน
+Uninstalled {id}.	ถอนการติดตั้ง {id} แล้ว
+Unique Values	ค่าเฉพาะ
+Unit	หน่วย
+United States	สหรัฐอเมริกา
+Units	หน่วย
+Units per step	หน่วยต่อขั้น
+unknown (an older project)	ไม่ทราบ (โปรเจกต์รุ่นเก่า)
+UNKNOWN TOOL	เครื่องมือที่ไม่รู้จัก
+Unload the GeoLibre tools and stop loading them when RustGIS starts.	ยกเลิกการโหลดเครื่องมือ GeoLibre และไม่ต้องโหลดอีกเมื่อเริ่ม RustGIS
+Unsaved changes	การเปลี่ยนแปลงที่ยังไม่บันทึก
+Unsupervised classes (k-means)	คลาสแบบไม่มีผู้สอน (k-means)
+Unsupervised classes (k-means).	คลาสแบบไม่มีผู้สอน (k-means)
+Untitled model	โมเดลไม่มีชื่อ
+Up	ขึ้น
+Up a level	ขึ้นหนึ่งระดับ
+Update	อัปเดต
+Update Bookmark	อัปเดตบุ๊กมาร์ก
+Update Job	อัปเดตงาน
+Update Label Class	อัปเดตคลาสป้ายชื่อ
+Update to {version}	อัปเดตเป็น {version}
+Upload File	อัปโหลดไฟล์
+Upload File…	อัปโหลดไฟล์…
+url is required	ต้องระบุ url
+US EPA EnviroAtlas: maps of ecosystem services, land cover, people and the built environment across the United States.	US EPA EnviroAtlas: แผนที่บริการของระบบนิเวศ สิ่งปกคลุมดิน ประชากร และสภาพแวดล้อมที่สร้างขึ้นทั่วสหรัฐอเมริกา
+US Federal GIS	GIS ของรัฐบาลกลางสหรัฐฯ
+US Federal GIS…	GIS ของรัฐบาลกลางสหรัฐฯ…
+US Local GIS	GIS ท้องถิ่นสหรัฐฯ
+US Local GIS…	GIS ท้องถิ่นสหรัฐฯ…
+US State GIS	GIS ระดับรัฐของสหรัฐฯ
+US State GIS…	GIS ระดับรัฐของสหรัฐฯ…
+USA Contiguous Albers Equal Area	USA Contiguous Albers Equal Area
+Use	ใช้
+Use a Single Stroke	ใช้เส้นเดียว
+Use another account	ใช้บัญชีอื่น
+Use Connection	ใช้การเชื่อมต่อ
+Use Current View	ใช้มุมมองปัจจุบัน
+Use each feature's line color	ใช้สีเส้นของแต่ละฟีเจอร์
+Use each feature's line width	ใช้ความกว้างเส้นของแต่ละฟีเจอร์
+Use the Layer's Strokes	ใช้เส้นของชั้นข้อมูล
+USERPROFILE	USERPROFILE
+USGS 3DEP DEM	USGS 3DEP DEM
+USGS 3DEP DEM…	USGS 3DEP DEM…
+USGS 3DEP elevation models (GeoTIFF tiles from The National Map) where the map is.	แบบจำลองความสูง USGS 3DEP (ไทล์ GeoTIFF จาก The National Map) ในบริเวณที่แผนที่แสดงอยู่
+USGS 3DEP LiDAR point clouds (COPC) from the Planetary Computer, where the map is: add a tile's data as a point cloud.	กลุ่มจุด LiDAR ของ USGS 3DEP (COPC) จาก Planetary Computer ในบริเวณที่แผนที่แสดงอยู่: เพิ่มข้อมูลของไทล์เป็นกลุ่มจุด
+USGS Imagery	ภาพถ่าย USGS
+USGS LiDAR	USGS LiDAR
+USGS LiDAR…	USGS LiDAR…
+USGS NLDI	USGS NLDI
+USGS NLDI network tools: choose a flowline direction and click the map (or trace the point below). Then get the basin, or choose a navigation method and press Load sources & plot to plot its flowlines, or pick a catalog such as stream gages or wells and plot it too. The NLDI covers the United States' NHDPlus network.	เครื่องมือโครงข่าย USGS NLDI: เลือกทิศทางเส้นการไหลแล้วคลิกบนแผนที่ (หรือติดตามจุดด้านล่าง) จากนั้นดึงขอบเขตลุ่มน้ำ หรือเลือกวิธีการนำทางแล้วกด โหลดแหล่งข้อมูลและพล็อต เพื่อพล็อตเส้นการไหล หรือเลือกแค็ตตาล็อก เช่น สถานีวัดน้ำหรือบ่อน้ำ แล้วพล็อตด้วย NLDI ครอบคลุมโครงข่าย NHDPlus ของสหรัฐอเมริกา
+USGS NLDI…	USGS NLDI…
+USGS The National Map	USGS The National Map
+USGS The National Map's map services (topographic maps, imagery, elevation, hydrography, boundaries and more) and a few partners'. Each is added as a tile layer.	บริการแผนที่ของ USGS The National Map (แผนที่ภูมิประเทศ ภาพถ่าย ความสูง อุทกศาสตร์ ขอบเขตการปกครอง และอื่น ๆ) และของพันธมิตรบางราย แต่ละรายการเพิ่มเป็นชั้นข้อมูลไทล์
+Using ChatGPT plan	กำลังใช้แพ็กเกจ ChatGPT
+Utilities	สาธารณูปโภค
+Valid combinations, one per line: a, b	ชุดค่าผสมที่ถูกต้อง บรรทัดละหนึ่งชุด: a, b
+Valid expression · {n} matching rows	นิพจน์ถูกต้อง · ตรงกัน {n} แถว
+Valid: {n} of {of} features match	ถูกต้อง: ฟีเจอร์ตรงกัน {n} จาก {of}
+Validate	ตรวจสอบความถูกต้อง
+Validate Model	ตรวจสอบโมเดล
+value (empty: no-data)	ค่า (เว้นว่าง: no-data)
+Values from −stretch to +stretch are shown from black to full colour	ค่าตั้งแต่ −stretch ถึง +stretch แสดงจากสีดำถึงสีเต็ม
+Vantor Open Data	Vantor Open Data
+Vantor's open imagery of disasters: pick an event and a phase (before or after it), then Find Items.	ภาพถ่ายแบบเปิดของ Vantor สำหรับภัยพิบัติ: เลือกเหตุการณ์และระยะ (ก่อนหรือหลังเหตุการณ์) แล้วกด ค้นหารายการ
+Vantor…	Vantor…
+Variable	ตัวแปร
+Variogram Model	แบบจำลองเวริโอแกรม
+Vector and raster data	ข้อมูลเวกเตอร์และแรสเตอร์
+Vector Layer	ชั้นข้อมูลเวกเตอร์
+vector tiles	ไทล์เวกเตอร์
+Vector tiles (MVT)	ไทล์เวกเตอร์ (MVT)
+Vectors a geospatial foundation model made for every pixel or image patch, found where the map is and shown as colours.	เวกเตอร์ที่โมเดลพื้นฐานเชิงภูมิสารสนเทศสร้างขึ้นสำหรับทุกพิกเซลหรือทุกแพตช์ภาพ ค้นหาในบริเวณที่แผนที่แสดงอยู่ และแสดงเป็นสี
+Version {version}	เวอร์ชัน {version}
+Vertex	จุดยอด
+Vertical	แนวตั้ง
+Via {roads}	ผ่าน {roads}
+Video	วิดีโอ
+Video file or URL	ไฟล์วิดีโอหรือ URL
+Video Page	หน้าวิดีโอ
+Videos	วิดีโอ
+Video…	วิดีโอ…
+Vietnam national coordinate system (VN-2000) using 3-degree Transverse Mercator with a 7-parameter Helmert shift to WGS 84.	ระบบพิกัดแห่งชาติเวียดนาม (VN-2000) ใช้ Transverse Mercator แบบ 3 องศา ร่วมกับการแปลง Helmert 7 พารามิเตอร์ไปยัง WGS 84
+Vietnam national coordinate system (VN-2000) UTM zone 48N (102°E–108°E, central meridian 105°E).	ระบบพิกัดแห่งชาติเวียดนาม (VN-2000) UTM โซน 48N (102°E–108°E, เส้นเมริเดียนกลาง 105°E)
+Vietnam national coordinate system (VN-2000) UTM zone 49N (108°E–114°E, central meridian 111°E).	ระบบพิกัดแห่งชาติเวียดนาม (VN-2000) UTM โซน 49N (108°E–114°E, เส้นเมริเดียนกลาง 111°E)
+View	มุมมอง
+View Clipping	การตัดมุมมอง
+View Effects	เอฟเฟกต์มุมมอง
+View Extent	ขอบเขตมุมมอง
+View In Google Earth	ดูใน Google Earth
+View In Google Maps	ดูใน Google Maps
+View Unplaced	ดูป้ายชื่อที่ไม่ได้วาง
+View › Windows	มุมมอง › หน้าต่าง
+Viewshed from a point	พื้นที่มองเห็นจากจุด
+Viewshed {radius}	พื้นที่มองเห็น {radius}
+Viewshed {radius} Here	พื้นที่มองเห็น {radius} ที่นี่
+Vignette	ขอบมืด (Vignette)
+Vignette, edge outlines and the stars around the globe.	ขอบมืด เส้นขอบ และดวงดาวรอบลูกโลก
+Visibility	การมองเห็น
+Visibility Analysis	การวิเคราะห์การมองเห็น
+Visibility Range	ช่วงการมองเห็น
+Visible	มองเห็น
+Visible Layers	ชั้นข้อมูลที่มองเห็น
+Visual Effect	เอฟเฟกต์ภาพ
+VN-2000 / TM-3 (Vietnam)	VN-2000 / TM-3 (เวียดนาม)
+VN-2000 / UTM zone 48N	VN-2000 / UTM zone 48N
+VN-2000 / UTM zone 49N	VN-2000 / UTM zone 49N
+Volume	ปริมาตร
+Waiting for the browser…	กำลังรอเบราว์เซอร์…
+Waiting for your answer	กำลังรอคำตอบของคุณ
+Walk	เดิน
+Want more basemaps?	ต้องการแผนที่ฐานเพิ่มเติมไหม
+WCS	WCS
+WCS Coverage Request	คำขอ WCS Coverage
+Weather	สภาพอากาศ
+Weather and climate data from dynamical.org (NOAA GFS, GEFS and HRRR, ECMWF, DWD ICON…) as Zarr stores: open a dataset, pick a variable and its time steps, and add it.	ข้อมูลสภาพอากาศและภูมิอากาศจาก dynamical.org (NOAA GFS, GEFS และ HRRR, ECMWF, DWD ICON…) ในรูปแบบ Zarr store: เปิดชุดข้อมูล เลือกตัวแปรและช่วงเวลา แล้วเพิ่ม
+Web\nData	ข้อมูล\nเว็บ
+Web\nMap	แผนที่\nเว็บ
+Web Basemaps	แผนที่ฐานเว็บ
+Web Data	ข้อมูลเว็บ
+Web Layer	ชั้นข้อมูลเว็บ
+Web Link Chart	แผนภูมิลิงก์เว็บ
+Web maps	แผนที่เว็บ
+Web Mercator	Web Mercator
+Web Scene	ฉากเว็บ
+Web service (detected)	บริการเว็บ (ตรวจพบ)
+Web Style	สไตล์เว็บ
+Web Tile Layers	ชั้นข้อมูลไทล์เว็บ
+Web Tool	เครื่องมือเว็บ
+Website	เว็บไซต์
+Weekly usage	การใช้งานรายสัปดาห์
+Weights	น้ำหนัก
+Welcome to RustGIS	ยินดีต้อนรับสู่ RustGIS
+West	ตะวันตก
+WFS	WFS
+WGS 84 / Globe	WGS 84 / ลูกโลก
+WGS 84 / Web Mercator	WGS 84 / Web Mercator
+What RustGIS opens with: the World Atlas sample or a blank map.	สิ่งที่ RustGIS เปิดเมื่อเริ่มต้น: ตัวอย่าง World Atlas หรือแผนที่เปล่า
+What RustGIS opens with: the World Atlas sample, a blank map, a project you choose, or the last project opened or saved.	สิ่งที่ RustGIS เปิดเมื่อเริ่มต้น: ตัวอย่าง World Atlas แผนที่เปล่า โปรเจกต์ที่คุณเลือก หรือโปรเจกต์ล่าสุดที่เปิดหรือบันทึก
+What to do, where to find it and why	ต้องทำอะไร หาได้ที่ไหน และทำไม
+What's near a point	มีอะไรอยู่ใกล้จุด
+WHERE	WHERE
+Where	เงื่อนไข
+Where Clause	อนุประโยค Where
+Where labels sit relative to their features.	ตำแหน่งของป้ายชื่อเทียบกับฟีเจอร์
+Where new features get their elevation (the z field).	แหล่งค่าความสูงของฟีเจอร์ใหม่ (ฟิลด์ z)
+Where the map opens: the full extent or a view you saved.	ตำแหน่งที่แผนที่เปิด: ขอบเขตทั้งหมดหรือมุมมองที่คุณบันทึกไว้
+Where tools work	ขอบเขตการทำงานของเครื่องมือ
+Whether the Select tool picks these layers' features on the map	เครื่องมือเลือกจะเลือกฟีเจอร์ของชั้นข้อมูลเหล่านี้บนแผนที่หรือไม่
+Which 5 countries have the largest GDP?	5 ประเทศใดมี GDP สูงที่สุด
+Whitebox and GeoLibre tools	เครื่องมือ Whitebox และ GeoLibre
+Whole map	ทั้งแผนที่
+Whose borders the sample countries and the basemap outline show.	มุมมองพรมแดนที่ใช้แสดงประเทศตัวอย่างและเส้นขอบแผนที่ฐาน
+Wide (±1 step)	กว้าง (±1 ขั้น)
+Wider (±3 steps)	กว้างขึ้น (±3 ขั้น)
+Width	ความกว้าง
+Width (mm)	ความกว้าง (mm)
+Windows	หน้าต่าง
+Winkel Tripel	Winkel Tripel
+Wireframe	โครงลวด
+Withdrawn	ถูกถอนออก
+WKT column	คอลัมน์ WKT
+WMS	WMS
+WMTS	WMTS
+Words	คำ
+words in the name	คำในชื่อ
+words to keep to (optional)	คำที่ใช้จำกัดผลลัพธ์ (ไม่บังคับ)
+Workflow	เวิร์กโฟลว์
+Workflow Manager	ตัวจัดการเวิร์กโฟลว์
+Workflows	เวิร์กโฟลว์
+Working	กำลังทำงาน
+Workspace	พื้นที่ทำงาน
+Workspace cell size and blending.	ขนาดเซลล์และการผสมของพื้นที่ทำงาน
+Workspace Options	ตัวเลือกพื้นที่ทำงาน
+World	โลก
+World Atlas	World Atlas
+World Atlas Sample	ตัวอย่าง World Atlas
+World Countries	ประเทศทั่วโลก
+World, compromise: low overall distortion, used for world atlases.	โลก แบบประนีประนอม: ความบิดเบี้ยวโดยรวมต่ำ ใช้ในแผนที่โลก
+World, compromise: neither equal-area nor conformal, balanced for wall maps.	โลก แบบประนีประนอม: ไม่รักษาพื้นที่และไม่รักษารูปร่าง สมดุลสำหรับแผนที่ติดผนัง
+World, compromise: rounded corners, gentle shapes near the poles.	โลก แบบประนีประนอม: มุมโค้งมน รูปร่างนุ่มนวลใกล้ขั้วโลก
+World, conformal: the usual web map; areas grow towards the poles.	โลก แบบคงรูป: แผนที่เว็บทั่วไป พื้นที่ขยายใหญ่ขึ้นเมื่อเข้าใกล้ขั้วโลก
+World, cylindrical: a compromise between Mercator and equal steps.	โลก แบบทรงกระบอก: ประนีประนอมระหว่าง Mercator กับระยะเท่ากัน
+World, cylindrical: equal steps of longitude and latitude.	โลก แบบทรงกระบอก: ระยะลองจิจูดและละติจูดเท่ากัน
+World, equal-area, cylindrical: true sizes, flattened near the poles.	โลก แบบรักษาพื้นที่ ทรงกระบอก: ขนาดจริง แบนลงใกล้ขั้วโลก
+World, equal-area: true sizes with a Robinson-like look.	โลก แบบรักษาพื้นที่: ขนาดจริง ลักษณะคล้าย Robinson
+World, equal-area: true sizes with rounded poles.	โลก แบบรักษาพื้นที่: ขนาดจริง ขั้วโลกโค้งมน
+World, equal-area: true sizes, shapes bend towards the edges.	โลก แบบรักษาพื้นที่: ขนาดจริง รูปร่างโค้งงอเมื่อเข้าใกล้ขอบ
+Worldview	มุมมองพรมแดน
+Write a plugin	เขียนปลั๊กอิน
+Writes Sen's slope, the test's Z and p-value, and the slope where the trend is significant.	เขียนค่าความชันของ Sen ค่า Z และค่า p ของการทดสอบ และค่าความชันในบริเวณที่แนวโน้มมีนัยสำคัญ
+X (mm)	X (mm)
+X column	คอลัมน์ X
+X Field	ฟิลด์ X
+XY Table To Point	ตาราง XY เป็นจุด
+XY Table To Point…	ตาราง XY เป็นจุด…
+Y (mm)	Y (mm)
+Y column	คอลัมน์ Y
+Y Field	ฟิลด์ Y
+Year	ปี
+Yes	ใช่
+You can undo this with {shortcut}.	คุณเลิกทำได้ด้วย {shortcut}
+You have version {version}.	คุณใช้เวอร์ชัน {version}
+You're using your ChatGPT plan	คุณกำลังใช้แพ็กเกจ ChatGPT ของคุณ
+Your skills are kept in the skills folder of the app's settings folder. Shared skills (~/.agents/skills) are off until you turn them on.	สกิลของคุณเก็บไว้ในโฟลเดอร์ skills ของโฟลเดอร์การตั้งค่าแอป สกิลที่แชร์ (~/.agents/skills) จะปิดอยู่จนกว่าคุณจะเปิด
+Yours	ของคุณ
+YYYY-MM-DD	YYYY-MM-DD
+YYYY-MM-DD, for the layers that change with time	YYYY-MM-DD สำหรับชั้นข้อมูลที่เปลี่ยนตามเวลา
+YYYY-MM-DD, for time layers	YYYY-MM-DD สำหรับชั้นข้อมูลเวลา
+Z factor	ตัวคูณ Z
+Zarr	Zarr
+Zarr Variables	ตัวแปร Zarr
+Zarr…	Zarr…
+Zonal Statistics	สถิติตามโซน
+Zone Polygons	รูปหลายเหลี่ยมโซน
+Zoom	ซูม
+Zoom about the pointer	ซูมรอบตัวชี้
+Zoom Box	ซูมแบบกรอบ
+Zoom Frame	ซูมกรอบแผนที่
+Zoom In	ขยาย
+Zoom in	ขยาย
+Zoom In Here	ขยายที่นี่
+Zoom in on the centre of the map.	ขยายที่กึ่งกลางแผนที่
+Zoom in · finish a sketch	ขยาย · จบการวาดร่าง
+Zoom Out	ย่อ
+Zoom out	ย่อ
+Zoom out from the centre of the map.	ย่อจากกึ่งกลางแผนที่
+Zoom To	ซูมไปที่
+Zoom To\nLayer	ซูมไปที่\nชั้นข้อมูล
+Zoom to a box (Explore)	ซูมไปที่กรอบ (สำรวจ)
+Zoom To Extent	ซูมไปที่ขอบเขต
+Zoom To Layer	ซูมไปที่ชั้นข้อมูล
+Zoom To Layers	ซูมไปที่ชั้นข้อมูล
+Zoom To Map View	ซูมไปที่มุมมองแผนที่
+Zoom To Selection	ซูมไปที่การเลือก
+Zoom to selection	ซูมไปที่การเลือก
+Zoom to the error	ซูมไปที่ข้อผิดพลาด
+Zoom to the extent of all layers.	ซูมไปที่ขอบเขตของชั้นข้อมูลทั้งหมด
+Zoom to the layer's extent.	ซูมไปที่ขอบเขตของชั้นข้อมูล
+Zoom to the selected features.	ซูมไปที่ฟีเจอร์ที่เลือก
+Zoom to the whole world.	ซูมไปทั้งโลก
+Zoom to this bookmark	ซูมไปที่บุ๊กมาร์กนี้
+Zoom To Tile Layer	ซูมไปที่ชั้นข้อมูลไทล์
+Zoom to Tokyo	ซูมไปที่โตเกียว
+Zoom To World	ซูมไปทั้งโลก
+Zoom {z} · Bearing {b}° · Pitch {p}°	ซูม {z} · ทิศ {b}° · มุมก้ม {p}°
+Zoom: the map's zoom level, as web maps count it. Bearing: the direction the top of the map faces, clockwise from north. Pitch: the tilt from looking straight down. Click to reset bearing and pitch.	ซูม: ระดับการซูมของแผนที่ตามแบบที่แผนที่เว็บนับ ทิศ: ทิศทางที่ด้านบนของแผนที่หันไป วัดตามเข็มนาฬิกาจากทิศเหนือ มุมก้ม: ความเอียงจากการมองตรงลงมา คลิกเพื่อรีเซ็ตทิศและมุมก้ม
+{agent} was stopped by you.	{agent} ถูกคุณหยุด
+{id} changed since it was installed; install it again from the Plugin Manager.	{id} เปลี่ยนไปตั้งแต่ติดตั้ง ติดตั้งใหม่อีกครั้งจาก ตัวจัดการปลั๊กอิน
+{names}: needs Node.js (npx) for its ACP adapter.	{names}: ต้องใช้ Node.js (npx) สำหรับอะแดปเตอร์ ACP
+{name} is larger than {mb} MB	{name} มีขนาดใหญ่กว่า {mb} MB
+{name} runs as a program on your computer: it needs the desktop app or rustgis-cli.	{name} ทำงานเป็นโปรแกรมบนคอมพิวเตอร์ของคุณ: ต้องใช้แอปเดสก์ท็อปหรือ rustgis-cli
+{name} was withdrawn from the plugin registry and has been turned off.	{name} ถูกถอนออกจากทะเบียนปลั๊กอินและถูกปิดแล้ว
+{name} was withdrawn from the plugin registry: {reason}	{name} ถูกถอนออกจากทะเบียนปลั๊กอิน: {reason}
+{name}: the download doesn't match the registry; it wasn't installed.	{name}: ไฟล์ที่ดาวน์โหลดไม่ตรงกับทะเบียน จึงไม่ได้ติดตั้ง
+{name}: the download is a different plugin; it wasn't installed.	{name}: ไฟล์ที่ดาวน์โหลดเป็นปลั๊กอินอื่น จึงไม่ได้ติดตั้ง
+{shown} of {total} plugins	ปลั๊กอิน {shown} จาก {total}
+{total} plugins	ปลั๊กอิน {total} รายการ
+{type} · {format}, read in place · a sample of {n} of the {matched} features in view (zoom in to see them all) · {renderer}	{type} · {format} อ่านจากตำแหน่งเดิม · ตัวอย่าง {n} จาก {matched} ฟีเจอร์ในมุมมอง (ขยายเพื่อดูทั้งหมด) · {renderer}
+{type} · {format}, read in place · {n} of {total} features in view · {renderer}	{type} · {format} อ่านจากตำแหน่งเดิม · {n} จาก {total} ฟีเจอร์ในมุมมอง · {renderer}
+{url}: downloaded after another project was opened, so it wasn't opened	{url}: ดาวน์โหลดเสร็จหลังจากเปิดโปรเจกต์อื่นแล้ว จึงไม่ได้เปิด
+{url}: only HTTPS addresses, or plain HTTP on this computer or network, are allowed	{url}: อนุญาตเฉพาะที่อยู่ HTTPS หรือ HTTP ธรรมดาบนคอมพิวเตอร์หรือเครือข่ายนี้เท่านั้น
+© OpenStreetMap contributors	© ผู้ร่วมพัฒนา OpenStreetMap
+±, dequantised	±, ลดการควอนไทซ์
+— fps	— fps
+⌘+Enter	⌘+Enter
+⌘K	⌘K
+▶ Simulate	▶ จำลอง
+WGS 84 / UTM zone 47N (Thailand)	WGS 84 / UTM โซน 47N (ประเทศไทย)
+WGS 84 / UTM zone 48N (Thailand)	WGS 84 / UTM โซน 48N (ประเทศไทย)
+Indian 1975 / UTM zone 47N (Thailand)	Indian 1975 / UTM โซน 47N (ประเทศไทย)
+Indian 1975 / UTM zone 48N (Thailand)	Indian 1975 / UTM โซน 48N (ประเทศไทย)
+Thailand west of 102°E (WGS 84): GPS, satellite imagery and current government data.	ประเทศไทยฝั่งตะวันตกของ 102°E (WGS 84): ข้อมูล GPS ภาพดาวเทียม และข้อมูลภาครัฐปัจจุบัน
+Thailand east of 102°E (WGS 84): GPS, satellite imagery and current government data.	ประเทศไทยฝั่งตะวันออกของ 102°E (WGS 84): ข้อมูล GPS ภาพดาวเทียม และข้อมูลภาครัฐปัจจุบัน
+Thailand west of 102°E on the Indian 1975 datum: older cadastral and topographic maps.	ประเทศไทยฝั่งตะวันตกของ 102°E บนพื้นหลักฐาน Indian 1975: แผนที่โฉนดที่ดินและแผนที่ภูมิประเทศรุ่นเก่า
+Thailand east of 102°E on the Indian 1975 datum: older cadastral and topographic maps.	ประเทศไทยฝั่งตะวันออกของ 102°E บนพื้นหลักฐาน Indian 1975: แผนที่โฉนดที่ดินและแผนที่ภูมิประเทศรุ่นเก่า
