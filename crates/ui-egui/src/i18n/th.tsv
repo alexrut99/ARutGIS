@@ -1511,7 +1511,7 @@ Item Pop-ups	ป๊อปอัปของรายการ
 Item {id}	รายการ {id}
 Its firewall ({firewall}) blocked RustGIS. The service may only allow some applications: contact its administrator and send them the details below.	ไฟร์วอลล์ของบริการ ({firewall}) บล็อก RustGIS บริการนี้อาจอนุญาตเฉพาะบางแอปพลิเคชัน: ติดต่อผู้ดูแลระบบและส่งรายละเอียดด้านล่างให้
 Its tool isn't available now (a plugin's, not loaded, or a suite's, not installed)	เครื่องมือของรายการนี้ใช้งานไม่ได้ในขณะนี้ (เป็นของปลั๊กอินที่ยังไม่โหลด หรือของชุดเครื่องมือที่ยังไม่ได้ติดตั้ง)
-Jobs	งาน
+Jobs	รายการงาน
 JOIN	JOIN
 Join	เชื่อม
 Join Features	เชื่อมฟีเจอร์
@@ -3038,7 +3038,7 @@ Target Records	เรคคอร์ดเป้าหมาย
 Task	งาน
 Task Item	รายการงาน
 Task name	ชื่องาน
-Tasks	งาน
+Tasks	ชุดงาน
 Tasks: guided steps that each run a command.	งาน: ขั้นตอนแนะนำที่แต่ละขั้นเรียกใช้คำสั่ง
 Template name	ชื่อเทมเพลต
 Templates	เทมเพลต
@@ -3569,3 +3569,441 @@ Thailand west of 102°E (WGS 84): GPS, satellite imagery and current government 
 Thailand east of 102°E (WGS 84): GPS, satellite imagery and current government data.	ประเทศไทยฝั่งตะวันออกของ 102°E (WGS 84): ข้อมูล GPS ภาพดาวเทียม และข้อมูลภาครัฐปัจจุบัน
 Thailand west of 102°E on the Indian 1975 datum: older cadastral and topographic maps.	ประเทศไทยฝั่งตะวันตกของ 102°E บนพื้นหลักฐาน Indian 1975: แผนที่โฉนดที่ดินและแผนที่ภูมิประเทศรุ่นเก่า
 Thailand east of 102°E on the Indian 1975 datum: older cadastral and topographic maps.	ประเทศไทยฝั่งตะวันออกของ 102°E บนพื้นหลักฐาน Indian 1975: แผนที่โฉนดที่ดินและแผนที่ภูมิประเทศรุ่นเก่า
+{n} of {total} selected	เลือกแล้ว {n} จาก {total}
+value	ค่า
+seed	ค่าสุ่มตั้งต้น
+classes	จำนวนคลาส
+epochs	จำนวนรอบ (epoch)
+factor	ตัวคูณ
+Use layers instead	ใช้ชั้นข้อมูลแทน
+from the names	จากชื่อ
+year	ปี
+decade	ทศวรรษ
+half	ครึ่งหนึ่ง
+A data cube's trend needs its period: fill in From and To	แนวโน้มของดาต้าคิวบ์ต้องระบุช่วงเวลา: กรอก จาก และ ถึง
+A date is missing between two commas	มีวันที่หายไประหว่างเครื่องหมายจุลภาคสองตัว
+{name} ({acc}% accurate)	{name} (ความแม่นยำ {acc}%)
+{name} ({n} images)	{name} ({n} ภาพ)
+{name} ({n} steps)	{name} ({n} ขั้นตอน)
+Data cube: {name}, where the map is	ดาต้าคิวบ์: {name} ในบริเวณแผนที่
+Data cube: {name}, read whole	ดาต้าคิวบ์: {name} อ่านทั้งหมด
+{time} UTC	{time} UTC
+Sign in to ArcGIS	ลงชื่อเข้าใช้ ArcGIS
+An ArcGIS Online organization's or an ArcGIS Enterprise portal's address; ArcGIS Online when blank	ที่อยู่ขององค์กร ArcGIS Online หรือพอร์ทัล ArcGIS Enterprise หากเว้นว่างจะใช้ ArcGIS Online
+Client ID	รหัสไคลเอนต์ (Client ID)
+The portal's OAuth app	แอป OAuth ของพอร์ทัล
+Finish signing in in the pop-up window…	ลงชื่อเข้าใช้ให้เสร็จในหน้าต่างป๊อปอัป…
+Sign in	ลงชื่อเข้าใช้
+Finish signing in in the browser…	ลงชื่อเข้าใช้ให้เสร็จในเบราว์เซอร์…
+A token for {server}	โทเค็นสำหรับ {server}
+Signed in to {portal}	ลงชื่อเข้าใช้ {portal} แล้ว
+Signed in to {portal} as {user}	ลงชื่อเข้าใช้ {portal} แล้วในชื่อ {user}
+For ArcGIS Online, the client ID is RustGIS's own app. For an ArcGIS Enterprise portal, register an OAuth app on it (Content › New item › Developer credentials) whose redirect URL is {redirect}, and give its client ID.	สำหรับ ArcGIS Online รหัสไคลเอนต์คือแอปของ RustGIS เอง สำหรับพอร์ทัล ArcGIS Enterprise ให้ลงทะเบียนแอป OAuth บนพอร์ทัลนั้น (Content › New item › Developer credentials) โดยตั้ง redirect URL เป็น {redirect} แล้วระบุรหัสไคลเอนต์ของแอปนั้น
+The sign-in is still kept in the app's settings folder, readable by your user account: the system keychain is unavailable, so it hasn't been moved there yet.	การลงชื่อเข้าใช้ยังถูกเก็บไว้ในโฟลเดอร์การตั้งค่าของแอป ซึ่งบัญชีผู้ใช้ของคุณอ่านได้: พวงกุญแจของระบบใช้งานไม่ได้ จึงยังไม่ได้ย้ายไปเก็บที่นั่น
+The system keychain is unavailable, so this sign-in won't be remembered: it lasts until RustGIS closes.	พวงกุญแจของระบบใช้งานไม่ได้ จึงจะไม่จดจำการลงชื่อเข้าใช้นี้: ใช้ได้จนกว่าจะปิด RustGIS
+The sign-in is kept in the system keychain, never in the app's settings or a project file.	การลงชื่อเข้าใช้ถูกเก็บไว้ในพวงกุญแจของระบบ ไม่เก็บในการตั้งค่าของแอปหรือไฟล์โปรเจกต์
+Remove account	นำบัญชีออก
+Signs this account out and forgets it on this computer, with its saved sign-in.	ออกจากระบบบัญชีนี้และลบบัญชีออกจากคอมพิวเตอร์เครื่องนี้ พร้อมการลงชื่อเข้าใช้ที่บันทึกไว้
+Signed out on this computer, but the system keychain couldn't be read, so OpenAI wasn't asked to end the session. You can disconnect RustGIS in ChatGPT's settings.	ออกจากระบบบนคอมพิวเตอร์เครื่องนี้แล้ว แต่อ่านพวงกุญแจของระบบไม่ได้ จึงไม่ได้ขอให้ OpenAI สิ้นสุดเซสชัน คุณสามารถยกเลิกการเชื่อมต่อ RustGIS ได้ในการตั้งค่าของ ChatGPT
+Untitled	ไม่มีชื่อ
+Recover unsaved work?	กู้คืนงานที่ยังไม่บันทึกหรือไม่
+RustGIS was quit last time without saving your changes.	ครั้งที่แล้ว RustGIS ถูกปิดโดยไม่ได้บันทึกการเปลี่ยนแปลงของคุณ
+RustGIS didn't close properly last time.	ครั้งที่แล้ว RustGIS ปิดไม่สมบูรณ์
+It was never saved: it opens unsaved, and Save asks where to write it.	งานนี้ไม่เคยถูกบันทึก: จะเปิดในสถานะยังไม่บันทึก และ บันทึก จะถามตำแหน่งที่จะเขียนไฟล์
+The open project has unsaved changes: save them, then recover this copy.	โปรเจกต์ที่เปิดอยู่มีการเปลี่ยนแปลงที่ยังไม่บันทึก: บันทึกก่อน แล้วจึงกู้คืนสำเนานี้
+Recover	กู้คืน
+Later	ภายหลัง
+Autosave couldn't keep a recovery copy: {error}	บันทึกอัตโนมัติไม่สามารถเก็บสำเนากู้คืนได้: {error}
+Recovered unsaved work in {name}. Save to keep it.	กู้คืนงานที่ยังไม่บันทึกใน {name} แล้ว บันทึกเพื่อเก็บไว้
+Other copies of unsaved work will be offered at the next start ({n}).	สำเนางานที่ยังไม่บันทึกอื่น ๆ ({n}) จะแสดงให้เลือกเมื่อเริ่มโปรแกรมครั้งถัดไป
+It opens unsaved; saving replaces {file}.	จะเปิดในสถานะยังไม่บันทึก การบันทึกจะแทนที่ {file}
+{file} has changed since this copy was made.	{file} มีการเปลี่ยนแปลงหลังจากสร้างสำเนานี้
+Older copies waiting: {n}.	สำเนาเก่ากว่าที่รออยู่: {n}
+It didn't open: {error}	เปิดไม่ได้: {error}
+{n} more bookmarks aren't listed. Type in the filter to narrow the list.	มีบุ๊กมาร์กอีก {n} รายการที่ไม่ได้แสดง พิมพ์ในตัวกรองเพื่อจำกัดรายการ
+{n} shown, more in the folder	แสดง {n} รายการ ยังมีอีกในโฟลเดอร์
+{command}: {reason}	{command}: {reason}
+{name} (tool)	{name} (เครื่องมือ)
+{name} (panel)	{name} (แผง)
+schema	สคีมา
+table	ตาราง
+folder	โฟลเดอร์
+service	บริการ
+map	แผนที่
+features	ฟีเจอร์
+coverage	คัฟเวอเรจ
+style	สไตล์
+record	เรคคอร์ด
+download	ดาวน์โหลด
+collection	คอลเลกชัน
+catalog	แค็ตตาล็อก
+item	รายการ
+asset	แอสเซ็ต
+bucket	บักเก็ต
+file	ไฟล์
+{n} of {m} are listed.	แสดง {n} จาก {m} รายการ
+{n} tables with geometry	{n} ตารางที่มีรูปทรงเรขาคณิต
+{n} records in the catalogue	{n} เรคคอร์ดในแค็ตตาล็อก
+{n} collections	{n} คอลเลกชัน
+{n} items in {bucket}	{n} รายการใน {bucket}
+{n} buckets	{n} บักเก็ต
+{kind} {title}: {count} layers	{kind} {title}: {count} ชั้นข้อมูล
+{name} now reads {n} project sources	ขณะนี้ {name} อ่านแหล่งข้อมูลของโปรเจกต์ {n} รายการ
+{name} now reads {n} project sources; {failed} could not be read	ขณะนี้ {name} อ่านแหล่งข้อมูลของโปรเจกต์ {n} รายการ อ่านไม่ได้ {failed} รายการ
+Agents on this computer that connect (Claude Code, Codex, Cursor and others) work on the map open here, with RustGIS's tools: they can open and save files and use the web. So can a script any program of yours writes to the file bridge shown below. Scripts and plugin management stay off. The choice is remembered across launches.	เอเจนต์บนคอมพิวเตอร์เครื่องนี้ที่เชื่อมต่อเข้ามา (Claude Code, Codex, Cursor และอื่น ๆ) จะทำงานกับแผนที่ที่เปิดอยู่ที่นี่ด้วยเครื่องมือของ RustGIS: สามารถเปิดและบันทึกไฟล์ และใช้เว็บได้ สคริปต์ที่โปรแกรมใด ๆ ของคุณเขียนลงในไฟล์บริดจ์ด้านล่างก็ทำได้เช่นกัน ส่วนสคริปต์และการจัดการปลั๊กอินยังคงปิดอยู่ ตัวเลือกนี้จะถูกจดจำไว้สำหรับการเปิดโปรแกรมครั้งต่อไป
+Agents may also run scripts, tasks and models, and install, remove and run plugins: anything you could do yourself. Turn it on only for an agent you trust with your computer. It lasts until RustGIS closes or agents are turned off.	เอเจนต์ยังสามารถเรียกใช้สคริปต์ งาน และโมเดล รวมถึงติดตั้ง นำออก และเรียกใช้ปลั๊กอินได้: ทุกอย่างที่คุณทำเองได้ เปิดใช้เฉพาะกับเอเจนต์ที่คุณไว้วางใจให้เข้าถึงคอมพิวเตอร์ของคุณ ใช้ได้จนกว่าจะปิด RustGIS หรือปิดเอเจนต์
+Full access	สิทธิ์เข้าถึงเต็มที่
+Agents without MCP can write a script (one command per line) to:	เอเจนต์ที่ไม่มี MCP สามารถเขียนสคริปต์ (หนึ่งคำสั่งต่อบรรทัด) ไปยัง:
+RustGIS runs it and writes the outcome to:	RustGIS จะรันสคริปต์และเขียนผลลัพธ์ไปยัง:
+MCP over HTTP on 127.0.0.1:{port}	MCP ผ่าน HTTP ที่ 127.0.0.1:{port}
+MCP over HTTP couldn't start: {error}	ไม่สามารถเริ่ม MCP ผ่าน HTTP ได้: {error}
+The file bridge couldn't start: {error}	ไม่สามารถเริ่มไฟล์บริดจ์ได้: {error}
+MCP relay couldn't start ({error}); agents can still use the file bridge	ไม่สามารถเริ่มรีเลย์ MCP ได้ ({error}) เอเจนต์ยังใช้ไฟล์บริดจ์ได้
+{error}; the file bridge couldn't start either: {why}	{error} และไม่สามารถเริ่มไฟล์บริดจ์ได้เช่นกัน: {why}
+Or, for agents that use MCP over HTTP (port {port}):	หรือ สำหรับเอเจนต์ที่ใช้ MCP ผ่าน HTTP (พอร์ต {port}):
+{shown} of {matched} records	{shown} จาก {matched} เรคคอร์ด
+Data cubes ready to open: a series of images over time, with its collection, band and range filled in.	ดาต้าคิวบ์ที่พร้อมเปิด: ชุดภาพตามช่วงเวลา ที่กรอกคอลเลกชัน แบนด์ และช่วงค่าไว้แล้ว
+NDVI, MODIS, rain…	NDVI, MODIS, ฝน…
+Only cubes with data where the map is	เฉพาะคิวบ์ที่มีข้อมูลในบริเวณแผนที่
+With no period, a cube is added over its last full calendar year.	หากไม่ระบุช่วงเวลา จะเพิ่มคิวบ์ตามปีปฏิทินเต็มปีล่าสุด
+No data cube matches	ไม่มีดาต้าคิวบ์ที่ตรงกัน
+The desktop app adds data cubes	ต้องใช้แอปเดสก์ท็อปเพื่อเพิ่มดาต้าคิวบ์
+Adds the cube where the map is, following the time slider through its dates	เพิ่มคิวบ์ในบริเวณแผนที่ โดยเปลี่ยนตามแถบเวลาไปตามวันที่ของคิวบ์
+Opens Trend Analysis with this cube, where the map is	เปิด การวิเคราะห์แนวโน้ม ด้วยคิวบ์นี้ ในบริเวณแผนที่
+Adds the whole cube, following the time slider through its dates	เพิ่มคิวบ์ทั้งหมด โดยเปลี่ยนตามแถบเวลาไปตามวันที่ของคิวบ์
+Opens Trend Analysis with this cube, read whole	เปิด การวิเคราะห์แนวโน้ม ด้วยคิวบ์นี้ โดยอ่านทั้งหมด
+Add to Time Slider	เพิ่มลงในแถบเวลา
+Trend Analysis…	การวิเคราะห์แนวโน้ม…
+Give both ends of the period, or neither	ระบุทั้งวันเริ่มต้นและวันสิ้นสุดของช่วงเวลา หรือไม่ระบุทั้งคู่
+{start} – to date	{start} – ปัจจุบัน
+{layers} tiles, {dates} dates from {start} to {end}: the time slider steps through them	{layers} ไทล์ {dates} วันที่ ตั้งแต่ {start} ถึง {end}: แถบเวลาจะเลื่อนไปทีละขั้นตามวันที่เหล่านี้
+Added from {start} to {end}: the time slider steps through it	เพิ่มแล้ว ตั้งแต่ {start} ถึง {end}: แถบเวลาจะเลื่อนไปทีละขั้นตามช่วงนี้
+the map has no GeoPackage layer loaded for editing (Home › Add Data › Edit GeoPackage Table…)	แผนที่ไม่มีชั้นข้อมูล GeoPackage ที่โหลดไว้สำหรับแก้ไข (หน้าหลัก › เพิ่มข้อมูล › แก้ไขตาราง GeoPackage…)
+The active project or map changed; reopen the GeoPackage dialog for the intended layer.	โปรเจกต์หรือแผนที่ที่ใช้งานอยู่เปลี่ยนไป เปิดกล่องโต้ตอบ GeoPackage ใหม่สำหรับชั้นข้อมูลที่ต้องการ
+Choose a GeoPackage layer	เลือกชั้นข้อมูล GeoPackage
+The selected GeoPackage layer is no longer available; choose a layer	ชั้นข้อมูล GeoPackage ที่เลือกไม่มีอยู่แล้ว เลือกชั้นข้อมูล
+Step through the layer's times with the time slider (View › Time), which starts with them	เลื่อนไปตามเวลาของชั้นข้อมูลด้วยแถบเวลา (มุมมอง › เวลา) ซึ่งจะเริ่มจากเวลาเหล่านั้น
+its default	ค่าเริ่มต้น
+for the layers that change with time, as they list their times (2024-06-01, 1995)	สำหรับชั้นข้อมูลที่เปลี่ยนตามเวลา ตามรูปแบบที่ชั้นข้อมูลระบุเวลาไว้ (2024-06-01, 1995)
+Only the map's area	เฉพาะพื้นที่ของแผนที่
+Feature layers: ask the service only for the features that cross the map's view	ชั้นข้อมูลฟีเจอร์: ขอจากบริการเฉพาะฟีเจอร์ที่ตัดผ่านมุมมองแผนที่
+A PostgreSQL/PostGIS connection (host=… port=… dbname=… user=…, or a postgresql:// address), a MySQL or MariaDB address (mysql://user@host:3306/database), a SQL Server address (mssql://user@host:1433/database) or a DuckDB file. PostGIS, MySQL, MariaDB and SQL Server tables are read live, large ones a view at a time; the password is kept until RustGIS closes, never in the project.	การเชื่อมต่อ PostgreSQL/PostGIS (host=… port=… dbname=… user=… หรือที่อยู่ postgresql://) ที่อยู่ MySQL หรือ MariaDB (mysql://user@host:3306/database) ที่อยู่ SQL Server (mssql://user@host:1433/database) หรือไฟล์ DuckDB ตารางของ PostGIS, MySQL, MariaDB และ SQL Server จะอ่านแบบสด ตารางขนาดใหญ่จะอ่านทีละมุมมอง รหัสผ่านจะเก็บไว้จนกว่าจะปิด RustGIS และไม่เก็บในโปรเจกต์
+Load for editing	โหลดเพื่อแก้ไข
+Load the table whole (up to 100,000 rows) so its edits can be saved back to it with Edit › Save to PostGIS. It needs a single-column integer primary key.	โหลดทั้งตาราง (สูงสุด 100,000 แถว) เพื่อให้บันทึกการแก้ไขกลับไปยังตารางได้ด้วย แก้ไข › บันทึกลง PostGIS ตารางต้องมีคีย์หลัก (primary key) ชนิดจำนวนเต็มแบบคอลัมน์เดียว
+Condition	เงื่อนไข
+optional, such as population > 10000	ไม่บังคับ เช่น population > 10000
+Most rows	จำนวนแถวสูงสุด
+Close the connection that PostGIS layers loaded for editing save through.	ปิดการเชื่อมต่อที่ชั้นข้อมูล PostGIS ซึ่งโหลดไว้สำหรับแก้ไขใช้บันทึกข้อมูล
+Choose a table to load for editing	เลือกตารางที่จะโหลดเพื่อแก้ไข
+Most rows: a whole number	จำนวนแถวสูงสุด: ต้องเป็นจำนวนเต็ม
+Loads one feature table of a GeoPackage on this computer (up to 100,000 rows) so its edits can be saved back to that table with Edit › Save to GeoPackage. It needs an INTEGER PRIMARY KEY.	โหลดตารางฟีเจอร์หนึ่งตารางจาก GeoPackage บนคอมพิวเตอร์เครื่องนี้ (สูงสุด 100,000 แถว) เพื่อให้บันทึกการแก้ไขกลับไปยังตารางนั้นได้ด้วย แก้ไข › บันทึกลง GeoPackage ตารางต้องมี INTEGER PRIMARY KEY
+Browse…	เรียกดู…
+Choose a layer	เลือกชั้นข้อมูล
+New rows	แถวใหม่
+Changed rows	แถวที่เปลี่ยนแปลง
+Deleted rows	แถวที่ลบ
+Saves the layer's edits to its table in one transaction. When a row you changed or deleted was changed or deleted in the database since it was loaded, or a new row's key is taken, nothing is saved and the rows are listed.	บันทึกการแก้ไขของชั้นข้อมูลลงในตารางภายในทรานแซกชันเดียว หากแถวที่คุณเปลี่ยนแปลงหรือลบถูกเปลี่ยนแปลงหรือลบในฐานข้อมูลหลังจากโหลดมา หรือคีย์ของแถวใหม่ถูกใช้ไปแล้ว จะไม่มีการบันทึกใด ๆ และจะแสดงรายการแถวเหล่านั้น
+Loads the layer's rows again as they are in the database now. Its edits that weren't saved are dropped (Undo brings them back).	โหลดแถวของชั้นข้อมูลอีกครั้งตามที่อยู่ในฐานข้อมูลขณะนี้ การแก้ไขที่ยังไม่บันทึกจะถูกละทิ้ง (เลิกทำ จะนำกลับมาได้)
+Saves the layer's edits to its table in the GeoPackage file in one transaction. When a row you changed or deleted was changed or deleted in the file since it was loaded, nothing is saved and the rows are listed. Saving the project keeps edits in the project only; exporting writes a new file.	บันทึกการแก้ไขของชั้นข้อมูลลงในตารางในไฟล์ GeoPackage ภายในทรานแซกชันเดียว หากแถวที่คุณเปลี่ยนแปลงหรือลบถูกเปลี่ยนแปลงหรือลบในไฟล์หลังจากโหลดมา จะไม่มีการบันทึกใด ๆ และจะแสดงรายการแถวเหล่านั้น การบันทึกโปรเจกต์จะเก็บการแก้ไขไว้ในโปรเจกต์เท่านั้น ส่วนการส่งออกจะเขียนเป็นไฟล์ใหม่
+Loads the layer's rows again as they are in the file now. Its edits that weren't saved are dropped (Undo brings them back).	โหลดแถวของชั้นข้อมูลอีกครั้งตามที่อยู่ในไฟล์ขณะนี้ การแก้ไขที่ยังไม่บันทึกจะถูกละทิ้ง (เลิกทำ จะนำกลับมาได้)
+Overlay (on top of the map's layers, such as labels, roads or a WMS layer; otherwise a basemap under them)	การซ้อนทับ (วางบนชั้นข้อมูลของแผนที่ เช่น ป้ายชื่อ ถนน หรือชั้นข้อมูล WMS หากไม่เลือกจะเป็นแผนที่ฐานที่อยู่ด้านล่าง)
+{what} must be a number	{what} ต้องเป็นตัวเลข
+Its default: {default}. Its times: {times}	ค่าเริ่มต้น: {default} เวลาที่มี: {times}
+Connected for editing: {db}	เชื่อมต่อเพื่อแก้ไขแล้ว: {db}
+{name} ({lon})	{name} ({lon})
+{value}% cloud	เมฆ {value}%
+{n} files	{n} ไฟล์
+east	ตะวันออก
+north	เหนือ
+{n} errors	{n} ข้อผิดพลาด
+{layer}: {added} added, {modified} changed, {deleted} deleted	{layer}: เพิ่ม {added} เปลี่ยนแปลง {modified} ลบ {deleted}
+{n} edits	{n} การแก้ไข
+{n} found where the map is	พบ {n} รายการในบริเวณแผนที่
+{n} found; the map holds more than one search reads: zoom in for the rest	พบ {n} รายการ แผนที่ครอบคลุมมากกว่าที่การค้นหาหนึ่งครั้งอ่านได้: ซูมเข้าเพื่อดูส่วนที่เหลือ
+{kind} · {res} · {dims} values · {years}	{kind} · {res} · {dims} ค่า · {years}
+The clipboard came after you moved on, so nothing was pasted: paste with {keys}.	คลิปบอร์ดมาถึงหลังจากคุณไปทำอย่างอื่นแล้ว จึงไม่ได้วางสิ่งใด: วางด้วย {keys}
+The browser didn't give RustGIS the clipboard ({why}): paste with {keys}.	เบราว์เซอร์ไม่อนุญาตให้ RustGIS เข้าถึงคลิปบอร์ด ({why}): วางด้วย {keys}
+Fills	สีพื้น
+Add Fill	เพิ่มสีพื้น
+Stack another fill on top	ซ้อนสีพื้นอีกชั้นไว้ด้านบน
+Fills for	สีพื้นสำหรับ
+The layer's fills	สีพื้นของชั้นข้อมูล
+This class is drawn with the layer's fills. Changing them here gives it its own.	คลาสนี้วาดด้วยสีพื้นของชั้นข้อมูล การเปลี่ยนที่นี่จะทำให้คลาสนี้มีสีพื้นของตัวเอง
+One fill, from the symbol. Add fills to stack colours, hatch lines and markers.	สีพื้นหนึ่งชั้นจากสัญลักษณ์ เพิ่มสีพื้นเพื่อซ้อนสี เส้นแรเงา และมาร์กเกอร์
+Draw	วาด
+A colour, hatch lines, markers on a grid, a gradient, or a shapeburst (shaded from the edge inwards)	สีเดียว เส้นแรเงา มาร์กเกอร์บนกริด การไล่สี หรือ shapeburst (ไล่เฉดจากขอบเข้าด้านใน)
+Use each feature's fill color	ใช้สีพื้นของแต่ละฟีเจอร์
+Second color	สีที่สอง
+Straight across, in rings from its first point, or round its first point	ไล่ตรง ไล่เป็นวงจากจุดแรก หรือไล่รอบจุดแรก
+Spread	การกระจาย
+Past its points: its end colors, back and forth, or over again	เลยจุดปลาย: ใช้สีที่ปลาย สะท้อนกลับไปมา หรือวนซ้ำ
+Whole shape	ทั้งรูปทรง
+Shade to the point deepest inside	ไล่เฉดไปยังจุดที่อยู่ลึกที่สุดด้านใน
+Ignore holes	ไม่สนใจรู
+Shade from the outer edge alone	ไล่เฉดจากขอบนอกเท่านั้น
+{label} •	{label} •
+Fill {n}	สีพื้น {n}
+{n} colors between	{n} สีระหว่างกลาง
+{n} addresses couldn't be looked up ({why}); run again later for them	ค้นหาที่อยู่ {n} รายการไม่ได้ ({why}) เรียกใช้อีกครั้งภายหลังสำหรับที่อยู่เหล่านั้น
+16 imported Zarr stores are already queued	มี Zarr store ที่นำเข้า 16 รายการอยู่ในคิวแล้ว
+Zarr URL is required	ต้องระบุ URL ของ Zarr
+Imported Zarr slice exceeds the 128 MiB download limit	ส่วนตัด (slice) ของ Zarr ที่นำเข้าเกินขีดจำกัดการดาวน์โหลด 128 MiB
+{url}: access denied (HTTP 403) to {count} of the slice’s chunks	{url}: ถูกปฏิเสธการเข้าถึง (HTTP 403) ไปยัง {count} chunk ของ slice
+{url}: access denied (HTTP 403)	{url}: ถูกปฏิเสธการเข้าถึง (HTTP 403)
+{url}: {e}	{url}: {e}
+Search fields	ค้นหาฟิลด์
+This layer has no fields.	ชั้นข้อมูลนี้ไม่มีฟิลด์
+No fields match	ไม่มีฟิลด์ที่ตรงกัน
+Background	พื้นหลัง
+A rectangle behind the text.	สี่เหลี่ยมผืนผ้าด้านหลังข้อความ
+Wrap at	ตัดบรรทัดที่
+A line break wherever this occurs, left out (a space puts each word on its own line).	ขึ้นบรรทัดใหม่ทุกตำแหน่งที่พบอักขระนี้ โดยไม่แสดงอักขระนั้น (ช่องว่างจะทำให้แต่ละคำอยู่คนละบรรทัด)
+Wrap length	ความยาวการตัดบรรทัด
+Lines longer than this are broken between their words.	บรรทัดที่ยาวกว่านี้จะถูกตัดระหว่างคำ
+Line alignment	การจัดแนวบรรทัด
+Halo color	สีขอบเรืองแสง
+White behind dark text, dark behind light.	สีขาวหลังข้อความสีเข้ม สีเข้มหลังข้อความสีอ่อน
+Halo width	ความกว้างขอบเรืองแสง
+Thin	บาง
+Repeat	แสดงซ้ำ
+A label every so far along the line.	ป้ายชื่อหนึ่งป้ายทุกระยะที่กำหนดตามแนวเส้น
+every 	ทุก 
+A label along a line isn't moved.	ป้ายชื่อที่วางตามแนวเส้นจะไม่ถูกย้าย
+{name} (not in the layer)	{name} (ไม่มีในชั้นข้อมูล)
+{n} characters	{n} อักขระ
+{name} (not installed)	{name} (ไม่ได้ติดตั้ง)
+{count} more: type part of a name	อีก {count} รายการ: พิมพ์บางส่วนของชื่อ
+Choose Layers	เลือกชั้นข้อมูล
+Reading the file's layers…	กำลังอ่านชั้นข้อมูลของไฟล์…
+Select None	ไม่เลือกเลย
+{n} layers: choose the ones to add.	{n} ชั้นข้อมูล: เลือกชั้นที่จะเพิ่ม
+Add {n}	เพิ่ม {n}
+In the coordinate system's units: metres for UTM.	ในหน่วยของระบบพิกัด: เมตรสำหรับ UTM
+In degrees.	เป็นองศา
+Short labels	ป้ายชื่อแบบย่อ
+The kilometres' last two digits, as topographic maps print them: 43 for 543000.	เลขสองหลักสุดท้ายของกิโลเมตร ตามที่แผนที่ภูมิประเทศพิมพ์: 43 สำหรับ 543000
+The map's, else its UTM zone	ระบบพิกัดของแผนที่ หรือโซน UTM ของแผนที่
+EPSG:25832, WKT or a PROJ string; empty: the map's when projected, else the UTM zone at the frame's centre.	EPSG:25832, WKT หรือสตริง PROJ เว้นว่าง: ใช้ของแผนที่เมื่อเป็นระบบพิกัดแบบฉาย มิฉะนั้นใช้โซน UTM ที่กึ่งกลางกรอบ
+{w} × {h} mm · {zoom}% · drag to move (Alt: no snapping), Shift-drag a map frame to pan it, wheel to zoom	{w} × {h} mm · {zoom}% · ลากเพื่อย้าย (Alt: ไม่สแนป) Shift+ลากกรอบแผนที่เพื่อเลื่อนแผนที่ หมุนล้อเมาส์เพื่อซูม
+no download service	ไม่มีบริการดาวน์โหลด
+this build has no download service	บิลด์นี้ไม่มีบริการดาวน์โหลด
+Shared vertices must be on or off	จุดยอดร่วมต้องเป็นเปิดหรือปิด
+Projects and JSON data (RustGIS, QGIS, GeoLibre)	โปรเจกต์และข้อมูล JSON (RustGIS, QGIS, GeoLibre)
+Give a valid tile archive index.	ระบุดัชนีไฟล์เก็บไทล์ที่ถูกต้อง
+The map has no tile archive read from a file.	แผนที่ไม่มีไฟล์เก็บไทล์ที่อ่านจากไฟล์
+Not a GeoLibre project	ไม่ใช่โปรเจกต์ GeoLibre
+Another dropped file wasn't opened: drop it again once you've answered about the unsaved changes.	ไฟล์อื่นที่วางไว้ไม่ได้เปิด: วางไฟล์อีกครั้งหลังจากตอบเรื่องการเปลี่ยนแปลงที่ยังไม่บันทึกแล้ว
+{name} is not a text file: RustGIS opens GeoJSON, CSV, GeoTIFF and .rgis here	{name} ไม่ใช่ไฟล์ข้อความ: ที่นี่ RustGIS เปิด GeoJSON, CSV, GeoTIFF และ .rgis ได้
+{n} layer address(es) were saved without their keys, tokens or passwords: after RustGIS closes, add those layers again to give them	บันทึกที่อยู่ชั้นข้อมูล {n} รายการโดยไม่มีคีย์ โทเค็น หรือรหัสผ่าน: หลังปิด RustGIS ให้เพิ่มชั้นข้อมูลเหล่านั้นอีกครั้งเพื่อระบุค่าเหล่านี้
+{command} isn't recorded: the downloaded data is kept for this session only, so a task couldn't add it again.	ไม่ได้บันทึก {command}: ข้อมูลที่ดาวน์โหลดเก็บไว้เฉพาะเซสชันนี้ งานจึงเพิ่มข้อมูลนั้นอีกครั้งไม่ได้
+{command} isn't recorded: its parameters may hold a password, key or token (one is named like it, an address carries one, or they nest too deep to check), and a task would keep it.	ไม่ได้บันทึก {command}: พารามิเตอร์อาจมีรหัสผ่าน คีย์ หรือโทเค็น (มีพารามิเตอร์ที่ชื่อคล้ายกัน มีที่อยู่ที่แนบค่าดังกล่าว หรือซ้อนกันลึกเกินกว่าจะตรวจสอบ) และงานจะเก็บค่านั้นไว้
+{command} isn't recorded: its parameters are over 4 MB, too much for a task to keep. Add that data to the project before recording.	ไม่ได้บันทึก {command}: พารามิเตอร์มีขนาดเกิน 4 MB มากเกินกว่าที่งานจะเก็บได้ เพิ่มข้อมูลนั้นลงในโปรเจกต์ก่อนบันทึก
+{command}'s step keeps its key parameter. If that is an access key, delete the step (Edit Steps) before sharing the task.	ขั้นตอนของ {command} เก็บพารามิเตอร์ key ไว้ หากเป็นคีย์การเข้าถึง ให้ลบขั้นตอนนั้น (แก้ไขขั้นตอน) ก่อนแชร์งาน
+ui.mcpRelay: port {port} is not a port number (0 to 65535)	ui.mcpRelay: พอร์ต {port} ไม่ใช่หมายเลขพอร์ต (0 ถึง 65535)
+{url}: downloaded after its project was closed, so it wasn't added	{url}: ดาวน์โหลดเสร็จหลังจากปิดโปรเจกต์แล้ว จึงไม่ได้เพิ่ม
+{n} other dropped files weren't opened: drop them again once you've answered about the unsaved changes.	ไฟล์อื่นที่วางไว้ {n} ไฟล์ไม่ได้เปิด: วางไฟล์เหล่านั้นอีกครั้งหลังจากตอบเรื่องการเปลี่ยนแปลงที่ยังไม่บันทึกแล้ว
+Asking the map service…	กำลังสอบถามบริการแผนที่…
+{layer}: {e}	{layer}: {e}
+{n} of {total}	{n} จาก {total}
+{distance} ft	{distance} ft
+{distance} mi	{distance} mi
+{distance} m	{distance} m
+{area} ft²	{area} ft²
+{area} acres	{area} เอเคอร์
+{area} mi²	{area} mi²
+{tool} made {layer}	{tool} สร้าง {layer}
+{tool} ran	รัน {tool} แล้ว
+{n} nodes need attention (marked !).	{n} โหนดต้องตรวจสอบ (มีเครื่องหมาย !)
+{name} ({n} nodes)	{name} ({n} โหนด)
+{time} · {distance} to go	{time} · เหลืออีก {distance}
+lon	ลองจิจูด
+lat	ละติจูด
+{n} datasets on {portal}	{n} ชุดข้อมูลบน {portal}
+Into the group just above it, as its last item	เข้าไปในกลุ่มที่อยู่ด้านบนถัดไป เป็นรายการสุดท้าย
+Indent	เยื้องเข้า
+Out of the group it is in, just below that group	ออกจากกลุ่มที่อยู่ ไปไว้ใต้กลุ่มนั้นถัดไป
+Outdent	เยื้องออก
+Hide legend and source layers	ซ่อนคำอธิบายสัญลักษณ์และชั้นข้อมูลต้นทาง
+Show legend and source layers	แสดงคำอธิบายสัญลักษณ์และชั้นข้อมูลต้นทาง
+Hide legend	ซ่อนคำอธิบายสัญลักษณ์
+Show legend	แสดงคำอธิบายสัญลักษณ์
+Hide source layers	ซ่อนชั้นข้อมูลต้นทาง
+Show source layers	แสดงชั้นข้อมูลต้นทาง
+Repair Data Source…	ซ่อมแซมแหล่งข้อมูล…
+Out of its group, just below that group	ออกจากกลุ่ม ไปไว้ใต้กลุ่มนั้นถัดไป
+number	ตัวเลข
+Draw new single-band rasters with the grey stretch again.	วาดแรสเตอร์แบนด์เดียวใหม่ด้วยการยืดสีเทาอีกครั้ง
+Character	อักขระ
+Length	ความยาว
+Offset right	เลื่อนไปทางขวา
+Shifts the mark right of the point (left when negative)	เลื่อนเครื่องหมายไปทางขวาของจุด (ไปทางซ้ายเมื่อค่าติดลบ)
+Place	ตำแหน่ง
+Several places	หลายตำแหน่ง
+The distance between two marks along the line	ระยะห่างระหว่างเครื่องหมายสองอันตามแนวเส้น
+0° crosses the line square	0° ตัดขวางเส้นเป็นมุมฉาก
+Turned further, clockwise	หมุนเพิ่ม ตามเข็มนาฬิกา
+With the field	ตามฟิลด์
+Turn the mark by the layer's rotation field, its offset with it	หมุนเครื่องหมายตามฟิลด์การหมุนของชั้นข้อมูล พร้อมระยะเลื่อนของเครื่องหมาย
+With the line	ตามแนวเส้น
+Turn each mark with the line's direction	หมุนเครื่องหมายแต่ละอันตามทิศทางของเส้น
+Turn each point's marker by the angle in a field, in degrees	หมุนมาร์กเกอร์ของแต่ละจุดตามมุมในฟิลด์ หน่วยเป็นองศา
+Counterclockwise	ทวนเข็มนาฬิกา
+The angles run counterclockwise, as in mathematics	มุมวัดทวนเข็มนาฬิกา แบบในคณิตศาสตร์
+Marks	เครื่องหมาย
+Add Mark	เพิ่มเครื่องหมาย
+Stack another marker on top	ซ้อนมาร์กเกอร์อีกอันไว้ด้านบน
+Marks for	เครื่องหมายสำหรับ
+This class is drawn with the layer's marks. Changing them here gives it its own.	คลาสนี้วาดด้วยเครื่องหมายของชั้นข้อมูล การเปลี่ยนที่นี่จะทำให้คลาสนี้มีเครื่องหมายของตนเอง
+One marker, from the symbol. Add marks to stack markers, or to shift or turn them.	มาร์กเกอร์เดียวจากสัญลักษณ์ เพิ่มเครื่องหมายเพื่อซ้อนมาร์กเกอร์ หรือเพื่อเลื่อนหรือหมุนมาร์กเกอร์
+Hash marks	ขีดตัดขวาง
+Markers	มาร์กเกอร์
+A line, or markers or hash marks along it	เส้น หรือมาร์กเกอร์หรือขีดตัดขวางตามแนวเส้น
+Offset down	เลื่อนลง
+Shifts the mark below the point (above when negative)	เลื่อนเครื่องหมายไปใต้จุด (ไปเหนือจุดเมื่อค่าติดลบ)
+{n} more panes	อีก {n} แผง
+{n} selected	เลือกแล้ว {n} รายการ
+{type} · {n} features · {renderer}	{type} · {n} ฟีเจอร์ · {renderer}
+{n} classes	{n} คลาส
+Nothing matches.	ไม่มีรายการที่ตรงกัน
+{n} of {count}	{n} จาก {count}
+{url}: only HTTPS addresses are allowed	{url}: อนุญาตเฉพาะที่อยู่ HTTPS เท่านั้น
+This layer's data is kept in the project or read from a database or web address: there's no file to repair.	ข้อมูลของชั้นข้อมูลนี้เก็บไว้ในโปรเจกต์ หรืออ่านจากฐานข้อมูลหรือที่อยู่เว็บ: ไม่มีไฟล์ให้ซ่อมแซม
+Tile layer not found	ไม่พบชั้นข้อมูลไทล์
+Only a tile archive read from a file (PMTiles or MBTiles) can be repaired.	ซ่อมแซมได้เฉพาะไฟล์เก็บไทล์ที่อ่านจากไฟล์ (PMTiles หรือ MBTiles)
+Repair Data Source	ซ่อมแซมแหล่งข้อมูล
+The web app can't link to files on this computer: add the file again with Add Data.	เว็บแอปลิงก์ไปยังไฟล์ในคอมพิวเตอร์เครื่องนี้ไม่ได้: เพิ่มไฟล์อีกครั้งด้วย เพิ่มข้อมูล
+Saved location	ตำแหน่งที่บันทึกไว้
+Read error	ข้อผิดพลาดในการอ่าน
+Replacement	ไฟล์ทดแทน
+Choose Folder…	เลือกโฟลเดอร์…
+List Datasets	แสดงรายการชุดข้อมูล
+Listing datasets…	กำลังแสดงรายการชุดข้อมูล…
+Repair	ซ่อมแซม
+Repaired {name}	ซ่อมแซม {name} แล้ว
+Ask Which Layers to Add	ถามว่าจะเพิ่มชั้นข้อมูลใด
+When a file holds several layers, choose the ones to add instead of adding them all.	เมื่อไฟล์มีหลายชั้นข้อมูล ให้เลือกชั้นที่จะเพิ่มแทนการเพิ่มทั้งหมด
+Classic	คลาสสิก
+The title over the map, the sources and the reference in boxes under it.	ชื่อเรื่องอยู่เหนือแผนที่ แหล่งที่มาและข้อมูลอ้างอิงอยู่ในกล่องใต้แผนที่
+Banner	แบนเนอร์
+The title and subtitle in a band of colour across the top.	ชื่อเรื่องและชื่อรองอยู่ในแถบสีพาดด้านบน
+Panel	แผง
+The map at the left; the title, locator, legend, sources and reference in a panel at the right.	แผนที่อยู่ทางซ้าย ชื่อเรื่อง ตัวระบุตำแหน่ง คำอธิบายสัญลักษณ์ แหล่งที่มา และข้อมูลอ้างอิงอยู่ในแผงทางขวา
+Editorial	แบบบทความ
+A large serif title; the note, the locator and the legend in a column at the right.	ชื่อเรื่องตัวใหญ่แบบมีเชิง (serif) หมายเหตุ ตัวระบุตำแหน่ง และคำอธิบายสัญลักษณ์อยู่ในคอลัมน์ทางขวา
+Modular	แบบโมดูล
+Cards on a light page: the map, the locator and the legend each in one.	การ์ดบนหน้าสีอ่อน: แผนที่ ตัวระบุตำแหน่ง และคำอธิบายสัญลักษณ์ อยู่ในการ์ดของตัวเอง
+Poster	โปสเตอร์
+The page in colour, the title in light text and the map in a light card.	หน้ากระดาษเป็นสี ชื่อเรื่องเป็นตัวอักษรสีอ่อน และแผนที่อยู่ในการ์ดสีอ่อน
+Autosave	บันทึกอัตโนมัติ
+The class these label groups and the Labeling pane edit.	คลาสที่กลุ่มป้ายชื่อเหล่านี้และแผงการติดป้ายชื่อแก้ไข
+{tool} tool active · Esc to stop	เครื่องมือ {tool} ทำงานอยู่ · Esc เพื่อหยุด
+Every {n} min	ทุก {n} นาที
+empty for AWS; https://… for others	เว้นว่างสำหรับ AWS ใส่ https://… สำหรับบริการอื่น
+{e}: access denied (check the connection's keys, region and the bucket's name)	{e}: ปฏิเสธการเข้าถึง (ตรวจสอบคีย์และภูมิภาคของการเชื่อมต่อ และชื่อบักเก็ต)
+Your changes will be lost if you don't save them.	การเปลี่ยนแปลงจะสูญหายหากไม่บันทึก
+The project changed while this was open: check the changes, then answer again.	โปรเจกต์มีการเปลี่ยนแปลงขณะที่หน้าต่างนี้เปิดอยู่: ตรวจสอบการเปลี่ยนแปลง แล้วตอบอีกครั้ง
+Don't Save	ไม่บันทึก
+Save changes to {name}?	บันทึกการเปลี่ยนแปลงของ {name} หรือไม่
+All features	ฟีเจอร์ทั้งหมด
+layer	ชั้นข้อมูล
+polygon layer	ชั้นข้อมูลรูปหลายเหลี่ยม
+point layer	ชั้นข้อมูลจุด
+raster layer	ชั้นข้อมูลแรสเตอร์
+vector layer	ชั้นข้อมูลเวกเตอร์
+raster layers (names separated by ;)	ชั้นข้อมูลแรสเตอร์ (คั่นชื่อด้วย ;)
+vector layers (names separated by ;)	ชั้นข้อมูลเวกเตอร์ (คั่นชื่อด้วย ;)
+a field of the first layer	ฟิลด์ของชั้นข้อมูลแรก
+a numeric field of the first layer	ฟิลด์ตัวเลขของชั้นข้อมูลแรก
+a field of the first layer holding coordinates	ฟิลด์ของชั้นข้อมูลแรกที่เก็บพิกัด
+text	ข้อความ
+bool	บูลีน
+Table · {n} rows	ตาราง · {n} แถว
+{type} · {n} features · {fields} fields	{type} · {n} ฟีเจอร์ · {fields} ฟิลด์
+{n} layers	{n} ชั้นข้อมูล
+{width} × {height} mm	{width} × {height} mm
+{n} rows	{n} แถว
+{key}: {takes} — {label}	{key}: {takes} — {label}
+{key}: {takes} — {label}, default {default}	{key}: {takes} — {label} ค่าเริ่มต้น {default}
+{layer} (first rows only)	{layer} (เฉพาะแถวแรก ๆ)
+{name}: its request can't carry an area, so the whole layer is asked for	{name}: คำขอระบุพื้นที่ไม่ได้ จึงขอข้อมูลทั้งชั้น
+Search commands	ค้นหาคำสั่ง
+Reset All	รีเซ็ตทั้งหมด
+Saved shortcuts are unreadable or exceed the limit. Changes apply only to this session; Reset All replaces the saved shortcuts.	อ่านแป้นพิมพ์ลัดที่บันทึกไว้ไม่ได้หรือเกินขีดจำกัด การเปลี่ยนแปลงมีผลเฉพาะเซสชันนี้ รีเซ็ตทั้งหมด จะแทนที่แป้นพิมพ์ลัดที่บันทึกไว้
+Too many shortcut changes to save. Changes apply only to this session.	เปลี่ยนแป้นพิมพ์ลัดมากเกินกว่าจะบันทึกได้ การเปลี่ยนแปลงมีผลเฉพาะเซสชันนี้
+Your browser may reserve some shortcuts.	เบราว์เซอร์อาจสงวนแป้นพิมพ์ลัดบางรายการไว้
+While typing, shortcuts without Ctrl/⌘ are paused. First-person navigation keeps Escape, Home and Delete.	ขณะพิมพ์ แป้นพิมพ์ลัดที่ไม่มี Ctrl/⌘ จะหยุดทำงานชั่วคราว การนำทางแบบมุมมองบุคคลที่หนึ่งยังคงใช้ Escape, Home และ Delete
+Copy, Cut and Paste keys cannot be reassigned.	กำหนดปุ่มคัดลอก ตัด และวางใหม่ไม่ได้
+The menu bar keeps that key: choose another.	แถบเมนูใช้ปุ่มนั้นอยู่: เลือกปุ่มอื่น
+Press a key combination to assign it. Escape cancels.	กดชุดปุ่มที่ต้องการกำหนด กด Escape เพื่อยกเลิก
+Assign Escape	กำหนด Escape
+Remove shortcut	นำแป้นพิมพ์ลัดออก
+Add…	เพิ่ม…
+Tab, Enter, Space and arrow key bindings can override keyboard navigation.	การกำหนดปุ่ม Tab, Enter, Space และปุ่มลูกศรอาจทับการนำทางด้วยแป้นพิมพ์
+Shortcut already assigned	แป้นพิมพ์ลัดนี้ถูกกำหนดแล้ว
+Replace	แทนที่
+Reset {key}	รีเซ็ต {key}
+{key} is used by {command}.	{key} ถูกใช้โดย {command} แล้ว
+any	ใดก็ได้
+{n} catalogs and collections	{n} แค็ตตาล็อกและคอลเลกชัน
+{url}: not a STAC item or collection	{url}: ไม่ใช่ไอเทมหรือคอลเลกชัน STAC
+{layers} tiles, {dates} dates: the time slider steps through them	{layers} ไทล์ {dates} วันที่: แถบเวลาจะไล่ไปตามวันที่เหล่านั้น
+picture	รูปภาพ
+{field} ({type}) · click to sort	{field} ({type}) · คลิกเพื่อเรียงลำดับ
+Fallback	ฟอนต์สำรอง
+Where the font isn't installed, the text is drawn in this family	เมื่อไม่ได้ติดตั้งฟอนต์นั้น ข้อความจะแสดงด้วยตระกูลฟอนต์นี้
+This font isn't installed here, so the text is drawn in the serif	ไม่ได้ติดตั้งฟอนต์นี้ที่นี่ ข้อความจึงแสดงด้วยฟอนต์แบบมีเชิง (serif)
+This font isn't installed here, so the text is drawn in the sans-serif	ไม่ได้ติดตั้งฟอนต์นี้ที่นี่ ข้อความจึงแสดงด้วยฟอนต์ไม่มีเชิง (sans-serif)
+No legend at this scale.	ไม่มีคำอธิบายสัญลักษณ์ที่มาตราส่วนนี้
+Loading the legend…	กำลังโหลดคำอธิบายสัญลักษณ์…
+The legend couldn't be loaded.	โหลดคำอธิบายสัญลักษณ์ไม่ได้
+Too many legends are showing at once.	แสดงคำอธิบายสัญลักษณ์พร้อมกันมากเกินไป
+Legend: {name}	คำอธิบายสัญลักษณ์: {name}
+{map} time.gif	{map} time.gif
+{field} ({share}%)	{field} ({share}%)
+{name} (dated tiles)	{name} (ไทล์ตามวันที่)
+{date}: {n} features	{date}: {n} ฟีเจอร์
+Step through the days with the time slider (View › Time), which starts with the layer's	ไล่ดูทีละวันด้วยแถบเวลา (มุมมอง › เวลา) ซึ่งเริ่มจากวันที่ของชั้นข้อมูล
+latest	ล่าสุด
+time	เวลา
+{n} layers in {k} categories	{n} ชั้นข้อมูลใน {k} หมวดหมู่
+Add a Zarr variable first (Home › Add › Add Data › Zarr…).	เพิ่มตัวแปร Zarr ก่อน (หน้าหลัก › เพิ่ม › เพิ่มข้อมูล › Zarr…)
+{n} features in view	{n} ฟีเจอร์ในมุมมอง
+{field}: total {sum}	{field}: รวม {sum}
+In the web app, give the store's web address (https://…)	ในเว็บแอป ให้ระบุที่อยู่เว็บของสโตร์ (https://…)
+{first} … {last}	{first} … {last}
+Find a place by coordinates, name, or address.	ค้นหาสถานที่ตามพิกัด ชื่อ หรือที่อยู่
+By Coordinates…	ตามพิกัด…
+By Place or Address…	ตามสถานที่หรือที่อยู่…
+Add a data file to the map.	เพิ่มไฟล์ข้อมูลลงในแผนที่
+Add Data options	ตัวเลือกการเพิ่มข้อมูล
+Add data from another source or use a data-adding option.	เพิ่มข้อมูลจากแหล่งอื่น หรือใช้ตัวเลือกการเพิ่มข้อมูล
+Edit GeoPackage Table…	แก้ไขตาราง GeoPackage…
+Show or hide the Data Sources pane.	แสดงหรือซ่อนแผงแหล่งข้อมูล
+Data Cubes…	ดาต้าคิวบ์…
+Notes	หมายเหตุ
+Intersect	ซ้อนทับร่วม (Intersect)
+Repair\nSource	ซ่อมแซม\nแหล่งข้อมูล
+Point the selected layer at its file after the file moved or was renamed.	ชี้ชั้นข้อมูลที่เลือกไปยังไฟล์ของตน หลังจากย้ายหรือเปลี่ยนชื่อไฟล์
+Select a feature layer in Layers to label it.	เลือกชั้นข้อมูลฟีเจอร์ในแผงชั้นข้อมูลเพื่อติดป้ายชื่อ
+Save to PostGIS…	บันทึกลง PostGIS…
+Save a PostGIS layer's edits to its table, unless rows changed there since.	บันทึกการแก้ไขของชั้นข้อมูล PostGIS ลงในตาราง เว้นแต่แถวในตารางมีการเปลี่ยนแปลงหลังจากนั้น
+Discard PostGIS Edits…	ละทิ้งการแก้ไข PostGIS…
+Load a PostGIS layer's rows again as they are in the database, dropping its edits.	โหลดแถวของชั้นข้อมูล PostGIS ใหม่ตามที่อยู่ในฐานข้อมูล โดยละทิ้งการแก้ไข
+Save to GeoPackage…	บันทึกลง GeoPackage…
+Save a GeoPackage layer's edits to its table in the file, unless rows changed there since.	บันทึกการแก้ไขของชั้นข้อมูล GeoPackage ลงในตารางในไฟล์ เว้นแต่แถวในตารางมีการเปลี่ยนแปลงหลังจากนั้น
+Discard GeoPackage Edits…	ละทิ้งการแก้ไข GeoPackage…
+Load a GeoPackage layer's rows again as they are in the file, dropping its edits.	โหลดแถวของชั้นข้อมูล GeoPackage ใหม่ตามที่อยู่ในไฟล์ โดยละทิ้งการแก้ไข
+Shared Vertices	จุดยอดร่วม
+Move polygon vertices stored at the same coordinate in this layer, including point-only contacts.	ย้ายจุดยอดของรูปหลายเหลี่ยมที่อยู่ที่พิกัดเดียวกันในชั้นข้อมูลนี้ รวมถึงจุดที่สัมผัสกันเพียงจุดเดียว
+Keyboard\nShortcuts	แป้นพิมพ์\nลัด
+Customize keyboard shortcuts.	กำหนดแป้นพิมพ์ลัดเอง
+Every 5 min	ทุก 5 นาที
+How often RustGIS keeps a copy of unsaved work, to offer it back after a crash.	ความถี่ที่ RustGIS เก็บสำเนางานที่ยังไม่บันทึก เพื่อนำกลับมาให้หลังโปรแกรมขัดข้อง
+Cities	เมือง
+Style keeps no label groups	แท็บสไตล์ไม่มีกลุ่มป้ายชื่อ
+View keeps no label groups	แท็บมุมมองไม่มีกลุ่มป้ายชื่อ
+Countries	ประเทศ
+Big	ใหญ่
+Default is left as it was	ค่าเริ่มต้นยังคงเหมือนเดิม
+Default's step names no class	ขั้นตอนของค่าเริ่มต้นไม่ได้ระบุคลาส
+Panel Box	กล่องแผง
