@@ -16,6 +16,11 @@
   <a href="https://github.com/opengeos/RustGIS"><img alt="Based on RustGIS" src="https://img.shields.io/badge/based%20on-RustGIS-0b1220?style=flat-square"></a>
 </p>
 
+<p align="center">
+  <a href="https://alexrut99.github.io/ARutGIS/?lang=th"><img alt="เปิด ARutGIS บนเว็บ" src="https://img.shields.io/badge/%E0%B9%80%E0%B8%9B%E0%B8%B4%E0%B8%94%E0%B8%9A%E0%B8%99%E0%B9%80%E0%B8%A7%E0%B9%87%E0%B8%9A-ARutGIS-2563eb?style=for-the-badge" height="36"></a>
+  <a href="https://github.com/alexrut99/ARutGIS/releases/latest"><img alt="ดาวน์โหลด ARutGIS" src="https://img.shields.io/badge/%E0%B8%94%E0%B8%B2%E0%B8%A7%E0%B8%99%E0%B9%8C%E0%B9%82%E0%B8%AB%E0%B8%A5%E0%B8%94-ARutGIS-0b1220?style=for-the-badge" height="36"></a>
+</p>
+
 ## ARutGIS และที่มา
 
 **ผู้พัฒนา ARutGIS: อนิรุทธ์ ลดาวดี (Anirut Ladawadee)**
@@ -39,6 +44,7 @@ cite RustGIS ([CITATION.cff](CITATION.cff)).
 - **เมนูภาษาไทย**: แปลข้อความในโปรแกรมทั้งหมดเป็นภาษาไทย (การตั้งค่า › ภาษา › ไทย)
 - **ระบบพิกัดไทย**: WGS 84 / UTM โซน 47N, 48N และ Indian 1975 / UTM โซน 47N, 48N
 - **ชื่อและโลโก้ ARutGIS**
+- **เวอร์ชันเว็บภาษาไทย** ที่ [alexrut99.github.io/ARutGIS](https://alexrut99.github.io/ARutGIS/?lang=th) ไม่ต้องติดตั้ง
 
 ## RustGIS, the project ARutGIS comes from
 

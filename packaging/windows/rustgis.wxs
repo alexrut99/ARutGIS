@@ -18,8 +18,8 @@
 
     <Icon Id="rustgis.ico" SourceFile="$(var.Icon)" />
     <Property Id="ARPPRODUCTICON" Value="rustgis.ico" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/alexrut99/ARustGIS" />
-    <Property Id="ARPHELPLINK" Value="https://github.com/alexrut99/ARustGIS/issues" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/alexrut99/ARutGIS" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/alexrut99/ARutGIS/issues" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="ARutGIS" />

@@ -187,7 +187,7 @@ SPEC
       # Update information for AppImageUpdate and friends: the newest GitHub release's .zsync,
       # which appimagetool makes with its bundled zsyncmake. zsyncmake writes into the current
       # folder, so run it from dist/.
-      repo="${GITHUB_REPOSITORY:-alexrut99/ARustGIS}"
+      repo="${GITHUB_REPOSITORY:-alexrut99/ARutGIS}"
       update="gh-releases-zsync|${repo%%/*}|${repo#*/}|latest|ARutGIS-*-linux-$arch.AppImage.zsync"
       (cd "$dist" && ARCH="$arch" APPIMAGE_EXTRACT_AND_RUN=1 "$t/appimagetool" --no-appstream \
         --runtime-file "$t/runtime" -u "$update" "$a" "$name.AppImage")

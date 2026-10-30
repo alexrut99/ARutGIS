@@ -93,7 +93,7 @@ Section "Install"
   WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "${PUBLISHER}"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" '"$INSTDIR\rustgis.exe",0'
   WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "${UNINST_KEY}" "URLInfoAbout" "https://github.com/alexrut99/ARustGIS"
+  WriteRegStr HKCU "${UNINST_KEY}" "URLInfoAbout" "https://github.com/alexrut99/ARutGIS"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKCU "${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /S'
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1

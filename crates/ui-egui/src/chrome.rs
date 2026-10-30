@@ -1084,7 +1084,7 @@ pub(crate) fn project_links(ui: &mut egui::Ui) {
         ui.label(egui::RichText::new(developer()).strong());
     });
     ui.horizontal(|ui| {
-        ui.add(egui::Hyperlink::from_label_and_url(tl!("GitHub"), "https://github.com/alexrut99/ARustGIS").open_in_new_tab(true));
+        ui.add(egui::Hyperlink::from_label_and_url(tl!("GitHub"), "https://github.com/alexrut99/ARutGIS").open_in_new_tab(true));
         ui.label("·");
         ui.label(egui::RichText::new(tl!("Developed from")).weak());
         ui.add(egui::Hyperlink::from_label_and_url("RustGIS (Qiusheng Wu)", "https://github.com/opengeos/RustGIS").open_in_new_tab(true));

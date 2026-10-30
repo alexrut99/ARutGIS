@@ -7,9 +7,9 @@ use serde_json::Value;
 use crate::{RustGisApp, Slot};
 
 /// The latest release, as JSON naming its tag and page.
-const LATEST: &str = "https://api.github.com/repos/alexrut99/ARustGIS/releases/latest";
+const LATEST: &str = "https://api.github.com/repos/alexrut99/ARutGIS/releases/latest";
 /// Every release, for when the check can't reach GitHub.
-const RELEASES: &str = "https://github.com/alexrut99/ARustGIS/releases";
+const RELEASES: &str = "https://github.com/alexrut99/ARutGIS/releases";
 /// The release JSON is a few kilobytes; anything far larger isn't it.
 const MAX_BYTES: usize = 1024 * 1024;
 

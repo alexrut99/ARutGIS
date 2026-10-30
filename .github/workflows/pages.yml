@@ -1,4 +1,4 @@
-# Publishes the ARutGIS web app to GitHub Pages (https://alexrut99.github.io/ARustGIS/) after every
+# Publishes the ARutGIS web app to GitHub Pages (https://alexrut99.github.io/ARutGIS/) after every
 # update to main, with the Thai faces it serves beside itself. RustGIS's own web app
 # (web.rustgis.app) is published by web-deploy.yml, from opengeos/RustGIS only.
 #
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     name: Build the web app
-    if: github.repository == 'alexrut99/ARustGIS'
+    if: github.repository == 'alexrut99/ARutGIS'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -44,7 +44,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bin" && tar xzf "$RUNNER_TEMP/trunk.tar.gz" -C "$RUNNER_TEMP/bin" trunk
           export PATH="$RUNNER_TEMP/bin:$PATH"
           cd apps/rustgis-web
-          # Relative URLs: the site lives under /ARustGIS/.
+          # Relative URLs: the site lives under /ARutGIS/.
           trunk build --release --public-url ./
 
       - name: Add the service worker
