@@ -10,6 +10,8 @@ which every package ships next to LICENSE. They are generated from `Cargo.lock` 
 
 | File | Author / source | Licence |
 |---|---|---|
+| Noto Sans Thai (`apps/rustgis-web/fonts/NotoSansThai-Regular.ttf`, `NotoSansThai-Bold.ttf`), served with the web app for Thai text | Google ([notofonts/thai](https://github.com/notofonts/thai)), version 2.000 | OFL-1.1 (`apps/rustgis-web/fonts/OFL.txt`) |
+| Web app icons (`apps/rustgis-web/icons/`) | The ARutGIS logo, drawn by `rustgis-cli logo` | Apache-2.0 |
 | ARutGIS logo (`docs/assets/arutgis-logo.svg`, and drawn in code in `crates/render/src/logo.rs`) | Made for ARutGIS | Apache-2.0 |
 | Sample data (`countries`, `countries_chn`, `cities`, `rivers`, `lakes` GeoJSON), embedded at build time from [rustgis-assets](https://github.com/opengeos/rustgis-assets/tree/main/data) | Natural Earth 1:110m, attributes trimmed; `countries_chn` is Natural Earth's China point of view (1:10m, simplified) | Public domain |
 | QGIS screenshot (`qgis-world-atlas.webp` in [rustgis-assets](https://github.com/opengeos/rustgis-assets/tree/main/images)), on the [RustGIS and QGIS](docs/comparison/qgis.md) page | Taken by the RustGIS project: [QGIS](https://qgis.org) 4.2 showing the Natural Earth sample data above | QGIS is GPL-2.0-or-later; the data is public domain |

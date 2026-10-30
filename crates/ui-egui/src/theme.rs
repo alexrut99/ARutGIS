@@ -178,6 +178,10 @@ pub fn install_fonts(
             if let Some(v) = fonts.families.get_mut(fam) {
                 if first {
                     v.insert(0, name.clone());
+                } else if bold_only {
+                    // Ahead of the regular Thai face (installed or downloaded), right after the
+                    // interface's semibold, which draws the Latin letters.
+                    v.insert(1.min(v.len()), name.clone());
                 } else if primary {
                     // Right after the interface face, so its regional glyph shapes win.
                     v.insert(1.min(v.len()), name.clone());

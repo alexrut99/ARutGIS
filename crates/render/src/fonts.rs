@@ -392,6 +392,21 @@ fn covers_thai(bytes: &[u8], index: u32) -> bool {
         .is_ok_and(|f| ['\u{E01}', '\u{E32}', '\u{E35}', '\u{E48}', '\u{E33}'].iter().all(|c| f.glyph_id(*c).0 != 0))
 }
 
+/// Where the web app serves its Thai faces from, beside the app (Noto Sans Thai, SIL Open Font
+/// License): relative, so the app finds them wherever it is hosted.
+pub const THAI_FONT_URL: &str = "fonts/NotoSansThai-Regular.ttf";
+pub const THAI_BOLD_FONT_URL: &str = "fonts/NotoSansThai-Bold.ttf";
+
+/// Thai faces handed over at run time (the web app downloads them; there are no installed fonts
+/// in the browser), regular and bold.
+static PROVIDED_THAI: [OnceLock<(Vec<u8>, u32)>; 2] = [OnceLock::new(), OnceLock::new()];
+
+/// Takes a downloaded Thai face, of `bold`'s weight, for the Thai text the map, its labels and
+/// exports draw: `false` when it draws no Thai, or one is already set.
+pub fn provide_thai_font(bytes: Vec<u8>, bold: bool) -> bool {
+    covers_thai(&bytes, 0) && PROVIDED_THAI[usize::from(bold)].set((bytes, 0)).is_ok()
+}
+
 /// An installed Thai face (its regular, and its bold where the family has one), found once.
 pub struct ThaiFonts {
     pub regular: (Vec<u8>, u32),
@@ -421,10 +436,13 @@ pub fn thai_fonts() -> Option<&'static ThaiFonts> {
 }
 
 /// The Thai face of `bold`'s weight (the regular where the family has no bold), bytes and face
-/// index.
+/// index: an installed one, else one [`provide_thai_font`] was given.
 pub fn thai_font(bold: bool) -> Option<&'static (Vec<u8>, u32)> {
-    let f = thai_fonts()?;
-    Some(if bold { f.bold.as_ref().unwrap_or(&f.regular) } else { &f.regular })
+    if let Some(f) = thai_fonts() {
+        return Some(if bold { f.bold.as_ref().unwrap_or(&f.regular) } else { &f.regular });
+    }
+    let regular = PROVIDED_THAI[0].get();
+    if bold { PROVIDED_THAI[1].get().or(regular) } else { regular }
 }
 
 /// A font file of any face count (a collection too), up to 64 MiB; "" is none.
@@ -489,14 +507,16 @@ pub fn symbol_font() -> Option<&'static (Vec<u8>, u32)> {
     FOUND.get_or_init(|| SYMBOL_CANDIDATES.iter().find_map(|p| read(p).filter(|b| covers_symbols(b, 0)).map(|b| (b, 0)))).as_ref()
 }
 
-/// Where the web app downloads a verified face for `script` from. Bengali and Thai have no
-/// verified hosted asset yet, so they are discovered only among installed desktop fonts.
+/// Where the web app downloads a verified face for `script` from. Bengali has no verified hosted
+/// asset yet, so it is discovered only among installed desktop fonts; Thai is served beside the
+/// web app, so only the browser build has an address for it.
 pub fn script_font_url(script: ScriptFont) -> Option<&'static str> {
     match script {
         ScriptFont::Cjk(region) => Some(cjk_font_url(region)),
         ScriptFont::Arabic => Some("https://assets.rustgis.app/fonts/Vazirmatn-Regular.ttf"),
         // No verified Bengali asset is hosted by RustGIS; don't guess a URL.
-        ScriptFont::Bengali | ScriptFont::Thai => None,
+        ScriptFont::Thai => cfg!(target_arch = "wasm32").then_some(THAI_FONT_URL),
+        ScriptFont::Bengali => None,
     }
 }
 
@@ -507,6 +527,7 @@ mod tests {
         assert!(!super::covers_bengali(epaint_default_fonts::UBUNTU_LIGHT));
         assert!(!super::covers_bengali(b"not a font"));
         assert_eq!(super::script_font_url(super::ScriptFont::Bengali), None);
+        // Thai is served beside the web app: the desktop has no address for it.
         assert_eq!(super::script_font_url(super::ScriptFont::Thai), None);
     }
 
@@ -544,6 +565,13 @@ mod tests {
                 assert!(super::covers_thai(&b, *i), "{r}");
             }
         }
+    }
+
+    /// A downloaded face is taken only when it draws Thai.
+    #[test]
+    fn a_provided_thai_face_must_draw_thai() {
+        assert!(!super::provide_thai_font(epaint_default_fonts::UBUNTU_LIGHT.to_vec(), true));
+        assert!(!super::provide_thai_font(b"not a font".to_vec(), true));
     }
 
     /// A variable Noto Sans Thai is found in a package folder by its name's start, and only when

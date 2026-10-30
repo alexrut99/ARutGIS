@@ -186,13 +186,20 @@ fn cjk_order(c: char) -> [CjkRegion; 3] {
     }
 }
 
-/// An installed Thai face of `bold`'s weight, parsed once; `None` when there is none (or on the
-/// web).
+/// The Thai face of `bold`'s weight (installed, or downloaded by the web app), parsed once;
+/// `None` when there is none.
+///
+/// Not found is not kept: the web app hands its Thai face over once downloaded
+/// ([`crate::fonts::provide_thai_font`]), after the first text may have asked.
 fn thai(bold: bool) -> Option<&'static FontRef<'static>> {
-    static FACES: [OnceLock<Option<FontRef<'static>>>; 2] = [OnceLock::new(), OnceLock::new()];
-    FACES[usize::from(bold)]
-        .get_or_init(|| crate::fonts::thai_font(bold).and_then(|(b, i)| FontRef::try_from_slice_and_index(b, *i).ok()))
-        .as_ref()
+    static FACES: [OnceLock<FontRef<'static>>; 2] = [OnceLock::new(), OnceLock::new()];
+    let slot = &FACES[usize::from(bold)];
+    if let Some(f) = slot.get() {
+        return Some(f);
+    }
+    let (bytes, index) = crate::fonts::thai_font(bold)?;
+    let face = FontRef::try_from_slice_and_index(bytes, *index).ok()?;
+    Some(slot.get_or_init(|| face))
 }
 
 /// Whether `c` is in the Thai block.
@@ -306,18 +313,21 @@ fn shape(text: &str, px: f32, face: &'static FontRef<'static>, sans: Option<&'st
     (out, x)
 }
 
-/// The installed Thai face of `bold`'s weight as the shaper reads it, with its parsed layout
-/// tables, built once.
+/// The Thai face of `bold`'s weight as the shaper reads it, with its parsed layout tables, built
+/// once.
 fn thai_shaper(bold: bool) -> Option<&'static (harfrust::FontRef<'static>, harfrust::ShaperData)> {
-    static SHAPERS: [OnceLock<Option<(harfrust::FontRef<'static>, harfrust::ShaperData)>>; 2] = [OnceLock::new(), OnceLock::new()];
-    SHAPERS[usize::from(bold)]
-        .get_or_init(|| {
-            let (bytes, index) = crate::fonts::thai_font(bold)?;
-            let font = harfrust::FontRef::from_index(bytes, *index).ok()?;
-            let data = harfrust::ShaperData::new(&font);
-            Some((font, data))
-        })
-        .as_ref()
+    static SHAPERS: [OnceLock<(harfrust::FontRef<'static>, harfrust::ShaperData)>; 2] = [OnceLock::new(), OnceLock::new()];
+    let slot = &SHAPERS[usize::from(bold)];
+    if let Some(s) = slot.get() {
+        return Some(s);
+    }
+    // Not found is not kept, as for [`thai`].
+    let (bytes, index) = crate::fonts::thai_font(bold)?;
+    let font = harfrust::FontRef::from_index(bytes, *index).ok()?;
+    Some(slot.get_or_init(|| {
+        let data = harfrust::ShaperData::new(&font);
+        (font, data)
+    }))
 }
 
 /// `run`, Thai text the installed Thai face `t` draws, shaped at `px` as the map view shapes it

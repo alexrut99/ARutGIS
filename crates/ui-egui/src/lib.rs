@@ -1234,6 +1234,24 @@ impl RustGisApp {
         }
     }
 
+    /// In the browser, where no fonts are installed, the Thai faces served beside the app, asked for
+    /// once at start whatever the interface language, so Thai data and labels draw. The regular
+    /// one is the Thai interface's script face too ([`Self::ensure_script_font`] waits for it).
+    fn fetch_thai_fallback(&mut self) {
+        use rustgis_engine::render::fonts::{ScriptFont, THAI_BOLD_FONT_URL, script_font_url, thai_font};
+        let (Some(fetch), Some(url)) = (&self.services.fetch_font, script_font_url(ScriptFont::Thai)) else { return };
+        if thai_font(false).is_some() {
+            return;
+        }
+        // The regular face may already be on its way for a Thai interface.
+        for (name, url) in [(format!("script-{:?}", ScriptFont::Thai), url), ("thai-bold".to_string(), THAI_BOLD_FONT_URL)] {
+            if !self.fonts_requested.contains(&name) {
+                fetch(url);
+                self.fonts_requested.push(name);
+            }
+        }
+    }
+
     /// On the desktop, an installed symbol face as a last-resort fallback, so marks the interface
     /// faces lack (Segoe UI has no "✓") don't draw as boxes. The bytes are borrowed from the font
     /// cache, not copied.
@@ -3798,12 +3816,27 @@ impl RustGisApp {
             None => Vec::new(),
         };
         for (url, bytes) in fonts {
-            use rustgis_engine::render::fonts::{CjkRegion, ScriptFont, script_font_url, valid_font};
+            use rustgis_engine::render::fonts::{
+                CjkRegion, ScriptFont, THAI_BOLD_FONT_URL, provide_thai_font, script_font_url, valid_font,
+            };
             let region = [CjkRegion::SimplifiedChinese, CjkRegion::Japanese, CjkRegion::Korean]
                 .map(ScriptFont::Cjk)
                 .into_iter()
                 .chain([ScriptFont::Arabic, ScriptFont::Bengali, ScriptFont::Thai])
                 .find(|r| script_font_url(*r) == Some(url.as_str()));
+            // The Thai bold face: semibold text only, and the map's bold Thai labels. Without it,
+            // that text draws in the regular face, so a failed download is only logged.
+            if url == THAI_BOLD_FONT_URL {
+                if !bytes.is_empty() && valid_font(&bytes, 0) {
+                    provide_thai_font(bytes.clone(), true);
+                    self.extra_fonts.retain(|(n, _, _)| n != theme::THAI_BOLD);
+                    self.extra_fonts.push((theme::THAI_BOLD.into(), std::sync::Arc::new(egui::FontData::from_owned(bytes)), None));
+                    self.fonts_dirty = true;
+                } else {
+                    log::error!("{url}: no usable font downloaded");
+                }
+                continue;
+            }
             if bytes.is_empty() || !valid_font(&bytes, 0) {
                 // A failed download: say so; picking the language again retries.
                 log::error!("{url}: no usable font downloaded");
@@ -3823,6 +3856,9 @@ impl RustGisApp {
                     self.fonts_failed.push(name);
                 }
                 continue;
+            }
+            if region == Some(ScriptFont::Thai) {
+                provide_thai_font(bytes.clone(), false);
             }
             let name = format!("web-{}", url.rsplit('/').next().unwrap_or("font"));
             self.extra_fonts.retain(|(n, _, _)| *n != name);
@@ -3907,6 +3943,7 @@ impl RustGisApp {
         if self.fonts_frames == 0 {
             self.add_cjk_fallback();
             self.add_thai_fallback();
+            self.fetch_thai_fallback();
             self.add_symbol_fallback();
             self.installed_region = self.current_region();
             theme::install_fonts(ctx, &self.extra_fonts, self.installed_region);

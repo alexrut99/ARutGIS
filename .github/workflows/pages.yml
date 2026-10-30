@@ -1,0 +1,98 @@
+# Publishes the ARutGIS web app to GitHub Pages (https://alexrut99.github.io/ARustGIS/) after every
+# update to main, with the Thai faces it serves beside itself. RustGIS's own web app
+# (web.rustgis.app) is published by web-deploy.yml, from opengeos/RustGIS only.
+#
+# GitHub Pages must be set to deploy from GitHub Actions (Settings › Pages › Source).
+name: Deploy the ARutGIS web app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the web app
+    if: github.repository == 'alexrut99/ARustGIS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # pushes the screenshots to the web-shots branch
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the web app
+        run: |
+          set -euo pipefail
+          # Pinned Trunk release, checksum-verified (as web-deploy.yml).
+          curl -sSfL -o "$RUNNER_TEMP/trunk.tar.gz" https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz
+          echo "f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b  $RUNNER_TEMP/trunk.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin" && tar xzf "$RUNNER_TEMP/trunk.tar.gz" -C "$RUNNER_TEMP/bin" trunk
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          cd apps/rustgis-web
+          # Relative URLs: the site lives under /ARustGIS/.
+          trunk build --release --public-url ./
+
+      - name: Add the service worker
+        run: cargo xtask web-pwa dist/web
+
+      - name: Check the site
+        working-directory: dist/web
+        run: |
+          set -euo pipefail
+          test -f index.html && ls *_bg.wasm >/dev/null
+          test -f fonts/NotoSansThai-Regular.ttf && test -f fonts/NotoSansThai-Bold.ttf && test -f fonts/OFL.txt
+          test -f icons/logo.svg && test -f sw.js && test -f manifest.webmanifest
+          touch .nojekyll
+          echo "Built site: $(du -sh . | cut -f1)"
+
+      - name: Screenshots
+        # A look at the built app in a headless browser, kept on the web-shots branch.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          (cd dist/web && python3 -m http.server 8000 >/dev/null 2>&1 &)
+          npm i --no-save --silent playwright@1.56.1
+          npx --yes playwright@1.56.1 install --with-deps chromium >/dev/null
+          node apps/rustgis-web/bench/shots.mjs http://localhost:8000/ "$RUNNER_TEMP/shots"
+          cd "$RUNNER_TEMP/shots"
+          git init -q -b web-shots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Web app screenshots of ${GITHUB_SHA}"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" web-shots
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/web
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
