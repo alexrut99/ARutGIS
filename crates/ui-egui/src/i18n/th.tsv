@@ -3767,7 +3767,7 @@ Halo width	ความกว้างขอบเรืองแสง
 Thin	บาง
 Repeat	แสดงซ้ำ
 A label every so far along the line.	ป้ายชื่อหนึ่งป้ายทุกระยะที่กำหนดตามแนวเส้น
-every 	ทุก 
+every 	ทุก
 A label along a line isn't moved.	ป้ายชื่อที่วางตามแนวเส้นจะไม่ถูกย้าย
 {name} (not in the layer)	{name} (ไม่มีในชั้นข้อมูล)
 {n} characters	{n} อักขระ
