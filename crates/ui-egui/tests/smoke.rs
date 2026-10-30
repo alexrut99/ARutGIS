@@ -2927,7 +2927,7 @@ fn dialogs_can_be_moved() {
     assert!((after.left_top() - (before.left_top() + (to - from))).length() < 2.0, "{before:?} → {after:?}");
 }
 
-/// "Let your Agents Control RustGIS", in the AI Assistant settings: ticking it starts the relay,
+/// "Let your Agents Control ARutGIS", in the AI Assistant settings: ticking it starts the relay,
 /// lets attached agents use files and the network, shows what an agent needs to connect and is
 /// remembered; unticking it stops the relay.
 #[cfg(not(target_arch = "wasm32"))]
@@ -2963,7 +2963,7 @@ fn letting_agents_control_rustgis_starts_the_relay_and_shows_how_to_connect() {
     // Whether the default port is free decides which path the box takes here: a RustGIS already
     // open on this machine may hold it.
     let free = std::net::TcpListener::bind(("127.0.0.1", rustgis_ui_egui::rustgis_assistant::relay::DEFAULT_PORT)).is_ok();
-    h.get_by_label("Let your Agents Control RustGIS").click();
+    h.get_by_label("Let your Agents Control ARutGIS").click();
     h.step();
     h.step();
     let last = |key: &str| saved.lock().unwrap().iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.clone());
@@ -2985,7 +2985,7 @@ fn letting_agents_control_rustgis_starts_the_relay_and_shows_how_to_connect() {
         })
         .is_some()
     );
-    h.get_by_label("Let your Agents Control RustGIS").click();
+    h.get_by_label("Let your Agents Control ARutGIS").click();
     h.step();
     assert!(h.state().relay.is_none(), "unticking stops the relay");
     assert_eq!(last("agents_control").as_deref(), Some("off"));
