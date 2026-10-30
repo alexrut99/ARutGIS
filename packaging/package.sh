@@ -348,7 +348,7 @@ SPEC
     sed -e "s|@VERSION@|${version%%-*}.0|g" -e "s|@ARCH@|$instarch|g" \
       -e "s|@NAME@|$(xmlval "${MSIX_NAME:-AlexRut.ARutGIS}")|g" \
       -e "s|@PUBLISHER@|$(xmlval "${MSIX_PUBLISHER:-CN=E6AE8172-DC4F-4F79-844B-9D84204BF95A}")|g" \
-      -e "s|@PUBLISHER_DISPLAY_NAME@|$(xmlval "${MSIX_PUBLISHER_DISPLAY_NAME:-ARutGIS}")|g" \
+      -e "s|@PUBLISHER_DISPLAY_NAME@|$(xmlval "${MSIX_PUBLISHER_DISPLAY_NAME:-Anirut Ladawadee}")|g" \
       "$root/packaging/windows/AppxManifest.xml" > "$m/AppxManifest.xml"
     makeappx="$(command -v makeappx.exe || true)"
     if [ -z "$makeappx" ]; then

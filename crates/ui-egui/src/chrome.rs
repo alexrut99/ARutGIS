@@ -1071,9 +1071,18 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
     }
 }
 
-/// ARutGIS's source code, and RustGIS, the project it is developed from, opened in a new tab in
-/// the browser build so the app (and its map) stays open.
+/// The developer of ARutGIS, in Thai when the interface is, and in English otherwise.
+fn developer() -> &'static str {
+    if crate::i18n::current().code() == "th" { "อนิรุทธ์ ลดาวดี" } else { "Anirut Ladawadee" }
+}
+
+/// Who develops ARutGIS, its source code, and RustGIS, the project it is developed from, opened
+/// in a new tab in the browser build so the app (and its map) stays open.
 pub(crate) fn project_links(ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(tl!("Developed by")).weak());
+        ui.label(egui::RichText::new(developer()).strong());
+    });
     ui.horizontal(|ui| {
         ui.add(egui::Hyperlink::from_label_and_url(tl!("GitHub"), "https://github.com/alexrut99/ARustGIS").open_in_new_tab(true));
         ui.label("·");

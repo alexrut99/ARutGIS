@@ -18,11 +18,13 @@
 
 ## ARutGIS และที่มา
 
+**ผู้พัฒนา ARutGIS: อนิรุทธ์ ลดาวดี (Anirut Ladawadee)**
+
 ARutGIS พัฒนาต่อจาก [RustGIS](https://github.com/opengeos/RustGIS) ของ Qiusheng Wu
 ภายใต้สัญญาอนุญาต [Apache-2.0](LICENSE) ซึ่งเป็นสัญญาเดียวกับต้นฉบับ ARutGIS ไม่ได้มีส่วนเกี่ยวข้องและไม่ได้รับการรับรองจากโครงการ RustGIS
 แจกจ่ายให้ใช้ฟรี
 
-ARutGIS is developed from [RustGIS](https://github.com/opengeos/RustGIS) by Qiusheng Wu, under
+ARutGIS is developed by Anirut Ladawadee from [RustGIS](https://github.com/opengeos/RustGIS) by Qiusheng Wu, under
 the same [Apache-2.0](LICENSE) licence. It is not affiliated with or endorsed by the RustGIS
 project. The copyright notices, licences and attributions of RustGIS and the libraries it uses
 are kept in [LICENSE](LICENSE), [ATTRIBUTION.md](ATTRIBUTION.md) and

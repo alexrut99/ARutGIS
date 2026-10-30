@@ -10,7 +10,7 @@ RequestExecutionLevel user
 ManifestDPIAware true
 
 !define APP "ARutGIS"
-!define PUBLISHER "ARutGIS"
+!define PUBLISHER "Anirut Ladawadee"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
 
 Name "${APP}"
@@ -24,7 +24,7 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "FileDescription" "${APP} ${VERSION} setup"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
-VIAddVersionKey "LegalCopyright" "Copyright the ARutGIS and RustGIS contributors. Apache-2.0."
+VIAddVersionKey "LegalCopyright" "Copyright Anirut Ladawadee and the RustGIS contributors. Apache-2.0."
 
 !include "MUI2.nsh"
 !include "WinMessages.nsh"

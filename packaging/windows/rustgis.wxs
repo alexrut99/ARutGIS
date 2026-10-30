@@ -9,7 +9,7 @@
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <!-- The UpgradeCode never changes: a new version replaces the installed one. -->
-  <Package Name="ARutGIS" Manufacturer="ARutGIS" Version="$(var.Version)"
+  <Package Name="ARutGIS" Manufacturer="Anirut Ladawadee" Version="$(var.Version)"
     UpgradeCode="278669A5-450F-4C8D-A1C8-FE40027B38C9" Scope="perMachine" Language="1033">
     <!-- Same-version upgrades too: a pre-release (0.2.0-rc.1) and its release share 0.2.0. -->
     <MajorUpgrade AllowSameVersionUpgrades="yes"
