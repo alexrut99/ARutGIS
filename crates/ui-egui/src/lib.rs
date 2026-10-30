@@ -3991,7 +3991,7 @@ impl RustGisApp {
         if let Some(url) = self.ui.open_url.take() {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
-        let title = format!("{}{} - RustGIS", self.session.project.name, if self.session.dirty() { " •" } else { "" });
+        let title = format!("{}{} - ARutGIS", self.session.project.name, if self.session.dirty() { " •" } else { "" });
         if title != self.sent_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.sent_title = title;
