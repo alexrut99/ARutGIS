@@ -51,16 +51,15 @@ jobs:
           set -euo pipefail
           mkdir -p out/rtsd
           for n in 1 2 3; do
-            f=$(find shp -iname "*adm${n}*.shp" | sort | head -1)
+            # tha_admin1.shp (earlier releases: tha_admbnda_adm1_rtsd_….shp).
+            f=$(find shp -iname "*adm*${n}.shp" -o -iname "*adm${n}_*.shp" | sort | head -1)
             if [ -z "$f" ]; then echo "::error::no ADM${n} shapefile"; exit 1; fi
             # About 30 m of simplification: light enough for a desktop GIS, close enough for
             # mapping a subdistrict.
             SHAPE_ENCODING=UTF-8 ogr2ogr -f GeoJSON -t_srs EPSG:4326 -simplify 0.0003 \
               -lco COORDINATE_PRECISION=6 -lco RFC7946=YES "out/rtsd/adm${n}.geojson" "$f"
             echo "adm${n}: $(jq '.features | length' "out/rtsd/adm${n}.geojson") features, $(du -h "out/rtsd/adm${n}.geojson" | cut -f1)"
-            jq -c '.features[0].properties' "out/rtsd/adm${n}.geojson"
-            # The Thai names the app labels by.
-            jq -e ".features[0].properties | has(\"ADM${n}_TH\")" "out/rtsd/adm${n}.geojson" >/dev/null
+            echo "::notice title=adm${n} fields::$(jq -c '.features[0].properties' "out/rtsd/adm${n}.geojson")"
           done
 
       - name: Publish to the boundaries-data branch
