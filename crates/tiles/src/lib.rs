@@ -38,6 +38,7 @@ pub mod stac;
 pub mod style;
 pub mod symbols;
 pub mod template;
+pub mod thai_boundaries;
 pub mod usgis;
 pub mod vector_export;
 

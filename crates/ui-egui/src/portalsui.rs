@@ -4,6 +4,7 @@
 //! `boundaries.add`, so the layers are added like any command's.
 
 use egui::vec2;
+use rustgis_engine::render::rustgis_tiles::thai_boundaries::{self, Level, Source};
 use rustgis_engine::render::rustgis_tiles::{boundaries, cache, overpass};
 use serde_json::{Value, json};
 
@@ -18,6 +19,8 @@ enum Asked {
     /// A country's level: its description, then its GeoJSON.
     Meta(Value),
     Boundary(Value),
+    /// Thailand's boundaries at a level, from the chosen source.
+    Thai(Value),
 }
 
 /// The dialogs' choices and the request under way.
@@ -33,6 +36,9 @@ pub struct State {
     pub countries_error: Option<String>,
     pub country: String,
     pub level: String,
+    /// Thailand's boundaries: the source and the level.
+    pub thai_source: Source,
+    pub thai_level: Level,
     waiting: Option<(Asked, Answer)>,
     pub error: Option<String>,
     pub info: Option<String>,
@@ -49,6 +55,8 @@ impl Default for State {
             countries_error: None,
             country: String::new(),
             level: "ADM1".into(),
+            thai_source: Source::Dopa,
+            thai_level: Level::Province,
             waiting: None,
             error: None,
             info: None,
@@ -105,6 +113,12 @@ pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
         Asked::Boundary(mut p) => r.and_then(text).and_then(|t| {
             p["text"] = json!(t);
             app.run("boundaries.add", p).map(|_| ())
+        }),
+        Asked::Thai(mut p) => r.and_then(text).and_then(|t| {
+            p["text"] = json!(t);
+            app.run("boundaries.thai", p).map(|v| {
+                app.ui.portals.info = Some(crate::i18n::fmt("Added {n} areas", &[("n", &v["features"].as_u64().unwrap_or(0).to_string())]));
+            })
         }),
     };
     match done {
@@ -182,8 +196,74 @@ pub fn osm(app: &mut RustGisApp, ui: &mut egui::Ui) {
     status(app, ui);
 }
 
-/// Boundaries: a country's administrative areas at a level, from geoBoundaries.
+/// The name of a Thai boundaries source, as the choice lists it.
+fn thai_source_label(s: Source) -> &'static str {
+    match s {
+        Source::Dopa => tl!("Department of Provincial Administration (DOPA)"),
+        Source::Rtsd => tl!("Royal Thai Survey Department (RTSD)"),
+    }
+}
+
+/// The name of a level of Thailand's administration.
+fn thai_level_label(l: Level) -> &'static str {
+    match l {
+        Level::Province => tl!("Provinces"),
+        Level::District => tl!("Districts"),
+        Level::Subdistrict => tl!("Subdistricts"),
+    }
+}
+
+/// Thailand: provinces, districts or subdistricts with their Thai names, from the agency the
+/// user picks.
+fn thai(app: &mut RustGisApp, ui: &mut egui::Ui) {
+    ui.label(egui::RichText::new(tl!("Thailand")).strong());
+    ui.label(
+        egui::RichText::new(tl!(
+            "Provinces, districts and subdistricts with their Thai names, labelled in Thai. For mapping and analysis, not legal boundaries."
+        ))
+        .weak(),
+    );
+    let busy = app.ui.portals.waiting.is_some();
+    egui::Grid::new("thai_boundaries").num_columns(2).spacing(vec2(10.0, 8.0)).show(ui, |ui| {
+        let st = &mut app.ui.portals;
+        let input_label = ui.label(tl!("Source"));
+        egui::ComboBox::from_id_salt("thai_source")
+            .selected_text(thai_source_label(st.thai_source))
+            .width(300.0)
+            .show_ui(ui, |ui| {
+                for s in Source::ALL {
+                    ui.selectable_value(&mut st.thai_source, s, thai_source_label(s)).on_hover_text(s.attribution());
+                }
+            })
+            .response
+            .labelled_by(input_label.id);
+        ui.end_row();
+        let input_label = ui.label(tl!("Level"));
+        egui::ComboBox::from_id_salt("thai_level")
+            .selected_text(thai_level_label(st.thai_level))
+            .width(300.0)
+            .show_ui(ui, |ui| {
+                for l in Level::ALL {
+                    ui.selectable_value(&mut st.thai_level, l, thai_level_label(l));
+                }
+            })
+            .response
+            .labelled_by(input_label.id);
+        ui.end_row();
+    });
+    ui.label(egui::RichText::new(app.ui.portals.thai_source.attribution()).small().weak());
+    if ui.add_enabled(!busy, egui::Button::new(tl!("Add Thai Boundaries"))).clicked() {
+        let (s, l) = (app.ui.portals.thai_source, app.ui.portals.thai_level);
+        app.ui.portals.error = None;
+        app.ui.portals.waiting = Some((Asked::Thai(json!({"source": s.code(), "level": l.code()})), fetch(&thai_boundaries::url(s, l))));
+    }
+    ui.separator();
+}
+
+/// Boundaries: Thailand's from its agencies, and a country's administrative areas at a level, from
+/// geoBoundaries.
 pub fn boundaries(app: &mut RustGisApp, ui: &mut egui::Ui) {
+    thai(app, ui);
     ui.label(egui::RichText::new(tl!("A country's administrative boundaries from geoBoundaries (CC BY 4.0): the country itself (ADM0), its first-level divisions (ADM1, such as states) and finer ones.")).weak());
     let busy = app.ui.portals.waiting.is_some();
     // The country list, asked for once.

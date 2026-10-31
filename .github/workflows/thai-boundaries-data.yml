@@ -1,0 +1,90 @@
+# Converts the Royal Thai Survey Department's administrative boundaries (OCHA HDX's common
+# operational dataset, CC BY-IGO) to simplified GeoJSON for ARutGIS's Thai boundaries, kept on the
+# boundaries-data branch, from which the app reads them (crates/tiles/src/thai_boundaries.rs).
+# Run by hand when HDX publishes a new version.
+name: Thai boundaries data (RTSD)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  convert:
+    name: Download, convert and publish
+    if: github.repository == 'alexrut99/ARutGIS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # pushes the boundaries-data branch
+    steps:
+      - name: Install GDAL
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gdal-bin jq unzip >/dev/null
+
+      - name: Download the shapefiles from HDX
+        run: |
+          set -euo pipefail
+          curl -sSfL --retry 3 -o package.json "https://data.humdata.org/api/3/action/package_show?id=cod-ab-tha"
+          # The zipped shapefiles' resource.
+          url=$(jq -r '[.result.resources[] | select((.format // "" | ascii_downcase | test("shp")) or (.name // "" | ascii_downcase | test("shp")))][0].download_url // empty' package.json)
+          if [ -z "$url" ]; then
+            echo "::error::HDX lists no shapefile for cod-ab-tha"
+            jq -r '.result.resources[] | "\(.format)  \(.name)  \(.download_url)"' package.json
+            exit 1
+          fi
+          echo "Shapefiles: $url"
+          echo "$url" > source-url.txt
+          jq -r '.result.metadata_modified' package.json > source-date.txt
+          curl -sSfL --retry 3 -o shp.zip "$url"
+          mkdir shp && unzip -q shp.zip -d shp
+          # A zip may hold zips per level.
+          find shp -name '*.zip' -exec sh -c 'unzip -q -o "$1" -d "$(dirname "$1")"' _ {} \;
+          find shp -iname '*.shp' | sort
+
+      - name: Convert to simplified GeoJSON
+        run: |
+          set -euo pipefail
+          mkdir -p out/rtsd
+          for n in 1 2 3; do
+            f=$(find shp -iname "*adm${n}*.shp" | sort | head -1)
+            if [ -z "$f" ]; then echo "::error::no ADM${n} shapefile"; exit 1; fi
+            # About 30 m of simplification: light enough for a desktop GIS, close enough for
+            # mapping a subdistrict.
+            SHAPE_ENCODING=UTF-8 ogr2ogr -f GeoJSON -t_srs EPSG:4326 -simplify 0.0003 \
+              -lco COORDINATE_PRECISION=6 -lco RFC7946=YES "out/rtsd/adm${n}.geojson" "$f"
+            echo "adm${n}: $(jq '.features | length' "out/rtsd/adm${n}.geojson") features, $(du -h "out/rtsd/adm${n}.geojson" | cut -f1)"
+            jq -c '.features[0].properties' "out/rtsd/adm${n}.geojson"
+            # The Thai names the app labels by.
+            jq -e ".features[0].properties | has(\"ADM${n}_TH\")" "out/rtsd/adm${n}.geojson" >/dev/null
+          done
+
+      - name: Publish to the boundaries-data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd out
+          cat > README.md <<EOF
+          # Thai administrative boundaries for ARutGIS
+
+          \`rtsd/adm1.geojson\` (provinces), \`adm2\` (districts) and \`adm3\` (subdistricts): the
+          Royal Thai Survey Department's (กรมแผนที่ทหาร) administrative boundaries, published by
+          OCHA ROAP on the Humanitarian Data Exchange as "Thailand - Subnational Administrative
+          Boundaries" (https://data.humdata.org/dataset/cod-ab-tha), licensed CC BY-IGO
+          (https://creativecommons.org/licenses/by/3.0/igo/).
+
+          Converted to GeoJSON (WGS 84) and simplified by about 30 m with GDAL's ogr2ogr by
+          .github/workflows/thai-boundaries-data.yml. For mapping and analysis, not legal
+          boundaries.
+
+          - Source file: $(cat ../source-url.txt)
+          - HDX dataset last modified: $(cat ../source-date.txt)
+          - Converted: $(date -u +%Y-%m-%d)
+          EOF
+          git init -q -b boundaries-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "RTSD boundaries from HDX ($(cat ../source-date.txt))"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" boundaries-data

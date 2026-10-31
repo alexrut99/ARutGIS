@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::{b, ps};
 use crate::render::rustgis_tiles::portal::{self, Portal, Use};
-use crate::render::rustgis_tiles::{boundaries, overpass};
+use crate::render::rustgis_tiles::{boundaries, overpass, thai_boundaries};
 use crate::{CmdResult, CommandSpec as C, Session};
 
 pub fn commands() -> Vec<C> {
@@ -18,6 +18,9 @@ pub fn commands() -> Vec<C> {
             r#"{"country": "ISO 3166 alpha-3 code (CHE, KEN…)", "level"?: "ADM0" (the country, default) … "ADM5", "name"?: text, "text"?: "the boundaries' GeoJSON, when already fetched (the app's background request)"}"#,
         ),
         C::new("boundaries.countries", "List geoBoundaries Countries", "Home › Add › Web Data", boundaries_countries).view(),
+        C::new("boundaries.thai", "Add Thai Administrative Boundaries", "Home › Add › Web Data", boundaries_thai).params(
+            r#"{"source": "dopa" (กรมการปกครอง, through OpenGISData-Thailand, CC BY 4.0) | "rtsd" (กรมแผนที่ทหาร, through OCHA HDX, CC BY-IGO), "level": "province" | "district" | "subdistrict", "name"?: text, "text"?: "the boundaries' GeoJSON, when already fetched (the app's background request)"} → Thailand's provinces, districts or subdistricts with their Thai names, labelled in Thai: for mapping and analysis, not legal boundaries"#,
+        ),
         C::new("portal.search", "Search Open Data", "Home › Add › Web Data", portal_search).view().params(
             r#"{"query"?: text (needed by ckan, socrata, arcgis-hub and huggingface), "portal"?: "ckan" (data.gov's catalogue, the default, or any CKAN site) | "socrata" | "arcgis-hub" | "arcgis-portal" (ArcGIS Online, or the portal at url) | "earthdata-gis" (NASA's) | "openaerialmap" | "usgs-dem" (3DEP elevation models) | "ign-lidar" (IGN's LiDAR HD tiles, France) | "geolens" | "huggingface" (a dataset's files: portal.files) | "ocean-data" | "dynamical" (weather and climate Zarr stores), "url"?: "the portal: a CKAN site (https://open.canada.ca/data), a Socrata site (data.cityofnewyork.us), an ArcGIS Hub site, an ArcGIS portal, a GeoLens server", "org"?: "an ArcGIS organisation's id: its public items only", "type"?: "an ArcGIS portal's kind of item: all (the default), imagery, maps, features or webmaps", "dataset"?: "usgs-dem's elevation model: 1 meter, 1/9 arc-second (about 3 m), 1/3 arc-second (about 10 m, the default), 1 arc-second (about 30 m), Alaska 5 meter", "bbox"?: [west, south, east, north] | "view", "view"?: bool (true: where the map is; openaerialmap, usgs-dem and ign-lidar search where the map is unless given a bbox), "limit"?: 1–50 (20)}"#,
         ),
@@ -109,6 +112,41 @@ fn boundaries_add(s: &mut Session, p: &Value) -> CmdResult {
         s.zoom_to(&e);
     }
     Ok(json!({"layer": id, "features": n}))
+}
+
+fn boundaries_thai(s: &mut Session, p: &Value) -> CmdResult {
+    let source = thai_boundaries::Source::parse(ps(p, "source").ok_or("source is required: dopa or rtsd")?)?;
+    let level = match p.get("level") {
+        Some(Value::Number(n)) => thai_boundaries::Level::parse(&n.to_string())?,
+        _ => thai_boundaries::Level::parse(ps(p, "level").ok_or("level is required: province, district or subdistrict")?)?,
+    };
+    let text = match ps(p, "text") {
+        Some(t) => t.to_string(),
+        None => {
+            String::from_utf8(fetch(&thai_boundaries::url(source, level))?).map_err(|_| "the boundaries aren't UTF-8 text".to_string())?
+        }
+    };
+    let name = ps(p, "name")
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| thai_boundaries::layer_name(source, level));
+    let (ds, _) = rustgis_data::io::read_geojson(&text, &name).map_err(|e| format!("{name}: {e}"))?;
+    let n = ds.features.len();
+    let field = thai_boundaries::name_field(source, level);
+    let labelled = ds.field_index(&field).is_some();
+    let id = super::layer::add_dataset(s, ds);
+    // Labelled by their Thai names, which the search box finds them by too.
+    if labelled {
+        s.run("labels.field", &json!({"layer": id, "field": field}))?;
+        s.run("labels.enable", &json!({"layer": id, "on": true}))?;
+    }
+    if let Some(e) = s.map().layer(id).map(|l| l.extent()) {
+        s.zoom_to(&e);
+    }
+    // Who made it, and what it is for: kept in the notes as the layer arrives.
+    s.notify(format!("{name} · ที่มา: {} · ใช้ทำแผนที่และวิเคราะห์ ไม่ใช่แนวเขตตามกฎหมาย", source.attribution()), false);
+    Ok(json!({"layer": id, "features": n, "source": source.code(), "level": level.code(), "attribution": source.attribution()}))
 }
 
 fn boundaries_countries(_s: &mut Session, _p: &Value) -> CmdResult {
