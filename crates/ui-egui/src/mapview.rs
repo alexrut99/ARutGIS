@@ -2905,8 +2905,20 @@ fn overlays(app: &mut RustGisApp, ui: &mut Ui, p: &egui::Painter, rect: Rect, t:
     // Attribution.
     // The built-in world outline is Natural Earth's, drawn only on the Earth.
     let earth = app.session.map().body().is_earth();
-    let att =
-        earth.then_some("Natural Earth").into_iter().chain(app.map.attribution.iter().map(String::as_str)).collect::<Vec<_>>().join(" | ");
+    // The world's elevation asks for its credit while a terrain is read from it.
+    let terrain = match app.session.map().view.terrain.as_ref().map(|t| &t.source) {
+        Some(rustgis_engine::map::view::TerrainSource::Tiles { url, .. }) => {
+            rustgis_engine::render::rustgis_tiles::elevation::attribution(url)
+        }
+        _ => None,
+    };
+    let att = earth
+        .then_some("Natural Earth")
+        .into_iter()
+        .chain(app.map.attribution.iter().map(String::as_str))
+        .chain(terrain)
+        .collect::<Vec<_>>()
+        .join(" | ");
     let g = p.layout(att, regular(10.5), t.text_dim, (rect.width() - 240.0).max(120.0));
     let r = Rect::from_min_size(pos2(rect.max.x - g.size().x - 14.0, rect.max.y - g.size().y - 6.0), g.size() + vec2(10.0, 4.0));
     p.rect_filled(r, CornerRadius::same(3), t.ribbon.gamma_multiply(0.75));

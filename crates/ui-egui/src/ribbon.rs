@@ -1930,6 +1930,7 @@ fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
         });
     });
     group(ui, "Scene", |ui| {
+        terrain_menu(ui, app);
         col(ui, |ui| {
             small(
                 ui,
@@ -4769,6 +4770,83 @@ fn language_menu(app: &mut RustGisApp, ui: &mut Ui) {
             }
         }
     });
+}
+
+/// View › Scene › 3D Terrain: the world's elevation with one click, the map tilted to show it
+/// (and off the globe, which doesn't tilt), or a DEM layer's; how much it is exaggerated; off.
+fn terrain_menu(ui: &mut Ui, app: &mut RustGisApp) {
+    use rustgis_engine::map::view::TerrainSource;
+    let terrain = app.session.map().view.terrain.clone();
+    let world_url = rustgis_engine::render::rustgis_tiles::elevation::WORLD_TERRAIN_URL;
+    let is_world = matches!(terrain.as_ref().map(|t| &t.source), Some(TerrainSource::Tiles { url, .. }) if url == world_url);
+    // The selected layer, when it is a raster: a DEM to take the heights from.
+    let dem = app.session.active_layer.and_then(|id| app.session.map().layer(id)).filter(|l| l.raster.is_some()).map(|l| l.name.clone());
+    big_menu(
+        ui,
+        app,
+        "relief",
+        "3D Terrain",
+        "Raise the map over the ground's heights and tilt it to see mountains and valleys.",
+        move |ui, app| {
+            // Shows the relief: a terrain is only seen tilted, and the globe doesn't tilt.
+            let show = |app: &mut RustGisApp| {
+                if app.session.map().projection.is_globe() {
+                    let _ = app.run("map.projection", json!({"type": "mercator"}));
+                }
+                if app.session.map().camera.pitch < 20.0 {
+                    let _ = app.run("map.setPitch", json!({"pitch": 60}));
+                }
+            };
+            if ui
+                .radio(is_world, tl!("World Elevation (no data needed)"))
+                .on_hover_text(rustgis_engine::render::rustgis_tiles::elevation::ATTRIBUTION)
+                .clicked()
+            {
+                let _ = app.run("map.terrain", json!({"world": true}));
+                show(app);
+                ui.close();
+            }
+            if let Some(name) = dem.clone() {
+                let on = matches!(terrain.as_ref().map(|t| &t.source), Some(TerrainSource::Layer(n)) if *n == name);
+                if ui.radio(on, format!("{}: {name}", tl!("From the Selected DEM Layer"))).clicked() {
+                    let _ = app.run("map.terrain", json!({"layer": name}));
+                    show(app);
+                    ui.close();
+                }
+            }
+            if ui
+                .button(tl!("Try It: Doi Inthanon"))
+                .on_hover_text(tl!("Fly to Thailand's highest mountain with the world's elevation on."))
+                .clicked()
+            {
+                if !is_world {
+                    let _ = app.run("map.terrain", json!({"world": true, "exaggeration": 1.5}));
+                }
+                if app.session.map().projection.is_globe() {
+                    let _ = app.run("map.projection", json!({"type": "mercator"}));
+                }
+                let _ = app.run("map.goToXY", json!({"lon": 98.4868, "lat": 18.5886, "scale": 150000, "bearing": 35, "pitch": 65}));
+                ui.close();
+            }
+            ui.separator();
+            ui.label(egui::RichText::new(tl!("Exaggeration")).small().weak());
+            let ex = terrain.as_ref().map(|t| t.exaggeration);
+            ui.add_enabled_ui(terrain.is_some(), |ui| {
+                ui.horizontal(|ui| {
+                    for x in [1.0, 1.5, 2.0, 3.0, 5.0] {
+                        if ui.selectable_label(ex == Some(x), format!("{x}×")).clicked() {
+                            let _ = app.run("map.terrain", json!({"exaggeration": x}));
+                        }
+                    }
+                });
+            });
+            ui.separator();
+            if ui.add_enabled(terrain.is_some(), egui::Button::new(tl!("Turn Off Terrain"))).clicked() {
+                let _ = app.run("map.terrain", json!({"off": true}));
+                ui.close();
+            }
+        },
+    );
 }
 
 #[cfg(test)]

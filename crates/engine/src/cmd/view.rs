@@ -49,7 +49,7 @@ pub fn commands() -> Vec<C> {
         })
         .params(r#"{"mode": "none"|"distance", "distance"?: metres from the view's centre}"#),
         C::new("map.terrain", "Terrain", "View › Scene", terrain).params(
-            r#"{"layer"?: a DEM raster layer (heights in metres) | "tiles"?: elevation tile URL with {z}/{x}/{y}, "encoding"?: "terrarium"|"mapbox" (tiles; default terrarium), "exaggeration"?: 0 to 20 (default 1, or the terrain's), "off"?: true}"#,
+            r#"{"world"?: true (the world's elevation, Terrain Tiles on AWS: no data needed) | "layer"?: a DEM raster layer (heights in metres) | "tiles"?: elevation tile URL with {z}/{x}/{y}, "encoding"?: "terrarium"|"mapbox" (tiles; default terrarium), "exaggeration"?: 0 to 20 (default 1, or the terrain's), "off"?: true}"#,
         ),
         C::new("map.displayType", "Display Type", "View › Options", |s, p| {
             let fast = match ps(p, "mode").ok_or("mode is required")? {
@@ -207,7 +207,14 @@ fn terrain(s: &mut Session, p: &Value) -> CmdResult {
         }
         None => None,
     };
+    let world = p.get("world").and_then(Value::as_bool) == Some(true);
     let source = match (ps(p, "layer"), ps(p, "tiles")) {
+        (Some(_), _) | (_, Some(_)) if world => return Err("world is the source: give it without a layer or tiles".into()),
+        // The world's elevation, ready to use (`rustgis_tiles::elevation`).
+        (None, None) if world => Some(TerrainSource::Tiles {
+            url: crate::render::rustgis_tiles::elevation::WORLD_TERRAIN_URL.to_string(),
+            encoding: TerrainEncoding::Terrarium,
+        }),
         (Some(_), Some(_)) => return Err("give a layer or tiles, not both".into()),
         (Some(name), None) => {
             let l = s.map().layer_by_name(name).ok_or_else(|| format!("no layer '{name}'"))?;
@@ -238,7 +245,9 @@ fn terrain(s: &mut Session, p: &Value) -> CmdResult {
         (Some(source), old) => Terrain { source, exaggeration: exaggeration.or(old.map(|t| t.exaggeration)).unwrap_or(1.0) },
         // Only a new exaggeration: the terrain keeps its source.
         (None, Some(old)) => Terrain { exaggeration: exaggeration.unwrap_or(old.exaggeration), ..old },
-        (None, None) => return Err("layer (a DEM raster layer) or tiles (an elevation tile URL) is required".into()),
+        (None, None) => {
+            return Err("world (the world's elevation), layer (a DEM raster layer) or tiles (an elevation tile URL) is required".into());
+        }
     };
     let out = json!({
         "source": match &t.source {

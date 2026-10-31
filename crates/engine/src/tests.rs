@@ -3450,6 +3450,12 @@ fn terrain_is_set_from_a_dem_or_tiles() {
     assert_eq!(back.terrain, s.map().view.terrain);
     s.run("map.terrain", &json!({"off": true})).unwrap();
     assert!(s.map().view.terrain.is_none());
+    // The world's elevation, with no data to find; alone as a source.
+    let v = s.run("map.terrain", &json!({"world": true, "exaggeration": 1.5})).unwrap();
+    assert_eq!(v["source"]["tiles"], crate::render::rustgis_tiles::elevation::WORLD_TERRAIN_URL);
+    assert_eq!(v["source"]["encoding"], "terrarium");
+    assert_eq!(v["exaggeration"], 1.5);
+    assert!(s.run("map.terrain", &json!({"world": true, "tiles": "https://e.com/{z}/{x}/{y}.png"})).is_err());
 }
 
 #[test]

@@ -15,6 +15,7 @@ pub mod cog;
 pub mod cubes;
 pub mod draw;
 pub mod earthdata;
+pub mod elevation;
 pub mod embeddings;
 pub mod failure;
 pub mod geocode;

@@ -4020,3 +4020,11 @@ Subdistricts	ตำบล / แขวง
 Add Thai Boundaries	เพิ่มขอบเขตการปกครองไทย
 Add Thai Administrative Boundaries	เพิ่มขอบเขตการปกครองไทย
 Added {n} areas	เพิ่มแล้ว {n} พื้นที่
+3D Terrain	ภูมิประเทศ 3 มิติ
+Raise the map over the ground's heights and tilt it to see mountains and valleys.	ยกแผนที่ตามความสูงของพื้นดินแล้วเอียงมุมมอง เพื่อดูภูเขาและหุบเขาแบบสามมิติ
+World Elevation (no data needed)	ความสูงทั่วโลก (ไม่ต้องหาข้อมูลเอง)
+From the Selected DEM Layer	จากชั้นข้อมูล DEM ที่เลือก
+Try It: Doi Inthanon	ลองดู: ดอยอินทนนท์
+Fly to Thailand's highest mountain with the world's elevation on.	บินไปยอดดอยที่สูงที่สุดของประเทศไทย พร้อมเปิดภูมิประเทศสามมิติ
+Turn Off Terrain	ปิดภูมิประเทศ
+Exaggeration	ขยายความสูง
