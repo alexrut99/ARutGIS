@@ -25,6 +25,9 @@ app. The codes it lacks (EPSG 9020–20003, `crates/data/src/raster/epsg_gap.rs`
 [terms of use](https://epsg.org/terms-of-use.html)), written as PROJ definitions by PROJ 9.8.
 The Equi7 grids' codes (EPSG 27701–27707, in the same file) are from the dataset's v13.106,
 written as PROJ definitions of its Azimuthal Equidistant method.
+The axis order of those systems (`crates/data/src/raster/epsg_axes.rs`: which are written north
+or latitude first) is from the EPSG Geodetic Parameter Dataset v11.022 (© IOGP, under its terms
+of use), read from the PROJ 9.5.1 database through pyproj 3.7.2.
 The map's ESRI codes (`crates/data/src/raster/esri.rs`) are Esri's projected coordinate systems
 from Esri's [projection-engine-db-doc](https://github.com/Esri/projection-engine-db-doc)
 (Apache-2.0), as imported into the [PROJ](https://proj.org) 9.7.1 database (MIT) and written as
@@ -37,10 +40,11 @@ with the bundled `crs-definitions` Helmert definitions. The OSGB36, Amersfoort a
 reference coordinates use those same transformations.
 
 The GeoLibre tool suite ([geolibre-rust](https://github.com/opengeos/geolibre-rust), MIT, built
-on [whitebox-wasm](https://github.com/opengeos/whitebox-wasm), MIT) is not part of RustGIS: the
-desktop app and command line run its separately downloaded `geolibre` runner, and the web app
-loads its WebAssembly runner (the `geolibre-wasm` npm package, from jsDelivr) when asked. Its
-tool names, descriptions and categories come from the runner's manifests.
+on [whitebox-wasm](https://github.com/opengeos/whitebox-wasm), MIT OR Apache-2.0) is not part of
+RustGIS: the desktop app and command line run its separately downloaded `geolibre` runner, and
+the web app loads its WebAssembly runner (the `geolibre-wasm` npm package, from jsDelivr, which
+carries its own licence and third-party notices) when asked. Its tool names, descriptions and
+categories come from the runner's manifests.
 
 The scientific colour ramps (`crates/map/src/color/scientific.rs`) are sampled from published
 colour maps: Viridis, Plasma, Inferno and Magma by Stéfan van der Walt and Nathaniel Smith (CC0),

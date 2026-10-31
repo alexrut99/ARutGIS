@@ -1693,6 +1693,36 @@ fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, moves: [bool; 2], reord
         })
         .response
         .on_hover_text(tl!("How the layer's colours combine with the tile layers and basemap beneath."));
+        // A layer its service draws on request: one picture of the view, or tiles (#1162).
+        if tile.on_request() {
+            let shown = if tile.single_image {
+                tl!("Single image").to_string()
+            } else if tile.sized_tiles() {
+                crate::i18n::fmt("Tiles of {size} px", &[("size", &tile.tile_size.to_string())])
+            } else {
+                tl!("Tiles").to_string()
+            };
+            ui.menu_button(crate::i18n::fmt("Draw as: {how}", &[("how", &shown)]), |ui| {
+                if ui.radio(tile.single_image, tl!("Single image")).on_hover_text(tl!("One picture of the view: symbols and labels aren't cut at tile edges, and the service is asked once a view. Drawn in tiles on the globe, on a tilted map, or in a projection the service doesn't offer.")).clicked() {
+                    action = Some(("map.setTiles", json!({"index": i, "singleImage": true})));
+                    ui.close();
+                }
+                if tile.sized_tiles() {
+                    for side in [256u32, 512, 1024] {
+                        let label = crate::i18n::fmt("Tiles of {size} px", &[("size", &side.to_string())]);
+                        if ui.radio(!tile.single_image && tile.tile_size == side, label).clicked() {
+                            action = Some(("map.setTiles", json!({"index": i, "singleImage": false, "tileSize": side})));
+                            ui.close();
+                        }
+                    }
+                } else if ui.radio(!tile.single_image, tl!("Tiles")).clicked() {
+                    action = Some(("map.setTiles", json!({"index": i, "singleImage": false})));
+                    ui.close();
+                }
+            })
+            .response
+            .on_hover_text(tl!("Whether the service is asked for one picture of the view or for tiles."));
+        }
         ui.separator();
         if ui.add_enabled(reorder && moves[0], egui::Button::new(tl!("Move up"))).clicked() {
             action = Some(("map.setTiles", json!({"index": i, "move": "up"})));
@@ -3901,7 +3931,7 @@ fn symbology(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         });
         ui.add_space(6.0);
     }
-    if g == GeometryType::Polygon && !l.graphics {
+    if l.has_geometry(GeometryType::Polygon) && !l.graphics {
         if ui.button(tl!("No Fill")).on_hover_text(tl!("Draw only polygon outlines, keeping their colors and widths.")).clicked() {
             let _ = app.run("layer.noFill", Value::Null);
         }
@@ -3991,9 +4021,13 @@ fn symbology(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         ui.add_space(8.0);
         line_strokes_editor(app, ui, &l, t);
     }
-    if g == GeometryType::Polygon && !l.graphics {
+    if l.has_geometry(GeometryType::Polygon) && !l.graphics {
         ui.add_space(8.0);
         crate::fill_editor::fills_editor(app, ui, &l, t);
+    }
+    if !l.graphics {
+        ui.add_space(8.0);
+        symbol_by_editor(app, ui, &l, t);
     }
     ui.add_space(10.0);
     ui.separator();
@@ -4882,6 +4916,110 @@ fn marker_rotation_row(app: &mut RustGisApp, ui: &mut Ui, l: &rustgis_engine::ma
                 .changed()
             {
                 let _ = app.run("layer.markerRotation", json!({"field": r.field, "counterclockwise": ccw}));
+            }
+        }
+    });
+}
+
+/// The By Expression section: the symbol's size, colors, outline width and (on points) angle per
+/// feature, each from an expression (`layer.symbolBy`). An expression applies when its box loses
+/// focus; one that doesn't read shows why as it is typed, and stays in its box unapplied until
+/// it is fixed or Escape drops it.
+fn symbol_by_editor(app: &mut RustGisApp, ui: &mut Ui, l: &rustgis_engine::map::Layer, t: &Tokens) {
+    let g = l.geometry_type();
+    let by = &l.symbol_by;
+    let mut rows: Vec<(&str, &str, &Option<String>)> = Vec::new();
+    match g {
+        GeometryType::Point => rows.extend([
+            ("size", tl!("Size"), &by.size),
+            ("fill", tl!("Fill"), &by.fill),
+            ("stroke", tl!("Outline"), &by.stroke),
+            ("strokeWidth", tl!("Outline width"), &by.stroke_width),
+            ("angle", tl!("Angle"), &by.angle),
+        ]),
+        GeometryType::Polyline => rows.extend([("stroke", tl!("Color"), &by.stroke), ("strokeWidth", tl!("Width"), &by.stroke_width)]),
+        _ => rows.extend([
+            ("fill", tl!("Fill"), &by.fill),
+            ("stroke", tl!("Outline"), &by.stroke),
+            ("strokeWidth", tl!("Outline width"), &by.stroke_width),
+        ]),
+    }
+    // A layer's id is its map's: a draft left on one map's layer isn't another's.
+    let scope = crate::labelpane::layer_key(app, l);
+    egui::Frame::NONE.fill(t.pane_header).corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(egui::RichText::new(tl!("By Expression")).font(semibold(12.5)));
+        ui.label(
+            egui::RichText::new(tl!(
+                "Set per feature from an expression, e.g. \"pop\" / 1e5 or CASE WHEN … END; colors as '#RRGGBB'. Empty: the symbol's own."
+            ))
+            .small()
+            .weak(),
+        );
+        for (key, label, cur) in rows {
+            let cur = cur.clone().unwrap_or_default();
+            let id = egui::Id::unique(("symbol_by", scope, key));
+            let (typing, failed) = (id.with("typing"), id.with("failed"));
+            let focused = ui.memory(|m| m.has_focus(id));
+            // Each kept with the expression it was typed over: one set meanwhile (by undo or a
+            // command) drops it. Typing left over from a box that stopped being drawn while
+            // focused is dropped too.
+            let over = |d: &mut egui::util::IdTypeMap, key: egui::Id| {
+                let v = d.get_temp::<(String, String)>(key);
+                if v.as_ref().is_some_and(|(was, _)| *was != cur) {
+                    d.remove::<(String, String)>(key);
+                }
+                v.filter(|(was, _)| *was == cur).map(|(_, text)| text)
+            };
+            if !focused {
+                ui.data_mut(|d| d.remove::<(String, String)>(typing));
+            }
+            // Text that didn't read, kept until it is changed or dropped.
+            let kept = ui.data_mut(|d| over(d, failed));
+            let mut buf = match focused {
+                true => ui.data_mut(|d| over(d, typing)).or_else(|| kept.clone()).unwrap_or_else(|| cur.clone()),
+                false => kept.clone().unwrap_or_else(|| cur.clone()),
+            };
+            let r = ui
+                .horizontal(|ui| {
+                    let input_label = ui
+                        .allocate_ui_with_layout(egui::vec2(96.0, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.set_min_width(96.0);
+                            ui.label(label)
+                        })
+                        .inner;
+                    ui.add(
+                        egui::TextEdit::singleline(&mut buf)
+                            .id(id)
+                            .hint_text(tl!("None"))
+                            .char_limit(rustgis_engine::data::query::MAX_LEN)
+                            .font(egui::TextStyle::Monospace)
+                            .desired_width(f32::INFINITY),
+                    )
+                    .labelled_by(input_label.id)
+                })
+                .inner;
+            // Checked here, as Calculate Field checks it, only while it differs from what is set.
+            let text = buf.trim();
+            let error =
+                (text != cur.trim() && !text.is_empty()).then(|| rustgis_engine::data::query::parse(text, &l.dataset).err()).flatten();
+            if r.lost_focus() {
+                ui.data_mut(|d| d.remove::<(String, String)>(typing));
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    ui.data_mut(|d| d.remove::<(String, String)>(failed));
+                } else if error.is_some() {
+                    ui.data_mut(|d| d.insert_temp(failed, (cur.clone(), buf.clone())));
+                } else {
+                    ui.data_mut(|d| d.remove::<(String, String)>(failed));
+                    if text != cur.trim() {
+                        let _ = app.run("layer.symbolBy", json!({ key: text }));
+                    }
+                }
+            } else if r.has_focus() {
+                ui.data_mut(|d| d.insert_temp(typing, (cur.clone(), buf.clone())));
+            }
+            if let Some(e) = error.filter(|_| focused || r.lost_focus() || kept.is_some()) {
+                ui.label(egui::RichText::new(crate::i18n::fmt("Invalid: {error}", &[("error", &e)])).small().color(t.red));
             }
         }
     });
@@ -6584,6 +6722,39 @@ mod tests {
         let _ = app.run("map.new", json!({"name": "Second"}));
         follow_layer_filter(&mut app);
         assert_eq!((app.ui.layer_filter.as_str(), app.ui.layer_filter_hid), ("", None));
+    }
+
+    #[test]
+    fn mixed_geojson_exposes_polygon_fill_controls() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = RustGisApp::new(Session::new(rustgis_engine::Project::default()));
+        app.run(
+            "layer.addDataText",
+            json!({"fileName":"mixed.geojson", "text":r#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[[0,0],[1,1]]}},
+            {"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[[1,0],[2,1]]}},
+            {"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}}
+        ]}"#}),
+        )
+        .unwrap();
+        assert_eq!(app.session.map().layer(app.session.active_layer.unwrap()).unwrap().geometry_type(), GeometryType::Polyline);
+        app.ui.open_right(RightPane::Symbology);
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1400.0, 900.0)).with_max_steps(64).build_ui_state(
+            |ui, app: &mut RustGisApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+        h.run_steps(6);
+        h.get_by_label("No Fill").click();
+        h.run_steps(2);
+        let s = &h.state().session;
+        let l = s.map().layer(s.active_layer.unwrap()).unwrap();
+        assert!(l.fill_layers.iter().all(|f| !f.draws(l.symbol(2).fill)));
+        assert!(!l.fill_layers.is_empty());
+        assert!(h.query_by_label("Add Fill").is_some());
     }
 
     fn symbology_retry_harness() -> egui_kittest::Harness<'static, RustGisApp> {

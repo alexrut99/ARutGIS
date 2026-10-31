@@ -43,6 +43,7 @@ pub mod template;
 pub mod thai_boundaries;
 pub mod usgis;
 pub mod vector_export;
+pub mod warp;
 
 pub use draw::{Drawn, Frame, PlacedTiles, Placement, draw, place, place_raster};
 pub use picture::{Pace, Unfinished, pace, paced, unfinished};

@@ -8,6 +8,7 @@ pub mod design;
 pub mod effects;
 pub mod fills;
 pub mod geolibre;
+mod geometry_kinds;
 pub mod globe;
 pub mod graphics;
 pub mod layout;
@@ -21,6 +22,7 @@ pub mod qgis;
 pub mod raster;
 pub mod report;
 pub mod source;
+pub mod symbol_by;
 pub mod symbology;
 pub mod tiles;
 pub mod time;
@@ -165,6 +167,10 @@ pub struct Layer {
     /// field, as QGIS's data-defined symbol angle does.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "symbology::de_marker_rotation")]
     pub marker_rotation: Option<symbology::MarkerRotation>,
+    /// Its symbol's size, colours, outline width and marker angle per feature, each by an
+    /// expression (none set: the renderer's symbol alone); drawn through [`Layer::styler`].
+    #[serde(default, skip_serializing_if = "symbol_by::SymbolBy::is_empty", deserialize_with = "symbol_by::de_symbol_by")]
+    pub symbol_by: symbol_by::SymbolBy,
     /// The scale (1:N) its symbol and label sizes are set for: drawn at another scale they grow
     /// and shrink with the map, as on paper (QGIS's reference scale). `None`: they keep their
     /// size on screen.
@@ -223,6 +229,9 @@ pub struct Layer {
     /// Allocation identities and byte totals, shared with render snapshots without retaining rows.
     #[serde(skip)]
     view_memory: view_memory::Cache,
+    /// Geometry families in the current rows, invalidated by copy-on-write edits and window reads.
+    #[serde(skip)]
+    geometry_kinds: geometry_kinds::Cache,
     /// Bumped whenever geometry changes so caches rebuild.
     #[serde(default)]
     pub geometry_rev: u64,
@@ -368,6 +377,7 @@ impl Layer {
             fill_layers: Vec::new(),
             stroke_levels: false,
             marker_rotation: None,
+            symbol_by: Default::default(),
             reference_scale: None,
             priority: 0,
             design: design::Design::default(),
@@ -386,6 +396,7 @@ impl Layer {
             projected_for: String::new(),
             geometry_rev: 0,
             view_memory: Default::default(),
+            geometry_kinds: Default::default(),
         }
     }
 
@@ -569,6 +580,13 @@ impl Layer {
         r.turn(&self.dataset, row)
     }
 
+    /// Its per-row style for one drawing at the map scale 1:`map_scale` (none: no map, as in an
+    /// export of the features): [`Layer::symbol`] and the rest with [`Layer::symbol_by`]'s
+    /// expressions applied, compiled once here.
+    pub fn styler(&self, map_scale: Option<f64>) -> symbol_by::Styler<'_> {
+        symbol_by::Styler::new(self, map_scale)
+    }
+
     /// The stacked strokes a line feature row is drawn with: its class's own
     /// ([`Renderer::strokes_for`]), else the layer's `line_strokes`; none (the single stroke) for
     /// a graphics layer.
@@ -644,6 +662,13 @@ impl Layer {
 
     pub fn geometry_type(&self) -> GeometryType {
         self.dataset.geometry_type
+    }
+
+    /// The declared family or one present in the loaded features. A mixed layer's dominant
+    /// family does not describe every feature; streamed layers also expose their current window.
+    /// Derived from row allocation identity, so repeated UI checks do not rescan the layer.
+    pub fn has_geometry(&self, kind: GeometryType) -> bool {
+        kind != GeometryType::None && (self.geometry_type() == kind || self.geometry_kinds.contains(&self.dataset.features, kind))
     }
 
     /// Copies of every geometry in a map projection's coordinates (`key` names the projection),
