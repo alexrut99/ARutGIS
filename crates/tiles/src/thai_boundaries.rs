@@ -130,7 +130,8 @@ pub fn name_field(source: Source, level: Level) -> String {
         (Source::Dopa, Level::Province) => "pro_th".into(),
         (Source::Dopa, Level::District) => "amp_th".into(),
         (Source::Dopa, Level::Subdistrict) => "tam_th".into(),
-        (Source::Rtsd, l) => format!("ADM{}_TH", l.adm()),
+        // HDX's current schema: adm1_name (English), adm1_name1 (Thai), adm1_pcode.
+        (Source::Rtsd, l) => format!("adm{}_name1", l.adm()),
     }
 }
 
@@ -151,7 +152,7 @@ mod tests {
         assert!(Level::parse("village").is_err());
         assert!(url(Source::Dopa, Level::Subdistrict).ends_with("/subdistricts.geojson"));
         assert!(url(Source::Rtsd, Level::Province).ends_with("/rtsd/adm1.geojson"));
-        assert_eq!(name_field(Source::Rtsd, Level::District), "ADM2_TH");
+        assert_eq!(name_field(Source::Rtsd, Level::District), "adm2_name1");
         assert_eq!(name_field(Source::Dopa, Level::Province), "pro_th");
         assert_eq!(layer_name(Source::Dopa, Level::Subdistrict), "ตำบล (กรมการปกครอง)");
         for s in Source::ALL {
