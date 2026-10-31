@@ -199,6 +199,8 @@ fn quick_analysis(app: &mut RustGisApp, ui: &mut Ui, c: Coord) {
     }
     resp.on_disabled_hover_text(why);
     ui.separator();
+    crate::flood::menu_rows(app, ui, c);
+    ui.separator();
     if menu_row(ui, "geoprocessing", tl!("Open In Geoprocessing…"), "", true).clicked() {
         run(app, "ui.gp.open", json!({"tool": "buffer"}));
         ui.close();

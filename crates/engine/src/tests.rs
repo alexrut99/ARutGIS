@@ -5567,6 +5567,31 @@ fn analysis_workflows_models_scripts_and_raster_functions() {
     assert_eq!(los["visible"], false);
     let los = s.run("analysis.lineOfSight", &json!({"layer": dem, "from": [10.0205, 45.0395], "to": [10.0055, 45.0395]})).unwrap();
     assert_eq!(los["visible"], true);
+    // A flood from the flat north-west corner, 1 m over the ground: around the hill's foot, not
+    // past the wall; its depth a raster of water only.
+    let fl =
+        s.run("analysis.flood", &json!({"layer": dem, "lon": 10.002, "lat": 45.038, "rise": 1, "radius": 3000, "cells": 300})).unwrap();
+    assert!((fl["level"].as_f64().unwrap() - fl["ground"].as_f64().unwrap() - 1.0).abs() < 0.02, "{fl}");
+    assert!(fl["cells"].as_u64().unwrap() > 100 && fl["areaKm2"].as_f64().unwrap() > 0.0, "{fl}");
+    assert!((fl["areaRai"].as_f64().unwrap() - fl["areaKm2"].as_f64().unwrap() * 625.0).abs() < 1e-6);
+    assert!(fl["maxDepth"].as_f64().unwrap() <= 1.01, "{fl}");
+    let water = s.map().layer(fl["layer"].as_u64().unwrap() as u32).unwrap();
+    assert_eq!(water.name, "Flood +1 m");
+    let depth = water.raster.as_ref().unwrap().data.clone().unwrap();
+    assert_eq!(depth.nodata, Some(-9999.0));
+    assert!(depth.bands[0].stats.max <= 1.01 && depth.bands[0].stats.min >= 0.0);
+    // East of the wall stays dry.
+    let east = rustgis_geom::lonlat_to_merc(rustgis_geom::Coord::new(10.035, 45.038));
+    let (px, py) = depth.transform.to_pixel(east);
+    assert!(depth.value(0, px as i64, py as i64).is_none_or(|v| v == -9999.0), "past the wall");
+    // Higher than the ground everywhere it reaches; rise or level, not both; a DEM that is one.
+    let fl =
+        s.run("analysis.flood", &json!({"layer": dem, "lon": 10.002, "lat": 45.038, "level": 1000, "radius": 1500, "cells": 100})).unwrap();
+    assert!(fl["cells"].as_u64().unwrap() > 1000);
+    assert!(s.run("analysis.flood", &json!({"layer": dem, "lon": 10.002, "lat": 45.038, "level": 100})).is_err(), "below the ground");
+    assert!(s.run("analysis.flood", &json!({"layer": dem, "lon": 10.002, "lat": 45.038, "rise": 1, "level": 300})).is_err());
+    assert!(s.run("analysis.flood", &json!({"layer": "Countries", "lon": 10.002, "lat": 45.038})).is_err());
+    assert!(s.run("analysis.flood", &json!({"layer": dem, "lon": 10.002, "lat": 89.0})).is_err());
     // IDW of city populations, with an environment extent and cell size.
     s.run("gp.env", &json!({"extent": [-10, 35, 30, 60], "cellSize": 0.5})).unwrap();
     let r = s.run("analysis.interpolate", &json!({"layer": "Cities", "field": "pop_max"})).unwrap();

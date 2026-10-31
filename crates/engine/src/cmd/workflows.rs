@@ -55,6 +55,9 @@ pub fn commands() -> Vec<C> {
         ),
         C::new("analysis.viewshed", "Visibility Analysis", "Analyze › Workflows", viewshed)
             .params(r#"{"layer": elevation raster, "lon", "lat", "band"?: 1-based, "height"?: observer metres, "radius"?: metres, "name"?: output}"#),
+        C::new("analysis.flood", "Flood Simulation", "Analyze › Workflows", flood).params(
+            r#"{"lon", "lat": where the water comes in (a river, a canal, the coast), "rise"?: metres it rises over the ground there (default 2) | "level"?: metres above sea level it stands at, "radius"?: metres around the point (default 10000; 200 to 100000), "cells"?: across the area (default 400; 50 to 1000), "layer"?: a DEM raster (default: the map's terrain, else the world's elevation), "name"?: output}"#,
+        ),
         C::new("analysis.lineOfSight", "Line Of Sight", "Analyze › Workflows", line_of_sight).params(
             r#"{"layer": elevation raster, "from": [lon, lat], "to": [lon, lat], "band"?: 1-based, "observerHeight"?: m, "targetHeight"?: m, "name"?: output}"#,
         ),
@@ -612,6 +615,136 @@ fn viewshed(s: &mut Session, p: &Value) -> CmdResult {
     let r = rasterops::derive(&dem, &out_name(p, format!("{}_viewshed", dem.name)), vec![vs])?;
     let v = add_raster(s, r)?;
     Ok(json!({"layer": v["layer"], "visibleCells": seen}))
+}
+
+/// How `analysis.flood` fails while the elevation tiles it needs are on their way (they are
+/// fetched as it asks): run it again in a moment.
+pub const FLOOD_LOADING: &str = "elevation is loading";
+
+/// Where a flood is worked out: its heights' source and its grid, a square of Web Mercator.
+struct FloodArea {
+    source: rustgis_map::view::TerrainSource,
+    bbox: [f64; 4],
+    cells: usize,
+    /// The point the water comes in at, in Web Mercator.
+    m: Coord,
+    /// Half the square's side, in Web Mercator units.
+    half: f64,
+    /// How much Web Mercator stretches the ground at the point (1 / cos latitude).
+    stretch: f64,
+}
+
+fn flood_area(s: &Session, p: &Value) -> Result<FloodArea, String> {
+    use rustgis_map::view::{TerrainEncoding, TerrainSource};
+    let (lon, lat) = (f(p, "lon").ok_or("lon is required")?, f(p, "lat").ok_or("lat is required")?);
+    if !(lon.is_finite() && lat.is_finite() && (-85.0..=85.0).contains(&lat)) {
+        return Err("lon and lat are a point on the map (latitude within ±85°)".into());
+    }
+    let radius = number(p, "radius")?.unwrap_or(10_000.0).clamp(200.0, 100_000.0);
+    let cells = number(p, "cells")?.unwrap_or(400.0).clamp(50.0, 1000.0).round() as usize;
+    let source = match ps(p, "layer") {
+        Some(name) => TerrainSource::Layer(name.to_string()),
+        None => s.map().view.terrain.as_ref().map(|t| t.source.clone()).unwrap_or_else(|| TerrainSource::Tiles {
+            url: crate::render::rustgis_tiles::elevation::WORLD_TERRAIN_URL.to_string(),
+            encoding: TerrainEncoding::Terrarium,
+        }),
+    };
+    // A square of `radius` ground metres each way, in Web Mercator (which stretches the ground
+    // by 1 / cos(latitude)).
+    let m = rustgis_geom::lonlat_to_merc(Coord::new(lon, lat));
+    let stretch = 1.0 / lat.to_radians().cos();
+    let half = radius * stretch;
+    Ok(FloodArea { source, bbox: [m.x - half, m.y - half, m.x + half, m.y + half], cells, m, half, stretch })
+}
+
+/// A number parameter: `None` when not given, an error when not a finite number.
+fn number(p: &Value, k: &str) -> Result<Option<f64>, String> {
+    match p.get(k).filter(|v| !v.is_null()) {
+        Some(_) => f(p, k).filter(|v| v.is_finite()).map(Some).ok_or_else(|| format!("{k} must be a number")),
+        None => Ok(None),
+    }
+}
+
+/// Whether the elevation `analysis.flood` with `p` needs is at hand, without running it:
+/// `Ok(None)` when it is, `Ok(Some((ready, total)))` while elevation tiles are on their way
+/// (fetched as this asks), so the app can wait for them before running it.
+pub fn flood_loading(s: &Session, p: &Value) -> Result<Option<(usize, usize)>, String> {
+    let a = flood_area(s, p)?;
+    Ok(match crate::render::terrain::grid_heights(s.map(), &a.source, a.bbox, a.cells, a.cells)? {
+        crate::render::terrain::GridHeights::Ready(_) => None,
+        crate::render::terrain::GridHeights::Loading { ready, total } => Some((ready, total)),
+    })
+}
+
+/// A water level over the ground, reached from a point (`rustgis_analysis::flood`): a raster of
+/// the water's depth, over the map's terrain, a DEM, or the world's elevation.
+fn flood(s: &mut Session, p: &Value) -> CmdResult {
+    use rustgis_data::raster::{ColorHint, Crs, GeoTransform};
+    let (rise, level) = (number(p, "rise")?, number(p, "level")?);
+    if rise.is_some() && level.is_some() {
+        return Err("give rise (metres over the ground) or level (metres above sea level), not both".into());
+    }
+    let FloodArea { source, bbox, cells, m, half, stretch } = flood_area(s, p)?;
+    let heights = match crate::render::terrain::grid_heights(s.map(), &source, bbox, cells, cells)? {
+        crate::render::terrain::GridHeights::Ready(h) => h,
+        crate::render::terrain::GridHeights::Loading { ready, total } => {
+            return Err(format!("{FLOOD_LOADING} ({ready} of {total} tiles): run it again in a moment"));
+        }
+    };
+    let seed = (cells / 2, cells / 2);
+    let ground = f64::from(heights[seed.1 * cells + seed.0]);
+    if !ground.is_finite() {
+        return Err("no elevation is known at this point".into());
+    }
+    let level = level.unwrap_or(ground + rise.unwrap_or(2.0).clamp(0.0, 1000.0));
+    let fl = rustgis_analysis::flood::flood_fill(&heights, cells, cells, seed, level)
+        .ok_or_else(|| format!("the ground here ({ground:.1} m) stands above the water level ({level:.1} m)"))?;
+    // Ground area: a Web Mercator cell's, shrunk by cos²(latitude) at its row.
+    let cell = 2.0 * half / cells as f64;
+    let (mut area, mut volume) = (0.0, 0.0);
+    for (i, d) in fl.depth.iter().enumerate() {
+        if d.is_finite() {
+            let y = bbox[3] - ((i / cells) as f64 + 0.5) * cell;
+            let a = cell * cell * rustgis_geom::merc_to_lonlat(Coord::new(m.x, y)).y.to_radians().cos().powi(2);
+            area += a;
+            volume += a * f64::from(*d);
+        }
+    }
+    const NODATA: f32 = -9999.0;
+    let band: Vec<f32> = fl.depth.iter().map(|d| if d.is_finite() { *d } else { NODATA }).collect();
+    let gt = GeoTransform { origin_x: bbox[0], origin_y: bbox[3], pixel_width: cell, pixel_height: -cell };
+    let given = rise.map_or_else(|| format!("{level:.1} m"), |r| format!("+{r} m"));
+    let name = out_name(p, format!("Flood {given}"));
+    let r = Raster::new(
+        &name,
+        cells as u32,
+        cells as u32,
+        vec![band],
+        gt,
+        Crs::WebMercator,
+        Some(f64::from(NODATA)),
+        ColorHint::Gray,
+        "Float32",
+    )
+    .map_err(|e| e.to_string())?;
+    let v = add_raster(s, r)?;
+    let layer = s.map().layer(v["layer"].as_u64().unwrap_or_default() as u32).map(|l| l.name.clone()).unwrap_or(name);
+    // Deeper water darker, the ground showing through.
+    s.run("raster.symbology", &json!({"layer": layer, "type": "stretch", "ramp": "Blues"}))?;
+    s.run("layer.transparency", &json!({"layer": layer, "value": 25}))?;
+    Ok(json!({
+        "layer": v["layer"],
+        "name": layer,
+        "ground": (ground * 100.0).round() / 100.0,
+        "level": (level * 100.0).round() / 100.0,
+        "cells": fl.cells,
+        "areaKm2": area / 1e6,
+        "areaRai": area / 1600.0,
+        "maxDepth": fl.max_depth,
+        "volumeM3": volume,
+        "cellSize": cell / stretch,
+        "reachesEdge": fl.reaches_edge,
+    }))
 }
 
 fn line_of_sight(s: &mut Session, p: &Value) -> CmdResult {

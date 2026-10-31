@@ -120,6 +120,82 @@ impl Ground {
     }
 }
 
+/// The heights an analysis reads from a terrain over a grid (`grid_heights`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum GridHeights {
+    /// Metres at each cell's centre, row by row from the top; NaN where nothing is known.
+    Ready(Vec<f32>),
+    /// Elevation tiles still on their way (`ready` of `total` read): ask again soon.
+    Loading { ready: usize, total: usize },
+}
+
+/// Most elevation tiles an analysis reads at once.
+const MAX_GRID_TILES: usize = 64;
+
+/// The heights (metres, not exaggerated) of `source` at the centres of a `cols` × `rows` grid
+/// over the Web Mercator box `[min_x, min_y, max_x, max_y]`, for an analysis. A DEM layer of
+/// `map` is read at once; elevation tiles at the zoom whose pixels are about a cell, every one of
+/// them read before any is used (no coarser stand-ins), fetched here while they aren't. Errors:
+/// no such DEM layer, or a grid that would need too many tiles.
+pub fn grid_heights(map: &Map, source: &TerrainSource, bbox: [f64; 4], cols: usize, rows: usize) -> Result<GridHeights, String> {
+    let [x0, y0, x1, y1] = bbox;
+    if cols == 0 || rows == 0 || !(x1 > x0 && y1 > y0) {
+        return Err("the grid is empty".into());
+    }
+    let (cw, ch) = ((x1 - x0) / cols as f64, (y1 - y0) / rows as f64);
+    let centre = |i: usize| Coord::new(x0 + (i % cols) as f64 * cw + cw / 2.0, y1 - (i / cols) as f64 * ch - ch / 2.0);
+    let n = cols * rows;
+    match source {
+        TerrainSource::Layer(name) => {
+            let raster = map
+                .layer_by_name(name)
+                .and_then(|l| l.raster.as_ref())
+                .and_then(|r| r.data.clone())
+                .ok_or_else(|| format!("'{name}' isn't a raster layer in the map (a DEM of heights in metres)"))?;
+            let wrap = crate::raster::full_turn_width(&raster);
+            Ok(GridHeights::Ready((0..n).map(|i| raster_height(&raster, centre(i), wrap).map_or(f32::NAN, |h| h as f32)).collect()))
+        }
+        TerrainSource::Tiles { url, encoding } => {
+            let world = 2.0 * std::f64::consts::PI * MERCATOR_R;
+            let z = (world / (256.0 * cw.min(ch).max(1e-9))).log2().ceil();
+            let zoom = if z.is_finite() { z.clamp(0.0, f64::from(MAX_TILE_ZOOM)) as u8 } else { 0 };
+            let (Some((a, _, _)), Some((b, _, _))) = (tile_at(Coord::new(x0, y1), zoom), tile_at(Coord::new(x1 - 1e-6, y0 + 1e-6), zoom))
+            else {
+                return Err("the grid is off the map".into());
+            };
+            let ids: Vec<TileId> = (a.y..=b.y).flat_map(|y| (a.x..=b.x).map(move |x| TileId { z: zoom, x, y })).collect();
+            if ids.len() > MAX_GRID_TILES {
+                return Err(format!("the area needs {} elevation tiles (at most {MAX_GRID_TILES}): make it smaller", ids.len()));
+            }
+            let mut tiles: HashMap<TileId, Option<Arc<Payload>>> = HashMap::new();
+            let mut waiting = 0;
+            for id in &ids {
+                match cache::get(&template::expand(url, *id, 256, false, &[]), Want::Image) {
+                    State::Ready(p) => {
+                        tiles.insert(*id, Some(p));
+                    }
+                    State::Pending => waiting += 1,
+                    // A tile that can't be read leaves its cells unknown.
+                    State::Failed(_) => {
+                        tiles.insert(*id, None);
+                    }
+                }
+            }
+            if waiting > 0 {
+                return Ok(GridHeights::Loading { ready: ids.len() - waiting, total: ids.len() });
+            }
+            let at = |m: Coord| -> Option<f64> {
+                let (id, fx, fy) = tile_at(m, zoom)?;
+                match tiles.get(&id)?.as_deref()? {
+                    Payload::Image(pm) => pixel_height(pm, *encoding, fx, fy),
+                    _ => None,
+                }
+            };
+            Ok(GridHeights::Ready((0..n).map(|i| at(centre(i)).map_or(f32::NAN, |h| h as f32)).collect()))
+        }
+    }
+}
+
 /// A DEM's height at a Web Mercator point, read bilinearly from its first band; nodata and
 /// points off it give `None`.
 fn raster_height(r: &Raster, m: Coord, wrap_width: Option<i64>) -> Option<f64> {

@@ -12,6 +12,7 @@
 
 pub mod convert;
 pub mod dggs;
+pub mod flood;
 pub mod geodesic;
 pub mod georef;
 mod join;

@@ -35,6 +35,7 @@ mod embeddingsui;
 mod failureui;
 mod fieldmenu;
 mod fill_editor;
+mod flood;
 mod geocodeui;
 mod geolibreui;
 mod geometrycalc;
@@ -675,6 +676,8 @@ pub struct UiState {
     pub connection_tree: connectiontree::State,
     /// OpenStreetMap and Boundaries: their choices and the request under way.
     pub portals: portalsui::State,
+    /// A flood asked for from the map, waiting for its elevation (`flood::poll`).
+    pub flood: Option<flood::Job>,
     /// Overture Maps and Source Cooperative: choices, results and the request under way.
     pub catalogs: catalogsui::State,
     /// Search Open Data: the portal, the search under way and the datasets found.
@@ -826,6 +829,7 @@ impl Default for UiState {
             s3_chooser: Default::default(),
             connection_tree: Default::default(),
             portals: Default::default(),
+            flood: None,
             catalogs: Default::default(),
             opendata: Default::default(),
             embeddings: Default::default(),
@@ -3793,6 +3797,7 @@ impl RustGisApp {
         connectionui::poll(self, ctx);
         connectiontree::poll(self, ctx);
         portalsui::poll(self, ctx);
+        flood::poll(self, ctx);
         catalogsui::poll(self, ctx);
         opendataui::poll(self, ctx);
         embeddingsui::poll(self, ctx);
@@ -4158,6 +4163,8 @@ mod record_tests {
         const SOMETHING_ELSE: &[&str] = &[
             // The DEM a terrain takes its heights from.
             "map.terrain",
+            // The DEM a flood stands on.
+            "analysis.flood",
             "service.refresh",
             "service.group",
             "layer.addData",

@@ -4028,3 +4028,14 @@ Try It: Doi Inthanon	ลองดู: ดอยอินทนนท์
 Fly to Thailand's highest mountain with the world's elevation on.	บินไปยอดดอยที่สูงที่สุดของประเทศไทย พร้อมเปิดภูมิประเทศสามมิติ
 Turn Off Terrain	ปิดภูมิประเทศ
 Exaggeration	ขยายความสูง
+Flood Simulation	จำลองน้ำท่วม
+Centre the map on a river or canal, then pick how high the water rises over the ground there. Or right-click the place › Quick Analysis › Flood From Here.	เลื่อนแผนที่ให้กึ่งกลางอยู่บนแม่น้ำหรือคลอง แล้วเลือกว่าน้ำจะสูงขึ้นกี่เมตรจากพื้นดินตรงนั้น หรือคลิกขวาที่จุดนั้น › การวิเคราะห์ด่วน › น้ำท่วมจากจุดนี้
+Flood From Here	น้ำท่วมจากจุดนี้
+Water over the ground here (a river, a canal):	ระดับน้ำสูงจากพื้นดินตรงนี้ (แม่น้ำ คลอง):
++{rise} m	+{rise} ม.
+Flood {rise}	น้ำท่วม {rise}
+Flood Simulation: reading the ground's elevation…	จำลองน้ำท่วม: กำลังอ่านข้อมูลความสูงของพื้นดิน…
+The ground's elevation couldn't be read in time: check the internet connection and try again.	อ่านข้อมูลความสูงของพื้นดินไม่ทันเวลา ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองอีกครั้ง
+Flood Simulation: {error}	จำลองน้ำท่วม: {error}
+{name}: water covers {area} km² ({rai} rai), up to {depth} m deep; it stands at {level} m above sea level, {ground} m where it comes in.	{name}: น้ำท่วม {area} ตร.กม. ({rai} ไร่) ลึกสุด {depth} ม. ระดับน้ำ {level} ม. จากระดับทะเล (พื้นดินตรงจุดเริ่ม {ground} ม.)
+The water reaches the edge of the area worked out: zoom out and run it again to see further.	น้ำท่วมไปถึงขอบพื้นที่ที่คำนวณ ซูมออกแล้วลองใหม่เพื่อดูให้ไกลขึ้น
