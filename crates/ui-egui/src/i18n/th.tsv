@@ -4067,3 +4067,5 @@ The token expired and was forgotten. Paste a new one.	โทเค็นหม�
 Tiles	ไทล์
 Whether the service is asked for one picture of the view or for tiles.	เลือกว่าจะขอจากบริการเป็นภาพเดียวทั้งมุมมอง หรือเป็นไทล์
 e.g.  pop_est / 1000000   or   upper(name) || ' ' || round(area, 1)	เช่น  pop_est / 1000000   หรือ   upper(name) || ' ' || round(area, 1)
+Labels outside	ป้ายกำกับนอกกรอบ
+Past the frame's edges, as ArcGIS and topographic maps print them; off, just inside the frame.	วางนอกขอบกรอบแผนที่ แบบที่ ArcGIS และแผนที่ภูมิประเทศใช้ ถ้าปิดจะวางชิดด้านในกรอบ

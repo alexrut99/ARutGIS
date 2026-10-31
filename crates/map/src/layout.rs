@@ -117,6 +117,10 @@ pub struct Grid {
     /// digits (`43` for 543,000 m); off, the whole value.
     #[serde(default, skip_serializing_if = "is_false")]
     pub short: bool,
+    /// The labels outside the frame, past its edges, as ArcGIS and topographic maps print them;
+    /// off, just inside it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub outside: bool,
 }
 
 /// What a grid's lines are.
@@ -189,6 +193,7 @@ impl Default for Grid {
             kind: GridKind::Graticule,
             crs: None,
             short: false,
+            outside: false,
         }
     }
 }

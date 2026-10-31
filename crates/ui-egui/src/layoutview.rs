@@ -1302,6 +1302,17 @@ fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u
         if !g.labels {
             return;
         }
+        let input_label = ui.label(tl!("Labels outside"));
+        let mut outside = g.outside;
+        if ui
+            .checkbox(&mut outside, "")
+            .labelled_by(input_label.id)
+            .on_hover_text(tl!("Past the frame's edges, as ArcGIS and topographic maps print them; off, just inside the frame."))
+            .changed()
+        {
+            set(app, json!({"outside": outside}));
+        }
+        ui.end_row();
         if measured {
             let input_label = ui.label(tl!("Short labels"));
             let mut short = g.short;

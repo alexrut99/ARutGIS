@@ -71,10 +71,15 @@ pub(crate) fn page_geometry(layout: &Layout, dpi: f64) -> (u32, u32, f64) {
 pub(crate) fn render_element(layout: &Layout, id: u32, maps: &mut [Map], dpi: f64, info: &PageInfo) -> Option<Option<(Pixmap, [f64; 4])>> {
     let e = layout.element(id)?;
     let (w, h, k) = page_geometry(layout, dpi);
-    let x0 = (e.x * k).floor().clamp(0.0, f64::from(w));
-    let y0 = (e.y * k).floor().clamp(0.0, f64::from(h));
-    let x1 = ((e.x + e.w) * k).ceil().clamp(0.0, f64::from(w));
-    let y1 = ((e.y + e.h) * k).ceil().clamp(0.0, f64::from(h));
+    // A frame's grid labelled outside it reaches past its edges.
+    let m = match &e.kind {
+        ElementKind::MapFrame { grid: Some(g), .. } if g.outside && g.labels => OUTSIDE_LABEL_MM,
+        _ => 0.0,
+    };
+    let x0 = ((e.x - m) * k).floor().clamp(0.0, f64::from(w));
+    let y0 = ((e.y - m) * k).floor().clamp(0.0, f64::from(h));
+    let x1 = ((e.x + e.w + m) * k).ceil().clamp(0.0, f64::from(w));
+    let y1 = ((e.y + e.h + m) * k).ceil().clamp(0.0, f64::from(h));
     let Some(bounds) = tiny_skia::IntRect::from_xywh(x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32) else {
         return Some(None);
     };
@@ -149,9 +154,10 @@ fn draw_page(
                     // Preserve upstream's best-effort page export for ordinary maps.
                     continue;
                 };
-                if let Some(g) = grid {
-                    draw_grid(&mut frame_pm, map, &view, g, layout.decimal_comma);
-                }
+                let outside = match grid {
+                    Some(g) => draw_grid(&mut frame_pm, map, &view, g, layout.decimal_comma),
+                    None => Vec::new(),
+                };
                 if let Some(other) = extent_of.and_then(frame)
                     && let Some(om) = maps.get(other.1)
                 {
@@ -191,6 +197,10 @@ fn draw_page(
                         Transform::identity(),
                         None,
                     );
+                }
+                if !outside.is_empty() {
+                    let vertical = grid.as_ref().is_some_and(|g| g.label_orientation == Orientation::Vertical);
+                    outside_labels(&mut pm, outside, (x0, y0, ew.max(1.0), eh.max(1.0)), up, ppp as f32, vertical);
                 }
             }
             ElementKind::NorthArrow { frame: f, style, fill, outline } => {
@@ -690,7 +700,10 @@ fn nice_step(span: f64, smallest: f64) -> f64 {
 /// A grid over a frame: lines across it, ticks along its edges or both, labelled at the edges the
 /// grid names. A graticule's lines are latitudes and longitudes; a measured grid's are eastings and
 /// northings in its coordinate system, bent through it onto the map.
-fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) {
+/// Draws `g` over a frame's picture `pm`; its labels too, unless they go outside the frame
+/// (`Grid::outside`): those are returned, by edge, place along it (pixels of `pm`) and text, for
+/// the page to draw past the frame's edges ([`outside_labels`]).
+fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) -> Vec<(Edge, f32, String)> {
     let ppp = view.pixels_per_point as f32;
     let (w, h) = (view.width, view.height);
     // The frame's edges in longitude/latitude: its corners and points along each side.
@@ -705,7 +718,7 @@ fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) {
         ext.expand(*c);
     }
     if ext.is_empty() {
-        return;
+        return Vec::new();
     }
     // Each line: its points in longitude/latitude, its label, and whether it runs north–south
     // (labelled along the top and bottom first).
@@ -724,7 +737,7 @@ fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) {
         }
         GridKind::Measured => {
             let center = map.to_lonlat(view.camera.to_map(w / 2.0, h / 2.0, w, h)).unwrap_or_else(|| ext.center());
-            let Some(tr) = measured_crs(g, map, center).and_then(|c| c.transformer().ok()) else { return };
+            let Some(tr) = measured_crs(g, map, center).and_then(|c| c.transformer().ok()) else { return Vec::new() };
             measured_lines(g, &tr, &lonlats, comma, &mut lines);
         }
     }
@@ -790,7 +803,11 @@ fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) {
         Edge::Left | Edge::Right if !vertical => label_px,
         _ => text::measure(s, label_px / 1.33, false),
     };
-    for (edge, at, s) in kept_labels(labels, (pw, ph), along, label_px, ppp) {
+    let kept = kept_labels(labels, (pw, ph), along, label_px, ppp);
+    if g.outside {
+        return kept;
+    }
+    for (edge, at, s) in kept {
         let tw = text::measure(&s, label_px / 1.33, false);
         match edge {
             Edge::Top => text::text_at(pm, &s, at, inset + label_px * 0.4, label_px, label_color, false, text::Align::Center, true),
@@ -799,6 +816,35 @@ fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) {
             Edge::Right if vertical => rotated_text(pm, &s, pw - inset - label_px * 0.4, at, label_px, label_color),
             Edge::Left => text::text_at(pm, &s, inset, at, label_px, label_color, false, text::Align::Left, true),
             Edge::Right => text::text_at(pm, &s, pw - inset - tw, at, label_px, label_color, false, text::Align::Left, true),
+        }
+    }
+    Vec::new()
+}
+
+/// How far (mm) a grid's outside labels reach past its frame's edges.
+pub const OUTSIDE_LABEL_MM: f64 = 6.0;
+
+/// A grid's labels past its frame's edges (`Grid::outside`), on the page `pm`: `labels` from
+/// [`draw_grid`] in pixels of the frame's picture, which is `up` page pixels each and placed at
+/// (`x0`, `y0`), `w` × `h` page pixels. The left and right ones read upward when the grid's
+/// labels run along their edge.
+#[allow(clippy::too_many_arguments)]
+fn outside_labels(pm: &mut Pixmap, labels: Vec<(Edge, f32, String)>, (x0, y0, w, h): (f32, f32, f32, f32), up: f32, ppp: f32, vertical: bool) {
+    let px = 8.0 * 1.33 * ppp;
+    let gap = 1.5 * PT_PER_MM as f32 * ppp;
+    let color = Rgba::rgb(0x20, 0x20, 0x20);
+    for (edge, at, s) in labels {
+        let at = at * up;
+        match edge {
+            Edge::Top => text::text_at(pm, &s, x0 + at, y0 - gap - px * 0.45, px, color, false, text::Align::Center, false),
+            Edge::Bottom => text::text_at(pm, &s, x0 + at, y0 + h + gap + px * 0.45, px, color, false, text::Align::Center, false),
+            Edge::Left if vertical => rotated_text(pm, &s, x0 - gap - px * 0.45, y0 + at, px, color),
+            Edge::Right if vertical => rotated_text(pm, &s, x0 + w + gap + px * 0.45, y0 + at, px, color),
+            Edge::Left => {
+                let tw = text::measure(&s, px / 1.33, false);
+                text::text_at(pm, &s, x0 - gap - tw, y0 + at, px, color, false, text::Align::Left, false)
+            }
+            Edge::Right => text::text_at(pm, &s, x0 + w + gap, y0 + at, px, color, false, text::Align::Left, false),
         }
     }
 }
