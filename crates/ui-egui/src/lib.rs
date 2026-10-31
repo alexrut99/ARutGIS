@@ -18,6 +18,7 @@ mod assistantpane;
 mod autosave;
 mod backstage;
 mod bookmarkpane;
+mod buildings3d;
 mod catalogsui;
 mod chrome;
 mod comets;
@@ -678,6 +679,8 @@ pub struct UiState {
     pub portals: portalsui::State,
     /// A flood asked for from the map, waiting for its elevation (`flood::poll`).
     pub flood: Option<flood::Job>,
+    /// 3D Buildings being downloaded (`buildings3d::poll`).
+    pub buildings: Option<buildings3d::Job>,
     /// Overture Maps and Source Cooperative: choices, results and the request under way.
     pub catalogs: catalogsui::State,
     /// Search Open Data: the portal, the search under way and the datasets found.
@@ -830,6 +833,7 @@ impl Default for UiState {
             connection_tree: Default::default(),
             portals: Default::default(),
             flood: None,
+            buildings: None,
             catalogs: Default::default(),
             opendata: Default::default(),
             embeddings: Default::default(),
@@ -3798,6 +3802,7 @@ impl RustGisApp {
         connectiontree::poll(self, ctx);
         portalsui::poll(self, ctx);
         flood::poll(self, ctx);
+        buildings3d::poll(self, ctx);
         catalogsui::poll(self, ctx);
         opendataui::poll(self, ctx);
         embeddingsui::poll(self, ctx);

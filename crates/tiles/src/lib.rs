@@ -10,6 +10,7 @@
 pub mod address;
 pub mod arcgis_auth;
 pub mod boundaries;
+pub mod buildings3d;
 pub mod cache;
 pub mod cog;
 pub mod cubes;

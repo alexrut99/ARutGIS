@@ -159,6 +159,12 @@ type Ring = Vec<[f64; 2]>;
 
 /// Reads an Overpass JSON answer.
 pub fn parse(bytes: &[u8]) -> Result<Answer, String> {
+    parse_with(bytes, |_| Map::new())
+}
+
+/// Reads an Overpass JSON answer, each polygon also given the properties `extra` makes of its
+/// tags (all of them, before they are split into columns and `other_tags`).
+pub fn parse_with(bytes: &[u8], extra: impl Fn(&[(String, String)]) -> Map<String, Value>) -> Result<Answer, String> {
     let v: Value = serde_json::from_slice(bytes).map_err(|_| {
         // Overpass answers errors as HTML or XML.
         let head = String::from_utf8_lossy(bytes.get(..bytes.len().min(2000)).unwrap_or(bytes)).to_string();
@@ -247,7 +253,8 @@ pub fn parse(bytes: &[u8]) -> Result<Answer, String> {
     if stray_inner > 0 {
         notes.push(format!("{stray_inner} inner rings (holes) outside every outer ring of their relation were left out"));
     }
-    Ok(Answer { points: collection(points), lines: collection(lines), polygons: collection(polygons), notes })
+    let none = |_: &[(String, String)]| Map::new();
+    Ok(Answer { points: collection(points, &none), lines: collection(lines, &none), polygons: collection(polygons, &extra), notes })
 }
 
 /// Whether a closed way is an area (OSM's usual reading of its tags).
@@ -380,7 +387,10 @@ fn inside(p: [f64; 2], ring: &[[f64; 2]]) -> bool {
 }
 
 /// A FeatureCollection: the most common tags as properties, the rest in `other_tags`.
-fn collection(features: Vec<(&str, i64, Vec<(String, String)>, Value)>) -> Value {
+fn collection(
+    features: Vec<(&str, i64, Vec<(String, String)>, Value)>,
+    extra: &dyn Fn(&[(String, String)]) -> Map<String, Value>,
+) -> Value {
     let mut counts: Vec<(String, usize)> = Vec::new();
     for (_, _, tags, _) in &features {
         for (k, _) in tags {
@@ -416,6 +426,7 @@ fn collection(features: Vec<(&str, i64, Vec<(String, String)>, Value)>) -> Value
             if !rest.is_empty() {
                 props.insert("other_tags".into(), json!(rest.join(",")));
             }
+            props.extend(extra(tags));
             json!({"type": "Feature", "properties": props, "geometry": geom})
         })
         .collect();

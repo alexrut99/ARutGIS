@@ -11477,6 +11477,32 @@ fn osm_and_boundaries() {
     ] {
         assert!(s.run("osm.download", &bad).is_err(), "{bad}");
     }
+    // 3D buildings: raised by the height tag, else floors × 3 m, else the kind's estimate.
+    const BUILDINGS: &str = r#"{"elements": [
+        {"type": "way", "id": 11, "tags": {"building": "yes", "height": "120 m", "name": "Tower"}, "geometry": [{"lat": 13.72, "lon": 100.52}, {"lat": 13.72, "lon": 100.521}, {"lat": 13.721, "lon": 100.521}, {"lat": 13.72, "lon": 100.52}]},
+        {"type": "way", "id": 12, "tags": {"building": "apartments", "building:levels": "8"}, "geometry": [{"lat": 13.722, "lon": 100.52}, {"lat": 13.722, "lon": 100.521}, {"lat": 13.723, "lon": 100.521}, {"lat": 13.722, "lon": 100.52}]},
+        {"type": "way", "id": 13, "tags": {"building": "temple"}, "geometry": [{"lat": 13.724, "lon": 100.52}, {"lat": 13.724, "lon": 100.521}, {"lat": 13.725, "lon": 100.521}, {"lat": 13.724, "lon": 100.52}]},
+        {"type": "node", "id": 14, "lat": 13.726, "lon": 100.525, "tags": {"building": "yes"}}
+    ]}"#;
+    let r = s.run("buildings.add3d", &json!({"bbox": [100.51, 13.71, 100.53, 13.73], "answer": BUILDINGS, "name": "Silom"})).unwrap();
+    assert_eq!(
+        (r["buildings"].as_u64(), r["fromHeight"].as_u64(), r["fromFloors"].as_u64(), r["estimated"].as_u64()),
+        (Some(3), Some(1), Some(1), Some(1)),
+        "{r}"
+    );
+    assert_eq!(r["tallest"], 120.0);
+    assert_eq!(r["narrowed"], false);
+    let l = s.map().layer(r["layer"].as_u64().unwrap() as u32).unwrap();
+    assert_eq!(l.name, "Silom");
+    assert_eq!(l.extrusion.as_ref().and_then(|x| x.field.as_deref()), Some("height_m"));
+    let hi = l.dataset.field_index("height_m").unwrap();
+    let heights: Vec<f64> = (0..3).filter_map(|i| l.dataset.value(i, hi).as_f64()).collect();
+    assert_eq!(heights, [120.0, 24.0, 12.0]);
+    // A view over a whole city is narrowed to about 3 km × 3 km about its centre.
+    let r = s.run("buildings.add3d", &json!({"bbox": [100.3, 13.5, 100.9, 14.0], "answer": BUILDINGS})).unwrap();
+    assert_eq!(r["narrowed"], true);
+    let none = r#"{"elements": [{"type": "node", "id": 1, "lat": 13.7, "lon": 100.5, "tags": {"amenity": "cafe"}}]}"#;
+    assert!(s.run("buildings.add3d", &json!({"bbox": [100.51, 13.71, 100.53, 13.73], "answer": none})).is_err());
     let gj = r#"{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"shapeName": "Bern"}, "geometry": {"type": "Polygon", "coordinates": [[[7, 46], [8, 46], [8, 47], [7, 46]]]}}]}"#;
     let r = s.run("boundaries.add", &json!({"country": "che", "level": 1, "text": gj})).unwrap();
     assert_eq!(r["features"], 1);

@@ -1931,6 +1931,7 @@ fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
     });
     group(ui, "Scene", |ui| {
         terrain_menu(ui, app);
+        buildings_menu(ui, app);
         col(ui, |ui| {
             small(
                 ui,
@@ -4770,6 +4771,51 @@ fn language_menu(app: &mut RustGisApp, ui: &mut Ui) {
             }
         }
     });
+}
+
+/// View › Scene › 3D Buildings: OpenStreetMap's buildings where the map is, raised by their
+/// heights (`buildings3d`); or a try in Bangkok's Silom and Sathorn.
+fn buildings_menu(ui: &mut Ui, app: &mut RustGisApp) {
+    big_menu(
+        ui,
+        app,
+        "polygon_layer",
+        "3D Buildings",
+        "OpenStreetMap's buildings where the map is, raised by their heights.",
+        |ui, app| {
+            let busy = crate::buildings3d::busy(app);
+            if ui
+                .add_enabled(!busy, egui::Button::new(tl!("Buildings in View")))
+                .on_hover_text(tl!("About 3 km × 3 km about the map's centre at most."))
+                .clicked()
+            {
+                crate::buildings3d::start(app);
+                ui.close();
+            }
+            if ui.add_enabled(!busy, egui::Button::new(tl!("Try It: Silom–Sathorn, Bangkok"))).clicked() {
+                if app.session.map().projection.is_globe() {
+                    let _ = app.run("map.projection", json!({"type": "mercator"}));
+                }
+                let _ = app.run("map.goToXY", json!({"lon": 100.5300, "lat": 13.7230, "scale": 12000, "bearing": 0, "pitch": 0}));
+                crate::buildings3d::start(app);
+                ui.close();
+            }
+            if busy {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(tl!("Downloading…"));
+                });
+            }
+            ui.separator();
+            ui.label(
+            egui::RichText::new(tl!(
+                "Buildings: OpenStreetMap (ODbL). Heights: the height OpenStreetMap gives, else floors × 3 m, else an estimate from the kind of building; most buildings in Thailand have neither, so their heights are estimates. Buildings stand on flat ground, not on the 3D terrain."
+            ))
+            .small()
+            .weak(),
+        );
+        },
+    );
 }
 
 /// View › Scene › 3D Terrain: the world's elevation with one click, the map tilted to show it

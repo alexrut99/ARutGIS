@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::{b, ps};
 use crate::render::rustgis_tiles::portal::{self, Portal, Use};
-use crate::render::rustgis_tiles::{boundaries, overpass, thai_boundaries};
+use crate::render::rustgis_tiles::{boundaries, buildings3d, overpass, thai_boundaries};
 use crate::{CmdResult, CommandSpec as C, Session};
 
 pub fn commands() -> Vec<C> {
@@ -18,6 +18,9 @@ pub fn commands() -> Vec<C> {
             r#"{"country": "ISO 3166 alpha-3 code (CHE, KEN…)", "level"?: "ADM0" (the country, default) … "ADM5", "name"?: text, "text"?: "the boundaries' GeoJSON, when already fetched (the app's background request)"}"#,
         ),
         C::new("boundaries.countries", "List geoBoundaries Countries", "Home › Add › Web Data", boundaries_countries).view(),
+        C::new("buildings.add3d", "3D Buildings", "View › Scene", buildings_3d).params(
+            r#"{"bbox"?: [west, south, east, north] | "view" (the map's extent, the default; narrowed to about 3 km × 3 km about its centre when larger), "url"?: "an Overpass server", "name"?: text, "answer"?: "the server's JSON answer, when already fetched (the app's background request)"} (OpenStreetMap's buildings raised by their height: the height tag, else floors × 3 m, else an estimate from the kind of building)"#,
+        ),
         C::new("boundaries.thai", "Add Thai Administrative Boundaries", "Home › Add › Web Data", boundaries_thai).params(
             r#"{"source": "dopa" (กรมการปกครอง, through OpenGISData-Thailand, CC BY 4.0) | "rtsd" (กรมแผนที่ทหาร, through OCHA HDX, CC BY-IGO), "level": "province" | "district" | "subdistrict", "name"?: text, "text"?: "the boundaries' GeoJSON, when already fetched (the app's background request)"} → Thailand's provinces, districts or subdistricts with their Thai names, labelled in Thai: for mapping and analysis, not legal boundaries"#,
         ),
@@ -84,6 +87,60 @@ fn osm_download(s: &mut Session, p: &Value) -> CmdResult {
         return Err(format!("{name}: nothing found in the area"));
     }
     Ok(json!({"layers": layers, "features": counts}))
+}
+
+/// The request for `buildings.add3d`: the buildings in its box (narrowed to
+/// `buildings3d::MAX_AREA_KM2`), and whether the box was narrowed.
+pub fn buildings_query(s: &Session, p: &Value) -> Result<(overpass::Query, bool), String> {
+    let (area, narrowed) = buildings3d::narrow(bbox(s, p)?);
+    Ok((overpass::Query::new(area, Some("buildings"), None)?, narrowed))
+}
+
+/// OpenStreetMap's buildings in the area, raised by their heights (`buildings3d`), coloured by
+/// them and lit.
+fn buildings_3d(s: &mut Session, p: &Value) -> CmdResult {
+    let (q, narrowed) = buildings_query(s, p)?;
+    let bytes = match ps(p, "answer") {
+        Some(a) => a.as_bytes().to_vec(),
+        None => fetch(&q.url(ps(p, "url"))?)?,
+    };
+    let answer = overpass::parse_with(&bytes, buildings3d::properties)?;
+    let name = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).unwrap_or("3D Buildings").to_string();
+    let (ds, _) = rustgis_data::io::read_geojson(&answer.polygons.to_string(), &name).map_err(|e| e.to_string())?;
+    if ds.features.is_empty() {
+        return Err("OpenStreetMap has no buildings mapped in this area".into());
+    }
+    let hi = ds.field_index("height_m").ok_or("the buildings' heights weren't read")?;
+    let src = ds.field_index("height_src").ok_or("the buildings' heights weren't read")?;
+    let (mut tagged, mut floors, mut estimated, mut tallest) = (0usize, 0usize, 0usize, 0.0_f64);
+    for r in 0..ds.features.len() {
+        match ds.value(r, src) {
+            rustgis_data::Value::Text(t) if t == "height" => tagged += 1,
+            rustgis_data::Value::Text(t) if t == "floors" => floors += 1,
+            _ => estimated += 1,
+        }
+        tallest = tallest.max(ds.value(r, hi).as_f64().unwrap_or(0.0));
+    }
+    let n = ds.features.len();
+    let id = super::layer::add_dataset(s, ds);
+    // Raised by the height, coloured by it (low cream to tall red), lit and shadowed.
+    s.run("layer.extrusion", &json!({"layer": id, "type": "field", "field": "height_m", "factor": 1}))?;
+    s.run("layer.symbology", &json!({"layer": id, "type": "graduated", "field": "height_m", "method": "manual", "breaks": [8, 16, 30, 60, 120], "ramp": "YlOrRd"}))?;
+    s.run("layer.lightShadow", &json!({"layer": id, "lighting": true, "shadows": true}))?;
+    s.notify(format!("{name}: {}", buildings3d::ATTRIBUTION), false);
+    for note in answer.notes {
+        s.notify(format!("{name}: {note}"), false);
+    }
+    Ok(json!({
+        "layer": id,
+        "buildings": n,
+        "fromHeight": tagged,
+        "fromFloors": floors,
+        "estimated": estimated,
+        "tallest": tallest,
+        "narrowed": narrowed,
+        "bbox": q.bbox,
+    }))
 }
 
 fn boundaries_add(s: &mut Session, p: &Value) -> CmdResult {
