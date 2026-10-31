@@ -4829,6 +4829,25 @@ fn terrain_menu(ui: &mut Ui, app: &mut RustGisApp) {
                 ui.close();
             }
             ui.separator();
+            ui.label(egui::RichText::new(tl!("Flood Simulation")).strong());
+            ui.label(
+                egui::RichText::new(tl!(
+                    "Centre the map on a river or canal, then pick how high the water rises over the ground there. Or right-click the place › Quick Analysis › Flood From Here."
+                ))
+                .small()
+                .weak(),
+            );
+            let waiting = app.ui.flood.is_some();
+            ui.horizontal_wrapped(|ui| {
+                for rise in crate::flood::RISES {
+                    if ui.add_enabled(!waiting, egui::Button::new(crate::flood::rise_label(rise))).clicked() {
+                        let c = app.session.map().center_lonlat();
+                        crate::flood::start(app, c, rise);
+                        ui.close();
+                    }
+                }
+            });
+            ui.separator();
             ui.label(egui::RichText::new(tl!("Exaggeration")).small().weak());
             let ex = terrain.as_ref().map(|t| t.exaggeration);
             ui.add_enabled_ui(terrain.is_some(), |ui| {
