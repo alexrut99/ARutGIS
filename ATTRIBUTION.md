@@ -11,6 +11,7 @@ which every package ships next to LICENSE. They are generated from `Cargo.lock` 
 | File | Author / source | Licence |
 |---|---|---|
 | Noto Sans Thai (`apps/rustgis-web/fonts/NotoSansThai-Regular.ttf`, `NotoSansThai-Bold.ttf`), served with the web app for Thai text | Google ([notofonts/thai](https://github.com/notofonts/thai)), version 2.000 | OFL-1.1 (`apps/rustgis-web/fonts/OFL.txt`) |
+| Sarabun (`crates/render/fonts/Sarabun-Regular.ttf`, `Sarabun-Bold.ttf`), built into the app for Thai map layouts | Cadson Demak, via [Google Fonts](https://github.com/google/fonts/tree/main/ofl/sarabun) | OFL-1.1 (`crates/render/fonts/OFL.txt`) |
 | Web app icons (`apps/rustgis-web/icons/`) | The ARutGIS logo, drawn by `rustgis-cli logo` | Apache-2.0 |
 | ARutGIS logo (`docs/assets/arutgis-logo.svg`, and drawn in code in `crates/render/src/logo.rs`) | Made for ARutGIS | Apache-2.0 |
 | Sample data (`countries`, `countries_chn`, `cities`, `rivers`, `lakes` GeoJSON), embedded at build time from [rustgis-assets](https://github.com/opengeos/rustgis-assets/tree/main/data) | Natural Earth 1:110m, attributes trimmed; `countries_chn` is Natural Earth's China point of view (1:10m, simplified) | Public domain |
