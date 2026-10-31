@@ -35,6 +35,7 @@ pub const TOKENS: &[(&str, &str)] = &[
     ("{map}", "Map name"),
     ("{scale}", "Map scale"),
     ("{date}", "Current date"),
+    ("{thaidate}", "Current date in Thai (Buddhist Era)"),
     ("{time}", "Current time"),
     ("{crs}", "Coordinate system"),
     ("{layers}", "Number of layers"),
@@ -168,6 +169,8 @@ pub fn expand(text: &str, v: &TokenValues) -> String {
             "{map}" => Some(v.map.clone()),
             "{scale}" => Some(scale_ratio(v.scale)),
             "{date}" => Some(date.clone()),
+            // Today in Thai, in the Buddhist Era: 31 ตุลาคม 2569.
+            "{thaidate}" => Some(rustgis_data::time::format(v.now as f64 * 1000.0, "D ดดดด BBBB")),
             "{time}" => Some(time.clone()),
             "{crs}" => Some(v.crs.clone()),
             "{layers}" => Some(v.layers.to_string()),
@@ -248,6 +251,7 @@ mod tests {
         assert_eq!(expand("{map} at {scale}", &v), "World at 1:25,000,000");
         assert_eq!(expand("{date} {time} · {layers}", &v), "2025-10-11 00:00 · 4");
         assert_eq!(expand("plain", &v), "plain");
+        assert_eq!(expand("{thaidate}", &v), "11 ตุลาคม 2568");
         let named = TokenValues { map: "{date}".into(), ..v };
         assert_eq!(expand("{map} {nope} {", &named), "{date} {nope} {");
     }

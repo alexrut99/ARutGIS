@@ -798,6 +798,7 @@ fn publication(s: &mut Session, p: &Value) -> CmdResult {
         }
         [
             ("{date}", "0000-00-00"),
+            ("{thaidate}", "00 พฤศจิกายน 0000"),
             ("{time}", "00:00"),
             ("{scale}", "1:10,000,000"),
             ("{pages}", "00"),

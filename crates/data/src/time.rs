@@ -290,8 +290,18 @@ fn digits(s: &str, min: usize, max: usize) -> Option<i64> {
     (s.len() >= min && s.len() <= max && s.bytes().all(|b| b.is_ascii_digit())).then(|| s.parse().ok()).flatten()
 }
 
+/// Thai month names, full and short (มกราคม, ม.ค.).
+const THAI_MONTHS: [&str; 12] =
+    ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+const THAI_MONTHS_SHORT: [&str; 12] = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+/// Years from the Common Era to the Buddhist Era Thailand dates by (2026 is 2569).
+pub const BUDDHIST_ERA_OFFSET: i64 = 543;
+
 /// Formats an instant with tokens `YYYY`, `YY`, `MMMM` (January), `MMM` (Jan), `MM`, `M`, `DD`,
-/// `D`, `HH`, `H`, `mm`, `ss`; other characters are kept, and so is text in brackets (`[Day] D`).
+/// `D`, `HH`, `H`, `mm`, `ss`, and for Thai dates `BBBB` and `BB` (the Buddhist Era year, 2569)
+/// and `ดดดด` and `ดดด` (the Thai month, ตุลาคม and ต.ค.); other characters are kept, and so is
+/// text in brackets (`[Day] D`).
 pub fn format(t: f64, fmt: &str) -> String {
     if !t.is_finite() {
         return String::new();
@@ -299,8 +309,14 @@ pub fn format(t: f64, fmt: &str) -> String {
     const MONTHS: [&str; 12] =
         ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     let c = Civil::of(t);
-    let month = MONTHS.get((c.month - 1).clamp(0, 11) as usize).copied().unwrap_or("");
-    let tokens: [(&str, String); 12] = [
+    let m = (c.month - 1).clamp(0, 11) as usize;
+    let month = MONTHS.get(m).copied().unwrap_or("");
+    let be = c.year + BUDDHIST_ERA_OFFSET;
+    let tokens: [(&str, String); 16] = [
+        ("BBBB", format!("{be:04}")),
+        ("BB", format!("{:02}", be.rem_euclid(100))),
+        ("ดดดด", THAI_MONTHS.get(m).copied().unwrap_or("").to_string()),
+        ("ดดด", THAI_MONTHS_SHORT.get(m).copied().unwrap_or("").to_string()),
         ("YYYY", format!("{:04}", c.year)),
         ("YY", format!("{:02}", c.year.rem_euclid(100))),
         ("MMMM", month.to_string()),
@@ -587,5 +603,15 @@ mod tests {
         assert_eq!(parse_input(&serde_json::json!(20_151_301)), Some(20_151_301.0));
         assert_eq!(parse_input(&serde_json::json!(86_400_000)), Some(DAY_MS));
         assert_eq!(parse_input(&serde_json::json!([1])), None);
+    }
+
+    #[test]
+    fn thai_dates_use_the_buddhist_era_and_thai_months() {
+        let t = super::parse_text("2026-10-31").unwrap();
+        assert_eq!(super::format(t, "D ดดดด BBBB"), "31 ตุลาคม 2569");
+        assert_eq!(super::format(t, "D ดดด BB"), "31 ต.ค. 69");
+        assert_eq!(super::format(super::parse_text("2027-01-05").unwrap(), "DD/MM/BBBB"), "05/01/2570");
+        // The Common Era tokens are untouched.
+        assert_eq!(super::format(t, "YYYY-MM-DD"), "2026-10-31");
     }
 }

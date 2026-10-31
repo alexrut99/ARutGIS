@@ -182,10 +182,21 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
                                         let v = ds.value(r, c);
                                         // A picture (a photo's thumbnail) is named, not spelled out.
                                         let picture = matches!(v, V::Text(s) if crate::mapview::is_picture(s));
-                                        let shown = if picture { tl!("picture").to_string() } else { v.to_string() };
+                                        // A date shown in Thai (Buddhist Era) while the interface is; the
+                                        // value itself, which edits and searches use, on hover.
+                                        let thai_date = match v {
+                                            V::Text(s) if !picture => crate::thaidate::cell(s),
+                                            _ => None,
+                                        };
+                                        let shown = if picture {
+                                            tl!("picture").to_string()
+                                        } else {
+                                            thai_date.clone().unwrap_or_else(|| v.to_string())
+                                        };
                                         let txt = egui::RichText::new(shown).size(11.5);
                                         let txt = if matches!(v, V::Null) || picture { txt.color(t.text_disabled).italics() } else { txt };
                                         let resp = ui.add(egui::Label::new(txt).sense(Sense::click()).truncate());
+                                        let resp = if thai_date.is_some() { resp.on_hover_text(v.to_string()) } else { resp };
                                         if resp.double_clicked() && is_layer {
                                             app.table.editing =
                                                 Some((r, c, if matches!(v, V::Null) { String::new() } else { v.to_string() }));

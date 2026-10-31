@@ -79,6 +79,7 @@ mod sqlpane;
 mod stacui;
 mod table;
 mod textform;
+mod thaidate;
 pub mod theme;
 mod tilelayer;
 mod tilelegend;

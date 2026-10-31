@@ -217,16 +217,19 @@ fn header(app: &mut RustGisApp, ui: &mut Ui, t: &TimeSlider, steps: &[f64], tk: 
     icons::paint(ui.painter(), r, "time_slider", tk.icon, tk.accent);
     ui.label(egui::RichText::new(tl!("Time Slider")).font(semibold(13.0)));
     ui.add_space(8.0);
-    ui.label(egui::RichText::new(t.label(t.current)).font(semibold(15.0)).color(tk.accent_text));
+    ui.label(egui::RichText::new(crate::thaidate::slider_label(t, t.current)).font(semibold(15.0)).color(tk.accent_text));
     // The window by the steps it takes in: the first, and the last before its end.
     let (from, to) = t.window();
     let last = steps.iter().rev().find(|s| **s < to).copied().unwrap_or(t.current);
     let window = if !from.is_finite() {
-        crate::i18n::fmt("showing everything through {to}", &[("to", &t.label(last))])
-    } else if t.label(from) == t.label(last) {
-        crate::i18n::fmt("showing {date}", &[("date", &t.label(from))])
+        crate::i18n::fmt("showing everything through {to}", &[("to", &crate::thaidate::slider_label(t, last))])
+    } else if crate::thaidate::slider_label(t, from) == crate::thaidate::slider_label(t, last) {
+        crate::i18n::fmt("showing {date}", &[("date", &crate::thaidate::slider_label(t, from))])
     } else {
-        crate::i18n::fmt("showing {from} to {to}", &[("from", &t.label(from)), ("to", &t.label(last))])
+        crate::i18n::fmt(
+            "showing {from} to {to}",
+            &[("from", &crate::thaidate::slider_label(t, from)), ("to", &crate::thaidate::slider_label(t, last))],
+        )
     };
     ui.label(egui::RichText::new(window).font(regular(11.5)).color(tk.text_dim));
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -417,7 +420,7 @@ fn timeline(app: &mut RustGisApp, ui: &mut Ui, t: &TimeSlider, steps: &[f64], cu
         let x = x_of(i as f64);
         p.line_segment([pos2(x, track.max.y), pos2(x, track.max.y + 3.0)], Stroke::new(1.0, tk.text_dim));
         // Kept inside the bar at its ends.
-        let g = p.layout_no_wrap(t.label(*s), regular(10.5), tk.text_dim);
+        let g = p.layout_no_wrap(crate::thaidate::slider_label(t, *s), regular(10.5), tk.text_dim);
         let left = (x - g.size().x / 2.0).clamp(r.min.x, (r.max.x - g.size().x).max(r.min.x));
         p.galley(pos2(left, track.max.y + 4.0), g, tk.text_dim);
     }
@@ -438,7 +441,10 @@ fn timeline(app: &mut RustGisApp, ui: &mut Ui, t: &TimeSlider, steps: &[f64], cu
         let i = i_of(pos.x);
         if let Some(s) = steps.get(i) {
             let c = counts.get(i).copied().unwrap_or(0);
-            resp.on_hover_text(crate::i18n::fmt("{date}: {n} features", &[("date", &t.label(*s)), ("n", &c.to_string())]));
+            resp.on_hover_text(crate::i18n::fmt(
+                "{date}: {n} features",
+                &[("date", &crate::thaidate::slider_label(t, *s)), ("n", &c.to_string())],
+            ));
         }
     }
 }
