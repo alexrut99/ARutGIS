@@ -87,7 +87,12 @@ fn with_builtin(mut families: Vec<Family>) -> Vec<Family> {
             listed: true,
             faces: faces
                 .iter()
-                .map(|(file, _, weight)| InstalledFace { path: PathBuf::from(format!("{BUILTIN_PATH}{file}")), index: 0, weight: *weight, italic: false })
+                .map(|(file, _, weight)| InstalledFace {
+                    path: PathBuf::from(format!("{BUILTIN_PATH}{file}")),
+                    index: 0,
+                    weight: *weight,
+                    italic: false,
+                })
                 .collect(),
             serif: false,
         });
@@ -109,7 +114,8 @@ static WARMING: AtomicBool = AtomicBool::new(false);
 /// The installed families, indexed once, by name (in any case). The first call walks the font
 /// folders; the UI starts that early with [`warm_up`] and reads [`installed_now`].
 pub fn installed() -> &'static [Family] {
-    FAMILIES.get_or_init(|| with_builtin(if std::env::var_os("RUSTGIS_BUILTIN_FONTS").is_some() { Vec::new() } else { index(&font_dirs()) }))
+    FAMILIES
+        .get_or_init(|| with_builtin(if std::env::var_os("RUSTGIS_BUILTIN_FONTS").is_some() { Vec::new() } else { index(&font_dirs()) }))
 }
 
 /// The installed families if they are indexed, without waiting: `None` while [`warm_up`]'s

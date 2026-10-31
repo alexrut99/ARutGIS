@@ -829,7 +829,14 @@ pub const OUTSIDE_LABEL_MM: f64 = 6.0;
 /// (`x0`, `y0`), `w` × `h` page pixels. The left and right ones read upward when the grid's
 /// labels run along their edge.
 #[allow(clippy::too_many_arguments)]
-fn outside_labels(pm: &mut Pixmap, labels: Vec<(Edge, f32, String)>, (x0, y0, w, h): (f32, f32, f32, f32), up: f32, ppp: f32, vertical: bool) {
+fn outside_labels(
+    pm: &mut Pixmap,
+    labels: Vec<(Edge, f32, String)>,
+    (x0, y0, w, h): (f32, f32, f32, f32),
+    up: f32,
+    ppp: f32,
+    vertical: bool,
+) {
     let px = 8.0 * 1.33 * ppp;
     let gap = 1.5 * PT_PER_MM as f32 * ppp;
     let color = Rgba::rgb(0x20, 0x20, 0x20);

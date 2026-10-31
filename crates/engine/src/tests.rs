@@ -22149,3 +22149,59 @@ fn merge_distinguishes_case_sensitive_file_paths() {
     assert_eq!(coordinates, [1.0, 2.0]);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// A Thai standard map sheet: Sarabun texts, a double neatline, a UTM grid labelled outside
+/// the frame on every side, a locator of Thailand outlining the map, and the particulars with
+/// the date in the Buddhist Era; the map drawn in UTM zone 47N or 48N when asked.
+#[test]
+fn a_thai_standard_sheet_is_laid_out_in_sarabun_with_a_utm_grid() {
+    use rustgis_map::layout::{ElementKind, GridKind};
+    let mut s = world();
+    s.run("map.goToXY", &json!({"lon": 100.5, "lat": 13.75, "scale": 2000000})).unwrap();
+    let r = s.run("layout.new", &json!({"template": "thai", "utm": true, "title": "แผนที่กรุงเทพฯ", "author": "อนิรุทธ์"})).unwrap();
+    assert_eq!(s.map().projection.code(), rustgis_map::Projection::from_code("thaiUtm47").unwrap().code());
+    let l = &s.project.layouts[r["layout"].as_u64().unwrap() as usize];
+    // A4 landscape by default.
+    assert_eq!((l.width.round(), l.height.round()), (297.0, 210.0));
+    let named = |n: &str| l.elements.iter().find(|e| e.name == n).unwrap_or_else(|| panic!("no {n}"));
+    for n in [
+        "Neatline",
+        "Inner Neatline",
+        "Title",
+        "Map Frame",
+        "North Arrow",
+        "Scale Bar",
+        "Scale Text",
+        "Legend",
+        "Locator Map",
+        "Information",
+    ] {
+        named(n);
+    }
+    let ElementKind::Text { text, font_name, .. } = &named("Title").kind else { panic!("the title is text") };
+    assert_eq!((text.as_str(), font_name.as_deref()), ("แผนที่กรุงเทพฯ", Some("Sarabun")));
+    let ElementKind::Text { text, .. } = &named("Information").kind else { panic!("the particulars are text") };
+    assert!(text.contains("{crs}") && text.contains("{thaidate}") && text.contains("อนิรุทธ์"), "{text}");
+    let frame = named("Map Frame");
+    let ElementKind::MapFrame { grid: Some(g), scale, .. } = &frame.kind else { panic!("the map frame has a grid") };
+    assert!(g.kind == GridKind::Measured && g.outside && g.edges.top && g.edges.right);
+    // A round scale: two significant figures.
+    let digits = scale.to_string();
+    assert!(digits.trim_end_matches('0').trim_end_matches('.').len() <= 2, "{scale}");
+    let ElementKind::MapFrame { extent_of, .. } = &named("Locator Map").kind else { panic!("the locator is a frame") };
+    assert_eq!(*extent_of, Some(frame.id));
+    // Portrait on A3, the panel under the map; east of 102°E, zone 48N.
+    s.run("map.goToXY", &json!({"lon": 104.8, "lat": 15.2, "scale": 2000000})).unwrap();
+    let r = s.run("layout.new", &json!({"template": "thai", "page": "a3", "orientation": "portrait", "utm": true})).unwrap();
+    assert_eq!(s.map().projection.code(), rustgis_map::Projection::from_code("thaiUtm48").unwrap().code());
+    let l = &s.project.layouts[r["layout"].as_u64().unwrap() as usize];
+    assert_eq!((l.width.round(), l.height.round()), (297.0, 420.0));
+    let frame = l.elements.iter().find(|e| e.name == "Map Frame").unwrap();
+    let legend = l.elements.iter().find(|e| e.name == "Legend").unwrap();
+    assert!(legend.y > frame.y + frame.h, "the panel is under the map");
+    // It exports.
+    let path = std::env::temp_dir().join(format!("arutgis-thai-{}.png", std::process::id()));
+    s.run("layout.export", &json!({"path": path.to_string_lossy(), "dpi": 72})).unwrap();
+    assert!(std::fs::metadata(&path).map(|m| m.len() > 10_000).unwrap_or(false));
+    let _ = std::fs::remove_file(&path);
+}

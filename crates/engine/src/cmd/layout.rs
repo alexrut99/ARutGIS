@@ -408,7 +408,11 @@ fn thai_standard(s: &mut Session, p: &Value, l: &mut Layout) -> Result<(), Strin
         l.add(format!("{name} Box"), (bx, by, bw, bh), pub_box(clear, ink, 0.6));
         let hh = 6.0 * k;
         if !heading.is_empty() {
-            l.add(format!("{name} Heading"), (bx + 2.0 * k, by + 1.0 * k, bw - 4.0 * k, hh), thai_text(heading, 10.0 * k, true, TextAlign::Center));
+            l.add(
+                format!("{name} Heading"),
+                (bx + 2.0 * k, by + 1.0 * k, bw - 4.0 * k, hh),
+                thai_text(heading, 10.0 * k, true, TextAlign::Center),
+            );
         }
         let pad = 2.0 * k;
         let head = if heading.is_empty() { 0.0 } else { hh + 1.0 * k };
