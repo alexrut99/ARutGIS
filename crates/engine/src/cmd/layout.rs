@@ -26,10 +26,10 @@ const MAX_LAYOUT: u64 = 64 << 20;
 pub fn commands() -> Vec<C> {
     vec![
         C::new("layout.new", "New Layout", "Home › Project", new_layout).params(
-            r#"{"name"?: string, "page"?: "letter"|"legal"|"tabloid"|"a5"|"a4"|"a3"|"a2"|"a1"|"a0", "orientation"?: "landscape"|"portrait", "width"?: mm, "height"?: mm, "template"?: "map" (frame, title, legend, north arrow, scale bar; the default)|"blank"}"#,
+            r#"{"name"?: string, "page"?: "letter"|"legal"|"tabloid"|"a5"|"a4"|"a3"|"a2"|"a1"|"a0" (default letter; a4 for "thai"), "orientation"?: "landscape"|"portrait", "width"?: mm, "height"?: mm, "template"?: "map" (frame, title, legend, north arrow, scale bar; the default)|"blank"|"thai" (a Thai standard map sheet in Sarabun, Thailand's government font: a double neatline, the title, the map at a round scale with a UTM grid labelled on every side, north arrow, scale bar and scale, legend, a locator map of Thailand, and the coordinate system, sources, maker and date in the Buddhist Era), "title"?: text (thai: default the map's name), "sources"?: text (thai), "author"?: text (thai), "utm"?: bool (thai: draw the map in WGS 84 / UTM zone 47N or 48N, whichever its centre is in, as Thai maps are; default false)}"#,
         ),
         C::new("layout.publication", "New Publication Layout", "Publish › Layout", publication).params(
-            r#"{"profile"?: "a4" (the default) | "a3" | "a2" (a sheet turned to portrait or landscape, whichever the area's map comes out larger on: its extent east to west against north to south, on the map's projection) | "a4-portrait"|"a4-landscape"|"a3-portrait"|"a3-landscape"|"a2-portrait"|"a2-landscape" (a sheet: frame, title, subtitle, the map, a boxed footer)|"figure-1col" (90 mm)|"figure-1.5col" (140 mm)|"figure-2col" (190 mm)|"thesis-full" (160 × 225 mm)|"thesis-half" (160 × 110 mm) (a figure: the map edge to edge, its title and sources left to the caption), "extent"?: [west, south, east, north] in degrees that must fit (default: the map view), "name"?: string, "title"?: text, "subtitle"?: text, "sources"?: text | [texts], "reference"?: text | [texts] (default: the projection, datum and graticule), "note"?: text, "author"?: text (default: "Made with RustGIS · {date}"; "" or [] for none), "headings"?: [the sources' heading, the reference's heading, an editorial column's heading], "locator"?: "globe" (a globe with the area outlined; the default on sheets) | "inset" (the surrounding region, the area outlined) | "none" (the default on figures), "decimal"?: "." (the default) | "," (graticule, scale bar and colorbar numbers and {scale} with a decimal comma: 0,05 and 1:6.300.000), "style"?: "classic" (the default: the title over the map, the footer under it) | "banner" (the title and subtitle in a band of the accent colour across the top) | "panel" (the map at the left, a panel at the right with the title, locator, legend, sources and reference) | "editorial" (the title large in serif, a column at the right with the note, the locator and the legend) | "modular" (cards on a light page: the map, the locator and the legend each in one, the sources and reference in tinted ones) | "poster" (the page in the accent colour, the title in light text, the map in a light card, the footer in darker blocks) (a sheet's arrangement; figures leave it to the caption), "accent"?: a colour as #RRGGBB (the style's colour: its band, panel tint, headings and rules, a poster's page)} → a new layout of the active map at a round scale, its texts wrapped to their boxes; {projection}, {datum} and {grid} in the texts are filled from the map"#,
+            r#"{"profile"?: "a4" (the default) | "a3" | "a2" (a sheet turned to portrait or landscape, whichever the area's map comes out larger on: its extent east to west against north to south, on the map's projection) | "a4-portrait"|"a4-landscape"|"a3-portrait"|"a3-landscape"|"a2-portrait"|"a2-landscape" (a sheet: frame, title, subtitle, the map, a boxed footer)|"figure-1col" (90 mm)|"figure-1.5col" (140 mm)|"figure-2col" (190 mm)|"thesis-full" (160 × 225 mm)|"thesis-half" (160 × 110 mm) (a figure: the map edge to edge, its title and sources left to the caption), "extent"?: [west, south, east, north] in degrees that must fit (default: the map view), "name"?: string, "title"?: text, "subtitle"?: text, "sources"?: text | [texts], "reference"?: text | [texts] (default: the projection, datum and graticule), "note"?: text, "author"?: text (default: "Made with ARutGIS · {date}"; "" or [] for none), "headings"?: [the sources' heading, the reference's heading, an editorial column's heading], "locator"?: "globe" (a globe with the area outlined; the default on sheets) | "inset" (the surrounding region, the area outlined) | "none" (the default on figures), "decimal"?: "." (the default) | "," (graticule, scale bar and colorbar numbers and {scale} with a decimal comma: 0,05 and 1:6.300.000), "style"?: "classic" (the default: the title over the map, the footer under it) | "banner" (the title and subtitle in a band of the accent colour across the top) | "panel" (the map at the left, a panel at the right with the title, locator, legend, sources and reference) | "editorial" (the title large in serif, a column at the right with the note, the locator and the legend) | "modular" (cards on a light page: the map, the locator and the legend each in one, the sources and reference in tinted ones) | "poster" (the page in the accent colour, the title in light text, the map in a light card, the footer in darker blocks) (a sheet's arrangement; figures leave it to the caption), "accent"?: a colour as #RRGGBB (the style's colour: its band, panel tint, headings and rules, a poster's page)} → a new layout of the active map at a round scale, its texts wrapped to their boxes; {projection}, {datum} and {grid} in the texts are filled from the map"#,
         ),
         C::new("layout.activate", "Open Layout", "Browser", |s, p| {
             let i = index(s, &by_name(p))?;
@@ -283,8 +283,9 @@ fn frame_kind(s: &Session, map: &str, w: f64, shape: FrameShape) -> ElementKind 
 }
 
 pub(crate) fn new_layout(s: &mut Session, p: &Value) -> CmdResult {
+    let thai = ps(p, "template") == Some("thai");
     let (w, h) = page_size(
-        &json!({"page": ps(p, "page").unwrap_or("letter"), "orientation": ps(p, "orientation").unwrap_or("landscape"), "width": p.get("width"), "height": p.get("height")}),
+        &json!({"page": ps(p, "page").unwrap_or(if thai { "a4" } else { "letter" }), "orientation": ps(p, "orientation").unwrap_or("landscape"), "width": p.get("width"), "height": p.get("height")}),
         None,
     )?;
     let name = unique_name(s, ps(p, "name").unwrap_or("Layout"));
@@ -313,12 +314,160 @@ pub(crate) fn new_layout(s: &mut Session, p: &Value) -> CmdResult {
                 ElementKind::text("{scale} · {date}", 8.0, Rgba::rgb(0x55, 0x5B, 0x66), false),
             );
         }
+        "thai" => thai_standard(s, p, &mut l)?,
         t => return Err(format!("unknown template '{t}'")),
     }
     s.project.layouts.push(l);
     let i = s.project.layouts.len() - 1;
     s.active_layout = Some(i);
     Ok(json!({"layout": i, "name": name}))
+}
+
+/// The font of a Thai standard map: Sarabun, bundled (`rustgis_render::families::BUILTIN`).
+pub const THAI_FONT: &str = "Sarabun";
+
+/// Text in [`THAI_FONT`].
+fn thai_text(text: impl Into<String>, size: f64, bold: bool, align: TextAlign) -> ElementKind {
+    ElementKind::Text {
+        text: text.into(),
+        size,
+        color: Rgba::rgb(0x1A, 0x1A, 0x1A),
+        bold,
+        italic: false,
+        align,
+        letter_spacing: 0.0,
+        font: FontFamily::Sans,
+        font_name: Some(THAI_FONT.to_string()),
+    }
+}
+
+/// A Thai standard map sheet on `l`, as Thai agencies and ArcGIS layouts arrange one: a double
+/// neatline; the title; the map at a round scale with a UTM grid labelled on every side; and a
+/// panel (at the right on a landscape page, under the map on a portrait one) with the north
+/// arrow, scale bar and scale, the legend, a locator map of Thailand and the map's particulars
+/// (coordinate system, sources, maker, date in the Buddhist Era).
+fn thai_standard(s: &mut Session, p: &Value, l: &mut Layout) -> Result<(), String> {
+    let (w, h) = (l.width, l.height);
+    // Drawn in UTM, as Thai maps are: the zone the map's centre is in (47N west of 102°E).
+    if b(p, "utm") == Some(true) && !s.map().projection.is_globe() {
+        let zone = if s.map().center_lonlat().x >= 102.0 { "thaiUtm48" } else { "thaiUtm47" };
+        let utm = rustgis_map::Projection::from_code(zone)?;
+        if s.map().projection.code() != utm.code() {
+            s.map_mut().set_projection(utm);
+        }
+    }
+    let map = s.map().name.clone();
+    let title = ps(p, "title").map(str::trim).filter(|t| !t.is_empty()).map_or_else(|| map.clone(), str::to_string);
+    let sources = ps(p, "sources").map(str::trim).filter(|t| !t.is_empty()).unwrap_or("(แหล่งข้อมูล)").to_string();
+    let author = ps(p, "author").map(str::trim).filter(|t| !t.is_empty()).unwrap_or("(ชื่อผู้จัดทำ)").to_string();
+    let k = w.min(h) / 210.0;
+    let ink = Rgba::rgb(0x1A, 0x1A, 0x1A);
+    let clear = Rgba::new(0, 0, 0, 0);
+    let lines = Rgba::new(0x1A, 0x1A, 0x1A, 160);
+    // The double neatline.
+    let m = 7.0 * k;
+    l.add("Neatline", (m, m, w - 2.0 * m, h - 2.0 * m), pub_box(clear, ink, 1.6));
+    let m2 = m + 1.6 * k;
+    l.add("Inner Neatline", (m2, m2, w - 2.0 * m2, h - 2.0 * m2), pub_box(clear, ink, 0.5));
+    let (x0, y0) = (m2 + 4.0 * k, m2 + 3.0 * k);
+    let (iw, ih) = (w - 2.0 * (m2 + 4.0 * k), h - 2.0 * (m2 + 3.0 * k));
+    let title_h = 11.0 * k;
+    l.add("Title", (x0, y0, iw, title_h), thai_text(title, 20.0 * k, true, TextAlign::Center));
+    let top = y0 + title_h + 2.0 * k;
+    let bottom = y0 + ih;
+    // Room round the map for its grid's labels.
+    let gap = 7.0 * k;
+    let landscape = w >= h;
+    let (frame_rect, panel) = if landscape {
+        let pw = (0.27 * iw).max(60.0 * k);
+        ((x0 + gap, top + gap, iw - pw - 2.0 * gap - 3.0 * k, bottom - top - 2.0 * gap), (x0 + iw - pw, top, pw, bottom - top))
+    } else {
+        let ph = (0.3 * (bottom - top)).max(55.0 * k);
+        ((x0 + gap, top + gap, iw - 2.0 * gap, bottom - top - ph - 2.0 * gap - 3.0 * k), (x0, bottom - ph, iw, ph))
+    };
+    let (fx, fy, fw, fh) = frame_rect;
+    // The map at a round scale (1:25,000, not 1:23,817), its UTM grid labelled on every side.
+    let mut kind = frame_kind(s, &map, fw, FrameShape::Rectangle);
+    if let ElementKind::MapFrame { scale, grid, .. } = &mut kind {
+        *scale = round_scale(*scale);
+        *grid = Some(rustgis_map::layout::Grid {
+            kind: rustgis_map::layout::GridKind::Measured,
+            color: lines,
+            width: 0.4,
+            edges: rustgis_map::layout::GridEdges { top: true, bottom: true, left: true, right: true },
+            ..Default::default()
+        });
+    }
+    let frame = l.add("Map Frame", (fx, fy, fw, fh), kind);
+    // The panel's boxes, each a heading and its contents.
+    let boxed = |l: &mut Layout, name: &str, heading: &str, (bx, by, bw, bh): (f64, f64, f64, f64)| -> (f64, f64, f64, f64) {
+        l.add(format!("{name} Box"), (bx, by, bw, bh), pub_box(clear, ink, 0.6));
+        let hh = 6.0 * k;
+        if !heading.is_empty() {
+            l.add(format!("{name} Heading"), (bx + 2.0 * k, by + 1.0 * k, bw - 4.0 * k, hh), thai_text(heading, 10.0 * k, true, TextAlign::Center));
+        }
+        let pad = 2.0 * k;
+        let head = if heading.is_empty() { 0.0 } else { hh + 1.0 * k };
+        (bx + pad, by + pad + head, bw - 2.0 * pad, bh - 2.0 * pad - head)
+    };
+    let (px, py, pw, ph) = panel;
+    let spacing = 2.5 * k;
+    // North arrow, scale bar and scale.
+    let scale_box = |l: &mut Layout, r: (f64, f64, f64, f64)| {
+        let (cx, cy, cw, ch) = boxed(l, "Scale", "", r);
+        let aw = (ch * 0.55).min(cw * 0.25);
+        l.add("North Arrow", (cx, cy, aw, ch), ElementKind::north_arrow(frame));
+        let sx = cx + aw + 3.0 * k;
+        let sw = cw - aw - 3.0 * k;
+        l.add("Scale Text", (sx, cy, sw, ch * 0.35), thai_text("มาตราส่วน {scale}", 10.0 * k, true, TextAlign::Center));
+        l.add("Scale Bar", (sx, cy + ch * 0.4, sw, ch * 0.5), ElementKind::scale_bar(frame));
+    };
+    // A locator map of Thailand, the map's extent outlined on it.
+    let locator = |l: &mut Layout, r: (f64, f64, f64, f64)| {
+        let (cx, cy, cw, ch) = boxed(l, "Locator", "แผนที่แสดงที่ตั้ง", r);
+        // Thailand runs about 1,650 km north to south and 800 km across.
+        let scale = round_scale((1_700_000.0 / (ch / 1000.0)).max(850_000.0 / (cw / 1000.0)));
+        let mut kind = frame_kind(s, &map, cw, FrameShape::Rectangle);
+        if let ElementKind::MapFrame { center, scale: sc, extent_of, bearing, pitch, .. } = &mut kind {
+            *center = Coord::new(100.9, 13.0);
+            *sc = scale;
+            *extent_of = Some(frame);
+            (*bearing, *pitch) = (0.0, 0.0);
+        }
+        l.add("Locator Map", (cx, cy, cw, ch), kind);
+    };
+    // The map's particulars, the date in the Buddhist Era.
+    let info = |l: &mut Layout, r: (f64, f64, f64, f64)| {
+        let (cx, cy, cw, ch) = boxed(l, "Information", "", r);
+        let text = format!("ระบบพิกัด: {{crs}}\nที่มาของข้อมูล: {sources}\nจัดทำโดย: {author}\nวันที่จัดทำ: {{thaidate}}");
+        l.add("Information", (cx, cy, cw, ch), thai_text(text, 8.5 * k, false, TextAlign::Left));
+    };
+    let legend = |l: &mut Layout, r: (f64, f64, f64, f64)| {
+        let (cx, cy, cw, ch) = boxed(l, "Legend", "คำอธิบายสัญลักษณ์", r);
+        l.add(
+            "Legend",
+            (cx, cy, cw, ch),
+            ElementKind::Legend { frame, title: String::new(), all_classes: false, hide_other: true, exclude: Vec::new() },
+        );
+    };
+    if landscape {
+        // Top to bottom: scale, legend, locator, particulars.
+        let (sh, lh, ih2) = (24.0 * k, (pw * 0.95).min(ph * 0.4), 24.0 * k);
+        let legend_h = ph - sh - lh - ih2 - 3.0 * spacing;
+        scale_box(l, (px, py, pw, sh));
+        legend(l, (px, py + sh + spacing, pw, legend_h));
+        locator(l, (px, py + sh + legend_h + 2.0 * spacing, pw, lh));
+        info(l, (px, py + ph - ih2, pw, ih2));
+    } else {
+        // Left to right: legend; scale over the particulars; the locator.
+        let cw = (pw - 2.0 * spacing) / 3.0;
+        legend(l, (px, py, cw, ph));
+        let sh = ph * 0.45;
+        scale_box(l, (px + cw + spacing, py, cw, sh));
+        info(l, (px + cw + spacing, py + sh + spacing, cw, ph - sh - spacing));
+        locator(l, (px + 2.0 * (cw + spacing), py, cw, ph));
+    }
+    Ok(())
 }
 
 /// One of `layout.publication`'s profiles.
@@ -732,7 +881,7 @@ fn publication(s: &mut Session, p: &Value) -> CmdResult {
         texts_of(p, "reference")?.unwrap_or_else(|| vec!["Projection: {projection}".into(), "Datum: {datum} · Graticule: {grid}".into()]);
     // An empty author leaves the line out; none given, the default.
     let author = match texts_of(p, "author")? {
-        None => Some("Made with RustGIS · {date}".to_string()),
+        None => Some("Made with ARutGIS · {date}".to_string()),
         Some(t) => Some(t.join(" ")).filter(|t| !t.trim().is_empty()),
     };
     let headings = texts_of(p, "headings")?.unwrap_or_default();

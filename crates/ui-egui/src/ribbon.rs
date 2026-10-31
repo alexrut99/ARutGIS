@@ -1100,6 +1100,25 @@ fn project_group(app: &mut RustGisApp, ui: &mut Ui) {
     group(ui, "Project", |ui| {
         big(ui, app, "new_map", "New\nMap", "Add a new map to the project.", "map.new", Value::Null, false, false);
         big_menu(ui, app, "new_layout", "New\nLayout", "Add a page layout for printing and exporting the map.", |ui, app| {
+            // Thai standard map sheets: the government font, a UTM grid, the particulars in Thai.
+            ui.menu_button(tl!("Thai Standard Map"), |ui| {
+                for (page, orientation, label) in [
+                    ("a4", "landscape", tl!("A4 landscape")),
+                    ("a4", "portrait", tl!("A4 portrait")),
+                    ("a3", "landscape", tl!("A3 landscape")),
+                    ("a3", "portrait", tl!("A3 portrait")),
+                ] {
+                    if ui.button(label).on_hover_text(tl!("In Sarabun (TH Sarabun New), with a UTM grid, north arrow, scale, legend, a locator map of Thailand, the coordinate system, sources, maker and the date in the Buddhist Era. The map is drawn in UTM zone 47N or 48N.")).clicked() {
+                        let title = app.session.map().name.clone();
+                        match app.run("layout.new", json!({"template": "thai", "page": page, "orientation": orientation, "utm": true, "title": title})) {
+                            Ok(_) => app.ui.tab = "Publish".into(),
+                            Err(e) => app.session.notify(e, true),
+                        }
+                        ui.close();
+                    }
+                }
+            });
+            ui.separator();
             for (id, label, w, h) in rustgis_engine::map::layout::PAGES {
                 let text = format!("{} ({w:.0} × {h:.0} mm)", tl!(*label));
                 if ui.button(text).clicked() {

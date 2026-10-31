@@ -53,7 +53,7 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     and each box grows to hold them. `{projection}`, `{datum}` and
     `{grid}` are filled from the map when the layout is made. `{date}` and the other dynamic text
     tokens stay live. The reference defaults to the projection, datum and graticule, and the
-    authorship to "Made with RustGIS · {date}" (`"author": ""` leaves it out). `headings` renames the two columns.
+    authorship to "Made with ARutGIS · {date}" (`"author": ""` leaves it out). `headings` renames the two columns.
   - **The locator** (at the frame's top left unless the data is there): `"locator": "globe"` (a
     sheet's default) adds a separate globe map with simplified copies of the map's visible polygon
     layers held in the project. Streamed layers, rasters, points, lines and labels are left out.

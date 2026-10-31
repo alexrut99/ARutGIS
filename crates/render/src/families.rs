@@ -1,9 +1,11 @@
 //! Installed font families by name, so a label can be drawn in the family a project names (as
 //! QGIS's text formats name theirs). The system's font folders are indexed once, from each
 //! file's `name` and `OS/2` tables, read piecemeal so indexing never loads a whole file; a face
-//! is read when it is first drawn, and kept. Nothing is installed or bundled: a family a machine
-//! lacks is drawn in the label font. In the browser, and with `RUSTGIS_BUILTIN_FONTS` set (so
-//! tests draw alike on every machine), there are none.
+//! is read when it is first drawn, and kept. A family a machine lacks is drawn in the label font.
+//! In the browser, and with `RUSTGIS_BUILTIN_FONTS` set (so tests draw alike on every machine),
+//! none are installed. One family is bundled everywhere ([`BUILTIN`]): Sarabun, Thailand's
+//! government font (TH Sarabun New) under the Open Font Licence, for Thai maps and layouts; an
+//! installed family of that name is drawn instead.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
@@ -60,6 +62,46 @@ pub fn heavier(face: &InstalledFace, bold: bool) -> bool {
     bold && face.weight < 600
 }
 
+/// The families bundled with the app: a name, and its faces' file names and bytes with their
+/// weights. Sarabun is "TH Sarabun New", Thailand's government font, as Cadson Demak published
+/// it under the SIL Open Font Licence 1.1 (`crates/render/fonts/OFL.txt`).
+pub const BUILTIN: &[(&str, &[(&str, &[u8], u16)])] = &[(
+    "Sarabun",
+    &[
+        ("Sarabun-Regular.ttf", include_bytes!("../fonts/Sarabun-Regular.ttf"), 400),
+        ("Sarabun-Bold.ttf", include_bytes!("../fonts/Sarabun-Bold.ttf"), 700),
+    ],
+)];
+
+/// Where a bundled face's bytes are named: `builtin:` and its file name.
+const BUILTIN_PATH: &str = "builtin:";
+
+/// The bundled families not installed already (an installed one of the same name wins).
+fn with_builtin(mut families: Vec<Family>) -> Vec<Family> {
+    for (name, faces) in BUILTIN {
+        if find_in(&families, name).is_some() {
+            continue;
+        }
+        families.push(Family {
+            name: (*name).to_string(),
+            listed: true,
+            faces: faces
+                .iter()
+                .map(|(file, _, weight)| InstalledFace { path: PathBuf::from(format!("{BUILTIN_PATH}{file}")), index: 0, weight: *weight, italic: false })
+                .collect(),
+            serif: false,
+        });
+    }
+    families.sort_by(|a, b| cmp_names(&a.name, &b.name));
+    families
+}
+
+/// A bundled face's bytes, by its `builtin:` path.
+fn builtin_bytes(path: &Path) -> Option<&'static [u8]> {
+    let file = path.to_str()?.strip_prefix(BUILTIN_PATH)?;
+    BUILTIN.iter().flat_map(|(_, faces)| faces.iter()).find(|(f, ..)| *f == file).map(|(_, b, _)| *b)
+}
+
 static FAMILIES: OnceLock<Vec<Family>> = OnceLock::new();
 /// Whether [`warm_up`] has started indexing them.
 static WARMING: AtomicBool = AtomicBool::new(false);
@@ -67,7 +109,7 @@ static WARMING: AtomicBool = AtomicBool::new(false);
 /// The installed families, indexed once, by name (in any case). The first call walks the font
 /// folders; the UI starts that early with [`warm_up`] and reads [`installed_now`].
 pub fn installed() -> &'static [Family] {
-    FAMILIES.get_or_init(|| if std::env::var_os("RUSTGIS_BUILTIN_FONTS").is_some() { Vec::new() } else { index(&font_dirs()) })
+    FAMILIES.get_or_init(|| with_builtin(if std::env::var_os("RUSTGIS_BUILTIN_FONTS").is_some() { Vec::new() } else { index(&font_dirs()) }))
 }
 
 /// The installed families if they are indexed, without waiting: `None` while [`warm_up`]'s
@@ -151,6 +193,9 @@ pub fn pick(family: &Family, bold: bool, italic: bool) -> Option<(&InstalledFace
 /// collection's file is kept by its path and each face checked on its own, so one damaged face
 /// doesn't hide its siblings.
 pub fn bytes(face: &InstalledFace) -> Option<&'static [u8]> {
+    if let Some(b) = builtin_bytes(&face.path) {
+        return Some(b);
+    }
     static LOADED: OnceLock<Mutex<(HashMap<PathBuf, Option<&'static [u8]>>, usize)>> = OnceLock::new();
     let parses = |b: &[u8], index: u32| ab_glyph::FontRef::try_from_slice_and_index(b, index).is_ok();
     let lock = LOADED.get_or_init(|| Mutex::new((HashMap::new(), 0)));
@@ -390,6 +435,26 @@ fn u32_at(b: &[u8], i: usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sarabun_is_bundled_with_its_regular_and_bold_faces() {
+        let all = installed();
+        let i = find("sarabun").expect("Sarabun is always there");
+        let f = &all[usize::from(i)];
+        // Bundled, unless one is installed (which is drawn instead).
+        if f.faces.iter().all(|x| x.path.to_string_lossy().starts_with(BUILTIN_PATH)) {
+            let (regular, _) = pick(f, false, false).unwrap();
+            let (bold, _) = pick(f, true, false).unwrap();
+            assert_eq!((regular.weight, bold.weight), (400, 700));
+            let b = bytes(regular).unwrap();
+            let font = ab_glyph::FontRef::try_from_slice(b).unwrap();
+            use ab_glyph::Font;
+            // Thai letters: ส (U+0E2A) and สระอา.
+            assert!(font.glyph_id('ส').0 != 0 && font.glyph_id('า').0 != 0);
+        }
+        // Still sorted, so a search finds every family.
+        assert!(all.windows(2).all(|w| cmp_names(&w[0].name, &w[1].name).is_le()));
+    }
 
     #[test]
     fn the_installed_families_are_read_without_waiting_once_indexed() {

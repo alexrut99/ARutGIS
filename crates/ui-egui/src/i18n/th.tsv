@@ -4049,3 +4049,21 @@ Buildings: OpenStreetMap (ODbL). Heights: the height OpenStreetMap gives, else f
 3D Buildings: downloading buildings from OpenStreetMap…	อาคาร 3 มิติ: กำลังดาวน์โหลดอาคารจาก OpenStreetMap…
 3D Buildings: {error}	อาคาร 3 มิติ: {error}
 3D Buildings: {n} buildings, the tallest {tallest} m. Heights: {tagged} from OpenStreetMap's height, {floors} from the number of floors, {estimated} estimated from the kind of building (the height_src field says which).	อาคาร 3 มิติ: {n} หลัง สูงสุด {tallest} ม. ที่มาของความสูง: จาก OpenStreetMap {tagged} หลัง จากจำนวนชั้น {floors} หลัง ประมาณจากประเภทอาคาร {estimated} หลัง (ดูได้ในฟิลด์ height_src)
+Thai Standard Map	แผนที่มาตรฐานไทย
+A4 landscape	A4 แนวนอน
+A4 portrait	A4 แนวตั้ง
+A3 landscape	A3 แนวนอน
+A3 portrait	A3 แนวตั้ง
+In Sarabun (TH Sarabun New), with a UTM grid, north arrow, scale, legend, a locator map of Thailand, the coordinate system, sources, maker and the date in the Buddhist Era. The map is drawn in UTM zone 47N or 48N.	ใช้ฟอนต์สารบรรณ (TH Sarabun New) มีกริด UTM ลูกศรทิศเหนือ มาตราส่วน คำอธิบายสัญลักษณ์ แผนที่แสดงที่ตั้งในประเทศไทย ระบบพิกัด ที่มาของข้อมูล ผู้จัดทำ และวันที่แบบ พ.ศ. แผนที่จะแสดงในระบบพิกัด UTM โซน 47N หรือ 48N
+By Expression	ตามสูตร
+Fields, numbers, 'text', + - * / % ^, || to join text, comparisons, CASE and functions such as round(), upper(), if() or scale_linear(). Applies to the selected rows, or every row when none is selected.	ใช้ฟิลด์ ตัวเลข 'ข้อความ' + - * / % ^ ใช้ || ต่อข้อความ ใช้การเปรียบเทียบ CASE และฟังก์ชันเช่น round(), upper(), if() หรือ scale_linear() ได้ คำนวณกับแถวที่เลือก หรือทุกแถวถ้าไม่ได้เลือก
+It is remembered on this computer.	จำไว้ในเครื่องนี้
+Keeps the token in the system's credential store, so it is there when RustGIS starts again. Unticked, a token remembered before is deleted when you save another.	เก็บโทเค็นไว้ในที่เก็บรหัสผ่านของระบบ เปิด ARutGIS ครั้งหน้าก็ยังใช้ได้ ถ้าไม่ติ๊ก โทเค็นที่จำไว้ก่อนหน้าจะถูกลบเมื่อบันทึกโทเค็นใหม่
+One picture of the view: symbols and labels aren't cut at tile edges, and the service is asked once a view. Drawn in tiles on the globe, on a tilted map, or in a projection the service doesn't offer.	ขอเป็นภาพเดียวทั้งมุมมอง สัญลักษณ์และป้ายชื่อจะไม่ถูกตัดตามขอบไทล์ และขอจากบริการครั้งเดียวต่อมุมมอง บนลูกโลก แผนที่ที่เอียง หรือระบบพิกัดที่บริการไม่รองรับ จะวาดเป็นไทล์แทน
+Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes unless you tick Remember, never in the project, and sent only to NASA's Earthdata data servers.	การอ่านไฟล์ของ granule ต้องใช้โทเค็น Earthdata Login ซึ่งใช้ได้กับ NASA DAAC ทุกแห่ง โทเค็นจะเก็บไว้จนกว่าจะปิด ARutGIS เว้นแต่ติ๊ก "จำไว้" ไม่บันทึกลงในโปรเจกต์ และส่งไปเฉพาะเซิร์ฟเวอร์ข้อมูล Earthdata ของ NASA เท่านั้น
+Set per feature from an expression, e.g. "pop" / 1e5 or CASE WHEN … END; colors as '#RRGGBB'. Empty: the symbol's own.	กำหนดรายฟีเจอร์ด้วยสูตร เช่น "pop" / 1e5 หรือ CASE WHEN … END สีใช้รูปแบบ '#RRGGBB' ปล่อยว่างไว้จะใช้ค่าของสัญลักษณ์เอง
+Single image	ภาพเดียว
+The token expired and was forgotten. Paste a new one.	โทเค็นหมดอายุและถูกลบแล้ว วางโทเค็นใหม่
+Tiles	ไทล์
+Whether the service is asked for one picture of the view or for tiles.	เลือกว่าจะขอจากบริการเป็นภาพเดียวทั้งมุมมอง หรือเป็นไทล์
+e.g.  pop_est / 1000000   or   upper(name) || ' ' || round(area, 1)	เช่น  pop_est / 1000000   หรือ   upper(name) || ' ' || round(area, 1)
