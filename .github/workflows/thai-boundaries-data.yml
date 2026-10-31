@@ -41,6 +41,10 @@ jobs:
           # A zip may hold zips per level.
           find shp -name '*.zip' -exec sh -c 'unzip -q -o "$1" -d "$(dirname "$1")"' _ {} \;
           find shp -iname '*.shp' | sort
+          # Shown in the run's summary (annotations), as the logs may not be at hand.
+          echo "::notice title=HDX resources::$(jq -r '[.result.resources[] | "\(.format) \(.name)"] | join(" | ")' package.json)"
+          echo "::notice title=Picked::$url"
+          echo "::notice title=Files::$(find shp -type f | sed 's#^shp/##' | sort | head -60 | tr '\n' ' ')"
 
       - name: Convert to simplified GeoJSON
         run: |
