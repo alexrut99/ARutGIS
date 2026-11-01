@@ -8,9 +8,10 @@ for the conventions.
    UI-only commands (`ui.*`) live in `crates/ui-egui/src/lib.rs`.
 3. Run `cargo xtask ci` and `pre-commit run --all-files`.
 4. Open a pull request. Rust CI runs on Linux by default. A maintainer can label it `ci:windows`,
-   `ci:macos` or `ci:full` to test those platforms before merging; pushes to `main` test all three.
-   `ci:full` also builds the release apps. The nightly workflow tests and release-builds all three
-   when there are new commits, and opens an issue on failure.
+   `ci:macos` or `ci:full` to test those platforms before merging (`ci:windows` tests Windows x64
+   and ARM64); pushes to `main` test them all. `ci:full` also builds the release apps. The nightly
+   workflow tests and release-builds them all when there are new commits, and opens an issue on
+   failure.
 5. The docs workflow builds a site and web-app preview. A first-time fork contributor's preview
    needs a maintainer to add `preview` or re-run the workflow; returning contributors' previews
    publish automatically.
@@ -38,7 +39,7 @@ Other workspace tasks:
 | Task | Purpose |
 | --- | --- |
 | `cargo xtask layers` | Check crate dependency direction and keep UI dependencies out of lower layers |
-| `cargo xtask notices` | Regenerate the shipped `THIRD-PARTY-LICENSES.txt` files after changing dependencies; requires `cargo-about` |
+| `cargo xtask notices` | Regenerate the shipped `THIRD-PARTY-LICENSES.txt` files after changing dependencies, or after adding code or data from another project to `INCLUDED` in `xtask/src/notices.rs` (with its licence text in `third-party/`); requires `cargo-about` |
 | `cargo xtask notices --check` | Check the notices without writing them; stale notices warn in CI but block releases |
 | `cargo xtask web-pwa <dir>` | Generate the service worker in a Trunk build output directory, such as `dist/web` |
 
@@ -79,8 +80,9 @@ tests), fifteen integration test binaries and the examples. While you work, name
 `cargo test -p rustgis-ui-egui --lib`, `cargo test -p rustgis-engine --test project_save`, or
 `cargo clippy -p rustgis-ui-egui --all-targets` to check without linking.
 
-**cargo-nextest.** [cargo-nextest](https://nexte.st) (`cargo install cargo-nextest --locked`) runs
-the test binaries side by side, each test in its own process, and filters tests by expression:
+**cargo-nextest.** [cargo-nextest](https://nexte.st) (`cargo install cargo-nextest --locked`, or
+`brew install cargo-nextest` for a pre-built one) runs the test binaries side by side, each test in
+its own process, and filters tests by expression:
 
 ```sh
 cargo nextest run --workspace --no-fail-fast -E 'not (package(rustgis-engine) and test(hostile_params_never_panic))'
@@ -96,6 +98,28 @@ A test that fails now and then can be retried with `--retries 1`.
 `CARGO_PROFILE_DEV_OPT_LEVEL=0`, `ui-egui` rebuilds after an edit about five times faster, but the
 engine's tests run about six times slower (rasters, geometry and the hostile-parameter test), so
 it suits iterating on the interface only. Switching the level rebuilds the workspace crates.
+
+**rust-analyzer in its own folder.** An editor's rust-analyzer and the terminal share `target/`:
+each waits for the other's lock ("Blocking waiting for file lock"), and as they build with
+different settings, each undoes the other's work. With `rust-analyzer.cargo.targetDir` set to
+`true` it builds in `target/rust-analyzer` instead, at the cost of the disk space.
+
+**On macOS.** No linker setting is needed: mold doesn't run there, Apple's own linker (Xcode 15
+and later) is already fast, and `split-debuginfo = "unpacked"` is already the default for debug
+builds.
+
+- Leave `target/` out of backups and search, which otherwise go through every file a build
+  changes: `tmutil addexclusion target` once it exists, and add the folder to Spotlight's privacy
+  list in System Settings.
+- macOS checks a program the first time it runs, and each build makes new test binaries. If even
+  the simplest tests take more than 0.2 seconds under nextest, run
+  `sudo spctl developer-mode enable-terminal`, turn your terminal on under System Settings ›
+  Privacy & Security › Developer Tools, and restart it. From then on, nothing that terminal starts
+  gets the first-run check, programs you download included, so do it only for a terminal you
+  trust; turning its switch off there undoes it. Working inside tmux or zellij, add the
+  multiplexer too, since its shells aren't the terminal's children, and add it again after each
+  update of a Homebrew build (signed ad hoc, it gets a new identity each time). Measure before
+  and after: on some machines it makes no difference (an M1 Max with macOS 15.7, for one).
 
 **`cargo clean` now and then.** `target/` keeps the artifacts of every branch and setting you have
 built, and can grow past a hundred gigabytes.
@@ -207,6 +231,15 @@ in `tests/support/ogc.rs` builds OGC landing pages, collection lists and GeoJSON
 test similarly generates its KML, KMZ, CSV and GeoJSON inputs. These run automatically with
 `cargo test --workspace --locked` and `cargo xtask ci`, without a separate setup step or a
 public service. Extend these generators when adding cases.
+
+`crates/engine/tests/workflows.rs` runs everyday jobs from start to finish: join, overlay,
+summarise, map, save, reopen and export, and the same saved job twice. Its real-data case,
+Shelby County's census tracts checked against the areas the Census Bureau publishes, is
+`#[ignore]`d: the nightly build downloads the public-domain files, pinned by checksum, and runs it
+with `RUSTGIS_WORKFLOW_DATA` naming their folder (the list of files is in `nightly.yml`). To run
+it locally, download the files listed there into one folder, check them with `sha256sum` against
+the checksums beside them, and run
+`RUSTGIS_WORKFLOW_DATA=<folder> cargo test -p rustgis-engine --test workflows -- --ignored`.
 
 ## Documentation
 

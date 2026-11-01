@@ -19,6 +19,8 @@
 3035, vn2000tm3	3035, vn2000tm3
 3D mesh	เมช 3 มิติ
 <None>	<ไม่มี>
+<null>	<null>
+A .geolibre project as a map	โปรเจกต์ .geolibre เป็นแผนที่
 A .qgs or .qgz project as a map	โปรเจกต์ .qgs หรือ .qgz เป็นแผนที่
 A 3D globe seen from space.	ลูกโลก 3 มิติที่มองจากอวกาศ
 A blank map with a basemap	แผนที่เปล่าพร้อมแผนที่ฐาน
@@ -27,6 +29,11 @@ A catalogue's (CSW 2.0.2) address: search its records by words and, if you like,
 A ChatGPT plan or app usage limit was reached. Review Weekly usage before trying again.	ถึงขีดจำกัดการใช้งานของแผน ChatGPT หรือแอปแล้ว ตรวจสอบการใช้งานรายสัปดาห์ก่อนลองอีกครั้ง
 A ChatGPT sign-in can only be used with the OpenAI API.	การลงชื่อเข้าใช้ด้วย ChatGPT ใช้ได้กับ OpenAI API เท่านั้น
 A connection has this name: give this one another name to remember its keys.	มีการเชื่อมต่อชื่อนี้อยู่แล้ว: ตั้งชื่ออื่นให้การเชื่อมต่อนี้เพื่อจดจำคีย์
+A copy of {name} with unsaved changes was kept a minute ago.	เก็บสำเนาของ {name} ที่มีการเปลี่ยนแปลงยังไม่บันทึกไว้เมื่อหนึ่งนาทีที่แล้ว
+A copy of {name} with unsaved changes was kept less than a minute ago.	เก็บสำเนาของ {name} ที่มีการเปลี่ยนแปลงยังไม่บันทึกไว้เมื่อไม่ถึงหนึ่งนาทีที่แล้ว
+A copy of {name} with unsaved changes was kept {n} days ago.	เก็บสำเนาของ {name} ที่มีการเปลี่ยนแปลงยังไม่บันทึกไว้เมื่อ {n} วันที่แล้ว
+A copy of {name} with unsaved changes was kept {n} hours ago.	เก็บสำเนาของ {name} ที่มีการเปลี่ยนแปลงยังไม่บันทึกไว้เมื่อ {n} ชั่วโมงที่แล้ว
+A copy of {name} with unsaved changes was kept {n} minutes ago.	เก็บสำเนาของ {name} ที่มีการเปลี่ยนแปลงยังไม่บันทึกไว้เมื่อ {n} นาทีที่แล้ว
 A country's administrative boundaries from geoBoundaries (CC BY 4.0): the country itself (ADM0), its first-level divisions (ADM1, such as states) and finer ones.	ขอบเขตการปกครองของประเทศจาก geoBoundaries (CC BY 4.0): ตัวประเทศ (ADM0) เขตการปกครองระดับที่หนึ่ง (ADM1 เช่น รัฐ) และระดับที่ละเอียดกว่า
 A custom stretch is in this raster's own units: pick another stretch type to save it as the default.	การยืดค่าแบบกำหนดเองใช้หน่วยของแรสเตอร์นี้เอง: เลือกการยืดค่าประเภทอื่นเพื่อบันทึกเป็นค่าเริ่มต้น
 A fast, free and open-source GIS written in pure Rust, for mapping, analyzing and sharing geospatial data on the desktop and in the browser.	GIS ที่รวดเร็ว ฟรี และโอเพนซอร์ส เขียนด้วย Rust ล้วน สำหรับทำแผนที่ วิเคราะห์ และแชร์ข้อมูลเชิงพื้นที่ บนเดสก์ท็อปและในเบราว์เซอร์
@@ -181,8 +188,10 @@ Add pages, layouts, related reports and related records to the report.	เพิ
 Add Photos	เพิ่มรูปถ่าย
 Add Plugin Folder…	เพิ่มโฟลเดอร์ปลั๊กอิน…
 Add points	เพิ่มจุด
+Add PostGIS Layer	เพิ่มชั้นข้อมูล PostGIS
 Add raster tiles, vector tiles or a map style by address.	เพิ่มไทล์แรสเตอร์ ไทล์เวกเตอร์ หรือสไตล์แผนที่ตามที่อยู่
 Add Rule	เพิ่มกฎ
+Add rule	เพิ่มกฎ
 Add sample countries	เพิ่มประเทศตัวอย่าง
 Add Sample Data	เพิ่มข้อมูลตัวอย่าง
 Add Satellite Embeddings	เพิ่ม Satellite Embeddings
@@ -192,6 +201,7 @@ Add skill…	เพิ่มสกิล…
 Add STAC Asset	เพิ่มแอสเซ็ต STAC
 Add STAC Data Cube	เพิ่มดาต้าคิวบ์ STAC
 Add STAC Footprints	เพิ่มขอบเขตภาพ (footprint) ของ STAC
+Add statistic	เพิ่มสถิติ
 Add Step	เพิ่มขั้นตอน
 Add Stroke	เพิ่มเส้น
 Add Style	เพิ่มสไตล์
@@ -215,6 +225,7 @@ Add view	เพิ่มมุมมอง
 Add With Options…	เพิ่มพร้อมตัวเลือก…
 Add Zarr Variable	เพิ่มตัวแปร Zarr
 Add Zarr Variable…	เพิ่มตัวแปร Zarr…
+Add {language}	เพิ่ม {language}
 Add ▾	เพิ่ม ▾
 Added	เพิ่มแล้ว
 Added Overture's {theme} as map tiles ({release}; some themes show only zoomed in): {attribution}	เพิ่ม {theme} ของ Overture เป็นไทล์แผนที่แล้ว ({release} บางธีมแสดงเฉพาะเมื่อซูมเข้า): {attribution}
@@ -273,6 +284,10 @@ Allow this agent's RustGIS action?	อนุญาตการดำเนิน
 Along lines	ตามแนวเส้น
 Along Selected Line	ตามแนวเส้นที่เลือก
 Alt+	Alt+
+Alt+Shift+ArrowDown	Alt+Shift+ArrowDown
+Alt+Shift+ArrowLeft	Alt+Shift+ArrowLeft
+Alt+Shift+ArrowRight	Alt+Shift+ArrowRight
+Alt+Shift+ArrowUp	Alt+Shift+ArrowUp
 Alternating bar	แถบสลับสี
 Altitude	ระดับความสูง
 Always allow	อนุญาตเสมอ
@@ -293,6 +308,7 @@ Another run is under way.	มีการเรียกใช้อื่นก
 Any	ใดก็ได้
 anywhere in the records	ที่ใดก็ได้ในเรคคอร์ด
 API key	คีย์ API
+Appends vector layers of the same geometry type into a new layer, optionally combining their attributes.	ต่อชั้นข้อมูลเวกเตอร์ที่มีรูปทรงชนิดเดียวกันเป็นชั้นข้อมูลใหม่ และรวมแอตทริบิวต์ของทุกชั้นได้หากต้องการ
 Apply	นำไปใช้
 Apply a function to a raster	ใช้ฟังก์ชันกับแรสเตอร์
 Apply Control Points	ใช้จุดควบคุม
@@ -307,6 +323,8 @@ ArcGIS Hub	ArcGIS Hub
 ArcGIS Portal	ArcGIS Portal
 ArcGIS Portal…	ArcGIS Portal…
 ArcGIS REST	ArcGIS REST
+ArcGIS Sign-In Status	สถานะการลงชื่อเข้าใช้ ArcGIS
+ArcGIS token	โทเค็น ArcGIS
 Archive	เก็บถาวร
 Archive History	ประวัติการเก็บถาวร
 Archiving	การเก็บถาวร
@@ -317,7 +335,9 @@ Area of use: within {r}° of the {lon}° meridian	พื้นที่ใช้
 Area of use: within {r}° of {lon}°, {lat}°	พื้นที่ใช้งาน: ภายใน {r}° จาก {lon}°, {lat}°
 Area {area}   ·   Perimeter {perimeter}	พื้นที่ {area}   ·   เส้นรอบรูป {perimeter}
 Areas (name, land use, area)	พื้นที่ (ชื่อ การใช้ที่ดิน พื้นที่)
+Arithmetic Progression	ลำดับเลขคณิต
 Arrange	จัดเรียง
+Arrange Element	จัดลำดับองค์ประกอบ
 Arrow	ลูกศร
 Arrowheads	หัวลูกศร
 Ask a question about your data, or describe what to do with the map. The assistant runs RustGIS commands for you; every change can be undone.	ถามคำถามเกี่ยวกับข้อมูลของคุณ หรืออธิบายสิ่งที่ต้องการทำกับแผนที่ ผู้ช่วยจะเรียกใช้คำสั่ง ARutGIS ให้คุณ และทุกการเปลี่ยนแปลงสามารถเลิกทำได้
@@ -328,8 +348,12 @@ Asking the catalog…	กำลังสอบถามแค็ตตาล็�
 Asking the NLDI…	กำลังสอบถาม NLDI…
 Asset	แอสเซ็ต
 Assistant settings	การตั้งค่าผู้ช่วย
+At both ends	ที่ปลายทั้งสองข้าง
+At inner vertices	ที่จุดยอดด้านใน
+At intervals	เป็นระยะ
 At the end	ที่ตอนท้าย
 At the start	ที่ตอนต้น
+At vertices	ที่จุดยอด
 Atlas	แอตลาส
 Attachments	ไฟล์แนบ
 Attribute\nTable	ตาราง\nแอตทริบิวต์
@@ -344,6 +368,7 @@ Auto-complete (2 clicks)	เติมอัตโนมัติ (2 คลิก
 Auto-complete Profile	เติมโปรไฟล์อัตโนมัติ
 Autofill Fields	เติมฟิลด์อัตโนมัติ
 Automatic	อัตโนมัติ
+Automatic (mm to km)	อัตโนมัติ (มม. ถึง กม.)
 Automatic (m or km)	อัตโนมัติ (m หรือ km)
 Automatic (system language)	อัตโนมัติ (ภาษาของระบบ)
 Automatic (system time zone and region)	อัตโนมัติ (เขตเวลาและภูมิภาคของระบบ)
@@ -379,6 +404,7 @@ Bike	จักรยาน
 Bilinear	ไบลิเนียร์ (Bilinear)
 Bind To Time Slider	ผูกกับแถบเวลา
 Bind to Time Slider	ผูกกับแถบเวลา
+Bindings: {bindings} · Conflicts: {conflicts} · Unknown commands: {unknown}	การกำหนดปุ่ม: {bindings} · ชนกัน: {conflicts} · คำสั่งที่ไม่รู้จัก: {unknown}
 Blank	ว่าง
 Blank for Amazon S3	เว้นว่างไว้สำหรับ Amazon S3
 Blank Letter page	หน้า Letter ว่าง
@@ -387,6 +413,7 @@ Blank Page	หน้าว่าง
 Blend: {mode}	การผสม: {mode}
 Block Feature Selection	บล็อกการเลือกฟีเจอร์
 Blue	น้ำเงิน
+Blur	เบลอ
 Bold	ตัวหนา
 Bold label text.	ทำให้ข้อความป้ายชื่อเป็นตัวหนา
 Bookmark Description	คำอธิบายบุ๊กมาร์ก
@@ -399,7 +426,9 @@ Boundaries…	ขอบเขตการปกครอง…
 Bounding\nGeometry	รูปทรง\nล้อมรอบ
 Brightness	ความสว่าง
 Brightness, contrast, saturation and sepia for the whole map.	ความสว่าง คอนทราสต์ ความอิ่มตัวของสี และโทนซีเปียสำหรับทั้งแผนที่
+Bring Forward	เลื่อนขึ้นหนึ่งชั้น
 Bring this bookmark's map into view to update it	แสดงแผนที่ของบุ๊กมาร์กนี้เพื่ออัปเดต
+Bring to Front	นำมาไว้หน้าสุด
 Browse	เรียกดู
 Browse Connection	เรียกดูการเชื่อมต่อ
 Browse it in the Browser	เรียกดูในเบราว์เซอร์
@@ -430,7 +459,9 @@ Bundle the project and its data into one file to share.	รวมโปรเจ
 Bundle the visible layers, with simplified geometry for phones and tablets.	รวมชั้นข้อมูลที่มองเห็นเป็นชุดเดียว พร้อมรูปทรงเรขาคณิตแบบย่อสำหรับโทรศัพท์และแท็บเล็ต
 By\nAttributes	ตาม\nแอตทริบิวต์
 By\nLocation	ตาม\nตำแหน่ง
+By Coordinates	ตามพิกัด
 By layer	ตามชั้นข้อมูล
+By Place or Address	ตามชื่อสถานที่หรือที่อยู่
 by {author}	โดย {author}
 By {field}	ตาม {field}
 cached tiles	ไทล์ในแคช
@@ -445,18 +476,21 @@ Calculate Geometry Attributes	คำนวณแอตทริบิวต์�
 Calculate raster statistics per polygon	คำนวณสถิติแรสเตอร์ตามรูปหลายเหลี่ยม
 Calculate Statistics	คำนวณสถิติ
 Calculated {rows} features	คำนวณ {rows} ฟีเจอร์แล้ว
+Calculates a magnitude-per-unit-area surface from point features using a kernel function.	คำนวณพื้นผิวค่าต่อหน่วยพื้นที่จากฟีเจอร์จุดด้วยฟังก์ชันเคอร์เนล
 Calculates raster summary statistics for each polygon feature.	คำนวณสถิติสรุปของแรสเตอร์สำหรับแต่ละฟีเจอร์รูปหลายเหลี่ยม
 Calculation	การคำนวณ
 Camera	กล้อง
 Camera Effect	เอฟเฟกต์กล้อง
 Can't read this folder	อ่านโฟลเดอร์นี้ไม่ได้
 Cancel	ยกเลิก
+Cancel ArcGIS Sign-In	ยกเลิกการลงชื่อเข้าใช้ ArcGIS
 Cancel Caching	ยกเลิกการแคช
 Cap	ปลายเส้น
 Capture To Clipboard	จับภาพไปยังคลิปบอร์ด
 CARGO_PKG_VERSION	CARGO_PKG_VERSION
 Cartography	การทำแผนที่
 Case Field	ฟิลด์จัดกลุ่ม
+Case Fields	ฟิลด์จัดกลุ่ม
 Cast Shadow	ทอดเงา
 Catalog	แค็ตตาล็อก
 catalog is a static STAC catalog's catalog.json or collection.json	catalog คือ catalog.json หรือ collection.json ของแค็ตตาล็อก STAC แบบสแตติก
@@ -512,6 +546,7 @@ Choose a layer…	เลือกชั้นข้อมูล…
 Choose a model.	เลือกโมเดล
 Choose a resampling type for the raster layer.	เลือกชนิดการรีแซมเปิลสำหรับชั้นข้อมูลแรสเตอร์
 Choose a saved S3 connection before opening this source.	เลือกการเชื่อมต่อ S3 ที่บันทึกไว้ก่อนเปิดแหล่งข้อมูลนี้
+Choose a shortcut file in the browser.	เลือกไฟล์แป้นพิมพ์ลัดในเบราว์เซอร์
 Choose a start	เลือกจุดเริ่มต้น
 Choose a stop	เลือกจุดแวะ
 Choose a zipped Shapefile, or pick its .shp and .dbf together.	เลือก Shapefile ที่บีบอัดเป็น zip หรือเลือกไฟล์ .shp และ .dbf พร้อมกัน
@@ -562,6 +597,7 @@ Clear NLDI result	ล้างผลลัพธ์ NLDI
 Clear search	ล้างการค้นหา
 Clear Selection	ล้างการเลือก
 Clear selection	ล้างการเลือก
+Clear Session Log	ล้างบันทึกเซสชัน
 Clear the filter to reorder	ล้างตัวกรองเพื่อจัดลำดับใหม่
 Clear the selection in every layer.	ล้างการเลือกในทุกชั้นข้อมูล
 Clear the selection.	ล้างการเลือก
@@ -606,6 +642,7 @@ Clip To Map View	ตัดตามมุมมองแผนที่
 Clip To Polygon	ตัดตามรูปหลายเหลี่ยม
 Clip to polygon layer	ตัดตามชั้นข้อมูลรูปหลายเหลี่ยม
 Clipboard	คลิปบอร์ด
+Clips input features by each split polygon, writing one layer per split polygon or split field value.	ตัดฟีเจอร์อินพุตด้วยรูปหลายเหลี่ยมแบ่งแต่ละรูป ได้หนึ่งชั้นข้อมูลต่อหนึ่งรูปหลายเหลี่ยมแบ่งหรือหนึ่งค่าของฟิลด์แบ่ง
 Close	ปิด
 Close (Esc)	ปิด (Esc)
 Close All	ปิดทั้งหมด
@@ -638,6 +675,7 @@ Colors from the raster's own color table.	สีจากตารางสี�
 Colour ramps (RustGIS, QGIS, GDAL, GMT)	ชุดไล่สี (ARutGIS, QGIS, GDAL, GMT)
 Columns named like longitude/latitude, easting/northing or geometry are picked for you.	คอลัมน์ที่มีชื่ออย่าง longitude/latitude, easting/northing หรือ geometry จะถูกเลือกให้อัตโนมัติ
 Combinations from the box above, one per line	ชุดผสมจากกล่องด้านบน บรรทัดละหนึ่งชุด
+Combines two polygon layers into every piece either covers, with the attributes of both where they overlap.	รวมชั้นข้อมูลรูปหลายเหลี่ยมสองชั้นเป็นทุกชิ้นที่ชั้นใดชั้นหนึ่งครอบคลุม ส่วนที่ซ้อนกันจะมีแอตทริบิวต์ของทั้งสองชั้น
 COMID {comid}	COMID {comid}
 Comma	จุลภาค
 Comma-separated (optional)	คั่นด้วยจุลภาค (ไม่บังคับ)
@@ -657,7 +695,9 @@ Completed	เสร็จสมบูรณ์
 Confirm uninstall	ยืนยันการถอนการติดตั้ง
 Conic, conformal: true shapes across a mid-latitude region; set its meridian and parallels to the region.	กรวย คงรูป: รูปร่างถูกต้องทั่วบริเวณละติจูดกลาง ตั้งค่าเมริเดียนและเส้นขนานให้ตรงกับบริเวณนั้น
 Conic, equal-area: true sizes across a mid-latitude region; set its meridian and parallels to the region.	กรวย พื้นที่เท่า: ขนาดถูกต้องทั่วบริเวณละติจูดกลาง ตั้งค่าเมริเดียนและเส้นขนานให้ตรงกับบริเวณนั้น
+Conical	รูปกรวย
 Connect	เชื่อมต่อ
+Connect PostGIS	เชื่อมต่อ PostGIS
 Connect a folder to the Browser.	เชื่อมต่อโฟลเดอร์เข้ากับเบราว์เซอร์
 Connect to S3	เชื่อมต่อกับ S3
 Connect, or pick a layer	เชื่อมต่อ หรือเลือกชั้นข้อมูล
@@ -671,6 +711,7 @@ Connections…	การเชื่อมต่อ…
 Constant	ค่าคงที่
 Constant height	ความสูงคงที่
 Constant…	ค่าคงที่…
+Content	เนื้อหา
 Contingent Values	ค่าแบบมีเงื่อนไข
 Continue	ดำเนินการต่อ
 Continue with ChatGPT	ดำเนินการต่อด้วย ChatGPT
@@ -743,6 +784,7 @@ Create Point	สร้างจุด
 Create Polygon	สร้างรูปหลายเหลี่ยม
 Create Profile	สร้างโปรไฟล์
 Create Thumbnail	สร้างภาพขนาดย่อ
+Creates a point at each vertex of the input features.	สร้างจุดที่จุดยอดแต่ละจุดของฟีเจอร์อินพุต
 Creates a point inside each input feature.	สร้างจุดภายในฟีเจอร์อินพุตแต่ละรายการ
 Creates points from a table's x and y coordinate fields.	สร้างจุดจากฟิลด์พิกัด x และ y ของตาราง
 Creates polygons around input features at a given distance.	สร้างรูปหลายเหลี่ยมรอบฟีเจอร์อินพุตตามระยะที่กำหนด
@@ -773,6 +815,7 @@ Dash-dot	เส้นประจุด
 Dashed	เส้นประ
 Data	ข้อมูล
 Data\nSources	แหล่ง\nข้อมูล
+Data Cube Catalog	แค็ตตาล็อกดาต้าคิวบ์
 Data Design	การออกแบบข้อมูล
 Data Engineering	วิศวกรรมข้อมูล
 Data Interop	การแลกเปลี่ยนข้อมูล
@@ -839,6 +882,8 @@ Delete the step	ลบขั้นตอน
 Delimited Text	ข้อความแบบมีตัวคั่น
 Delimited text and spreadsheets	ข้อความแบบมีตัวคั่นและสเปรดชีต
 Delimited Text…	ข้อความแบบมีตัวคั่น…
+Delimiter	ตัวคั่น
+Density	ความหนาแน่น
 Depth Priority	ลำดับความสำคัญตามความลึก
 Descending	จากมากไปน้อย
 Describing	กำลังอธิบาย
@@ -863,9 +908,11 @@ Directions From Here	เส้นทางจากที่นี่
 Directions To Here	เส้นทางไปที่นี่
 Directions use an external routing server	เส้นทางใช้เซิร์ฟเวอร์คำนวณเส้นทางภายนอก
 Discard	ละทิ้ง
+Discard GeoPackage Edits	ทิ้งการแก้ไข GeoPackage
 Discard unsaved changes to the current model?	ละทิ้งการเปลี่ยนแปลงที่ยังไม่บันทึกของโมเดลปัจจุบันหรือไม่
 Disconnect	ตัดการเชื่อมต่อ
 Disconnect From S3	ตัดการเชื่อมต่อจาก S3
+Disconnect PostGIS	ยกเลิกการเชื่อมต่อ PostGIS
 Display	การแสดงผล
 Display Filters	ตัวกรองการแสดงผล
 Display Filters ({n})	ตัวกรองการแสดงผล ({n})
@@ -875,6 +922,8 @@ Dissolve Field	ฟิลด์สำหรับรวมรูปทรง
 Distance	ระยะทาง
 Distance (km)	ระยะทาง (กม.)
 Distance Coefficient P	สัมประสิทธิ์ระยะทาง P
+Distance Field	ฟิลด์ระยะทาง
+Distance Units	หน่วยระยะทาง
 Distance units	หน่วยระยะทาง
 Distances along the surface, heights, areas and volumes.	ระยะทางตามพื้นผิว ความสูง พื้นที่ และปริมาตร
 DISTINCT	DISTINCT
@@ -933,8 +982,13 @@ Draw a halo around label text.	วาดขอบเรืองแสงรอ�
 Draw a labelled latitude/longitude grid over the map frame.	วาดกริดละติจูด/ลองจิจูดพร้อมป้ายชื่อบนกรอบแผนที่
 Draw a model: chain tools from input layers to the results to keep	วาดโมเดล: เชื่อมเครื่องมือต่อกันจากชั้นข้อมูลอินพุตไปยังผลลัพธ์ที่ต้องการเก็บ
 Draw a model: chain tools from input layers to the results to keep.	วาดโมเดล: เชื่อมเครื่องมือต่อกันจากชั้นข้อมูลอินพุตไปยังผลลัพธ์ที่ต้องการเก็บ
+Draw as: {how}	วาดเป็น: {how}
 Draw at its place in the stack, the bottom stroke first	วาดตามตำแหน่งในลำดับชั้น โดยวาดเส้นล่างสุดก่อน
 Draw every feature's strokes of one level before the next, so casings join under the cores where lines meet	วาดเส้นของทุกฟีเจอร์ในระดับเดียวกันก่อนระดับถัดไป เพื่อให้เส้นขอบนอกเชื่อมกันใต้เส้นแกนตรงจุดที่เส้นมาบรรจบกัน
+Draw it over every other element	วาดทับองค์ประกอบอื่นทั้งหมด
+Draw it over the element above it	วาดทับองค์ประกอบที่อยู่เหนือขึ้นไปหนึ่งชั้น
+Draw it under every other element	วาดใต้องค์ประกอบอื่นทั้งหมด
+Draw it under the element below it	วาดใต้องค์ประกอบที่อยู่ถัดลงไปหนึ่งชั้น
 Draw labels at every scale and distance.	วาดป้ายชื่อที่ทุกมาตราส่วนและทุกระยะ
 Draw new features in the selected layer. Double-click to finish lines and polygons.	วาดฟีเจอร์ใหม่ในชั้นข้อมูลที่เลือก ดับเบิลคลิกเพื่อจบการวาดเส้นและรูปหลายเหลี่ยม
 Draw new single-band rasters with the inverted grey stretch again.	วาดแรสเตอร์แบนด์เดียวใหม่ด้วยการยืดสีเทาแบบกลับค่าอีกครั้ง
@@ -957,6 +1011,7 @@ Drone and aerial imagery shared on OpenAerialMap, newest first, added as cloud-o
 Duplicate	ทำสำเนา
 Duplicate Connection	ทำสำเนาการเชื่อมต่อ
 Duplicate Element	ทำสำเนาองค์ประกอบ
+Duplicate Keys	คีย์ซ้ำ
 Duplicate Layout	ทำสำเนาเลย์เอาต์
 Duplicate Map	ทำสำเนาแผนที่
 Dusk	พลบค่ำ
@@ -997,6 +1052,7 @@ Edit Attribute	แก้ไขแอตทริบิวต์
 Edit Cell	แก้ไขเซลล์
 Edit Connection	แก้ไขการเชื่อมต่อ
 Edit Description	แก้ไขคำอธิบาย
+Edit GeoPackage Table	แก้ไขตาราง GeoPackage
 Edit Graphic	แก้ไขกราฟิก
 Edit Status	สถานะการแก้ไข
 Edit Steps	แก้ไขขั้นตอน
@@ -1005,6 +1061,7 @@ Edit Text…	แก้ไขข้อความ…
 Edit the title and instructions	แก้ไขชื่อเรื่องและคำแนะนำ
 Edit Vertex	แก้ไขจุดยอด
 Edit Vertices	แก้ไขจุดยอด
+Edit › Features	แก้ไข › ฟีเจอร์
 Editing	การแก้ไข
 Editing on	เปิดการแก้ไขอยู่
 Editing Settings	การตั้งค่าการแก้ไข
@@ -1063,6 +1120,7 @@ Escape	Escape
 ESRI	ESRI
 ESRI:	ESRI:
 Europe Equal Area (ETRS89 LAEA)	Europe Equal Area (ETRS89 LAEA)
+every	ทุก
 Every band's value at a pixel.	ค่าของทุกแบนด์ที่พิกเซลหนึ่ง
 Every editing tool.	เครื่องมือแก้ไขทั้งหมด
 Every label setting of this layer, in the Labeling pane.	การตั้งค่าป้ายชื่อทั้งหมดของชั้นข้อมูลนี้ ในแผงการติดป้ายชื่อ
@@ -1077,6 +1135,7 @@ exit roundabout	ออกจากวงเวียน
 Expand Group	ขยายกลุ่ม
 Expand Legend	ขยายคำอธิบายสัญลักษณ์
 Expand the ribbon (Ctrl+F1)	ขยายริบบอน (Ctrl+F1)
+Expand Tile Legend	ขยายคำอธิบายสัญลักษณ์ของไทล์
 Explode	แยกส่วน (Explode)
 Exploratory 3D Analysis	การวิเคราะห์ 3D เชิงสำรวจ
 Exploratory Analysis	การวิเคราะห์เชิงสำรวจ
@@ -1094,6 +1153,7 @@ Export Features	ส่งออกฟีเจอร์
 Export Features (tool)	ส่งออกฟีเจอร์ (เครื่องมือ)
 Export Features needs a vector layer (Data › Export Raster writes a raster)	ส่งออกฟีเจอร์ต้องใช้ชั้นข้อมูลเวกเตอร์ (ข้อมูล › ส่งออกแรสเตอร์ ใช้เขียนแรสเตอร์)
 Export Features…	ส่งออกฟีเจอร์…
+Export Keyboard Shortcuts…	ส่งออกแป้นพิมพ์ลัด…
 Export Layout	ส่งออกเลย์เอาต์
 Export Map	ส่งออกแผนที่
 Export Map failed unexpectedly	ส่งออกแผนที่ล้มเหลวโดยไม่คาดคิด
@@ -1107,6 +1167,7 @@ Export Raster	ส่งออกแรสเตอร์
 Export Raster…	ส่งออกแรสเตอร์…
 Export Report	ส่งออกรายงาน
 Export Report…	ส่งออกรายงาน…
+Export Session Log	ส่งออกบันทึกเซสชัน
 Export Table	ส่งออกตาราง
 Export the animation as PNG frames (zip).	ส่งออกแอนิเมชันเป็นเฟรม PNG (zip)
 Export the layer.	ส่งออกชั้นข้อมูล
@@ -1124,6 +1185,8 @@ Export To 3D File	ส่งออกเป็นไฟล์ 3D
 Exported to {path}.	ส่งออกไปที่ {path} แล้ว
 exporting animations needs the desktop app	การส่งออกแอนิเมชันต้องใช้แอปเดสก์ท็อป
 exporting time animations needs the desktop app	การส่งออกแอนิเมชันตามเวลาต้องใช้แอปเดสก์ท็อป
+Exports a styled raster layer as Web Mercator PNG tiles in a PMTiles archive.	ส่งออกชั้นข้อมูลแรสเตอร์ที่จัดสัญลักษณ์แล้วเป็นไทล์ PNG แบบ Web Mercator ในไฟล์ PMTiles
+Exports a vector layer as a Web Mercator vector-tile PMTiles archive.	ส่งออกชั้นข้อมูลเวกเตอร์เป็นไฟล์ PMTiles แบบเวกเตอร์ไทล์ Web Mercator
 Export…	ส่งออก…
 Expression	นิพจน์
 Extent	ขอบเขต
@@ -1151,6 +1214,7 @@ Feature Layer	ชั้นข้อมูลฟีเจอร์
 Feature Templates	เทมเพลตฟีเจอร์
 Feature templates: default values for new features.	เทมเพลตฟีเจอร์: ค่าเริ่มต้นสำหรับฟีเจอร์ใหม่
 Feature To Point	ฟีเจอร์เป็นจุด
+Feature Vertices To Points	จุดยอดของฟีเจอร์เป็นจุด
 featured products	ผลิตภัณฑ์แนะนำ
 Features	ฟีเจอร์
 Features most like the selected one	ฟีเจอร์ที่คล้ายกับฟีเจอร์ที่เลือกมากที่สุด
@@ -1165,6 +1229,7 @@ Field	ฟิลด์
 field * 2, 'text', a + b	field * 2, 'text', a + b
 Field boundaries	ขอบเขตแปลงเกษตร
 Field density	ความหนาแน่นของแปลงเกษตร
+Field is missing from this input.	อินพุตนี้ไม่มีฟิลด์ดังกล่าว
 Field name	ชื่อฟิลด์
 Field Prefix	คำนำหน้าฟิลด์
 Field to Sum and Average	ฟิลด์สำหรับหาผลรวมและค่าเฉลี่ย
@@ -1185,6 +1250,7 @@ file path	พาธไฟล์
 Files ({n})	ไฟล์ ({n})
 Fill	สีพื้น
 Fill Cache	สร้างแคช
+Fill Layers	ชั้นสีพื้น
 Fill the cache whenever the projection changes.	สร้างแคชทุกครั้งที่เส้นโครงแผนที่เปลี่ยน
 Film grain	เกรนฟิล์ม
 Filter	ตัวกรอง
@@ -1201,6 +1267,7 @@ Find plugins in the RustGIS plugin registry.	ค้นหาปลั๊กอ�
 Find Similar	ค้นหาที่คล้ายกัน
 Find Tools	ค้นหาเครื่องมือ
 Finding routes…	กำลังค้นหาเส้นทาง…
+Finish File Export	ส่งออกไฟล์ให้เสร็จ
 Finish Polygon	จบรูปหลายเหลี่ยม
 Finish Profile	จบโพรไฟล์
 Finish Tool Run	จบการรันเครื่องมือ
@@ -1256,6 +1323,7 @@ Function	ฟังก์ชัน
 Function Editor	ตัวแก้ไขฟังก์ชัน
 Gamma	แกมมา
 Gemini stopped the reply ({reason}).	Gemini หยุดการตอบกลับ ({reason})
+General	ทั่วไป
 Generalization	การทำให้เป็นแบบทั่วไป
 Generate a token	สร้างโทเค็น
 geoBoundaries listed no countries: type a country's code	geoBoundaries ไม่มีรายชื่อประเทศ: พิมพ์รหัสประเทศ
@@ -1272,11 +1340,15 @@ GeoJSON, CSV, GeoParquet, FlatGeobuf, GeoPackage, zipped Shapefiles, KML, GPX or
 GeoLens	GeoLens
 GeoLens…	GeoLens…
 GeoLibre	GeoLibre
+GeoLibre project	โปรเจกต์ GeoLibre
+GeoLibre Project…	โปรเจกต์ GeoLibre…
 GeoLibre Tools	เครื่องมือ GeoLibre
 Geometric Interval	ช่วงเรขาคณิต
 Geometry	รูปทรงเรขาคณิต
 Geometry lost during import cannot be recovered here. Use Import Original File to choose its coordinate system before reading it. Streamed layers must first be loaded into memory.	รูปทรงเรขาคณิตที่สูญหายระหว่างการนำเข้าไม่สามารถกู้คืนได้ที่นี่ ใช้ นำเข้าไฟล์ต้นฉบับ เพื่อเลือกระบบพิกัดก่อนอ่านไฟล์ ชั้นข้อมูลแบบสตรีมต้องโหลดเข้าหน่วยความจำก่อน
 GeoPackage	GeoPackage
+GeoPackage Edits	การแก้ไข GeoPackage
+GeoPackage tables are edited in the desktop app	แก้ไขตาราง GeoPackage ได้ในแอปบนเครื่อง
 GeoParquet	GeoParquet
 Geoprocessing	การประมวลผลเชิงพื้นที่
 Geoprocessing history.	ประวัติการประมวลผลเชิงพื้นที่
@@ -1314,6 +1386,7 @@ Got it	รับทราบ
 GPU	GPU
 GPU\nRendering	การเรนเดอร์\nด้วย GPU
 GPX	GPX
+Gradient	ไล่สี
 Graduated Colors	ไล่ระดับสี
 Granules	แกรนูล
 Graphic Style	สไตล์กราฟิก
@@ -1341,6 +1414,7 @@ Harbour (qualitative)	ท่าเรือ (เชิงคุณภาพ)
 Hazards	ภัยพิบัติ
 Haze	หมอกควัน
 Haze, fog, rain or snow over the map.	หมอกควัน หมอก ฝน หรือหิมะบนแผนที่
+Head/Tail Breaks	Head/Tail Breaks
 Height	ความสูง
 Height (mm)	ความสูง (มม.)
 Help	ช่วยเหลือ
@@ -1369,6 +1443,9 @@ Hold	พักไว้
 HOME	HOME
 Home	หน้าหลัก
 Home › Add	หน้าหลัก › เพิ่ม
+Home › Add › Add Data	หน้าหลัก › เพิ่ม › เพิ่มข้อมูล
+Home › Add › Web Data	หน้าหลัก › เพิ่ม › ข้อมูลเว็บ
+Home › Add › Web Data › United States	หน้าหลัก › เพิ่ม › ข้อมูลเว็บ › สหรัฐอเมริกา
 Home › Add Data	หน้าหลัก › เพิ่มข้อมูล
 Home › Inspect › Measure	หน้าหลัก › ตรวจสอบ › วัดระยะ
 Home › Navigate	หน้าหลัก › นำทาง
@@ -1391,6 +1468,9 @@ Hydrography	อุทกศาสตร์
 Icechunk only, not read yet	Icechunk เท่านั้น ยังอ่านไม่ได้
 Id: {id}	รหัส: {id}
 Identify	ระบุข้อมูล
+Identify WMS Layer	ระบุข้อมูลชั้น WMS
+Identity	เอกลักษณ์ (Identity)
+Identity Features	ฟีเจอร์เอกลักษณ์ (Identity)
 Idle	ว่าง
 IDW\nInterpolation	การประมาณค่า\nแบบ IDW
 IDW Interpolation	การประมาณค่าในช่วงแบบ IDW
@@ -1413,6 +1493,9 @@ Import All	นำเข้าทั้งหมด
 Import Bookmarks	นำเข้าบุ๊กมาร์ก
 Import Bookmarks…	นำเข้าบุ๊กมาร์ก…
 Import Deep Learning Package	นำเข้าแพ็กเกจ Deep Learning
+Import GeoLibre Project	นำเข้าโปรเจกต์ GeoLibre
+Import Keyboard Shortcuts	นำเข้าแป้นพิมพ์ลัด
+Import Keyboard Shortcuts…	นำเข้าแป้นพิมพ์ลัด…
 Import Layout	นำเข้าเลย์เอาต์
 Import Layout…	นำเข้าเลย์เอาต์…
 Import Model	นำเข้าโมเดล
@@ -1431,6 +1514,7 @@ Import Styles From…	นำเข้าสไตล์จาก…
 Import Task	นำเข้างาน
 Import Task…	นำเข้างาน…
 Import Thumbnail	นำเข้าภาพขนาดย่อ
+Imported bindings replace conflicting keys. Unknown commands are kept for later use.	การกำหนดปุ่มที่นำเข้าจะแทนที่ปุ่มที่ชนกัน คำสั่งที่ไม่รู้จักจะเก็บไว้ใช้ภายหลัง
 Import…	นำเข้า…
 IN	IN
 In Beyond	ซ่อนเมื่อขยายเกิน
@@ -1449,6 +1533,7 @@ INPUT	อินพุต
 Input	อินพุต
 Input Features	ฟีเจอร์อินพุต
 Input Layer	ชั้นข้อมูลอินพุต
+Input Layers	ชั้นข้อมูลอินพุต
 Input Points	จุดอินพุต
 Input Polygons	รูปหลายเหลี่ยมอินพุต
 Input Raster	แรสเตอร์อินพุต
@@ -1485,8 +1570,11 @@ Interpolation Attribute	แอตทริบิวต์สำหรับป�
 Interpret the layer's native coordinates in this coordinate system. This changes where it draws; the source file is unchanged.	ตีความพิกัดดั้งเดิมของชั้นข้อมูลในระบบพิกัดนี้ ซึ่งจะเปลี่ยนตำแหน่งที่แสดงผล โดยไฟล์ต้นทางไม่เปลี่ยนแปลง
 Interval	ช่วงห่าง
 invalid child id	รหัสลูกไม่ถูกต้อง
+Invalid or reserved shortcut key.	ปุ่มลัดไม่ถูกต้องหรือถูกสงวนไว้
 Invalid selection outline · draw a smaller area	เส้นขอบการเลือกไม่ถูกต้อง · วาดพื้นที่ให้เล็กลง
 Invalid selection outline · draw a smaller radius	เส้นขอบการเลือกไม่ถูกต้อง · วาดรัศมีให้เล็กลง
+Invalid shortcut binding.	การกำหนดปุ่มลัดไม่ถูกต้อง
+Invalid shortcut key.	ปุ่มลัดไม่ถูกต้อง
 Invalid: {error}	ไม่ถูกต้อง: {error}
 Invert	กลับค่า
 Invert color scheme	กลับชุดสี
@@ -1515,11 +1603,15 @@ Jobs	รายการงาน
 JOIN	JOIN
 Join	เชื่อม
 Join Features	เชื่อมฟีเจอร์
+Join Field	เชื่อมฟิลด์ (Join Field)
 Join Operation	การดำเนินการเชื่อม
+Joins	การเชื่อม
 Joins attributes from a join layer to a target layer based on their spatial relationship.	เชื่อมแอตทริบิวต์จากชั้นข้อมูลที่จะเชื่อมไปยังชั้นข้อมูลเป้าหมายตามความสัมพันธ์เชิงพื้นที่
+Joins attributes from a source table or layer to a target layer or table based on matching key values.	เชื่อมแอตทริบิวต์จากตารางหรือชั้นข้อมูลต้นทางเข้ากับชั้นข้อมูลหรือตารางเป้าหมาย โดยจับคู่ค่าคีย์ที่ตรงกัน
 Journal figure, 1 column (90 mm)	ภาพประกอบวารสาร 1 คอลัมน์ (90 mm)
 Journal figure, 1.5 columns (140 mm)	ภาพประกอบวารสาร 1.5 คอลัมน์ (140 mm)
 Journal figure, 2 columns (190 mm)	ภาพประกอบวารสาร 2 คอลัมน์ (190 mm)
+JSON value	ค่า JSON
 Keep a history of every edit to the layer, to look back or restore.	เก็บประวัติการแก้ไขทุกครั้งของชั้นข้อมูล เพื่อย้อนดูหรือกู้คืน
 Keep an archive of edits	เก็บคลังประวัติการแก้ไข
 keep current	คงค่าปัจจุบัน
@@ -1534,8 +1626,10 @@ Keep this result	เก็บผลลัพธ์นี้
 Keep Tool	คงเครื่องมือไว้
 Keep value	คงค่าไว้
 Keeps the access key ID and secret access key in this computer's credential store, never in the connection or the project.	เก็บ access key ID และ secret access key ไว้ในที่เก็บข้อมูลรับรองของคอมพิวเตอร์เครื่องนี้ ไม่เก็บไว้ในการเชื่อมต่อหรือโปรเจกต์
+Keeps the parts of two polygon layers that only one of them covers, with that layer's attributes.	เก็บส่วนของชั้นข้อมูลรูปหลายเหลี่ยมสองชั้นที่มีเพียงชั้นเดียวครอบคลุม พร้อมแอตทริบิวต์ของชั้นนั้น
 Key	คีย์
 Keyboard Shortcuts	แป้นพิมพ์ลัด
+Keyboard shortcuts	แป้นพิมพ์ลัด
 Keyboard shortcuts.	แป้นพิมพ์ลัด
 Keys are available for this session but were not remembered on this computer.	คีย์ใช้ได้ในเซสชันนี้ แต่ไม่ได้จดจำไว้บนคอมพิวเตอร์เครื่องนี้
 Keys are kept for this session only: there is no credential store to remember them in here.	คีย์จะเก็บไว้เฉพาะเซสชันนี้: ไม่มีที่เก็บข้อมูลรับรองสำหรับจดจำคีย์ที่นี่
@@ -1631,6 +1725,7 @@ Line Of Sight From Here	แนวสายตาจากจุดนี้
 Line Strokes	ลายเส้น
 Line width	ความกว้างเส้น
 Line {n} isn't four numbers (column row lon lat)	บรรทัด {n} ไม่ใช่ตัวเลขสี่ค่า (column row lon lat)
+Linear	เชิงเส้น
 Lines	เส้น
 Lines and ticks	เส้นและขีดแบ่ง
 LineString	LineString
@@ -1650,6 +1745,7 @@ List Database Columns	แสดงรายการคอลัมน์ฐา�
 List Database Tables	แสดงรายการตารางฐานข้อมูล
 List geoBoundaries Countries	แสดงรายการประเทศใน geoBoundaries
 List Layers in File	แสดงรายการชั้นข้อมูลในไฟล์
+List PostGIS Tables	แสดงรายการตาราง PostGIS
 List Products	แสดงรายการผลิตภัณฑ์
 List S3 Bucket	แสดงรายการใน S3 Bucket
 List Source Cooperative Files	แสดงรายการไฟล์ Source Cooperative
@@ -1664,6 +1760,7 @@ Listed for discovery: RustGIS doesn't read this dataset yet. Its data and paper 
 Listing…	กำลังแสดงรายการ…
 Lit	ด้านรับแสง
 Live summary of the features in view.	สรุปฟีเจอร์ในมุมมองแบบสด
+Load	โหลด
 Load All Features	โหลดฟีเจอร์ทั้งหมด
 Load an unpacked plugin from its folder while you develop it.	โหลดปลั๊กอินที่ยังไม่ได้แพ็กจากโฟลเดอร์ระหว่างการพัฒนา
 Load more	โหลดเพิ่ม
@@ -1683,6 +1780,7 @@ Locator	ตัวระบุตำแหน่ง
 Lock	ล็อก
 Locked	ล็อกแล้ว
 Locked: unlock it in the Format pane to move or change it	ล็อกอยู่: ปลดล็อกในแผงรูปแบบเพื่อย้ายหรือเปลี่ยนแปลง
+Log Commands	บันทึกคำสั่ง
 Log In to Connection	ลงชื่อเข้าใช้การเชื่อมต่อ
 Log In to {name}…	ลงชื่อเข้าใช้ {name}…
 Log In…	ลงชื่อเข้าใช้…
@@ -1739,14 +1837,18 @@ Mapping	การทำแผนที่
 Maps	แผนที่
 Maps move together.	แผนที่เคลื่อนที่ไปพร้อมกัน
 MapServer	MapServer
+Mark {n}	ขีด {n}
 Marker	มาร์กเกอร์
+Marker Rotation	การหมุนมาร์กเกอร์
 Mask Values	ค่าที่มาสก์
 Masking	การมาสก์
 Match Option	ตัวเลือกการจับคู่
 Matching places	สถานที่ที่ตรงกัน
+Matplotlib	Matplotlib
 Max	สูงสุด
 Max %	สูงสุด %
 Max Neighbors	จำนวนเพื่อนบ้านสูงสุด
+Maximum Zoom	ระดับซูมสูงสุด
 Maximum zoom	ระดับซูมสูงสุด
 MCP Relay	รีเลย์ MCP
 MCP relay is already listening on 127.0.0.1:{port}; stop it first to use port {asked}	รีเลย์ MCP กำลังรอรับการเชื่อมต่อที่ 127.0.0.1:{port} อยู่แล้ว ให้หยุดก่อนจึงจะใช้พอร์ต {asked} ได้
@@ -1761,6 +1863,7 @@ Measure Distance	วัดระยะทาง
 Measure geodesic distances and areas on the map.	วัดระยะทางและพื้นที่แบบจีโอเดสิกบนแผนที่
 Measure on this body, with one of its basemaps.	วัดบนเทห์ฟากฟ้านี้ ด้วยแผนที่ฐานแผนที่หนึ่งของเทห์ฟากฟ้านั้น
 Measure with an elevation raster	วัดด้วยแรสเตอร์ความสูง
+Measured grid	กริดพิกัด
 Measurement units	หน่วยการวัด
 Measurement units must be metric or imperial	หน่วยการวัดต้องเป็นเมตริกหรืออิมพีเรียล
 Measurements so far.	ผลการวัดจนถึงตอนนี้
@@ -1768,6 +1871,7 @@ Mensuration	การรังวัด
 Mensuration Tools	เครื่องมือรังวัด
 Merge	ผสาน
 Merge elevation rasters into a surface model and export a 3D mesh.	ผสานแรสเตอร์ความสูงเป็นแบบจำลองพื้นผิว และส่งออกเป็นเมช 3 มิติ
+Merge Rules	กฎการรวม
 Merges polygons that share a field value into one feature per value.	ผสานรูปหลายเหลี่ยมที่มีค่าฟิลด์เดียวกันเป็นหนึ่งฟีเจอร์ต่อหนึ่งค่า
 Messages appear here.	ข้อความจะแสดงที่นี่
 Meters	เมตร
@@ -1782,12 +1886,15 @@ Min must be less than Max	ค่าต่ำสุดต้องน้อยก
 Min must not be more than Max	ค่าต่ำสุดต้องไม่มากกว่าค่าสูงสุด
 Minimum Bounding Geometry	รูปทรงเรขาคณิตขอบเขตต่ำสุด (Minimum Bounding Geometry)
 Minimum Maximum	ต่ำสุด-สูงสุด
+Minimum Zoom	ระดับซูมต่ำสุด
 Minus	Minus
 Minutes	นาที
 minutes ago	นาทีที่แล้ว
+minutes is a whole number from 0 (off) to 60	minutes ต้องเป็นจำนวนเต็มตั้งแต่ 0 (ปิด) ถึง 60
 Miter	มุมแหลม (Miter)
 Mobile Map	แผนที่มือถือ
 Mod+	Mod+
+Mod+A	Mod+A
 Mod+C	Mod+C
 Mod+D	Mod+D
 Mod+Equals	Mod+Equals
@@ -1831,7 +1938,9 @@ Move	ย้าย
 Move Bookmark	ย้ายบุ๊กมาร์ก
 Move Down	เลื่อนลง
 Move down	เลื่อนลง
+Move down: labels of the classes listed first are placed first when they compete for room.	เลื่อนลง: เมื่อป้ายแย่งพื้นที่กัน ป้ายของคลาสที่อยู่ในรายการก่อนจะได้วางก่อน
 Move Group	ย้ายกลุ่ม
+Move Group To Group	ย้ายกลุ่มไปไว้ในกลุ่ม
 Move Label Class	ย้ายคลาสป้ายชื่อ
 Move Task Step	ย้ายขั้นตอนของงาน
 Move To Bottom	ย้ายไปล่างสุด
@@ -1840,6 +1949,7 @@ Move To Top	ย้ายไปบนสุด
 Move To {group}	ย้ายไปยัง {group}
 Move Up	เลื่อนขึ้น
 Move up	เลื่อนขึ้น
+Move up: labels of the classes listed first are placed first when they compete for room.	เลื่อนขึ้น: เมื่อป้ายแย่งพื้นที่กัน ป้ายของคลาสที่อยู่ในรายการก่อนจะได้วางก่อน
 Move, rotate, scale, merge, explode, split or flip the selected features.	ย้าย หมุน ปรับขนาด ผสาน แยกส่วน แบ่ง หรือพลิกฟีเจอร์ที่เลือก
 Move, Rotate, Scale…	ย้าย หมุน ปรับขนาด…
 MultiLineString	MultiLineString
@@ -1869,6 +1979,8 @@ Navigation	การนำทาง
 Navigation Mode	โหมดการนำทาง
 Navigator	ตัวนำทาง
 NDVI, NDWI, SAVI, NBR, NDBI, EVI.	NDVI, NDWI, SAVI, NBR, NDBI, EVI.
+Near	ใกล้ที่สุด (Near)
+Near Features	ฟีเจอร์ที่ใกล้ที่สุด
 Nearest Neighbor	เพื่อนบ้านใกล้ที่สุด (Nearest Neighbor)
 Neatline	เส้นกรอบ (Neatline)
 Needs three or more bands.	ต้องมีอย่างน้อยสามแบนด์
@@ -2028,6 +2140,7 @@ Ollama (local)	Ollama (ภายในเครื่อง)
 On	เปิด
 On Hold	พักไว้
 on hold	พักไว้
+on must be true or false	on ต้องเป็น true หรือ false
 On the desktop, the key can also come from {vars}.	บนเดสก์ท็อป คีย์อาจมาจาก {vars} ได้ด้วย
 On-screen compass, zoom slider and pan pad.	เข็มทิศบนหน้าจอ แถบเลื่อนซูม และแผงเลื่อนแผนที่
 One command per line: id {json}. Lines starting with # are comments.	หนึ่งคำสั่งต่อบรรทัด: id {json} บรรทัดที่ขึ้นต้นด้วย # เป็นหมายเหตุ
@@ -2036,12 +2149,14 @@ One layer: a Zarr variable or a raster's bands	หนึ่งชั้นข้
 One page per feature of an index layer.	หนึ่งหน้าต่อหนึ่งฟีเจอร์ของชั้นข้อมูลดัชนี
 One per line: code=name	หนึ่งรายการต่อบรรทัด: code=name
 One stroke, from the symbol. Add strokes for casings, parallel lines and offsets.	เส้นเดียวจากสัญลักษณ์ เพิ่มเส้นสำหรับเส้นขอบนอก เส้นขนาน และระยะเลื่อน
+only a discovered list can invalidate the saved table	only a discovered list can invalidate the saved table
 Only features matching this expression draw in {layer}.	เฉพาะฟีเจอร์ที่ตรงกับนิพจน์นี้เท่านั้นที่จะแสดงใน {layer}
 Only selected polygons will be included in the output.	เฉพาะรูปหลายเหลี่ยมที่เลือกเท่านั้นที่จะรวมอยู่ในผลลัพธ์
 Only where the map is	เฉพาะบริเวณแผนที่
 Opacity	ความทึบ
 Open	เปิด
 Open a .rgis project	เปิดโปรเจกต์ .rgis
+Open a Data Cube	เปิดดาต้าคิวบ์
 open a layout first	เปิดเลย์เอาต์ก่อน
 Open a model file (*.model.json)	เปิดไฟล์โมเดล (*.model.json)
 Open a model of this project	เปิดโมเดลของโปรเจกต์นี้
@@ -2098,6 +2213,7 @@ OpenStreetMap's public server	เซิร์ฟเวอร์สาธาร�
 OpenStreetMap, Esri, USGS, NASA and more, from the plugin registry.	OpenStreetMap, Esri, USGS, NASA และอื่นๆ จากรีจิสทรีปลั๊กอิน
 OpenStreetMap…	OpenStreetMap…
 Open…	เปิด…
+Opt+	Opt+
 Optional	ไม่บังคับ
 Optional. Shift+Enter starts a new line.	ไม่บังคับ กด Shift+Enter เพื่อขึ้นบรรทัดใหม่
 Options	ตัวเลือก
@@ -2140,6 +2256,9 @@ Package a trained deep learning model.	สร้างแพ็กเกจโ�
 Package Map	แพ็กเกจแผนที่
 Package Project	แพ็กเกจโปรเจกต์
 Package Results	แพ็กเกจผลลัพธ์
+Pad	เติมขอบ
+Padding across	ระยะขอบแนวนอน
+Padding up and down	ระยะขอบแนวตั้ง
 Page	หน้า
 Page\nSize	ขนาด\nหน้า
 Page after: {name}	หน้าหลังเนื้อหา: {name}
@@ -2176,6 +2295,7 @@ Paste Layers	วางชั้นข้อมูล
 Paste Special	วางแบบพิเศษ
 Paste Special (as a new layer)	วางแบบพิเศษ (เป็นชั้นข้อมูลใหม่)
 paste your key	วางคีย์ของคุณ
+path is required	ต้องระบุ path
 Pause	หยุดชั่วคราว
 Pause.	หยุดชั่วคราว
 PDF	PDF
@@ -2198,8 +2318,11 @@ Pictures	รูปภาพ
 Pictures, attachments and chart	รูปภาพ ไฟล์แนบ และแผนภูมิ
 Pipe	ขีดตั้ง (|)
 Pitch	มุมก้ม
+Pivot Field	ฟิลด์ Pivot
+Pivot Table	ตาราง Pivot
 Pixel	พิกเซล
 Pixel Editor	ตัวแก้ไขพิกเซล
+Pixel Size	ขนาดพิกเซล
 Pixel Size (°)	ขนาดพิกเซล (°)
 Pixel type	ชนิดพิกเซล
 Place a raster on the map	วางแรสเตอร์บนแผนที่
@@ -2248,6 +2371,7 @@ Pop-up Mode	โหมดป๊อปอัป
 pop_max > 1000000	pop_max > 1000000
 Popular datasets…	ชุดข้อมูลยอดนิยม…
 Populated Places	แหล่งชุมชน
+Population Field	ฟิลด์ประชากร
 Portal	พอร์ทัล
 Portolan	Portolan
 Portolan…	Portolan…
@@ -2265,6 +2389,7 @@ Preparing its Python environment…	กำลังเตรียมสภา�
 Presentation	งานนำเสนอ
 Presentation File	ไฟล์งานนำเสนอ
 Presentation Pane	แผงงานนำเสนอ
+Preserve Attributes	คงแอตทริบิวต์ไว้
 Preset	ค่าที่ตั้งไว้
 Press Load sources & plot first	กด โหลดแหล่งข้อมูลและพล็อต ก่อน
 Preview and set up the report.	แสดงตัวอย่างและตั้งค่ารายงาน
@@ -2294,6 +2419,7 @@ Project	โปรเจกต์
 Project\nPackage	แพ็กเกจ\nโปรเจกต์
 Project Info	ข้อมูลโปรเจกต์
 project is "sample", "blank", "last" or {"path": a project file}	project คือ "sample", "blank", "last" หรือ {"path": a project file} (พาธไฟล์โปรเจกต์)
+Project Raster	ฉายแรสเตอร์ (Project Raster)
 Project Template	เทมเพลตโปรเจกต์
 Project templates: start projects from a saved setup.	เทมเพลตโปรเจกต์: เริ่มโปรเจกต์จากการตั้งค่าที่บันทึกไว้
 project's path is required	ต้องระบุ path ของโปรเจกต์
@@ -2303,6 +2429,8 @@ Projects (RustGIS, QGIS)	โปรเจกต์ (ARutGIS, QGIS)
 Properties	คุณสมบัติ
 Property	คุณสมบัติ
 Proportional Symbols	สัญลักษณ์แบบสัดส่วน
+Provide keys to reset, or no parameters to reset all.	ระบุปุ่มที่จะรีเซ็ต หรือไม่ใส่พารามิเตอร์เพื่อรีเซ็ตทั้งหมด
+Provide shortcut file text, data or a path.	ระบุข้อความ ข้อมูล หรือพาธของไฟล์แป้นพิมพ์ลัด
 Provider	ผู้ให้บริการ
 Provinces:	จังหวัด:
 Proximity	ความใกล้เคียง
@@ -2328,6 +2456,7 @@ Quick\nAccess	เข้าถึง\nด่วน
 Quick Access Toolbar	แถบเครื่องมือเข้าถึงด่วน
 Quick actions	การดำเนินการด่วน
 Quick Analysis	การวิเคราะห์ด่วน
+Radial	แนวรัศมี
 radius km	รัศมี km
 radius m	รัศมี m
 Radius {distance} (approximate)	รัศมี {distance} (โดยประมาณ)
@@ -2350,6 +2479,7 @@ Raster Information	รายละเอียดแรสเตอร์
 Raster Layer	ชั้นข้อมูลแรสเตอร์
 Raster layer	ชั้นข้อมูลแรสเตอร์
 Raster tiles (XYZ)	ไทล์แรสเตอร์ (XYZ)
+Raster to PMTiles	แรสเตอร์เป็น PMTiles
 Raster · {w} × {h} · {n} bands · {renderer}	แรสเตอร์ · {w} × {h} · {n} แบนด์ · {renderer}
 Read and write files on this computer	อ่านและเขียนไฟล์บนคอมพิวเตอร์เครื่องนี้
 Read the bands picked for the view (at most about 6 km a side)	อ่านแบนด์ที่เลือกสำหรับมุมมอง (ด้านละไม่เกินประมาณ 6 km)
@@ -2383,6 +2513,7 @@ Red–Blue	แดง–น้ำเงิน
 Reference Scale	มาตราส่วนอ้างอิง
 Reference scale	มาตราส่วนอ้างอิง
 Refine the search to see {n} more	ค้นหาให้เจาะจงขึ้นเพื่อดูอีก {n} รายการ
+Reflect	สะท้อน
 Refresh	รีเฟรช
 Refresh every connection's lists	รีเฟรชรายการของทุกการเชื่อมต่อ
 Refresh Map Series	รีเฟรชชุดแผนที่
@@ -2430,6 +2561,7 @@ Remove this stop	นำจุดแวะนี้ออก
 Remove Tile Layer	นำชั้นข้อมูลไทล์ออก
 Remove token	นำโทเค็นออก
 Remove {name}	นำ {name} ออก
+Removes the parts of input features that fall inside erase polygons.	ลบส่วนของฟีเจอร์อินพุตที่อยู่ภายในรูปหลายเหลี่ยมที่ใช้ลบ
 Removes the parts of polygon features that overlap erase polygons.	ลบส่วนของฟีเจอร์รูปหลายเหลี่ยมที่ซ้อนทับกับรูปหลายเหลี่ยมสำหรับลบออก
 Removes vertices that deviate less than a tolerance (Douglas–Peucker).	ลบจุดยอดที่เบี่ยงเบนน้อยกว่าค่าความคลาดเคลื่อนที่ยอมรับ (Douglas–Peucker)
 Rename	เปลี่ยนชื่อ
@@ -2464,6 +2596,7 @@ Reset Default	รีเซ็ตเป็นค่าเริ่มต้น
 Reset Effects	รีเซ็ตเอฟเฟกต์
 Reset North	รีเซ็ตทิศเหนือ
 Reset north	รีเซ็ตทิศเหนือ
+Reset unreadable saved shortcuts before importing.	รีเซ็ตแป้นพิมพ์ลัดที่บันทึกไว้แต่อ่านไม่ได้ก่อนนำเข้า
 Resolution (0–30)	ความละเอียด (0–30)
 Response	การตอบกลับ
 Restore	คืนค่า
@@ -2491,8 +2624,11 @@ Round	มน
 roundabout turn	เลี้ยวที่วงเวียน
 Routes (name, surface, length)	เส้นทาง (ชื่อ พื้นผิวถนน ความยาว)
 Routes by Valhalla (FOSSGIS) on OpenStreetMap data. Travel times don't include live traffic.	เส้นทางจาก Valhalla (FOSSGIS) บนข้อมูล OpenStreetMap เวลาเดินทางไม่รวมสภาพจราจรแบบเรียลไทม์
+Row Fields	ฟิลด์แถว
 Rows	แถว
+Rows shifted	แถวเลื่อนตำแหน่ง
 Rule	กฎ
+Rule is not available for this field.	ใช้กฎนี้กับฟิลด์นี้ไม่ได้
 Rule name	ชื่อกฎ
 Rulers	ไม้บรรทัด
 Run	เรียกใช้
@@ -2598,6 +2734,7 @@ Save the project's setup, without its features, as a template.	บันทึ�
 Save the project's styles to a style file.	บันทึกสไตล์ของโปรเจกต์เป็นไฟล์สไตล์
 Save the raster as a GeoTIFF.	บันทึกแรสเตอร์เป็น GeoTIFF
 Save the selected layer with its symbology as a layer file.	บันทึกชั้นข้อมูลที่เลือกพร้อมสัญลักษณ์เป็นไฟล์ชั้นข้อมูล
+Save to GeoPackage	บันทึกลง GeoPackage
 Save Web Link Chart	บันทึกแผนภูมิลิงก์บนเว็บ
 Save Web Map	บันทึกเว็บแมป
 Save Web Scene	บันทึกเว็บซีน
@@ -2653,6 +2790,7 @@ Search Open Data	ค้นหาข้อมูลเปิด
 Search Open Data…	ค้นหาข้อมูลเปิด…
 Search places for “{query}”	ค้นหาสถานที่สำหรับ “{query}”
 Search plugins	ค้นหาปลั๊กอิน
+Search Radius	รัศมีการค้นหา
 Search results © OpenStreetMap contributors	ผลการค้นหา © ผู้ร่วมพัฒนา OpenStreetMap
 Search Satellite Embeddings	ค้นหาเอ็มเบดดิงดาวเทียม
 Search services and layers…	ค้นหาบริการและชั้นข้อมูล…
@@ -2712,6 +2850,7 @@ Select Rows	เลือกแถว
 Select rows with a SQL expression.	เลือกแถวด้วยนิพจน์ SQL
 Select Subset From Current Selection	เลือกบางส่วนจากการเลือกปัจจุบัน
 Select the rows related to the selection.	เลือกแถวที่สัมพันธ์กับการเลือก
+Select Tile Layer	เลือกชั้นข้อมูลไทล์
 Selectable	เลือกได้
 Selectable Layers	ชั้นข้อมูลที่เลือกได้
 Selectable on the map: the Select tool picks its features	เลือกได้บนแผนที่: เครื่องมือเลือกจะเลือกฟีเจอร์ของชั้นข้อมูลนี้
@@ -2729,7 +2868,9 @@ Selects features that intersect features in another layer.	เลือกฟี
 Selects features with a SQL where clause, e.g. pop_est > 1000000.	เลือกฟีเจอร์ด้วยเงื่อนไข SQL where เช่น pop_est > 1000000
 Semicolon	อัฒภาค
 Send	ส่ง
+Send Backward	เลื่อนลงหนึ่งชั้น
 Send offline edits back and refresh.	ส่งการแก้ไขแบบออฟไลน์กลับและรีเฟรช
+Send to Back	ส่งไปไว้หลังสุด
 Sent as	ส่งในรูปแบบ
 Sentinel-2 Explorer	Sentinel-2 Explorer
 Sentinel-2 Explorer…	Sentinel-2 Explorer…
@@ -2739,10 +2880,12 @@ Sepia	ซีเปีย
 Sequential	ลำดับต่อเนื่อง
 Serif	Serif
 Server	เซิร์ฟเวอร์
+Service	บริการ
 Service Group	กลุ่มบริการ
 Service group data exceeds 64 MB.	ข้อมูลกลุ่มบริการเกิน 64 MB
 Service Import Requests	คำขอนำเข้าบริการ
 Service Layers	ชั้นข้อมูลของบริการ
+Session Log	บันทึกเซสชัน
 Session token	โทเค็นเซสชัน
 Set	ตั้งค่า
 Set Cell Size	กำหนดขนาดเซลล์
@@ -2755,10 +2898,13 @@ Set Subtypes	กำหนดประเภทย่อย
 Set the pixels inside a polygon	กำหนดค่าพิกเซลภายในรูปหลายเหลี่ยม
 Set the pixels inside a polygon.	กำหนดค่าพิกเซลภายในรูปหลายเหลี่ยม
 Settings	การตั้งค่า
+Settings › Customize	การตั้งค่า › ปรับแต่ง
+Settings › Customize › Keyboard Shortcuts	การตั้งค่า › ปรับแต่ง › แป้นพิมพ์ลัด
 Shade walls by the way they face the light.	แรเงาผนังตามทิศที่หันเข้าหาแสง
 Shaded	แรเงา
 Shaded Relief	ภาพนูนต่ำแรเงา
 Shape	รูปร่าง
+Shapeburst	ไล่สีตามรูปทรง (Shapeburst)
 Shapefile	Shapefile
 Shapes	รูปทรง
 Share	แชร์
@@ -2839,6 +2985,7 @@ Side labels	ป้ายชื่อด้านข้าง
 Sign in to choose a model.	ลงชื่อเข้าใช้เพื่อเลือกโมเดล
 Sign in with your ChatGPT account.	ลงชื่อเข้าใช้ด้วยบัญชี ChatGPT ของคุณ
 Sign out	ออกจากระบบ
+Sign Out of ArcGIS	ออกจากระบบ ArcGIS
 Sign-in	การลงชื่อเข้าใช้
 Sign-in cancelled.	ยกเลิกการลงชื่อเข้าใช้แล้ว
 Sign-in timed out. Start again and allow the browser to reach this computer's loopback address.	การลงชื่อเข้าใช้หมดเวลา เริ่มใหม่และอนุญาตให้เบราว์เซอร์เข้าถึงที่อยู่ loopback ของคอมพิวเตอร์นี้
@@ -2873,6 +3020,7 @@ Snapping	การสแนป
 Snow	หิมะ
 Socrata	Socrata
 Solid	เส้นทึบ
+Some images aren't shown: the notebook's images use all the memory set aside for them.	บางภาพไม่ได้แสดง เพราะภาพในโน้ตบุ๊กใช้หน่วยความจำที่กันไว้ให้หมดแล้ว
 Some of the project's S3 sources wait for you to choose the saved connection that reads them	แหล่งข้อมูล S3 บางรายการของโปรเจกต์รอให้คุณเลือกการเชื่อมต่อที่บันทึกไว้สำหรับอ่านข้อมูล
 Sort	เรียงลำดับ
 Sort: {field}	เรียงลำดับ: {field}
@@ -2881,8 +3029,14 @@ Source Cooperative	Source Cooperative
 Source Cooperative…	Source Cooperative…
 Source coordinate system	ระบบพิกัดต้นทาง
 Source coordinate system is required	ต้องระบุระบบพิกัดต้นทาง
+Source Key Field	ฟิลด์คีย์ต้นทาง
+Source Table / Layer	ตาราง / ชั้นข้อมูลต้นทาง
+Source-layer Name	ชื่อชั้นข้อมูลต้นทาง (source-layer)
 South	ใต้
 South Polar Stereographic	South Polar Stereographic
+Spacing	ระยะห่าง
+Spacing across	ระยะห่างแนวนอน
+Spacing down	ระยะห่างแนวตั้ง
 Spatial Join	การเชื่อมเชิงพื้นที่
 Speaker notes	บันทึกของผู้นำเสนอ
 Spectral Analysis	การวิเคราะห์สเปกตรัม
@@ -2891,10 +3045,15 @@ Speed	ความเร็ว
 Speed Display	แสดงผลแบบเร็ว
 Split	แยก
 Split (click the line)	แยก (คลิกที่เส้น)
+Split Features	แบ่งฟีเจอร์
+Split Field	ฟิลด์แบ่ง
 Split the widest class	แยกคลาสที่กว้างที่สุด
+Splits input features by overlay polygons, keeping every part: those inside get the overlay's attributes.	แบ่งฟีเจอร์อินพุตด้วยรูปหลายเหลี่ยมซ้อนทับ โดยเก็บทุกส่วนไว้ ส่วนที่อยู่ข้างในจะได้แอตทริบิวต์ของชั้นซ้อนทับ
+Splits input features where they overlap overlay polygons, keeping both layers' attributes.	แบ่งฟีเจอร์อินพุตตรงที่ซ้อนกับรูปหลายเหลี่ยมซ้อนทับ โดยเก็บแอตทริบิวต์ของทั้งสองชั้น
 SQL	SQL
 SQL Pane	แผง SQL
 SQL queries run through DuckDB, a program the desktop app calls: open this project in the desktop app to query it.	คิวรี SQL ทำงานผ่าน DuckDB ซึ่งเป็นโปรแกรมที่แอปเดสก์ท็อปเรียกใช้: เปิดโปรเจกต์นี้ในแอปเดสก์ท็อปเพื่อคิวรี
+SQL Query	คิวรี SQL
 SQL Server	SQL Server
 SQL that must be true, e.g. pop > 0	SQL ที่ต้องเป็นจริง เช่น pop > 0
 Square	สี่เหลี่ยมจัตุรัส
@@ -2955,8 +3114,11 @@ Start With	เริ่มต้นด้วย
 Start-up	การเริ่มต้นโปรแกรม
 starting with a project file needs the desktop app	การเริ่มต้นด้วยไฟล์โปรเจกต์ต้องใช้แอปเดสก์ท็อป
 Statistic	สถิติ
+Statistic is already listed for this field.	สถิตินี้มีอยู่ในรายการของฟิลด์นี้แล้ว
+Statistic is not available for this field.	ใช้สถิตินี้กับฟิลด์นี้ไม่ได้
 Statistics	สถิติ
 Statistics Field	ฟิลด์สถิติ
+Statistics of fields, for the whole table or for each group of records sharing the case fields' values.	สถิติของฟิลด์ สำหรับทั้งตาราง หรือสำหรับแต่ละกลุ่มของระเบียนที่มีค่าในฟิลด์จัดกลุ่มเหมือนกัน
 Status	สถานะ
 Status Bar	แถบสถานะ
 Std. Dev.	ส่วนเบี่ยงเบนมาตรฐาน
@@ -2964,6 +3126,7 @@ Step	ขั้น
 Step back	ถอยหลังหนึ่งขั้น
 Step forward	เดินหน้าหนึ่งขั้น
 Step through a task.	ทำงานทีละขั้นตอน
+Step through the days with the time slider (View › Time), which starts with the layer's days	ดูทีละวันด้วยแถบเลื่อนเวลา (มุมมอง › เวลา) ซึ่งเริ่มจากวันของชั้นข้อมูล
 Step Time	เวลาต่อขั้น
 Step {n} done	ขั้นตอนที่ {n} เสร็จแล้ว
 Stepped line	เส้นแบบขั้นบันได
@@ -3019,10 +3182,12 @@ Switch Selection	สลับการเลือก
 Switch selection	สลับการเลือก
 Switch to a dark basemap	เปลี่ยนเป็นแผนที่ฐานสีเข้ม
 Symbol	สัญลักษณ์
+Symbol by Expression	สัญลักษณ์ตามนิพจน์
 Symbol Color	สีสัญลักษณ์
 Symbology	สัญลักษณ์
 Symbology Pane	แผงสัญลักษณ์
 Symbology Pane…	แผงสัญลักษณ์…
+Symmetrical Difference	ผลต่างสมมาตร (Symmetrical Difference)
 Sync	ซิงค์
 Tab	แท็บ
 tab is required	ต้องระบุ tab
@@ -3034,7 +3199,9 @@ Tags	แท็ก
 Take the data in view offline, to edit and sync back later.	นำข้อมูลในมุมมองไปใช้แบบออฟไลน์ เพื่อแก้ไขแล้วซิงค์กลับภายหลัง
 Take this bound out	นำขอบเขตนี้ออก
 Target Features	ฟีเจอร์เป้าหมาย
+Target Key Field	ฟิลด์คีย์เป้าหมาย
 Target Records	เรคคอร์ดเป้าหมาย
+Target Table / Layer	ตาราง / ชั้นข้อมูลเป้าหมาย
 Task	งาน
 Task Item	รายการงาน
 Task name	ชื่องาน
@@ -3090,6 +3257,7 @@ the layout export failed unexpectedly	การส่งออกเลย์เ
 The link doesn't say its STAC API: Find Items searches {api}	ลิงก์ไม่ได้ระบุ STAC API: "ค้นหารายการ" จะค้นหาใน {api}
 The list of plugins to browse. Leave it empty for the RustGIS plugin registry.	รายการปลั๊กอินสำหรับเรียกดู เว้นว่างไว้เพื่อใช้รีจิสทรีปลั๊กอินของ ARutGIS
 the map has no layers	แผนที่ไม่มีชั้นข้อมูล
+the map has no PostGIS layer loaded for editing (Home › Add Data › Database…, Load for editing)	แผนที่ยังไม่มีชั้นข้อมูล PostGIS ที่โหลดไว้สำหรับแก้ไข (หน้าหลัก › เพิ่มข้อมูล › ฐานข้อมูล…, โหลดเพื่อแก้ไข)
 The map is drawn in this coordinate system; layers are projected on the fly.	แผนที่วาดในระบบพิกัดนี้ ชั้นข้อมูลจะถูกแปลงพิกัดขณะแสดงผล
 the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	แผนที่ไม่ได้แสดงบนหน้าจอใน ARutGIS (กำลังแสดงเลย์เอาต์หรือแค็ตตาล็อก) จึงวาดนอกหน้าจอ
 The map view as it is now	มุมมองแผนที่ในขณะนี้
@@ -3105,6 +3273,8 @@ The model sent an empty reply; ask again, or try another model.	โมเดล�
 The National Map	The National Map
 The National Map…	The National Map…
 the NLDI's answer isn't UTF-8 text	คำตอบของ NLDI ไม่ใช่ข้อความ UTF-8
+the old file's list must disappear immediately	the old file's list must disappear immediately
+the open project has unsaved changes: save them before recovering other work	โปรเจกต์ที่เปิดอยู่มีการเปลี่ยนแปลงที่ยังไม่บันทึก ให้บันทึกก่อนกู้งานอื่นคืน
 the page is too large to draw	หน้ามีขนาดใหญ่เกินกว่าจะวาดได้
 The password was refused. Type a password to try again.	รหัสผ่านถูกปฏิเสธ พิมพ์รหัสผ่านเพื่อลองอีกครั้ง
 the picture is too large to show	ภาพมีขนาดใหญ่เกินกว่าจะแสดงได้
@@ -3122,6 +3292,9 @@ The public server is free and shared by many: it answers light use, and may ask 
 The range is two numbers, low and high (0, 0.9)	ช่วงคือตัวเลขสองค่า ต่ำและสูง (0, 0.9)
 The raster's data couldn't be read.	อ่านข้อมูลของแรสเตอร์ไม่ได้
 The raster's data couldn't be read: {error}	อ่านข้อมูลของแรสเตอร์ไม่ได้: {error}
+the recovery copy is incomplete	สำเนาสำหรับกู้คืนไม่สมบูรณ์
+the recovery copy is too large	สำเนาสำหรับกู้คืนใหญ่เกินไป
+the recovery copy isn't text	สำเนาสำหรับกู้คืนไม่ใช่ข้อความ
 the release isn't known	ไม่ทราบรุ่นที่เผยแพร่
 The reply reached its length limit.	คำตอบถึงขีดจำกัดความยาวแล้ว
 The reply stopped before completion; no actions were run.	คำตอบหยุดก่อนเสร็จสมบูรณ์ ไม่ได้เรียกใช้การกระทำใดๆ
@@ -3170,6 +3343,7 @@ the window's screenshot didn't come back in time, so the map was drawn offscreen
 the window's screenshot didn't hold the map, so it was drawn offscreen	ภาพหน้าจอของหน้าต่างไม่มีแผนที่อยู่ จึงวาดแผนที่นอกหน้าจอแทน
 Theme	ธีม
 There is no expression defined.	ยังไม่ได้กำหนดนิพจน์
+there is no unsaved work to recover	ไม่มีงานที่ยังไม่บันทึกให้กู้คืน
 Thermal	ความร้อน
 Thesis figure, full page (160 × 225 mm)	ภาพประกอบวิทยานิพนธ์ เต็มหน้า (160 × 225 mm)
 Thesis figure, half page (160 × 110 mm)	ภาพประกอบวิทยานิพนธ์ ครึ่งหน้า (160 × 110 mm)
@@ -3197,6 +3371,7 @@ This run has no tool form to open	การรันนี้ไม่มีฟ�
 This S3 connection choice is no longer available.	ตัวเลือกการเชื่อมต่อ S3 นี้ไม่มีให้ใช้แล้ว
 This step	ขั้นนี้
 This step names no tool to show.	ขั้นนี้ไม่ได้ระบุเครื่องมือที่จะแสดง
+This value cannot be shown as a list. Edit its JSON below.	ค่านี้แสดงเป็นรายการไม่ได้ แก้ไข JSON ของค่าได้ด้านล่าง
 Thumbnail	ภาพขนาดย่อ
 Tick length	ความยาวขีดแบ่ง
 Ticks	ขีดแบ่ง
@@ -3225,8 +3400,10 @@ To	ถึง
 Toggle Dark Mode	สลับโหมดมืด
 Toggle GPU Rendering	สลับการเรนเดอร์ด้วย GPU
 Toggle Imperial Measurements	สลับหน่วยวัดแบบอิมพีเรียล
+Token Required	ต้องใช้โทเค็น
 Tolerance (km)	ค่าความคลาดเคลื่อนที่ยอมรับ (km)
 Tolls	ทางด่วนเก็บค่าผ่านทาง
+Too many shortcut changes to save.	มีการเปลี่ยนแปลงแป้นพิมพ์ลัดมากเกินกว่าจะบันทึกได้
 Tool Gallery	คลังเครื่องมือ
 Toolbox	กล่องเครื่องมือ
 Toolboxes	กล่องเครื่องมือ
@@ -3254,6 +3431,7 @@ Train And Classify	ฝึกและจำแนก
 Train Deep Learning Model	ฝึกโมเดลการเรียนรู้เชิงลึก
 Trained models	โมเดลที่ฝึกแล้ว
 Training polygons	รูปหลายเหลี่ยมฝึกสอน
+Transfer Fields	ฟิลด์ที่โอนย้าย
 Transparency	ความโปร่งใส
 Traverse	วงรอบ (Traverse)
 Trend Analysis	การวิเคราะห์แนวโน้ม
@@ -3262,6 +3440,7 @@ Triangle	สามเหลี่ยม
 TRUE	TRUE
 Try again in a moment.	ลองใหม่อีกครั้งในอีกสักครู่
 Try again later.	ลองใหม่ภายหลัง
+Try other places round the point	ลองตำแหน่งอื่นรอบจุด
 Turn editing on or off for the map.	เปิดหรือปิดการแก้ไขสำหรับแผนที่
 Turn Labels Off	ปิดป้ายชื่อ
 Turn labels on or off for the selected layer.	เปิดหรือปิดป้ายชื่อของชั้นข้อมูลที่เลือก
@@ -3282,6 +3461,7 @@ Type the keys to log in for this session, then Save.	พิมพ์คีย์
 Type the password to remember it on this computer.	พิมพ์รหัสผ่านเพื่อจดจำไว้ในคอมพิวเตอร์เครื่องนี้
 Type the password, then Save. Remember on this computer is optional.	พิมพ์รหัสผ่าน แล้วกด บันทึก การจดจำในคอมพิวเตอร์เครื่องนี้เป็นตัวเลือกเสริม
 Typed below	พิมพ์ด้านล่าง
+typing must not start another lookup	typing must not start another lookup
 UM	UM
 Unavailable: {reason}	ไม่พร้อมใช้งาน: {reason}
 Unbind From Time Slider	ยกเลิกการผูกกับแถบเวลา
@@ -3296,22 +3476,28 @@ Uninstall	ถอนการติดตั้ง
 Uninstall GeoLibre Tools	ถอนการติดตั้ง GeoLibre Tools
 Uninstall Plugin	ถอนการติดตั้งปลั๊กอิน
 Uninstalled {id}.	ถอนการติดตั้ง {id} แล้ว
+Union	รวม (Union)
+Union Features	รวมฟีเจอร์ (Union)
 Unique Values	ค่าเฉพาะ
 Unit	หน่วย
 United States	สหรัฐอเมริกา
 Units	หน่วย
 Units per step	หน่วยต่อขั้น
 unknown (an older project)	ไม่ทราบ (โปรเจกต์รุ่นเก่า)
+Unknown shortcut binding field.	ไม่รู้จักฟิลด์ของการกำหนดปุ่มลัด
+Unknown shortcut command.	ไม่รู้จักคำสั่งของปุ่มลัด
 UNKNOWN TOOL	เครื่องมือที่ไม่รู้จัก
 Unload the GeoLibre tools and stop loading them when RustGIS starts.	ยกเลิกการโหลดเครื่องมือ GeoLibre และไม่ต้องโหลดอีกเมื่อเริ่ม ARutGIS
 Unsaved changes	การเปลี่ยนแปลงที่ยังไม่บันทึก
 Unsupervised classes (k-means)	คลาสแบบไม่มีผู้สอน (k-means)
 Unsupervised classes (k-means).	คลาสแบบไม่มีผู้สอน (k-means)
+Unsupported shortcut file version.	ไม่รองรับไฟล์แป้นพิมพ์ลัดรุ่นนี้
 Untitled model	โมเดลไม่มีชื่อ
 Up	ขึ้น
 Up a level	ขึ้นหนึ่งระดับ
 Update	อัปเดต
 Update Bookmark	อัปเดตบุ๊กมาร์ก
+Update Features	ปรับปรุงฟีเจอร์ (Update)
 Update Job	อัปเดตงาน
 Update Label Class	อัปเดตคลาสป้ายชื่อ
 Update to {version}	อัปเดตเป็น {version}
@@ -3327,8 +3513,10 @@ US State GIS	GIS ระดับรัฐของสหรัฐฯ
 US State GIS…	GIS ระดับรัฐของสหรัฐฯ…
 USA Contiguous Albers Equal Area	USA Contiguous Albers Equal Area
 Use	ใช้
+Use a browser download to export shortcuts.	ส่งออกแป้นพิมพ์ลัดด้วยการดาวน์โหลดผ่านเบราว์เซอร์
 Use a Single Stroke	ใช้เส้นเดียว
 Use another account	ใช้บัญชีอื่น
+Use ArcGIS Token	ใช้โทเค็น ArcGIS
 Use Connection	ใช้การเชื่อมต่อ
 Use Current View	ใช้มุมมองปัจจุบัน
 Use each feature's line color	ใช้สีเส้นของแต่ละฟีเจอร์
@@ -3355,6 +3543,7 @@ Valid: {n} of {of} features match	ถูกต้อง: ฟีเจอร์�
 Validate	ตรวจสอบความถูกต้อง
 Validate Model	ตรวจสอบโมเดล
 value (empty: no-data)	ค่า (เว้นว่าง: no-data)
+Value Field	ฟิลด์ค่า
 Values from −stretch to +stretch are shown from black to full colour	ค่าตั้งแต่ −stretch ถึง +stretch แสดงจากสีดำถึงสีเต็ม
 Vantor Open Data	Vantor Open Data
 Vantor's open imagery of disasters: pick an event and a phase (before or after it), then Find Items.	ภาพถ่ายแบบเปิดของ Vantor สำหรับภัยพิบัติ: เลือกเหตุการณ์และระยะ (ก่อนหรือหลังเหตุการณ์) แล้วกด ค้นหารายการ
@@ -3365,9 +3554,11 @@ Vector and raster data	ข้อมูลเวกเตอร์และแร
 Vector Layer	ชั้นข้อมูลเวกเตอร์
 vector tiles	ไทล์เวกเตอร์
 Vector tiles (MVT)	ไทล์เวกเตอร์ (MVT)
+Vector to PMTiles	เวกเตอร์เป็น PMTiles
 Vectors a geospatial foundation model made for every pixel or image patch, found where the map is and shown as colours.	เวกเตอร์ที่โมเดลพื้นฐานเชิงภูมิสารสนเทศสร้างขึ้นสำหรับทุกพิกเซลหรือทุกแพตช์ภาพ ค้นหาในบริเวณที่แผนที่แสดงอยู่ และแสดงเป็นสี
 Version {version}	เวอร์ชัน {version}
 Vertex	จุดยอด
+VERTEX_PART_INDEX	VERTEX_PART_INDEX
 Vertical	แนวตั้ง
 Via {roads}	ผ่าน {roads}
 Video	วิดีโอ
@@ -3484,6 +3675,7 @@ World, equal-area: true sizes, shapes bend towards the edges.	โลก แบ�
 Worldview	มุมมองพรมแดน
 Write a plugin	เขียนปลั๊กอิน
 Writes Sen's slope, the test's Z and p-value, and the slope where the trend is significant.	เขียนค่าความชันของ Sen ค่า Z และค่า p ของการทดสอบ และค่าความชันในบริเวณที่แนวโน้มมีนัยสำคัญ
+writing the copy failed unexpectedly	เขียนสำเนาล้มเหลวโดยไม่คาดคิด
 X (mm)	X (mm)
 X column	คอลัมน์ X
 X Field	ฟิลด์ X
@@ -3558,6 +3750,7 @@ Zoom: the map's zoom level, as web maps count it. Bearing: the direction the top
 © OpenStreetMap contributors	© ผู้ร่วมพัฒนา OpenStreetMap
 ±, dequantised	±, ลดการควอนไทซ์
 — fps	— fps
+“{text}” isn't a {type} value: {field} is left as it was.	“{text}” ไม่ใช่ค่าชนิด {type} จึงคง {field} ไว้ตามเดิม
 ⌘+Enter	⌘+Enter
 ⌘K	⌘K
 ▶ Simulate	▶ จำลอง
@@ -3586,6 +3779,7 @@ A date is missing between two commas	มีวันที่หายไปร�
 {name} ({n} images)	{name} ({n} ภาพ)
 {name} ({n} steps)	{name} ({n} ขั้นตอน)
 Data cube: {name}, where the map is	ดาต้าคิวบ์: {name} ในบริเวณแผนที่
+Data Cubes	ดาต้าคิวบ์
 Data cube: {name}, read whole	ดาต้าคิวบ์: {name} อ่านทั้งหมด
 {time} UTC	{time} UTC
 Sign in to ArcGIS	ลงชื่อเข้าใช้ ArcGIS
@@ -3594,6 +3788,7 @@ Client ID	รหัสไคลเอนต์ (Client ID)
 The portal's OAuth app	แอป OAuth ของพอร์ทัล
 Finish signing in in the pop-up window…	ลงชื่อเข้าใช้ให้เสร็จในหน้าต่างป๊อปอัป…
 Sign in	ลงชื่อเข้าใช้
+Sign In to ArcGIS	ลงชื่อเข้าใช้ ArcGIS
 Finish signing in in the browser…	ลงชื่อเข้าใช้ให้เสร็จในเบราว์เซอร์…
 A token for {server}	โทเค็นสำหรับ {server}
 Signed in to {portal}	ลงชื่อเข้าใช้ {portal} แล้ว
@@ -3614,6 +3809,8 @@ The open project has unsaved changes: save them, then recover this copy.	โป�
 Recover	กู้คืน
 Later	ภายหลัง
 Autosave couldn't keep a recovery copy: {error}	บันทึกอัตโนมัติไม่สามารถเก็บสำเนากู้คืนได้: {error}
+autosave failed unexpectedly; it goes on with the next copy	การบันทึกอัตโนมัติล้มเหลวโดยไม่คาดคิด จะทำต่อในสำเนาถัดไป
+autosave needs the desktop app	การบันทึกอัตโนมัติต้องใช้แอปบนเครื่อง
 Recovered unsaved work in {name}. Save to keep it.	กู้คืนงานที่ยังไม่บันทึกใน {name} แล้ว บันทึกเพื่อเก็บไว้
 Other copies of unsaved work will be offered at the next start ({n}).	สำเนางานที่ยังไม่บันทึกอื่น ๆ ({n}) จะแสดงให้เลือกเมื่อเริ่มโปรแกรมครั้งถัดไป
 It opens unsaved; saving replaces {file}.	จะเปิดในสถานะยังไม่บันทึก การบันทึกจะแทนที่ {file}
@@ -3669,6 +3866,7 @@ With no period, a cube is added over its last full calendar year.	หากไ�
 No data cube matches	ไม่มีดาต้าคิวบ์ที่ตรงกัน
 The desktop app adds data cubes	ต้องใช้แอปเดสก์ท็อปเพื่อเพิ่มดาต้าคิวบ์
 Adds the cube where the map is, following the time slider through its dates	เพิ่มคิวบ์ในบริเวณแผนที่ โดยเปลี่ยนตามแถบเวลาไปตามวันที่ของคิวบ์
+Adds the distance to the nearest feature of another layer, its id and the nearest point on it.	เพิ่มระยะทางไปยังฟีเจอร์ที่ใกล้ที่สุดของอีกชั้นข้อมูล พร้อมรหัสของฟีเจอร์นั้นและจุดที่ใกล้ที่สุดบนฟีเจอร์
 Opens Trend Analysis with this cube, where the map is	เปิด การวิเคราะห์แนวโน้ม ด้วยคิวบ์นี้ ในบริเวณแผนที่
 Adds the whole cube, following the time slider through its dates	เพิ่มคิวบ์ทั้งหมด โดยเปลี่ยนตามแถบเวลาไปตามวันที่ของคิวบ์
 Opens Trend Analysis with this cube, read whole	เปิด การวิเคราะห์แนวโน้ม ด้วยคิวบ์นี้ โดยอ่านทั้งหมด
@@ -3707,6 +3905,7 @@ Loads the layer's rows again as they are in the database now. Its edits that wer
 Saves the layer's edits to its table in the GeoPackage file in one transaction. When a row you changed or deleted was changed or deleted in the file since it was loaded, nothing is saved and the rows are listed. Saving the project keeps edits in the project only; exporting writes a new file.	บันทึกการแก้ไขของชั้นข้อมูลลงในตารางในไฟล์ GeoPackage ภายในทรานแซกชันเดียว หากแถวที่คุณเปลี่ยนแปลงหรือลบถูกเปลี่ยนแปลงหรือลบในไฟล์หลังจากโหลดมา จะไม่มีการบันทึกใด ๆ และจะแสดงรายการแถวเหล่านั้น การบันทึกโปรเจกต์จะเก็บการแก้ไขไว้ในโปรเจกต์เท่านั้น ส่วนการส่งออกจะเขียนเป็นไฟล์ใหม่
 Loads the layer's rows again as they are in the file now. Its edits that weren't saved are dropped (Undo brings them back).	โหลดแถวของชั้นข้อมูลอีกครั้งตามที่อยู่ในไฟล์ขณะนี้ การแก้ไขที่ยังไม่บันทึกจะถูกละทิ้ง (เลิกทำ จะนำกลับมาได้)
 Overlay (on top of the map's layers, such as labels, roads or a WMS layer; otherwise a basemap under them)	การซ้อนทับ (วางบนชั้นข้อมูลของแผนที่ เช่น ป้ายชื่อ ถนน หรือชั้นข้อมูล WMS หากไม่เลือกจะเป็นแผนที่ฐานที่อยู่ด้านล่าง)
+Overlay Features	ซ้อนทับฟีเจอร์
 {what} must be a number	{what} ต้องเป็นตัวเลข
 Its default: {default}. Its times: {times}	ค่าเริ่มต้น: {default} เวลาที่มี: {times}
 Connected for editing: {db}	เชื่อมต่อเพื่อแก้ไขแล้ว: {db}
@@ -3732,6 +3931,7 @@ This class is drawn with the layer's fills. Changing them here gives it its own.
 One fill, from the symbol. Add fills to stack colours, hatch lines and markers.	สีพื้นหนึ่งชั้นจากสัญลักษณ์ เพิ่มสีพื้นเพื่อซ้อนสี เส้นแรเงา และมาร์กเกอร์
 Draw	วาด
 A colour, hatch lines, markers on a grid, a gradient, or a shapeburst (shaded from the edge inwards)	สีเดียว เส้นแรเงา มาร์กเกอร์บนกริด การไล่สี หรือ shapeburst (ไล่เฉดจากขอบเข้าด้านใน)
+A command id is required.	ต้องระบุรหัสคำสั่ง
 Use each feature's fill color	ใช้สีพื้นของแต่ละฟีเจอร์
 Second color	สีที่สอง
 Straight across, in rings from its first point, or round its first point	ไล่ตรง ไล่เป็นวงจากจุดแรก หรือไล่รอบจุดแรก
@@ -3779,6 +3979,7 @@ Select None	ไม่เลือกเลย
 {n} layers: choose the ones to add.	{n} ชั้นข้อมูล: เลือกชั้นที่จะเพิ่ม
 Add {n}	เพิ่ม {n}
 In the coordinate system's units: metres for UTM.	ในหน่วยของระบบพิกัด: เมตรสำหรับ UTM
+In the middle	ตรงกลาง
 In degrees.	เป็นองศา
 Short labels	ป้ายชื่อแบบย่อ
 The kilometres' last two digits, as topographic maps print them: 43 for 543000.	เลขสองหลักสุดท้ายของกิโลเมตร ตามที่แผนที่ภูมิประเทศพิมพ์: 43 สำหรับ 543000
@@ -3821,8 +4022,12 @@ lat	ละติจูด
 {n} datasets on {portal}	{n} ชุดข้อมูลบน {portal}
 Into the group just above it, as its last item	เข้าไปในกลุ่มที่อยู่ด้านบนถัดไป เป็นรายการสุดท้าย
 Indent	เยื้องเข้า
+Indent Group	เยื้องกลุ่มเข้า
+Indent Layer	เยื้องชั้นข้อมูลเข้า
 Out of the group it is in, just below that group	ออกจากกลุ่มที่อยู่ ไปไว้ใต้กลุ่มนั้นถัดไป
 Outdent	เยื้องออก
+Outdent Group	เยื้องกลุ่มออก
+Outdent Layer	เยื้องชั้นข้อมูลออก
 Hide legend and source layers	ซ่อนคำอธิบายสัญลักษณ์และชั้นข้อมูลต้นทาง
 Show legend and source layers	แสดงคำอธิบายสัญลักษณ์และชั้นข้อมูลต้นทาง
 Hide legend	ซ่อนคำอธิบายสัญลักษณ์
@@ -3830,6 +4035,8 @@ Show legend	แสดงคำอธิบายสัญลักษณ์
 Hide source layers	ซ่อนชั้นข้อมูลต้นทาง
 Show source layers	แสดงชั้นข้อมูลต้นทาง
 Repair Data Source…	ซ่อมแซมแหล่งข้อมูล…
+Repair is disabled while discovery is in flight	Repair is disabled while discovery is in flight
+Repair Tile Archive	ซ่อมไฟล์ไทล์
 Out of its group, just below that group	ออกจากกลุ่ม ไปไว้ใต้กลุ่มนั้นถัดไป
 number	ตัวเลข
 Draw new single-band rasters with the grey stretch again.	วาดแรสเตอร์แบนด์เดียวใหม่ด้วยการยืดสีเทาอีกครั้ง
@@ -3842,6 +4049,7 @@ Several places	หลายตำแหน่ง
 The distance between two marks along the line	ระยะห่างระหว่างเครื่องหมายสองอันตามแนวเส้น
 0° crosses the line square	0° ตัดขวางเส้นเป็นมุมฉาก
 Turned further, clockwise	หมุนเพิ่ม ตามเข็มนาฬิกา
+Turns a field's values into fields: a row for each combination of the row fields' values, a column for each value of the pivot field.	เปลี่ยนค่าในฟิลด์เป็นฟิลด์ใหม่ โดยมีหนึ่งแถวต่อหนึ่งชุดค่าของฟิลด์แถว และหนึ่งคอลัมน์ต่อหนึ่งค่าของฟิลด์ Pivot
 With the field	ตามฟิลด์
 Turn the mark by the layer's rotation field, its offset with it	หมุนเครื่องหมายตามฟิลด์การหมุนของชั้นข้อมูล พร้อมระยะเลื่อนของเครื่องหมาย
 With the line	ตามแนวเส้น
@@ -3856,6 +4064,7 @@ Marks for	เครื่องหมายสำหรับ
 This class is drawn with the layer's marks. Changing them here gives it its own.	คลาสนี้วาดด้วยเครื่องหมายของชั้นข้อมูล การเปลี่ยนที่นี่จะทำให้คลาสนี้มีเครื่องหมายของตนเอง
 One marker, from the symbol. Add marks to stack markers, or to shift or turn them.	มาร์กเกอร์เดียวจากสัญลักษณ์ เพิ่มเครื่องหมายเพื่อซ้อนมาร์กเกอร์ หรือเพื่อเลื่อนหรือหมุนมาร์กเกอร์
 Hash marks	ขีดตัดขวาง
+Hatch lines	เส้นแรเงา
 Markers	มาร์กเกอร์
 A line, or markers or hash marks along it	เส้น หรือมาร์กเกอร์หรือขีดตัดขวางตามแนวเส้น
 Offset down	เลื่อนลง
@@ -3875,6 +4084,7 @@ The web app can't link to files on this computer: add the file again with Add Da
 Saved location	ตำแหน่งที่บันทึกไว้
 Read error	ข้อผิดพลาดในการอ่าน
 Replacement	ไฟล์ทดแทน
+Replaces the parts of input polygons that update polygons cover with the update polygons themselves.	แทนที่ส่วนของรูปหลายเหลี่ยมอินพุตที่รูปหลายเหลี่ยมปรับปรุงครอบคลุม ด้วยรูปหลายเหลี่ยมปรับปรุงนั้นเอง
 Choose Folder…	เลือกโฟลเดอร์…
 List Datasets	แสดงรายการชุดข้อมูล
 Listing datasets…	กำลังแสดงรายการชุดข้อมูล…
@@ -3882,6 +4092,7 @@ Repair	ซ่อมแซม
 Repaired {name}	ซ่อมแซม {name} แล้ว
 Ask Which Layers to Add	ถามว่าจะเพิ่มชั้นข้อมูลใด
 When a file holds several layers, choose the ones to add instead of adding them all.	เมื่อไฟล์มีหลายชั้นข้อมูล ให้เลือกชั้นที่จะเพิ่มแทนการเพิ่มทั้งหมด
+When its place is taken, the label tries the other places round the point, corners first.	เมื่อตำแหน่งถูกใช้ไปแล้ว ป้ายจะลองตำแหน่งอื่นรอบจุด โดยเริ่มจากมุมก่อน
 Classic	คลาสสิก
 The title over the map, the sources and the reference in boxes under it.	ชื่อเรื่องอยู่เหนือแผนที่ แหล่งที่มาและข้อมูลอ้างอิงอยู่ในกล่องใต้แผนที่
 Banner	แบนเนอร์
@@ -3893,6 +4104,9 @@ A large serif title; the note, the locator and the legend in a column at the rig
 Modular	แบบโมดูล
 Cards on a light page: the map, the locator and the legend each in one.	การ์ดบนหน้าสีอ่อน: แผนที่ ตัวระบุตำแหน่ง และคำอธิบายสัญลักษณ์ อยู่ในการ์ดของตัวเอง
 Poster	โปสเตอร์
+PostGIS Connection	การเชื่อมต่อ PostGIS
+PostGIS Edits	การแก้ไข PostGIS
+PostGIS tables are edited in the desktop app	แก้ไขตาราง PostGIS ได้ในแอปบนเครื่อง
 The page in colour, the title in light text and the map in a light card.	หน้ากระดาษเป็นสี ชื่อเรื่องเป็นตัวอักษรสีอ่อน และแผนที่อยู่ในการ์ดสีอ่อน
 Autosave	บันทึกอัตโนมัติ
 The class these label groups and the Labeling pane edit.	คลาสที่กลุ่มป้ายชื่อเหล่านี้และแผงการติดป้ายชื่อแก้ไข
@@ -3933,6 +4147,7 @@ Too many shortcut changes to save. Changes apply only to this session.	เปล
 Your browser may reserve some shortcuts.	เบราว์เซอร์อาจสงวนแป้นพิมพ์ลัดบางรายการไว้
 While typing, shortcuts without Ctrl/⌘ are paused. First-person navigation keeps Escape, Home and Delete.	ขณะพิมพ์ แป้นพิมพ์ลัดที่ไม่มี Ctrl/⌘ จะหยุดทำงานชั่วคราว การนำทางแบบมุมมองบุคคลที่หนึ่งยังคงใช้ Escape, Home และ Delete
 Copy, Cut and Paste keys cannot be reassigned.	กำหนดปุ่มคัดลอก ตัด และวางใหม่ไม่ได้
+Corner radius	รัศมีมุม
 The menu bar keeps that key: choose another.	แถบเมนูใช้ปุ่มนั้นอยู่: เลือกปุ่มอื่น
 Press a key combination to assign it. Escape cancels.	กดชุดปุ่มที่ต้องการกำหนด กด Escape เพื่อยกเลิก
 Assign Escape	กำหนด Escape
@@ -3940,6 +4155,9 @@ Remove shortcut	นำแป้นพิมพ์ลัดออก
 Add…	เพิ่ม…
 Tab, Enter, Space and arrow key bindings can override keyboard navigation.	การกำหนดปุ่ม Tab, Enter, Space และปุ่มลูกศรอาจทับการนำทางด้วยแป้นพิมพ์
 Shortcut already assigned	แป้นพิมพ์ลัดนี้ถูกกำหนดแล้ว
+Shortcut file contains invalid or reserved bindings.	ไฟล์แป้นพิมพ์ลัดมีการกำหนดปุ่มที่ไม่ถูกต้องหรือถูกสงวนไว้
+Shortcut file exceeds the size limit.	ไฟล์แป้นพิมพ์ลัดใหญ่เกินขนาดที่กำหนด
+Shortcut keys are required.	ต้องระบุปุ่มลัด
 Replace	แทนที่
 Reset {key}	รีเซ็ต {key}
 {key} is used by {command}.	{key} ถูกใช้โดย {command} แล้ว
@@ -3990,11 +4208,15 @@ Save a PostGIS layer's edits to its table, unless rows changed there since.	บ�
 Discard PostGIS Edits…	ละทิ้งการแก้ไข PostGIS…
 Load a PostGIS layer's rows again as they are in the database, dropping its edits.	โหลดแถวของชั้นข้อมูล PostGIS ใหม่ตามที่อยู่ในฐานข้อมูล โดยละทิ้งการแก้ไข
 Save to GeoPackage…	บันทึกลง GeoPackage…
+Save to PostGIS	บันทึกลง PostGIS
 Save a GeoPackage layer's edits to its table in the file, unless rows changed there since.	บันทึกการแก้ไขของชั้นข้อมูล GeoPackage ลงในตารางในไฟล์ เว้นแต่แถวในตารางมีการเปลี่ยนแปลงหลังจากนั้น
 Discard GeoPackage Edits…	ละทิ้งการแก้ไข GeoPackage…
+discard is true or false	discard ต้องเป็น true หรือ false
+Discard PostGIS Edits	ทิ้งการแก้ไข PostGIS
 Load a GeoPackage layer's rows again as they are in the file, dropping its edits.	โหลดแถวของชั้นข้อมูล GeoPackage ใหม่ตามที่อยู่ในไฟล์ โดยละทิ้งการแก้ไข
 Shared Vertices	จุดยอดร่วม
 Move polygon vertices stored at the same coordinate in this layer, including point-only contacts.	ย้ายจุดยอดของรูปหลายเหลี่ยมที่อยู่ที่พิกัดเดียวกันในชั้นข้อมูลนี้ รวมถึงจุดที่สัมผัสกันเพียงจุดเดียว
+Move Shared Vertex	ย้ายจุดยอดร่วม
 Keyboard\nShortcuts	แป้นพิมพ์\nลัด
 Customize keyboard shortcuts.	กำหนดแป้นพิมพ์ลัดเอง
 Every 5 min	ทุก 5 นาที
@@ -4059,12 +4281,15 @@ By Expression	ตามสูตร
 Fields, numbers, 'text', + - * / % ^, || to join text, comparisons, CASE and functions such as round(), upper(), if() or scale_linear(). Applies to the selected rows, or every row when none is selected.	ใช้ฟิลด์ ตัวเลข 'ข้อความ' + - * / % ^ ใช้ || ต่อข้อความ ใช้การเปรียบเทียบ CASE และฟังก์ชันเช่น round(), upper(), if() หรือ scale_linear() ได้ คำนวณกับแถวที่เลือก หรือทุกแถวถ้าไม่ได้เลือก
 It is remembered on this computer.	จำไว้ในเครื่องนี้
 Keeps the token in the system's credential store, so it is there when RustGIS starts again. Unticked, a token remembered before is deleted when you save another.	เก็บโทเค็นไว้ในที่เก็บรหัสผ่านของระบบ เปิด ARutGIS ครั้งหน้าก็ยังใช้ได้ ถ้าไม่ติ๊ก โทเค็นที่จำไว้ก่อนหน้าจะถูกลบเมื่อบันทึกโทเค็นใหม่
+Kernel Density	ความหนาแน่นเคอร์เนล (Kernel Density)
+Kernel Type	ชนิดเคอร์เนล
 One picture of the view: symbols and labels aren't cut at tile edges, and the service is asked once a view. Drawn in tiles on the globe, on a tilted map, or in a projection the service doesn't offer.	ขอเป็นภาพเดียวทั้งมุมมอง สัญลักษณ์และป้ายชื่อจะไม่ถูกตัดตามขอบไทล์ และขอจากบริการครั้งเดียวต่อมุมมอง บนลูกโลก แผนที่ที่เอียง หรือระบบพิกัดที่บริการไม่รองรับ จะวาดเป็นไทล์แทน
 Reading a granule's files needs an Earthdata Login token, which works for every NASA DAAC. It is kept until RustGIS closes unless you tick Remember, never in the project, and sent only to NASA's Earthdata data servers.	การอ่านไฟล์ของ granule ต้องใช้โทเค็น Earthdata Login ซึ่งใช้ได้กับ NASA DAAC ทุกแห่ง โทเค็นจะเก็บไว้จนกว่าจะปิด ARutGIS เว้นแต่ติ๊ก "จำไว้" ไม่บันทึกลงในโปรเจกต์ และส่งไปเฉพาะเซิร์ฟเวอร์ข้อมูล Earthdata ของ NASA เท่านั้น
 Set per feature from an expression, e.g. "pop" / 1e5 or CASE WHEN … END; colors as '#RRGGBB'. Empty: the symbol's own.	กำหนดรายฟีเจอร์ด้วยสูตร เช่น "pop" / 1e5 หรือ CASE WHEN … END สีใช้รูปแบบ '#RRGGBB' ปล่อยว่างไว้จะใช้ค่าของสัญลักษณ์เอง
 Single image	ภาพเดียว
 The token expired and was forgotten. Paste a new one.	โทเค็นหมดอายุและถูกลบแล้ว วางโทเค็นใหม่
 Tiles	ไทล์
+Tiles of {size} px	ไทล์ขนาด {size} พิกเซล
 Whether the service is asked for one picture of the view or for tiles.	เลือกว่าจะขอจากบริการเป็นภาพเดียวทั้งมุมมอง หรือเป็นไทล์
 e.g.  pop_est / 1000000   or   upper(name) || ' ' || round(area, 1)	เช่น  pop_est / 1000000   หรือ   upper(name) || ' ' || round(area, 1)
 Labels outside	ป้ายกำกับนอกกรอบ

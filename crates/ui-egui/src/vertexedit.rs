@@ -379,7 +379,7 @@ pub fn cursor(app: &RustGisApp, rect: Rect, p: Pos2) -> Option<egui::CursorIcon>
 pub fn draw(app: &RustGisApp, p: &Painter, rect: Rect, accent: Color32) {
     let green = Color32::from_rgb(0x16, 0x9A, 0x5A);
     let drag = app.map.vertex_drag;
-    let shared = drag.and_then(|d| app.map.vertex_drag_owner.as_ref()?.preview.as_ref().map(|preview| (d, preview)));
+    let shared = drag.zip(app.map.vertex_drag_owner.as_ref().and_then(|o| o.preview.as_ref()));
     if let Some((d, preview)) = shared {
         draw_shared(app, p, rect, d, preview, accent);
     }
