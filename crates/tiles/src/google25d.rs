@@ -448,11 +448,11 @@ mod tests {
         };
         let square = |a: f64, b: f64, size: f64| vec![ll(a, b), ll(a + size, b), ll(a + size, b - size), ll(a, b - size), ll(a, b)];
         // The tall square: 30 m.
-        assert_eq!(height(&[g.clone()], &square(x0 + 12.0, y0 - 12.0, 12.0)), Some(30.0));
+        assert_eq!(height(std::slice::from_ref(&g), &square(x0 + 12.0, y0 - 12.0, 12.0)), Some(30.0));
         // A corner of low pixels: 12 m.
-        assert_eq!(height(&[g.clone()], &square(x0, y0, 8.0)), Some(12.0));
+        assert_eq!(height(std::slice::from_ref(&g), &square(x0, y0, 8.0)), Some(12.0));
         // Smaller than a pixel: the pixel under it.
-        assert_eq!(height(&[g.clone()], &square(x0 + 13.0, y0 - 13.0, 1.0)), Some(30.0));
+        assert_eq!(height(std::slice::from_ref(&g), &square(x0 + 13.0, y0 - 13.0, 1.0)), Some(30.0));
         // Off the grid: none.
         assert_eq!(height(&[g], &square(x0 + 500.0, y0, 8.0)), None);
     }
