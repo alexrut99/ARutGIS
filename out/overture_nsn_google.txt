@@ -1,0 +1,20 @@
+rustgis-cli: 3D Buildings: © Overture Maps Foundation, © OpenStreetMap contributors, Microsoft, Google, Esri Community Maps (ODbL)
+rustgis-cli: 3D Buildings: Google Open Buildings 2.5D Temporal (CC BY 4.0)
+{
+  "bbox": [
+    99.97,
+    15.69,
+    99.99,
+    15.71
+  ],
+  "buildings": 57,
+  "estimated": 17,
+  "fromFloors": 0,
+  "fromGoogle": 40,
+  "fromHeight": 0,
+  "layer": 1,
+  "narrowed": false,
+  "oneFloor": 0,
+  "source": "overture",
+  "tallest": 7.0
+}

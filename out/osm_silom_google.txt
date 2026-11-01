@@ -1,0 +1,20 @@
+rustgis-cli: 3D Buildings: © OpenStreetMap contributors (ODbL)
+rustgis-cli: 3D Buildings: Google Open Buildings 2.5D Temporal (CC BY 4.0)
+{
+  "bbox": [
+    100.525,
+    13.722,
+    100.535,
+    13.732
+  ],
+  "buildings": 1750,
+  "estimated": 10,
+  "fromFloors": 729,
+  "fromGoogle": 1002,
+  "fromHeight": 9,
+  "layer": 1,
+  "narrowed": false,
+  "oneFloor": 0,
+  "source": "osm",
+  "tallest": 206.0
+}
