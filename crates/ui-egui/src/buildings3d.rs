@@ -10,6 +10,9 @@ use serde_json::{Value, json};
 use crate::{RustGisApp, Slot, i18n};
 
 type Answer = Slot<Result<Vec<u8>, String>>;
+
+/// Whether Google's 2.5D heights can be read here: its server doesn't answer web pages.
+pub const GOOGLE: bool = cfg!(not(target_arch = "wasm32"));
 type Read = Slot<Result<Vec<Value>, String>>;
 
 /// The user's choices: where the buildings come from and which heights raise them.
@@ -31,6 +34,9 @@ enum Step {
     Items(Vec<Answer>),
     /// The buildings in the area, read from each file.
     Reading(Vec<Read>),
+    /// Google's 2.5D heights over the area, read on a thread (the desktop app's); then the
+    /// command finds them kept.
+    Google(Slot<Result<(), String>>),
 }
 
 /// The request under way: its parameters and where it is.
@@ -67,7 +73,7 @@ pub fn start(app: &mut RustGisApp) {
     let mut p = json!({
         "name": i18n::t("3D Buildings"),
         "source": source.code(),
-        "heights": {"data": heights.data, "estimate": heights.estimate},
+        "heights": {"data": heights.data, "google": heights.google && GOOGLE, "estimate": heights.estimate},
     });
     let asked = rustgis_engine::cmd::portals::buildings_query(&app.session, &p).and_then(|(q, narrowed)| {
         // The box the request was for, so the answer is read for the same one.
@@ -146,7 +152,7 @@ fn advance(app: &mut RustGisApp, params: &mut Value, step: Step) -> Result<Resul
             Some(r) => {
                 let t = r.and_then(|b| String::from_utf8(b).map_err(|_| "the answer isn't UTF-8 text".to_string()))?;
                 params["answer"] = json!(t);
-                Err(())
+                then_google(params)?
             }
         },
         Step::Latest(a) => match take(&a) {
@@ -190,10 +196,43 @@ fn advance(app: &mut RustGisApp, params: &mut Value, step: Step) -> Result<Resul
                     all.extend(r?);
                 }
                 params["features"] = Value::Array(all);
+                then_google(params)?
+            }
+        },
+        Step::Google(slot) => match take(&slot) {
+            None => Ok(Step::Google(slot)),
+            Some(r) => {
+                // Not read: the buildings come without them, rather than the command waiting.
+                if let Err(e) = r {
+                    params["heights"]["google"] = json!(false);
+                    app.session.notify(i18n::fmt("3D Buildings: Google's 2.5D heights weren't read: {error}", &[("error", &e)]), true);
+                }
                 Err(())
             }
         },
     })
+}
+
+/// Once the buildings are in: Google's heights read first when they are asked for, else done.
+fn then_google(params: &Value) -> Result<Result<Step, ()>, String> {
+    if !params["heights"]["google"].as_bool().unwrap_or(false) {
+        return Ok(Err(()));
+    }
+    let slot: Slot<Result<(), String>> = Slot::default();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use rustgis_engine::render::rustgis_tiles::google25d;
+        let (land, area) = (slot.clone(), area(params)?);
+        std::thread::spawn(move || {
+            let r = google25d::grids_blocking(area, google25d::YEAR).map(|_| ());
+            *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+        });
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(Err("the web app can't read them".into()));
+    }
+    Ok(Ok(Step::Google(slot)))
 }
 
 /// Moves the request along; once the buildings are in, they are added, raised and shown tilted.
@@ -234,12 +273,13 @@ fn show_tilted(app: &mut RustGisApp) {
 pub fn summary(v: &Value) -> String {
     let n = |k: &str| v[k].as_u64().unwrap_or(0).to_string();
     i18n::fmt(
-        "3D Buildings: {n} buildings, the tallest {tallest} m. Heights: {tagged} from the data's height, {floors} from the number of floors, {estimated} estimated from the kind of building, {one} one floor (the height_src field says which).",
+        "3D Buildings: {n} buildings, the tallest {tallest} m. Heights: {tagged} from the data's height, {floors} from the number of floors, {google} from Google 2.5D, {estimated} estimated from the kind of building, {one} one floor (the height_src field says which).",
         &[
             ("n", &n("buildings")),
             ("tallest", &format!("{:.0}", v["tallest"].as_f64().unwrap_or(0.0))),
             ("tagged", &n("fromHeight")),
             ("floors", &n("fromFloors")),
+            ("google", &n("fromGoogle")),
             ("estimated", &n("estimated")),
             ("one", &n("oneFloor")),
         ],
@@ -252,13 +292,14 @@ mod tests {
 
     #[test]
     fn the_summary_says_where_the_heights_came_from() {
-        let v = json!({"buildings": 1200, "fromHeight": 40, "fromFloors": 160, "estimated": 990, "oneFloor": 10, "tallest": 314.2});
+        let v = json!({"buildings": 1200, "fromHeight": 40, "fromFloors": 160, "fromGoogle": 500, "estimated": 490, "oneFloor": 10, "tallest": 314.2});
         let s = summary(&v);
         assert!(
             s.contains("1200 buildings")
                 && s.contains("314 m")
                 && s.contains("40 from")
-                && s.contains("990 estimated")
+                && s.contains("500 from Google")
+                && s.contains("490 estimated")
                 && s.contains("10 one floor"),
             "{s}"
         );

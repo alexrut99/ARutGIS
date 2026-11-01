@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::{b, ps};
 use crate::render::rustgis_tiles::portal::{self, Portal, Use};
-use crate::render::rustgis_tiles::{boundaries, buildings3d, overpass, overture, thai_boundaries};
+use crate::render::rustgis_tiles::{boundaries, buildings3d, google25d, overpass, overture, thai_boundaries};
 use crate::{CmdResult, CommandSpec as C, Session};
 
 pub fn commands() -> Vec<C> {
@@ -19,7 +19,7 @@ pub fn commands() -> Vec<C> {
         ),
         C::new("boundaries.countries", "List geoBoundaries Countries", "Home › Add › Web Data", boundaries_countries).view(),
         C::new("buildings.add3d", "3D Buildings", "View › Scene", buildings_3d).params(
-            r#"{"source"?: "osm" (OpenStreetMap through Overpass, the default) | "overture" (Overture Maps: OpenStreetMap's buildings with Google's, Microsoft's and Esri's found in imagery filling the gaps), "heights"?: {"data"?: bool (the data's height, else its floors × 3 m; default true), "estimate"?: bool (else an estimate from the kind of building; default true)} (a building left with neither stands one floor high), "bbox"?: [west, south, east, north] | "view" (the map's extent, the default; narrowed to about 3 km × 3 km about its centre when larger), "url"?: "an Overpass server", "name"?: text, "answer"?: "the Overpass server's JSON answer, when already fetched (the app's background request)", "features"?: [Overture's buildings as GeoJSON features with its height, num_floors, class and subtype, when already read (the app's background request)]} (buildings raised by their heights, coloured by them; height_src says where each height came from)"#,
+            r#"{"source"?: "osm" (OpenStreetMap through Overpass, the default) | "overture" (Overture Maps: OpenStreetMap's buildings with Google's, Microsoft's and Esri's found in imagery filling the gaps), "heights"?: {"data"?: bool (the data's height, else its floors × 3 m; default true), "google"?: bool (else Google Open Buildings 2.5D's height from imagery, 2023, in Africa, South and South-East Asia and Latin America; the desktop app and the command line; default false), "estimate"?: bool (else an estimate from the kind of building; default true)} (a building left with none stands one floor high), "bbox"?: [west, south, east, north] | "view" (the map's extent, the default; narrowed to about 3 km × 3 km about its centre when larger), "url"?: "an Overpass server", "name"?: text, "answer"?: "the Overpass server's JSON answer, when already fetched (the app's background request)", "features"?: [Overture's buildings as GeoJSON features with its height, num_floors, class and subtype, when already read (the app's background request)]} (buildings raised by their heights, coloured by them; height_src says where each height came from)"#,
         ),
         C::new("boundaries.thai", "Add Thai Administrative Boundaries", "Home › Add › Web Data", boundaries_thai).params(
             r#"{"source": "dopa" (กรมการปกครอง, through OpenGISData-Thailand, CC BY 4.0) | "rtsd" (กรมแผนที่ทหาร, through OCHA HDX, CC BY-IGO), "level": "province" | "district" | "subdistrict", "name"?: text, "text"?: "the boundaries' GeoJSON, when already fetched (the app's background request)"} → Thailand's provinces, districts or subdistricts with their Thai names, labelled in Thai: for mapping and analysis, not legal boundaries"#,
@@ -107,7 +107,48 @@ fn heights(p: &Value) -> Result<buildings3d::Heights, String> {
     if let Some(x) = o.get("estimate") {
         h.estimate = x.as_bool().ok_or("heights.estimate is true or false")?;
     }
+    if let Some(x) = o.get("google") {
+        h.google = x.as_bool().ok_or("heights.google is true or false")?;
+    }
     Ok(h)
+}
+
+/// Google's 2.5D heights over an area (read once, then kept).
+#[cfg(not(target_arch = "wasm32"))]
+fn google_grids(area: [f64; 4]) -> Result<std::sync::Arc<Vec<google25d::Grid>>, String> {
+    google25d::grids_blocking(area, google25d::YEAR)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn google_grids(_area: [f64; 4]) -> Result<std::sync::Arc<Vec<google25d::Grid>>, String> {
+    Err("Google's 2.5D heights are read by the desktop app only (Google's server doesn't answer web pages)".into())
+}
+
+/// A GeoJSON polygon's outline (its first outer ring), as longitude/latitude pairs.
+fn outline(g: &Value) -> Option<Vec<(f64, f64)>> {
+    let ring = match g["type"].as_str()? {
+        "Polygon" => g.pointer("/coordinates/0")?,
+        "MultiPolygon" => g.pointer("/coordinates/0/0")?,
+        _ => return None,
+    };
+    Some(ring.as_array()?.iter().filter_map(|p| Some((p.get(0)?.as_f64()?, p.get(1)?.as_f64()?))).collect())
+}
+
+/// Raises the buildings without a height of their own by Google's 2.5D heights, where it has
+/// them: how many it raised.
+fn google_heights(polygons: &mut Value, grids: &[google25d::Grid]) -> usize {
+    let mut n = 0;
+    for f in polygons["features"].as_array_mut().into_iter().flatten() {
+        if matches!(f["properties"]["height_src"].as_str(), Some("height" | "floors")) {
+            continue;
+        }
+        if let Some(h) = outline(&f["geometry"]).and_then(|o| google25d::height(grids, &o)) {
+            f["properties"]["height_m"] = json!(h);
+            f["properties"]["height_src"] = json!(buildings3d::HeightSource::Google.code());
+            n += 1;
+        }
+    }
+    n
 }
 
 /// Overture's buildings as read from its GeoParquet files, as GeoJSON features with what 3D needs:
@@ -169,7 +210,7 @@ fn buildings_3d(s: &mut Session, p: &Value) -> CmdResult {
     let source = buildings3d::Source::parse(ps(p, "source").unwrap_or("osm"))?;
     let allow = heights(p)?;
     let name = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).unwrap_or("3D Buildings").to_string();
-    let (polygons, notes, area, narrowed) = match source {
+    let (mut polygons, mut notes, area, narrowed) = match source {
         buildings3d::Source::Osm => {
             let (q, narrowed) = buildings_query(s, p)?;
             let bytes = match ps(p, "answer") {
@@ -213,6 +254,15 @@ fn buildings_3d(s: &mut Session, p: &Value) -> CmdResult {
             (json!({"type": "FeatureCollection", "features": raised}), Vec::new(), area, narrowed)
         }
     };
+    // Google's heights for the buildings without their own, before any estimate.
+    let mut google_used = false;
+    if allow.google {
+        match google_grids(area) {
+            Ok(grids) if grids.is_empty() => notes.push("Google's 2.5D heights don't cover this area".to_string()),
+            Ok(grids) => google_used = google_heights(&mut polygons, &grids) > 0,
+            Err(e) => notes.push(format!("Google's 2.5D heights weren't read: {e}")),
+        }
+    }
     let (ds, _) = rustgis_data::io::read_geojson(&polygons.to_string(), &name).map_err(|e| e.to_string())?;
     if ds.features.is_empty() {
         return Err(match source {
@@ -223,11 +273,12 @@ fn buildings_3d(s: &mut Session, p: &Value) -> CmdResult {
     }
     let hi = ds.field_index("height_m").ok_or("the buildings' heights weren't read")?;
     let src = ds.field_index("height_src").ok_or("the buildings' heights weren't read")?;
-    let (mut tagged, mut floors, mut estimated, mut one_floor, mut tallest) = (0usize, 0usize, 0usize, 0usize, 0.0_f64);
+    let (mut tagged, mut floors, mut google, mut estimated, mut one_floor, mut tallest) = (0usize, 0usize, 0usize, 0usize, 0usize, 0.0_f64);
     for r in 0..ds.features.len() {
         match ds.value(r, src) {
             rustgis_data::Value::Text(t) if t == "height" => tagged += 1,
             rustgis_data::Value::Text(t) if t == "floors" => floors += 1,
+            rustgis_data::Value::Text(t) if t == "google_2.5d" => google += 1,
             rustgis_data::Value::Text(t) if t == "one_floor" => one_floor += 1,
             _ => estimated += 1,
         }
@@ -240,6 +291,9 @@ fn buildings_3d(s: &mut Session, p: &Value) -> CmdResult {
     s.run("layer.symbology", &json!({"layer": id, "type": "graduated", "field": "height_m", "method": "manual", "breaks": [8, 16, 30, 60, 120], "ramp": "YlOrRd"}))?;
     s.run("layer.lightShadow", &json!({"layer": id, "lighting": true, "shadows": true}))?;
     s.notify(format!("{name}: {}", source.attribution()), false);
+    if google_used {
+        s.notify(format!("{name}: {}", google25d::ATTRIBUTION), false);
+    }
     for note in notes {
         s.notify(format!("{name}: {note}"), false);
     }
@@ -249,6 +303,7 @@ fn buildings_3d(s: &mut Session, p: &Value) -> CmdResult {
         "buildings": n,
         "fromHeight": tagged,
         "fromFloors": floors,
+        "fromGoogle": google,
         "estimated": estimated,
         "oneFloor": one_floor,
         "tallest": tallest,

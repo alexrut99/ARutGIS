@@ -20,6 +20,7 @@ pub mod elevation;
 pub mod embeddings;
 pub mod failure;
 pub mod geocode;
+pub mod google25d;
 pub mod mbtiles;
 pub mod mvt;
 pub mod nldi;

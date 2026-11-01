@@ -4830,6 +4830,9 @@ fn buildings_menu(ui: &mut Ui, app: &mut RustGisApp) {
         ui.label(egui::RichText::new(tl!("Heights from")).font(semibold(12.0)));
         ui.checkbox(&mut choice.heights.data, tl!("The data's height or floors"))
             .on_hover_text(tl!("The height the building is given, else its number of floors × 3 m."));
+        ui.add_enabled(crate::buildings3d::GOOGLE, egui::Checkbox::new(&mut choice.heights.google, tl!("Google Open Buildings 2.5D")))
+            .on_hover_text(tl!("Heights Google measured from satellite imagery in 2023 (CC BY 4.0), for buildings without their own: most of Thailand, Africa, South Asia and Latin America. Read for the area first, so slower; the desktop app only."))
+            .on_disabled_hover_text(tl!("Google's server doesn't answer web pages: use the desktop app."));
         ui.checkbox(&mut choice.heights.estimate, tl!("An estimate from the kind of building")).on_hover_text(tl!(
             "A house 6 m, a shophouse 10 m, apartments 15 m, a temple 12 m… A building left with no height stands one floor (3 m) high."
         ));

@@ -59,17 +59,19 @@ impl Source {
     }
 }
 
-/// Which heights are used, in their order: the data's own (a height, else floors), then an
-/// estimate from the kind of building. A building left with neither stands one floor high.
+/// Which heights are used, in their order: the data's own (a height, else floors), then Google's
+/// 2.5D heights from imagery (`google25d`, off by default: the desktop app's), then an estimate
+/// from the kind of building. A building left with none stands one floor high.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Heights {
     pub data: bool,
+    pub google: bool,
     pub estimate: bool,
 }
 
 impl Default for Heights {
     fn default() -> Self {
-        Heights { data: true, estimate: true }
+        Heights { data: true, google: false, estimate: true }
     }
 }
 
@@ -82,6 +84,8 @@ pub enum HeightSource {
     Floors,
     /// The kind of building.
     Estimate,
+    /// Google's 2.5D heights, read from imagery.
+    Google,
     /// None of the heights allowed: one floor.
     Floor,
 }
@@ -92,6 +96,7 @@ impl HeightSource {
             HeightSource::Tagged => "height",
             HeightSource::Floors => "floors",
             HeightSource::Estimate => "estimate",
+            HeightSource::Google => "google_2.5d",
             HeightSource::Floor => "one_floor",
         }
     }
@@ -268,11 +273,11 @@ mod tests {
     #[test]
     fn only_the_heights_allowed_are_used() {
         let t = tags(&[("building", "apartments"), ("building:levels", "8")]);
-        let no_data = Heights { data: false, estimate: true };
+        let no_data = Heights { data: false, estimate: true, ..Heights::default() };
         assert_eq!(height_with(&t, no_data), (15.0, None, HeightSource::Estimate));
-        let nothing = Heights { data: false, estimate: false };
+        let nothing = Heights { data: false, estimate: false, ..Heights::default() };
         assert_eq!(height_with(&t, nothing), (3.0, None, HeightSource::Floor));
-        let data_only = Heights { data: true, estimate: false };
+        let data_only = Heights { data: true, estimate: false, ..Heights::default() };
         assert_eq!(height_with(&t, data_only), (24.0, Some(8.0), HeightSource::Floors));
         assert_eq!(height_with(&tags(&[("building", "temple")]), data_only), (3.0, None, HeightSource::Floor));
         assert_eq!(properties_with(&tags(&[("building", "house")]), nothing)["height_src"], "one_floor");
@@ -288,7 +293,7 @@ mod tests {
         assert_eq!(overture_height(None, None, None, None, all), (6.0, None, HeightSource::Estimate));
         // Nonsense heights fall through.
         assert_eq!(overture_height(Some(-1.0), Some(0.0), Some("house"), None, all).2, HeightSource::Estimate);
-        let p = overture_properties(Some(30.0), None, None, None, Heights { data: false, estimate: false });
+        let p = overture_properties(Some(30.0), None, None, None, Heights { data: false, estimate: false, google: false });
         assert_eq!((p["height_m"].as_f64(), p["height_src"].as_str()), (Some(3.0), Some("one_floor")));
     }
 

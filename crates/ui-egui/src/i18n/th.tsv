@@ -4280,9 +4280,13 @@ A house 6 m, a shophouse 10 m, apartments 15 m, a temple 12 m… A building left
 Buildings: OpenStreetMap (ODbL). Most buildings in Thailand have no height or floors in it, so their heights are estimates. Buildings stand on flat ground, not on the 3D terrain.	อาคาร: OpenStreetMap (ODbL) อาคารส่วนใหญ่ในไทยยังไม่มีความสูงหรือจำนวนชั้น ความสูงจึงเป็นค่าประมาณ อาคารตั้งบนพื้นราบ ไม่ได้วางบนภูมิประเทศ 3 มิติ
 Buildings: Overture Maps (ODbL): OpenStreetMap, Microsoft, Google and Esri Community Maps. Heights where its sources give them, else as ticked. Buildings stand on flat ground, not on the 3D terrain.	อาคาร: Overture Maps (ODbL) จาก OpenStreetMap, Microsoft, Google และ Esri Community Maps ใช้ความสูงเมื่อแหล่งข้อมูลระบุไว้ ไม่เช่นนั้นตามที่ติ๊กเลือก อาคารตั้งบนพื้นราบ ไม่ได้วางบนภูมิประเทศ 3 มิติ
 3D Buildings: reading buildings from Overture Maps…	อาคาร 3 มิติ: กำลังอ่านอาคารจาก Overture Maps…
+Google Open Buildings 2.5D	Google Open Buildings 2.5D
+Heights Google measured from satellite imagery in 2023 (CC BY 4.0), for buildings without their own: most of Thailand, Africa, South Asia and Latin America. Read for the area first, so slower; the desktop app only.	ความสูงที่ Google วัดจากภาพดาวเทียมปี 2023 (CC BY 4.0) ใช้กับอาคารที่ไม่มีความสูงของตัวเอง ครอบคลุมประเทศไทยเกือบทั้งหมด แอฟริกา เอเชียใต้ และละตินอเมริกา ต้องอ่านข้อมูลของบริเวณนั้นก่อนจึงช้ากว่า ใช้ได้เฉพาะแอปบนเครื่อง
+Google's server doesn't answer web pages: use the desktop app.	เซิร์ฟเวอร์ของ Google ไม่ให้หน้าเว็บดึงข้อมูล ให้ใช้แอปบนเครื่อง
+3D Buildings: Google's 2.5D heights weren't read: {error}	อาคาร 3 มิติ: อ่านความสูงจาก Google 2.5D ไม่ได้: {error}
+3D Buildings: {n} buildings, the tallest {tallest} m. Heights: {tagged} from the data's height, {floors} from the number of floors, {google} from Google 2.5D, {estimated} estimated from the kind of building, {one} one floor (the height_src field says which).	อาคาร 3 มิติ: {n} หลัง สูงสุด {tallest} ม. ที่มาของความสูง: จากความสูงในข้อมูล {tagged} หลัง จากจำนวนชั้น {floors} หลัง จาก Google 2.5D {google} หลัง ประมาณจากประเภทอาคาร {estimated} หลัง สูงหนึ่งชั้น {one} หลัง (ดูได้ในฟิลด์ height_src)
 Overture has no buildings here	Overture ไม่มีข้อมูลอาคารในบริเวณนี้
 The area takes too many of Overture's files: zoom in	บริเวณนี้ต้องอ่านไฟล์ของ Overture มากเกินไป ให้ซูมเข้าก่อน
-3D Buildings: {n} buildings, the tallest {tallest} m. Heights: {tagged} from the data's height, {floors} from the number of floors, {estimated} estimated from the kind of building, {one} one floor (the height_src field says which).	อาคาร 3 มิติ: {n} หลัง สูงสุด {tallest} ม. ที่มาของความสูง: จากความสูงในข้อมูล {tagged} หลัง จากจำนวนชั้น {floors} หลัง ประมาณจากประเภทอาคาร {estimated} หลัง สูงหนึ่งชั้น {one} หลัง (ดูได้ในฟิลด์ height_src)
 Thai Standard Map	แผนที่มาตรฐานไทย
 A4 landscape	A4 แนวนอน
 A4 portrait	A4 แนวตั้ง
