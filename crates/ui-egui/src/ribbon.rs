@@ -4801,49 +4801,71 @@ fn language_menu(app: &mut RustGisApp, ui: &mut Ui) {
     });
 }
 
-/// View › Scene › 3D Buildings: OpenStreetMap's buildings where the map is, raised by their
-/// heights (`buildings3d`); or a try in Bangkok's Silom and Sathorn.
+/// View › Scene › 3D Buildings: the buildings where the map is, from OpenStreetMap or Overture
+/// Maps, raised by the heights the user ticks (`buildings3d`); or a try in Bangkok's Silom and
+/// Sathorn.
 fn buildings_menu(ui: &mut Ui, app: &mut RustGisApp) {
-    big_menu(
-        ui,
-        app,
-        "polygon_layer",
-        "3D Buildings",
-        "OpenStreetMap's buildings where the map is, raised by their heights.",
-        |ui, app| {
-            let busy = crate::buildings3d::busy(app);
-            if ui
-                .add_enabled(!busy, egui::Button::new(tl!("Buildings in View")))
-                .on_hover_text(tl!("About 3 km × 3 km about the map's centre at most."))
-                .clicked()
-            {
-                crate::buildings3d::start(app);
-                ui.close();
+    use rustgis_engine::render::rustgis_tiles::buildings3d::Source;
+    big_menu(ui, app, "polygon_layer", "3D Buildings", "Buildings where the map is, raised by their heights.", |ui, app| {
+        let busy = crate::buildings3d::busy(app);
+        ui.label(egui::RichText::new(tl!("Buildings from")).font(semibold(12.0)));
+        let choice = &mut app.ui.buildings_choice;
+        for (s, label, tip) in [
+            (
+                Source::Osm,
+                tl!("OpenStreetMap"),
+                tl!("Up to date, with names and kinds of building; some areas are mapped only in part. About 3 km × 3 km at a time."),
+            ),
+            (
+                Source::Overture,
+                tl!("Overture Maps"),
+                tl!(
+                    "OpenStreetMap's buildings, with the ones Google, Microsoft and Esri found in imagery filling the gaps: nearly every building, updated monthly."
+                ),
+            ),
+        ] {
+            ui.radio_value(&mut choice.source, s, label).on_hover_text(tip);
+        }
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new(tl!("Heights from")).font(semibold(12.0)));
+        ui.checkbox(&mut choice.heights.data, tl!("The data's height or floors"))
+            .on_hover_text(tl!("The height the building is given, else its number of floors × 3 m."));
+        ui.checkbox(&mut choice.heights.estimate, tl!("An estimate from the kind of building")).on_hover_text(tl!(
+            "A house 6 m, a shophouse 10 m, apartments 15 m, a temple 12 m… A building left with no height stands one floor (3 m) high."
+        ));
+        ui.separator();
+        if ui
+            .add_enabled(!busy, egui::Button::new(tl!("Buildings in View")))
+            .on_hover_text(tl!("About 3 km × 3 km about the map's centre at most."))
+            .clicked()
+        {
+            crate::buildings3d::start(app);
+            ui.close();
+        }
+        if ui.add_enabled(!busy, egui::Button::new(tl!("Try It: Silom–Sathorn, Bangkok"))).clicked() {
+            if app.session.map().projection.is_globe() {
+                let _ = app.run("map.projection", json!({"type": "mercator"}));
             }
-            if ui.add_enabled(!busy, egui::Button::new(tl!("Try It: Silom–Sathorn, Bangkok"))).clicked() {
-                if app.session.map().projection.is_globe() {
-                    let _ = app.run("map.projection", json!({"type": "mercator"}));
-                }
-                let _ = app.run("map.goToXY", json!({"lon": 100.5300, "lat": 13.7230, "scale": 12000, "bearing": 0, "pitch": 0}));
-                crate::buildings3d::start(app);
-                ui.close();
-            }
-            if busy {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(tl!("Downloading…"));
-                });
-            }
-            ui.separator();
-            ui.label(
-            egui::RichText::new(tl!(
-                "Buildings: OpenStreetMap (ODbL). Heights: the height OpenStreetMap gives, else floors × 3 m, else an estimate from the kind of building; most buildings in Thailand have neither, so their heights are estimates. Buildings stand on flat ground, not on the 3D terrain."
-            ))
+            let _ = app.run("map.goToXY", json!({"lon": 100.5300, "lat": 13.7230, "scale": 12000, "bearing": 0, "pitch": 0}));
+            crate::buildings3d::start(app);
+            ui.close();
+        }
+        if busy {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(tl!("Downloading…"));
+            });
+        }
+        ui.separator();
+        ui.label(
+            egui::RichText::new(match app.ui.buildings_choice.source {
+                Source::Osm => tl!("Buildings: OpenStreetMap (ODbL). Most buildings in Thailand have no height or floors in it, so their heights are estimates. Buildings stand on flat ground, not on the 3D terrain."),
+                Source::Overture => tl!("Buildings: Overture Maps (ODbL): OpenStreetMap, Microsoft, Google and Esri Community Maps. Heights where its sources give them, else as ticked. Buildings stand on flat ground, not on the 3D terrain."),
+            })
             .small()
             .weak(),
         );
-        },
-    );
+    });
 }
 
 /// View › Scene › 3D Terrain: the world's elevation with one click, the map tilted to show it

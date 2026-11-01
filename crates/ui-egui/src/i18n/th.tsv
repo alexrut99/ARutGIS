@@ -4262,15 +4262,27 @@ Flood Simulation: {error}	จำลองน้ำท่วม: {error}
 {name}: water covers {area} km² ({rai} rai), up to {depth} m deep; it stands at {level} m above sea level, {ground} m where it comes in.	{name}: น้ำท่วม {area} ตร.กม. ({rai} ไร่) ลึกสุด {depth} ม. ระดับน้ำ {level} ม. จากระดับทะเล (พื้นดินตรงจุดเริ่ม {ground} ม.)
 The water reaches the edge of the area worked out: zoom out and run it again to see further.	น้ำท่วมไปถึงขอบพื้นที่ที่คำนวณ ซูมออกแล้วลองใหม่เพื่อดูให้ไกลขึ้น
 3D Buildings	อาคาร 3 มิติ
-OpenStreetMap's buildings where the map is, raised by their heights.	อาคารจาก OpenStreetMap ในบริเวณแผนที่ ยกขึ้นตามความสูงของแต่ละหลัง
 Buildings in View	อาคารในบริเวณนี้
 About 3 km × 3 km about the map's centre at most.	ไม่เกินราว 3 × 3 กม. รอบกึ่งกลางแผนที่
 Try It: Silom–Sathorn, Bangkok	ลองดู: สีลม–สาทร กรุงเทพฯ
-Buildings: OpenStreetMap (ODbL). Heights: the height OpenStreetMap gives, else floors × 3 m, else an estimate from the kind of building; most buildings in Thailand have neither, so their heights are estimates. Buildings stand on flat ground, not on the 3D terrain.	อาคาร: OpenStreetMap (ODbL) ความสูง: ใช้ความสูงที่ OpenStreetMap ระบุ ถ้าไม่มีใช้จำนวนชั้น × 3 ม. ถ้าไม่มีอีกจะประมาณจากประเภทอาคาร อาคารส่วนใหญ่ในไทยไม่มีทั้งสองอย่าง ความสูงจึงเป็นค่าประมาณ อาคารตั้งบนพื้นราบ ไม่ได้ตั้งบนภูมิประเทศ 3 มิติ
 3D Buildings: the view is large, so the buildings around its centre (about 3 km × 3 km) are downloaded.	อาคาร 3 มิติ: บริเวณที่เห็นกว้างเกินไป จึงดาวน์โหลดเฉพาะรอบกึ่งกลาง (ราว 3 × 3 กม.)
 3D Buildings: downloading buildings from OpenStreetMap…	อาคาร 3 มิติ: กำลังดาวน์โหลดอาคารจาก OpenStreetMap…
 3D Buildings: {error}	อาคาร 3 มิติ: {error}
-3D Buildings: {n} buildings, the tallest {tallest} m. Heights: {tagged} from OpenStreetMap's height, {floors} from the number of floors, {estimated} estimated from the kind of building (the height_src field says which).	อาคาร 3 มิติ: {n} หลัง สูงสุด {tallest} ม. ที่มาของความสูง: จาก OpenStreetMap {tagged} หลัง จากจำนวนชั้น {floors} หลัง ประมาณจากประเภทอาคาร {estimated} หลัง (ดูได้ในฟิลด์ height_src)
+Buildings where the map is, raised by their heights.	อาคารในบริเวณแผนที่ ยกขึ้นตามความสูง
+Buildings from	อาคารจาก
+Up to date, with names and kinds of building; some areas are mapped only in part. About 3 km × 3 km at a time.	ข้อมูลเป็นปัจจุบัน มีชื่อและประเภทอาคาร แต่บางพื้นที่ยังวาดไม่ครบ โหลดได้ครั้งละประมาณ 3 × 3 กม.
+OpenStreetMap's buildings, with the ones Google, Microsoft and Esri found in imagery filling the gaps: nearly every building, updated monthly.	อาคารของ OpenStreetMap เติมส่วนที่ขาดด้วยอาคารที่ Google, Microsoft และ Esri ตรวจพบจากภาพดาวเทียม ได้อาคารเกือบครบทุกหลัง อัปเดตทุกเดือน
+Heights from	ความสูงจาก
+The data's height or floors	ความสูงหรือจำนวนชั้นในข้อมูล
+The height the building is given, else its number of floors × 3 m.	ใช้ความสูงที่ระบุไว้ ถ้าไม่มีใช้จำนวนชั้น × 3 ม.
+An estimate from the kind of building	ประมาณจากประเภทอาคาร
+A house 6 m, a shophouse 10 m, apartments 15 m, a temple 12 m… A building left with no height stands one floor (3 m) high.	บ้าน 6 ม. ตึกแถว 10 ม. อาคารชุด 15 ม. วัด 12 ม. … อาคารที่ไม่ได้ความสูงจากแหล่งใดเลยจะสูงหนึ่งชั้น (3 ม.)
+Buildings: OpenStreetMap (ODbL). Most buildings in Thailand have no height or floors in it, so their heights are estimates. Buildings stand on flat ground, not on the 3D terrain.	อาคาร: OpenStreetMap (ODbL) อาคารส่วนใหญ่ในไทยยังไม่มีความสูงหรือจำนวนชั้น ความสูงจึงเป็นค่าประมาณ อาคารตั้งบนพื้นราบ ไม่ได้วางบนภูมิประเทศ 3 มิติ
+Buildings: Overture Maps (ODbL): OpenStreetMap, Microsoft, Google and Esri Community Maps. Heights where its sources give them, else as ticked. Buildings stand on flat ground, not on the 3D terrain.	อาคาร: Overture Maps (ODbL) จาก OpenStreetMap, Microsoft, Google และ Esri Community Maps ใช้ความสูงเมื่อแหล่งข้อมูลระบุไว้ ไม่เช่นนั้นตามที่ติ๊กเลือก อาคารตั้งบนพื้นราบ ไม่ได้วางบนภูมิประเทศ 3 มิติ
+3D Buildings: reading buildings from Overture Maps…	อาคาร 3 มิติ: กำลังอ่านอาคารจาก Overture Maps…
+Overture has no buildings here	Overture ไม่มีข้อมูลอาคารในบริเวณนี้
+The area takes too many of Overture's files: zoom in	บริเวณนี้ต้องอ่านไฟล์ของ Overture มากเกินไป ให้ซูมเข้าก่อน
+3D Buildings: {n} buildings, the tallest {tallest} m. Heights: {tagged} from the data's height, {floors} from the number of floors, {estimated} estimated from the kind of building, {one} one floor (the height_src field says which).	อาคาร 3 มิติ: {n} หลัง สูงสุด {tallest} ม. ที่มาของความสูง: จากความสูงในข้อมูล {tagged} หลัง จากจำนวนชั้น {floors} หลัง ประมาณจากประเภทอาคาร {estimated} หลัง สูงหนึ่งชั้น {one} หลัง (ดูได้ในฟิลด์ height_src)
 Thai Standard Map	แผนที่มาตรฐานไทย
 A4 landscape	A4 แนวนอน
 A4 portrait	A4 แนวตั้ง

@@ -12044,6 +12044,51 @@ fn osm_and_boundaries() {
     assert_eq!(r["narrowed"], true);
     let none = r#"{"elements": [{"type": "node", "id": 1, "lat": 13.7, "lon": 100.5, "tags": {"amenity": "cafe"}}]}"#;
     assert!(s.run("buildings.add3d", &json!({"bbox": [100.51, 13.71, 100.53, 13.73], "answer": none})).is_err());
+    // Only the heights ticked: no data heights, no estimates, so one floor each.
+    let r = s
+        .run(
+            "buildings.add3d",
+            &json!({"bbox": [100.51, 13.71, 100.53, 13.73], "answer": BUILDINGS, "heights": {"data": false, "estimate": false}}),
+        )
+        .unwrap();
+    assert_eq!((r["oneFloor"].as_u64(), r["tallest"].as_f64()), (Some(3), Some(3.0)), "{r}");
+    let r = s
+        .run("buildings.add3d", &json!({"bbox": [100.51, 13.71, 100.53, 13.73], "answer": BUILDINGS, "heights": {"data": false}}))
+        .unwrap();
+    assert_eq!((r["fromHeight"].as_u64(), r["estimated"].as_u64()), (Some(0), Some(3)), "{r}");
+    // Overture's buildings, as the app reads them: its height, else floors, else class or subtype.
+    let square = |x: f64| json!({"type": "Polygon", "coordinates": [[[x, 13.72], [x + 0.001, 13.72], [x + 0.001, 13.721], [x, 13.72]]]});
+    let features = json!([
+        {"type": "Feature", "geometry": square(100.52), "properties": {"id": "a", "name": "Tower", "height": 150.0, "num_floors": 40, "class": "office"}},
+        {"type": "Feature", "geometry": square(100.522), "properties": {"id": "b", "height": null, "num_floors": 5, "class": null}},
+        {"type": "Feature", "geometry": square(100.524), "properties": {"id": "c", "class": null, "subtype": "religious"}},
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [100.525, 13.72]}, "properties": {"id": "d"}}
+    ]);
+    let r = s
+        .run(
+            "buildings.add3d",
+            &json!({"source": "overture", "bbox": [100.51, 13.71, 100.53, 13.73], "features": features, "name": "Overture"}),
+        )
+        .unwrap();
+    assert_eq!(
+        (r["source"].as_str(), r["buildings"].as_u64(), r["fromHeight"].as_u64(), r["fromFloors"].as_u64(), r["estimated"].as_u64()),
+        (Some("overture"), Some(3), Some(1), Some(1), Some(1)),
+        "{r}"
+    );
+    let l = s.map().layer(r["layer"].as_u64().unwrap() as u32).unwrap();
+    let (hi, name) = (l.dataset.field_index("height_m").unwrap(), l.dataset.field_index("name").unwrap());
+    let heights: Vec<f64> = (0..3).filter_map(|i| l.dataset.value(i, hi).as_f64()).collect();
+    assert_eq!(heights, [150.0, 15.0, 12.0]);
+    assert_eq!(l.dataset.value(0, name), &rustgis_data::Value::Text("Tower".into()));
+    for bad in [
+        json!({"source": "google", "bbox": [100.51, 13.71, 100.53, 13.73], "answer": BUILDINGS}),
+        json!({"source": "overture", "bbox": [100.51, 13.71, 100.53, 13.73], "features": "x"}),
+        json!({"source": "overture", "bbox": [100.51, 13.71, 100.53, 13.73], "features": []}),
+        json!({"bbox": [100.51, 13.71, 100.53, 13.73], "answer": BUILDINGS, "heights": {"data": "yes"}}),
+        json!({"bbox": [100.51, 13.71, 100.53, 13.73], "answer": BUILDINGS, "heights": true}),
+    ] {
+        assert!(s.run("buildings.add3d", &bad).is_err(), "{bad}");
+    }
     let gj = r#"{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"shapeName": "Bern"}, "geometry": {"type": "Polygon", "coordinates": [[[7, 46], [8, 46], [8, 47], [7, 46]]]}}]}"#;
     let r = s.run("boundaries.add", &json!({"country": "che", "level": 1, "text": gj})).unwrap();
     assert_eq!(r["features"], 1);

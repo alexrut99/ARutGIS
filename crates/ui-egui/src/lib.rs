@@ -689,6 +689,8 @@ pub struct UiState {
     pub flood: Option<flood::Job>,
     /// 3D Buildings being downloaded (`buildings3d::poll`).
     pub buildings: Option<buildings3d::Job>,
+    /// Where 3D Buildings come from and which heights raise them.
+    pub buildings_choice: buildings3d::Choice,
     /// Overture Maps and Source Cooperative: choices, results and the request under way.
     pub catalogs: catalogsui::State,
     /// Search Open Data: the portal, the search under way and the datasets found.
@@ -842,6 +844,7 @@ impl Default for UiState {
             portals: Default::default(),
             flood: None,
             buildings: None,
+            buildings_choice: Default::default(),
             catalogs: Default::default(),
             opendata: Default::default(),
             embeddings: Default::default(),

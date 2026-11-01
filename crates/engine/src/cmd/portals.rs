@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::{b, ps};
 use crate::render::rustgis_tiles::portal::{self, Portal, Use};
-use crate::render::rustgis_tiles::{boundaries, buildings3d, overpass, thai_boundaries};
+use crate::render::rustgis_tiles::{boundaries, buildings3d, overpass, overture, thai_boundaries};
 use crate::{CmdResult, CommandSpec as C, Session};
 
 pub fn commands() -> Vec<C> {
@@ -19,7 +19,7 @@ pub fn commands() -> Vec<C> {
         ),
         C::new("boundaries.countries", "List geoBoundaries Countries", "Home › Add › Web Data", boundaries_countries).view(),
         C::new("buildings.add3d", "3D Buildings", "View › Scene", buildings_3d).params(
-            r#"{"bbox"?: [west, south, east, north] | "view" (the map's extent, the default; narrowed to about 3 km × 3 km about its centre when larger), "url"?: "an Overpass server", "name"?: text, "answer"?: "the server's JSON answer, when already fetched (the app's background request)"} (OpenStreetMap's buildings raised by their height: the height tag, else floors × 3 m, else an estimate from the kind of building)"#,
+            r#"{"source"?: "osm" (OpenStreetMap through Overpass, the default) | "overture" (Overture Maps: OpenStreetMap's buildings with Google's, Microsoft's and Esri's found in imagery filling the gaps), "heights"?: {"data"?: bool (the data's height, else its floors × 3 m; default true), "estimate"?: bool (else an estimate from the kind of building; default true)} (a building left with neither stands one floor high), "bbox"?: [west, south, east, north] | "view" (the map's extent, the default; narrowed to about 3 km × 3 km about its centre when larger), "url"?: "an Overpass server", "name"?: text, "answer"?: "the Overpass server's JSON answer, when already fetched (the app's background request)", "features"?: [Overture's buildings as GeoJSON features with its height, num_floors, class and subtype, when already read (the app's background request)]} (buildings raised by their heights, coloured by them; height_src says where each height came from)"#,
         ),
         C::new("boundaries.thai", "Add Thai Administrative Boundaries", "Home › Add › Web Data", boundaries_thai).params(
             r#"{"source": "dopa" (กรมการปกครอง, through OpenGISData-Thailand, CC BY 4.0) | "rtsd" (กรมแผนที่ทหาร, through OCHA HDX, CC BY-IGO), "level": "province" | "district" | "subdistrict", "name"?: text, "text"?: "the boundaries' GeoJSON, when already fetched (the app's background request)"} → Thailand's provinces, districts or subdistricts with their Thai names, labelled in Thai: for mapping and analysis, not legal boundaries"#,
@@ -96,27 +96,139 @@ pub fn buildings_query(s: &Session, p: &Value) -> Result<(overpass::Query, bool)
     Ok((overpass::Query::new(area, Some("buildings"), None)?, narrowed))
 }
 
-/// OpenStreetMap's buildings in the area, raised by their heights (`buildings3d`), coloured by
-/// them and lit.
+/// The heights `buildings.add3d` may use.
+fn heights(p: &Value) -> Result<buildings3d::Heights, String> {
+    let mut h = buildings3d::Heights::default();
+    let Some(v) = p.get("heights") else { return Ok(h) };
+    let o = v.as_object().ok_or(r#"heights is {"data": bool, "estimate": bool}"#)?;
+    if let Some(x) = o.get("data") {
+        h.data = x.as_bool().ok_or("heights.data is true or false")?;
+    }
+    if let Some(x) = o.get("estimate") {
+        h.estimate = x.as_bool().ok_or("heights.estimate is true or false")?;
+    }
+    Ok(h)
+}
+
+/// Overture's buildings as read from its GeoParquet files, as GeoJSON features with what 3D needs:
+/// their id, name, height, floors, class and subtype.
+pub fn overture_features(fields: &[rustgis_data::Field], features: &[rustgis_data::Feature]) -> Vec<Value> {
+    let col = |n: &str| fields.iter().position(|f| f.name == n);
+    let keep = [
+        ("id", col("id")),
+        ("name", col("names.primary")),
+        ("height", col("height")),
+        ("num_floors", col("num_floors")),
+        ("class", col("class")),
+        ("subtype", col("subtype")),
+    ];
+    features
+        .iter()
+        .filter_map(|f| {
+            let g = f.geometry.as_ref()?;
+            let props: serde_json::Map<String, Value> =
+                keep.iter().map(|(k, i)| ((*k).to_string(), i.and_then(|i| f.attrs.get(i)).map_or(Value::Null, |v| v.to_json()))).collect();
+            Some(json!({"type": "Feature", "geometry": rustgis_data::io::geometry_to_geojson(g), "properties": props}))
+        })
+        .collect()
+}
+
+/// Overture's buildings in `area`, read in place from the latest release's files (the command
+/// line and the assistant; the app reads them off the frame and passes them).
+#[cfg(not(target_arch = "wasm32"))]
+fn overture_buildings(area: [f64; 4]) -> Result<Vec<Value>, String> {
+    let release = overture::parse_latest(&fetch(&overture::catalog_url())?)?;
+    let files = overture::parse_collection(&fetch(&overture::collection_url(&release, "buildings", "building"))?)?;
+    let hits = overture::files_in(&files, area);
+    if hits.is_empty() {
+        return Err("Overture has no buildings in this area".into());
+    }
+    if hits.len() > overture::MAX_FILES {
+        return Err(format!("the area takes {} of Overture's building files (up to {}): zoom in", hits.len(), overture::MAX_FILES));
+    }
+    let [w, s, e, n] = area;
+    let req = rustgis_data::source::Request { extent: Some(rustgis_data::Extent::new(w, s, e, n)), limit: rustgis_data::source::MAX_LIMIT };
+    let mut out = Vec::new();
+    for f in hits {
+        let url = overture::parse_item(&fetch(&f.item)?)?;
+        let (fields, batch) =
+            rustgis_data::source::query_url_blocking(&url, vec!["names.primary".into()], req).map_err(|e| format!("Overture: {e}"))?;
+        out.extend(overture_features(&fields, &batch.features));
+    }
+    Ok(out)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn overture_buildings(_area: [f64; 4]) -> Result<Vec<Value>, String> {
+    Err("in the web app, use View › Scene › 3D Buildings".into())
+}
+
+/// Buildings in the area (OpenStreetMap's or Overture's), raised by their heights (`buildings3d`),
+/// coloured by them and lit.
 fn buildings_3d(s: &mut Session, p: &Value) -> CmdResult {
-    let (q, narrowed) = buildings_query(s, p)?;
-    let bytes = match ps(p, "answer") {
-        Some(a) => a.as_bytes().to_vec(),
-        None => fetch(&q.url(ps(p, "url"))?)?,
-    };
-    let answer = overpass::parse_with(&bytes, buildings3d::properties)?;
+    let source = buildings3d::Source::parse(ps(p, "source").unwrap_or("osm"))?;
+    let allow = heights(p)?;
     let name = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).unwrap_or("3D Buildings").to_string();
-    let (ds, _) = rustgis_data::io::read_geojson(&answer.polygons.to_string(), &name).map_err(|e| e.to_string())?;
+    let (polygons, notes, area, narrowed) = match source {
+        buildings3d::Source::Osm => {
+            let (q, narrowed) = buildings_query(s, p)?;
+            let bytes = match ps(p, "answer") {
+                Some(a) => a.as_bytes().to_vec(),
+                None => fetch(&q.url(ps(p, "url"))?)?,
+            };
+            let answer = overpass::parse_with(&bytes, |t| buildings3d::properties_with(t, allow))?;
+            (answer.polygons, answer.notes, q.bbox, narrowed)
+        }
+        buildings3d::Source::Overture => {
+            let (area, narrowed) = buildings3d::narrow(bbox(s, p)?);
+            let features = match p.get("features") {
+                Some(Value::Array(f)) => f.clone(),
+                Some(_) => return Err("features is a list of GeoJSON features".into()),
+                None => overture_buildings(area)?,
+            };
+            let num = |v: &Value| v.as_f64();
+            let text = |v: &Value| v.as_str().map(str::to_string);
+            let raised: Vec<Value> = features
+                .into_iter()
+                .filter(|f| f.get("geometry").is_some_and(|g| matches!(g["type"].as_str(), Some("Polygon" | "MultiPolygon"))))
+                .map(|mut f| {
+                    let pr = f["properties"].clone();
+                    let (class, subtype) = (text(&pr["class"]), text(&pr["subtype"]));
+                    let mut props = buildings3d::overture_properties(
+                        num(&pr["height"]),
+                        num(&pr["num_floors"]),
+                        class.as_deref(),
+                        subtype.as_deref(),
+                        allow,
+                    );
+                    for k in ["id", "name", "class", "subtype"] {
+                        if let Some(v) = pr.get(k).filter(|v| !v.is_null()) {
+                            props.insert(k.to_string(), v.clone());
+                        }
+                    }
+                    f["properties"] = Value::Object(props);
+                    f
+                })
+                .collect();
+            (json!({"type": "FeatureCollection", "features": raised}), Vec::new(), area, narrowed)
+        }
+    };
+    let (ds, _) = rustgis_data::io::read_geojson(&polygons.to_string(), &name).map_err(|e| e.to_string())?;
     if ds.features.is_empty() {
-        return Err("OpenStreetMap has no buildings mapped in this area".into());
+        return Err(match source {
+            buildings3d::Source::Osm => "OpenStreetMap has no buildings mapped in this area",
+            buildings3d::Source::Overture => "Overture has no buildings in this area",
+        }
+        .into());
     }
     let hi = ds.field_index("height_m").ok_or("the buildings' heights weren't read")?;
     let src = ds.field_index("height_src").ok_or("the buildings' heights weren't read")?;
-    let (mut tagged, mut floors, mut estimated, mut tallest) = (0usize, 0usize, 0usize, 0.0_f64);
+    let (mut tagged, mut floors, mut estimated, mut one_floor, mut tallest) = (0usize, 0usize, 0usize, 0usize, 0.0_f64);
     for r in 0..ds.features.len() {
         match ds.value(r, src) {
             rustgis_data::Value::Text(t) if t == "height" => tagged += 1,
             rustgis_data::Value::Text(t) if t == "floors" => floors += 1,
+            rustgis_data::Value::Text(t) if t == "one_floor" => one_floor += 1,
             _ => estimated += 1,
         }
         tallest = tallest.max(ds.value(r, hi).as_f64().unwrap_or(0.0));
@@ -127,19 +239,21 @@ fn buildings_3d(s: &mut Session, p: &Value) -> CmdResult {
     s.run("layer.extrusion", &json!({"layer": id, "type": "field", "field": "height_m", "factor": 1}))?;
     s.run("layer.symbology", &json!({"layer": id, "type": "graduated", "field": "height_m", "method": "manual", "breaks": [8, 16, 30, 60, 120], "ramp": "YlOrRd"}))?;
     s.run("layer.lightShadow", &json!({"layer": id, "lighting": true, "shadows": true}))?;
-    s.notify(format!("{name}: {}", buildings3d::ATTRIBUTION), false);
-    for note in answer.notes {
+    s.notify(format!("{name}: {}", source.attribution()), false);
+    for note in notes {
         s.notify(format!("{name}: {note}"), false);
     }
     Ok(json!({
         "layer": id,
+        "source": source.code(),
         "buildings": n,
         "fromHeight": tagged,
         "fromFloors": floors,
         "estimated": estimated,
+        "oneFloor": one_floor,
         "tallest": tallest,
         "narrowed": narrowed,
-        "bbox": q.bbox,
+        "bbox": area,
     }))
 }
 
