@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::{b, ps};
 use crate::render::rustgis_tiles::portal::{self, Portal, Use};
-use crate::render::rustgis_tiles::{boundaries, buildings3d, google25d, overpass, overture, thai_boundaries};
+use crate::render::rustgis_tiles::{boundaries, buildings3d, google25d, overpass, thai_boundaries};
 use crate::{CmdResult, CommandSpec as C, Session};
 
 pub fn commands() -> Vec<C> {
@@ -178,6 +178,7 @@ pub fn overture_features(fields: &[rustgis_data::Field], features: &[rustgis_dat
 /// line and the assistant; the app reads them off the frame and passes them).
 #[cfg(not(target_arch = "wasm32"))]
 fn overture_buildings(area: [f64; 4]) -> Result<Vec<Value>, String> {
+    use crate::render::rustgis_tiles::overture;
     let release = overture::parse_latest(&fetch(&overture::catalog_url())?)?;
     let files = overture::parse_collection(&fetch(&overture::collection_url(&release, "buildings", "building"))?)?;
     let hits = overture::files_in(&files, area);
