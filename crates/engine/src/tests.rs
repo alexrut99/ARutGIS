@@ -19165,10 +19165,10 @@ fn text_elements_take_a_font_family() {
     }
     assert_eq!(font(&s, title), FontFamily::Serif);
     // Only a text takes a family: another element refuses it rather than ignore it.
-    let arrow = s.run("layout.addElement", &json!({"kind": "northArrow"})).unwrap()["element"].clone();
-    let err = s.run("layout.update", &json!({"element": arrow, "font": "serif"})).unwrap_err();
+    let rect = s.run("layout.addElement", &json!({"kind": "rectangle"})).unwrap()["element"].clone();
+    let err = s.run("layout.update", &json!({"element": rect, "font": "serif"})).unwrap_err();
     assert!(err.contains("only text elements"), "{err}");
-    assert!(s.run("layout.addElement", &json!({"kind": "northArrow", "font": "serif"})).unwrap_err().contains("only text elements"));
+    assert!(s.run("layout.addElement", &json!({"kind": "rectangle", "font": "serif"})).unwrap_err().contains("only text elements"));
     // The page draws either way.
     assert!(s.run("layout.update", &json!({"element": title, "text": "Mapa do Brasil", "bold": true, "italic": true})).is_ok());
     assert!(!crate::cmd::layout::layout_bytes(&mut s, 0, false, 72.0, false).unwrap().is_empty());
@@ -19237,8 +19237,8 @@ fn text_elements_take_an_installed_font_family_by_name() {
         assert!(s.run("layout.update", &p).is_err(), "{bad}");
     }
     assert_eq!(font(&s, id), (FontFamily::Sans, None), "a refused call changes nothing");
-    let arrow = s.run("layout.addElement", &json!({"kind": "northArrow"})).unwrap()["element"].clone();
-    assert!(s.run("layout.update", &json!({"element": arrow, "fallback": "serif"})).unwrap_err().contains("only text elements"));
+    let rect = s.run("layout.addElement", &json!({"kind": "rectangle"})).unwrap()["element"].clone();
+    assert!(s.run("layout.update", &json!({"element": rect, "fallback": "serif"})).unwrap_err().contains("only text elements"));
     // An installed family, where this computer has a small one (its file read whatever the
     // session's budget): kept as the font names it, its fallback its own class, and nothing said.
     let small = |f: &&rustgis_render::families::Family| {
