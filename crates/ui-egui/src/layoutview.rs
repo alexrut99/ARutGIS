@@ -2906,13 +2906,14 @@ mod tests {
         assert_eq!(h.state().layout.selection(&layout), vec![a, b]);
         let depth = h.state().session.undo_depth();
         drag(&mut h, centre(b), centre(b) + vec2(0.0, 10.0 * s), Modifiers::NONE);
-        let l = &h.state().session.project.layouts[li];
+        let l = h.state().session.project.layouts[li].clone();
         let dy = |id: u32| l.element(id).unwrap().y - layout.element(id).unwrap().y;
         assert!(dy(a) > 5.0 && (dy(a) - dy(b)).abs() < 1e-9, "both moved alike: {} {}", dy(a), dy(b));
         assert_eq!(dy(c), 0.0, "the third stays");
         assert_eq!(h.state().session.undo_depth(), depth + 1, "one step to undo");
         // Shift-clicking a selected one takes it out; a plain click selects one alone.
-        click(&mut h, centre(a) + vec2(0.0, dy(a) as f32 * s), Modifiers::SHIFT);
+        let moved_a = centre(a) + vec2(0.0, dy(a) as f32 * s);
+        click(&mut h, moved_a, Modifiers::SHIFT);
         let l = h.state().session.project.layouts[li].clone();
         assert_eq!(h.state().layout.selection(&l), vec![b]);
         click(&mut h, centre(c), Modifiers::NONE);
