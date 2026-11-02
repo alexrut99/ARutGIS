@@ -133,11 +133,21 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   a change of type without a step picks one, as degrees and metres don't carry over.
 - **Map surrounds**: north arrow, scale bar, legend, colorbar, table frame (a layer's attribute table) and
   chart frame (a bar chart of a numeric field), plus a neatline or backdrop. A north arrow's
-  properties pick its **Style** (classic arrow, compass rose, triangle or star) and its **Fill**
-  and **Outline** colours (`"style":"compass","fill":"#B91C1C"`). A scale bar's pick its
-  **Style** (alternating bar, stepped line or single line), its **Units** (metres or kilometres
-  to suit the scale, or kilometres, metres, miles or feet) and its **Divisions** (1 to 10), each
-  labelled where there is room (`"style":"line","units":"miles","divisions":2`). A legend shows what
+  properties pick its **Style** from pictures of the ten (classic arrow, compass rose, triangle,
+  star, compass needle, arrow in a ring, line arrow, chevron, block arrow, star in a ring), its
+  **Fill** and **Outline** colours, the **Letter** over it as typed (`N`, `น`, `North`; empty for
+  none) and that letter's **Letter type**: size (Auto fits the arrow), colour, bold, italic and
+  font, any installed one (`"style":"rose","label":"น","textSize":14,"font":"Tahoma"`). A scale
+  bar's pick its **Style** from pictures of the eight (alternating, double alternating, hollow,
+  stepped line, line with ticks up, down or across, ruler), its **Units** (metres or kilometres
+  to suit the scale, or kilometres, metres, miles, feet or nautical miles), its **Divisions** (1
+  to 10) and **Subdivisions** of the first, and a **Division length** (`1` km a division; Auto
+  picks a round one that fits). The unit is named as its **Unit name** says: `km`, `Kilometers`,
+  in Thai `กม.` or `กิโลเมตร`, none, or as typed in **Unit text**; **Unit place** puts it after
+  the last number, after the bar, above or below it, and **Numbers** go above or below the bar, at
+  its ends only, or nowhere. **Bar height**, **Bar color**, **Light color** and the **Number type**
+  (size, colour, bold, italic, font) finish it
+  (`"style":"doubleAlternating","units":"km","division":1,"unitLabel":"thai","numbers":"below"`). A legend shows what
   its frame draws: only layers with a feature at the frame's scale (through their definition
   query, display filters and scale range) and, for Unique Values, only the classes those features
   have, with `<all other values>` only when some feature falls in it and its symbol is not fully

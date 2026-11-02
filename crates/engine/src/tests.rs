@@ -4190,6 +4190,76 @@ fn layout_surrounds_take_cartographic_options() {
         s.project.layouts[0].element(added).unwrap().kind,
         ElementKind::ScaleBar { units: ScaleUnits::Feet, divisions: 4, style: ScaleBarStyle::Line, .. }
     ));
+    // Typed labels, Thai units and type of their own (#scale-labels).
+    s.run(
+        "layout.update",
+        &json!({"element": arrow, "style": "rose", "label": "น", "textSize": 14, "textColor": "#0000AA", "font": "serif", "italic": true}),
+    )
+    .unwrap();
+    match &find(&s, "northArrow").kind {
+        ElementKind::NorthArrow { style: ArrowStyle::Rose, label, text, .. } => {
+            assert_eq!(label, "น");
+            assert_eq!((text.size, text.color, text.bold, text.italic), (14.0, Some(Rgba::rgb(0, 0, 0xAA)), true, true));
+            assert_eq!(text.font, rustgis_map::layout::FontFamily::Serif);
+        }
+        k => panic!("{k:?}"),
+    }
+    s.run("layout.update", &json!({"element": arrow, "label": "", "textColor": ""})).unwrap();
+    assert!(
+        matches!(&find(&s, "northArrow").kind, ElementKind::NorthArrow { label, text, .. } if label.is_empty() && text.color.is_none())
+    );
+    s.run(
+        "layout.update",
+        &json!({"element": bar, "units": "km", "style": "doubleAlternating", "unitLabel": "thai", "unitPlace": "afterBar",
+            "numbers": "below", "subdivisions": 4, "division": 2.5, "color": "#003366", "altColor": "#DDEEFF", "barHeight": 8, "textSize": 9, "bold": true}),
+    )
+    .unwrap();
+    match &find(&s, "scaleBar").kind {
+        ElementKind::ScaleBar {
+            style: ScaleBarStyle::DoubleAlternating,
+            unit_label: rustgis_map::layout::UnitLabel::Thai,
+            unit_place: rustgis_map::layout::UnitPlace::AfterBar,
+            numbers: rustgis_map::layout::NumberPlace::Below,
+            subdivisions: 4,
+            division,
+            color,
+            bar_height,
+            text,
+            ..
+        } => {
+            assert_eq!((*division, *color, *bar_height), (2.5, Rgba::rgb(0, 0x33, 0x66), 8.0));
+            assert!(text.bold && text.size == 9.0);
+        }
+        k => panic!("{k:?}"),
+    }
+    // Typing the unit names it so.
+    s.run("layout.update", &json!({"element": bar, "unitText": "ก.ม."})).unwrap();
+    assert!(matches!(
+        &find(&s, "scaleBar").kind,
+        ElementKind::ScaleBar { unit_label: rustgis_map::layout::UnitLabel::Custom, unit_text, .. } if unit_text == "ก.ม."
+    ));
+    for bad in [
+        json!({"unitLabel": "klingon"}),
+        json!({"unitPlace": "inside"}),
+        json!({"numbers": "everywhere"}),
+        json!({"division": -1}),
+        json!({"textColor": "blue"}),
+        json!({"label": "N"}),
+    ] {
+        let mut p = bad.clone();
+        p["element"] = json!(bar);
+        assert!(s.run("layout.update", &p).is_err(), "{bad}");
+    }
+    assert!(s.run("layout.update", &json!({"element": frame, "font": "serif"})).is_err(), "a frame takes no font");
+    let thai = s
+        .run("layout.addElement", &json!({"kind": "scaleBar", "unitLabel": "thaiAbbreviation", "style": "ruler", "font": "serif"}))
+        .unwrap()["element"]
+        .as_u64()
+        .unwrap() as u32;
+    assert!(matches!(
+        &s.project.layouts[0].element(thai).unwrap().kind,
+        ElementKind::ScaleBar { style: ScaleBarStyle::Ruler, unit_label: rustgis_map::layout::UnitLabel::ThaiAbbreviation, .. }
+    ));
     // The page draws with them all, and they survive a save.
     let out = std::env::temp_dir().join(format!("rustgis-surrounds-{}.png", std::process::id()));
     s.run("layout.export", &json!({"path": out.to_string_lossy()})).unwrap();

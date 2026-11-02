@@ -6,10 +6,10 @@ use std::path::Path;
 use rustgis_geom::{Coord, Extent};
 use rustgis_map::Rgba;
 use rustgis_map::layout::{
-    Align, Arrange, ArrowStyle, CoordFormat, ElementKind, FontFamily, FrameShape, Grid, GridEdges, GridKind, GridStyle, Guides, Layout,
-    LineDir, LineHead, MAX_COLORBAR_TICKS, MAX_GRID_WIDTH, MAX_GUIDES, MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_ELEMENT_MM, MapSeries,
-    Orientation, PAGES, ScaleBarStyle, ScaleUnits, TextAlign, TickSide, fit_scale, line_angle, line_at_angle, line_length,
-    normalize_rotation,
+    Align, Arrange, ArrowStyle, CoordFormat, ElementKind, FontFamily, FrameShape, Grid, GridEdges, GridKind, GridStyle, Guides, LabelText,
+    Layout, LineDir, LineHead, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS, MAX_GRID_WIDTH, MAX_GUIDES, MAX_LABEL_SIZE, MAX_SCALE_DIVISIONS,
+    MAX_SURROUND_TEXT, MAX_TICK_MM, MIN_ELEMENT_MM, MapSeries, NumberPlace, Orientation, PAGES, ScaleBarStyle, ScaleUnits, TextAlign,
+    TickSide, UnitLabel, UnitPlace, fit_scale, line_angle, line_at_angle, line_length, normalize_rotation,
 };
 use serde_json::{Value, json};
 
@@ -86,10 +86,10 @@ pub fn commands() -> Vec<C> {
             r#"{"layout"?, "shape"?: "rectangle"|"circle"|"ellipse"|"polygon"|"lasso", "points"?: [[u, v], …] (polygon/lasso, 0..1 across the frame), "map"?: name, "x"?, "y"?, "w"?, "h"?: mm}"#,
         ),
         C::new("layout.addElement", "Add Element", "Publish › Map Surrounds", add_element).params(
-            r##"{"layout"?, "kind": "northArrow"|"scaleBar"|"legend"|"colorbar"|"text"|"dynamicText"|"picture"|"table"|"chart"|"rectangle" (a neatline framing the page unless any of x, y, w, h is given)|"ellipse"|"circle"|"line"|"arrow"|"extentIndicator"|"grid", "frame"?: element id (default: the first map frame), "of"?: frame id (extentIndicator, which also takes "color" and "width" in points, default red and 2), "text"?, "size"?, "color"?: "#RRGGBB"|"#RRGGBBAA", "bold"?: bool (text), "italic"?: bool, "align"?: "left"|"center"|"right", "letterSpacing"?: points, -5 to 50 (text, dynamicText), "font"?: "sans"|"serif"|an installed font family's name, as labels.fonts lists them (text, dynamicText; a family not installed here is drawn in its fallback, and a serif where none is installed in the sans, with a warning; refused for other kinds), "fallback"?: "sans"|"serif" (a named font's, where it isn't installed; default its own class, else sans), "title"?: legend title (default "Legend"), "allClasses"?: bool (legend: every class, not only those the frame draws), "hideOther"?: bool (legend: leave out <all other values>), "exclude"?: [layer names] (legend: layers it leaves out though the map draws them), "orientation"?: "horizontal"|"vertical" (colorbar), "ticks"?: 2..21 (colorbar: labelled values, ends included), "tickSide"?: "below"|"above"|"right"|"left" (colorbar), "reverse"?: bool (colorbar: high values first), "fill"?: "#RRGGBBAA" (rectangle, ellipse, circle, northArrow), "width"?: outline width in points (rectangle, ellipse, circle; 0 for none) or line width in points (line, grid), "radius"?: mm, 0 to 50 (rectangle: rounded corners), "dir"?: "horizontal"|"vertical"|"falling"|"rising" (line), "head"?: "none"|"end"|"start"|"both" (line; default "end" for an arrow), "angle"?: degrees anticlockwise from pointing right, centred on the page unless x or y is given (line, arrow; it sets the box and the direction, so w, h and dir are not used with it), "length"?: mm (line, arrow), "image"?: base64, "path"?: picture file, "layer"?: (table, chart; colorbar: a raster layer, default the top visible one), "field"?, "label"?, "rows"?, "step"?: degrees, or a measured grid's units (metres) (0 picks one), "type"?: "graticule" (latitudes and longitudes, default) | "measured" (eastings and northings in a projected system, as ArcGIS Pro's measured grid), "crs"?: a measured grid's coordinate system: EPSG:25832, WKT or a PROJ string ("" or none: the map's when projected, else the UTM zone at the frame's centre), "short"?: bool (a measured grid's labels as their kilometres' last two digits, 43 for 543000), "outside"?: bool (grid: the labels outside the frame, as ArcGIS prints them; default inside it), "labels"?: bool, "style"?: "lines"|"ticks"|"linesAndTicks" (grid) or "classic"|"compass"|"triangle"|"star" (northArrow) or "alternating"|"stepped"|"line" (scaleBar), "tickLength"?: mm, "format"?: "decimal"|"dms", "hemisphere"?: bool (N/S/E/W rather than a sign), "edges"?: ["top","bottom","left","right"] (labelled edges), "labelOrientation"?: "horizontal"|"vertical", "off"?: bool (grid; options not given keep the grid's), "outline"?: "#RRGGBB" (northArrow), "units"?: "auto"|"kilometers"|"meters"|"miles"|"feet", "divisions"?: 1..10 (scaleBar), "x"?, "y"?, "w"?, "h"?: mm}"##,
+            r##"{"layout"?, "kind": "northArrow"|"scaleBar"|"legend"|"colorbar"|"text"|"dynamicText"|"picture"|"table"|"chart"|"rectangle" (a neatline framing the page unless any of x, y, w, h is given)|"ellipse"|"circle"|"line"|"arrow"|"extentIndicator"|"grid", "frame"?: element id (default: the first map frame), "of"?: frame id (extentIndicator, which also takes "color" and "width" in points, default red and 2), "text"?, "size"?, "color"?: "#RRGGBB"|"#RRGGBBAA", "bold"?: bool (text), "italic"?: bool, "align"?: "left"|"center"|"right", "letterSpacing"?: points, -5 to 50 (text, dynamicText), "font"?: "sans"|"serif"|an installed font family's name, as labels.fonts lists them (text, dynamicText, northArrow, scaleBar; a family not installed here is drawn in its fallback, and a serif where none is installed in the sans, with a warning; refused for other kinds), "fallback"?: "sans"|"serif" (a named font's, where it isn't installed; default its own class, else sans), "title"?: legend title (default "Legend"), "allClasses"?: bool (legend: every class, not only those the frame draws), "hideOther"?: bool (legend: leave out <all other values>), "exclude"?: [layer names] (legend: layers it leaves out though the map draws them), "orientation"?: "horizontal"|"vertical" (colorbar), "ticks"?: 2..21 (colorbar: labelled values, ends included), "tickSide"?: "below"|"above"|"right"|"left" (colorbar), "reverse"?: bool (colorbar: high values first), "fill"?: "#RRGGBBAA" (rectangle, ellipse, circle, northArrow), "width"?: outline width in points (rectangle, ellipse, circle; 0 for none) or line width in points (line, grid), "radius"?: mm, 0 to 50 (rectangle: rounded corners), "dir"?: "horizontal"|"vertical"|"falling"|"rising" (line), "head"?: "none"|"end"|"start"|"both" (line; default "end" for an arrow), "angle"?: degrees anticlockwise from pointing right, centred on the page unless x or y is given (line, arrow; it sets the box and the direction, so w, h and dir are not used with it), "length"?: mm (line, arrow), "image"?: base64, "path"?: picture file, "layer"?: (table, chart; colorbar: a raster layer, default the top visible one), "field"?, "label"?, "rows"?, "step"?: degrees, or a measured grid's units (metres) (0 picks one), "type"?: "graticule" (latitudes and longitudes, default) | "measured" (eastings and northings in a projected system, as ArcGIS Pro's measured grid), "crs"?: a measured grid's coordinate system: EPSG:25832, WKT or a PROJ string ("" or none: the map's when projected, else the UTM zone at the frame's centre), "short"?: bool (a measured grid's labels as their kilometres' last two digits, 43 for 543000), "outside"?: bool (grid: the labels outside the frame, as ArcGIS prints them; default inside it), "labels"?: bool, "style"?: "lines"|"ticks"|"linesAndTicks" (grid) or "classic"|"compass"|"triangle"|"star"|"needle"|"circle"|"simple"|"chevron"|"block"|"rose" (northArrow) or "alternating"|"doubleAlternating"|"hollow"|"stepped"|"line"|"lineDown"|"lineCross"|"ruler" (scaleBar), "tickLength"?: mm, "format"?: "decimal"|"dms", "hemisphere"?: bool (N/S/E/W rather than a sign), "edges"?: ["top","bottom","left","right"] (labelled edges), "labelOrientation"?: "horizontal"|"vertical", "off"?: bool (grid; options not given keep the grid's), "outline"?: "#RRGGBB" (northArrow), "label"?: the letter over a north arrow (default "N", "" for none), "units"?: "auto"|"kilometers"|"meters"|"miles"|"feet"|"nauticalMiles", "divisions"?: 1..10, "subdivisions"?: 0..10 (the first division split), "division"?: each division's length in the units (metres when auto; 0 a round one that fits), "unitLabel"?: "abbreviation" (km) | "name" (Kilometers) | "thaiAbbreviation" (กม.) | "thai" (กิโลเมตร) | "custom" | "none", "unitText"?: the unit as typed (sets unitLabel custom), "unitPlace"?: "afterLabel"|"afterBar"|"above"|"below", "numbers"?: "above"|"below"|"ends"|"none", "color"?, "altColor"?: the dark and light parts, "barHeight"?: points (0 sized to the element) (scaleBar), "textSize"?: points (0 sized to the element), "textColor"?: "#RRGGBB" ("" the element's own), "bold"?, "italic"?, "font"?, "fallback"? (northArrow letter, scaleBar numbers and unit), "x"?, "y"?, "w"?, "h"?: mm}"##,
         ),
         C::new("layout.update", "Element Properties", "Publish › Element", update).params(
-            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line), "bold"?, "italic"?, "align"?, "letterSpacing"?, "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "exclude"?: [layer names] (legend; [] lists every layer again), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse; for a rectangle or ellipse, color sets it when outline is not given), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"? (scaleBar), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster), "field"?, "rows"?}"##,
+            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line), "bold"?, "italic"?, "align"?, "letterSpacing"?, "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, northArrow, scaleBar, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "exclude"?: [layer names] (legend; [] lists every layer again), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse; for a rectangle or ellipse, color sets it when outline is not given), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "label"? (northArrow), "units"?, "divisions"?, "subdivisions"?, "division"?, "unitLabel"?, "unitText"?, "unitPlace"?, "numbers"?, "color"?, "altColor"?, "barHeight"? (scaleBar), "textSize"?, "textColor"? (northArrow, scaleBar: as in layout.addElement), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster), "field"?, "rows"?}"##,
         ),
         C::new("layout.guides", "Guides", "Publish › Page Setup", guides).params(
             r#"{"layout"?, "x"?: [mm] (vertical guides, from the page's left edge), "y"?: [mm] (horizontal guides, from its top edge), "clear"?: bool (remove every guide first)}"#,
@@ -2389,7 +2389,7 @@ fn add_element(s: &mut Session, p: &Value) -> CmdResult {
     }
     // A family is a text's: refused elsewhere, as a legend's left-out layers are, so a script
     // doesn't take it as applied.
-    if !matches!(kind, "text" | "dynamicText") && gives_font(p) {
+    if !matches!(kind, "text" | "dynamicText" | "northArrow" | "scaleBar") && gives_font(p) {
         return Err(ONLY_TEXT_FONT.into());
     }
     if kind != "rectangle" && p.get("radius").is_some_and(|v| !v.is_null()) {
@@ -2793,7 +2793,7 @@ pub(crate) fn text_style(p: &Value, italic: bool, align: TextAlign, spacing: f64
 }
 
 /// What a `font` given for an element that isn't a text is told.
-const ONLY_TEXT_FONT: &str = "only text elements take a font or a fallback";
+const ONLY_TEXT_FONT: &str = "only text elements, north arrows and scale bars take a font or a fallback";
 
 /// Rounded corners are a rectangle's: refused elsewhere, as a family is, so a script doesn't take
 /// them as applied.
@@ -2930,47 +2930,173 @@ fn legend_exclude(s: &Session, l: &Layout, frame: u32, p: &Value) -> Result<Opti
     Ok(Some(out))
 }
 
+/// The keys of a north arrow's letter's or a scale bar's numbers' type.
+const LABEL_KEYS: &[&str] = &["textSize", "textColor", "bold", "italic", "font", "fallback"];
+
+/// A north arrow's letter or a scale bar's unit typed in `v`, kept as a label is (control
+/// characters out, [`MAX_SURROUND_TEXT`] characters at most).
+fn surround_text(v: &Value, key: &str) -> Result<String, String> {
+    let t = v.as_str().ok_or_else(|| format!("{key} is text"))?;
+    Ok(t.chars().filter(|c| !c.is_control()).take(MAX_SURROUND_TEXT).collect::<String>().trim().to_string())
+}
+
+/// `text` with the type options in `p`: `textSize` (points, 0 sizes it to the element),
+/// `textColor` (`""` follows the element's colour), `bold`, `italic`, `font` and `fallback`.
+fn label_text(p: &Value, text: &LabelText) -> Result<LabelText, String> {
+    let mut t = text.clone();
+    if let Some(v) = given_num(p, "textSize", "a number of points (0 sizes it to the element)")? {
+        if v < 0.0 {
+            return Err("textSize is 0 (sized to the element) or a number of points".into());
+        }
+        t.size = v.min(MAX_LABEL_SIZE);
+    }
+    match p.get("textColor").filter(|v| !v.is_null()) {
+        Some(Value::String(c)) if c.trim().is_empty() => t.color = None,
+        Some(Value::String(c)) => {
+            t.color = Some(Rgba::from_hex(c).ok_or("textColor must be #RRGGBB or #RRGGBBAA (\"\" for the element's own)")?)
+        }
+        Some(_) => return Err("textColor must be #RRGGBB or #RRGGBBAA".into()),
+        None => {}
+    }
+    if let Some(v) = p.get("bold").filter(|v| !v.is_null()) {
+        t.bold = v.as_bool().ok_or("bold is true or false")?;
+    }
+    if let Some(v) = p.get("italic").filter(|v| !v.is_null()) {
+        t.italic = v.as_bool().ok_or("italic is true or false")?;
+    }
+    (t.font, t.font_name) = text_font(p, (t.font, t.font_name.clone()))?;
+    Ok(t)
+}
+
 /// A north arrow or scale bar with the options in `p` over `kind`'s; `None` for other elements
 /// or when `p` has none. A bad value is an error, leaving nothing changed.
 fn restyle(kind: &ElementKind, p: &Value) -> Result<Option<ElementKind>, String> {
     match kind {
-        ElementKind::NorthArrow { frame, style, fill, outline } => {
-            if ["style", "fill", "outline"].iter().all(|k| p.get(k).is_none()) {
+        ElementKind::NorthArrow { frame, style, fill, outline, label, text } => {
+            if !["style", "fill", "outline", "label"].iter().chain(LABEL_KEYS).any(|k| p.get(*k).is_some()) {
                 return Ok(None);
             }
             let style = match ps(p, "style") {
-                Some(v) => ArrowStyle::from_name(v)
-                    .ok_or_else(|| format!("unknown north arrow style '{v}' (classic, compass, triangle or star)"))?,
+                Some(v) => ArrowStyle::from_name(v).ok_or_else(|| format!("unknown north arrow style '{v}' ({})", ArrowStyle::codes()))?,
                 None => *style,
+            };
+            let label = match p.get("label").filter(|v| !v.is_null()) {
+                Some(v) => surround_text(v, "label")?,
+                None => label.clone(),
             };
             Ok(Some(ElementKind::NorthArrow {
                 frame: *frame,
                 style,
                 fill: color(p, "fill", *fill)?,
                 outline: color(p, "outline", *outline)?,
+                label,
+                text: label_text(p, text)?,
             }))
         }
-        ElementKind::ScaleBar { frame, units, divisions, style } => {
-            if ["style", "units", "divisions"].iter().all(|k| p.get(k).is_none()) {
+        ElementKind::ScaleBar {
+            frame,
+            units,
+            divisions,
+            style,
+            subdivisions,
+            division,
+            unit_label,
+            unit_text,
+            unit_place,
+            numbers,
+            color: bar_color,
+            alt_color,
+            bar_height,
+            text,
+        } => {
+            const KEYS: [&str; 13] = [
+                "style",
+                "units",
+                "divisions",
+                "subdivisions",
+                "division",
+                "unitLabel",
+                "unitText",
+                "unitPlace",
+                "numbers",
+                "color",
+                "altColor",
+                "barHeight",
+                "label",
+            ];
+            if !KEYS.iter().chain(LABEL_KEYS).any(|k| p.get(*k).is_some()) {
                 return Ok(None);
             }
+            if p.get("label").is_some_and(|v| !v.is_null()) {
+                return Err("a scale bar's unit is unitText (with unitLabel custom), not label".into());
+            }
+            let pick = |key: &str, what: &str, codes: String, find: &dyn Fn(&str) -> bool| -> Result<bool, String> {
+                match ps(p, key) {
+                    Some(v) if find(v) => Ok(true),
+                    Some(v) => Err(format!("unknown {what} '{v}' ({codes})")),
+                    None if p.get(key).is_some_and(|v| !v.is_null()) => Err(format!("{key} is text ({codes})")),
+                    None => Ok(false),
+                }
+            };
             let style = match ps(p, "style") {
                 Some(v) => {
-                    ScaleBarStyle::from_name(v).ok_or_else(|| format!("unknown scale bar style '{v}' (alternating, stepped or line)"))?
+                    ScaleBarStyle::from_name(v).ok_or_else(|| format!("unknown scale bar style '{v}' ({})", ScaleBarStyle::codes()))?
                 }
                 None => *style,
             };
             let units = match ps(p, "units") {
-                Some(v) => {
-                    ScaleUnits::from_name(v).ok_or_else(|| format!("unknown units '{v}' (auto, kilometers, meters, miles or feet)"))?
-                }
+                Some(v) => ScaleUnits::from_name(v)
+                    .ok_or_else(|| format!("unknown units '{v}' (auto, kilometers, meters, miles, feet or nauticalMiles)"))?,
                 None => *units,
             };
-            let divisions = match p.get("divisions") {
-                Some(_) => f(p, "divisions").ok_or("divisions is a number")?.round().clamp(1.0, MAX_SCALE_DIVISIONS as f64) as usize,
-                None => *divisions,
+            let count = |key: &str, now: usize, lo: f64| -> Result<usize, String> {
+                match p.get(key).filter(|v| !v.is_null()) {
+                    Some(_) => {
+                        Ok(f(p, key).ok_or_else(|| format!("{key} is a number"))?.round().clamp(lo, MAX_SCALE_DIVISIONS as f64) as usize)
+                    }
+                    None => Ok(now),
+                }
             };
-            Ok(Some(ElementKind::ScaleBar { frame: *frame, units, divisions, style }))
+            let divisions = count("divisions", *divisions, 1.0)?;
+            let subdivisions = count("subdivisions", *subdivisions, 0.0)?;
+            let division = match given_num(p, "division", "a length in the scale bar's units (0 for a round one)")? {
+                Some(v) if v >= 0.0 => v,
+                Some(_) => return Err("division is 0 (a round one) or a length".into()),
+                None => *division,
+            };
+            let unit_text = match p.get("unitText").filter(|v| !v.is_null()) {
+                Some(v) => surround_text(v, "unitText")?,
+                None => unit_text.clone(),
+            };
+            pick("unitLabel", "unit label", UnitLabel::codes(), &|v| UnitLabel::from_name(v).is_some())?;
+            let unit_label = match ps(p, "unitLabel").and_then(UnitLabel::from_name) {
+                Some(l) => l,
+                // Text typed for the unit names it.
+                None if p.get("unitText").is_some_and(|v| !v.is_null()) => UnitLabel::Custom,
+                None => *unit_label,
+            };
+            pick("unitPlace", "unit place", UnitPlace::codes(), &|v| UnitPlace::from_name(v).is_some())?;
+            pick("numbers", "number place", NumberPlace::codes(), &|v| NumberPlace::from_name(v).is_some())?;
+            let bar_height = match given_num(p, "barHeight", "a number of points (0 sizes it to the element)")? {
+                Some(v) => v.clamp(0.0, MAX_BAR_HEIGHT),
+                None => *bar_height,
+            };
+            Ok(Some(ElementKind::ScaleBar {
+                frame: *frame,
+                units,
+                divisions,
+                style,
+                subdivisions,
+                division,
+                unit_label,
+                unit_text,
+                unit_place: ps(p, "unitPlace").and_then(UnitPlace::from_name).unwrap_or(*unit_place),
+                numbers: ps(p, "numbers").and_then(NumberPlace::from_name).unwrap_or(*numbers),
+                color: color(p, "color", *bar_color)?,
+                alt_color: color(p, "altColor", *alt_color)?,
+                bar_height,
+                text: label_text(p, text)?,
+            }))
         }
         ElementKind::Rectangle { fill, outline, width, .. } | ElementKind::Ellipse { fill, outline, width } => {
             if ["fill", "outline", "color", "width", "radius"].iter().all(|k| p.get(k).is_none()) {
@@ -3161,6 +3287,7 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
         Some(ElementKind::Text { italic, align, letter_spacing, font, font_name, .. }) => {
             Some((text_style(p, *italic, *align, *letter_spacing)?, text_font(p, (*font, font_name.clone()))?))
         }
+        Some(ElementKind::NorthArrow { .. } | ElementKind::ScaleBar { .. }) => None,
         _ if gives_font(p) => return Err(ONLY_TEXT_FONT.into()),
         _ => None,
     };

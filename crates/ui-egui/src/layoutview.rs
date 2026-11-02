@@ -7,9 +7,9 @@
 
 use egui::{Align2, Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use rustgis_engine::map::layout::{
-    Arrange, ArrowStyle, CoordFormat, ElementKind, Grid, GridKind, GridStyle, Layout, LineHead, MAX_COLORBAR_TICKS, MAX_FRAME_SCALE,
-    MAX_GRID_WIDTH, MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_FRAME_SCALE, Orientation, PT_PER_MM, ScaleBarStyle, ScaleUnits, TickSide,
-    frame_camera, line_angle, line_length,
+    Arrange, ArrowStyle, CoordFormat, ElementKind, Grid, GridKind, GridStyle, LabelText, Layout, LineHead, MAX_BAR_HEIGHT,
+    MAX_COLORBAR_TICKS, MAX_FRAME_SCALE, MAX_GRID_WIDTH, MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_FRAME_SCALE, NumberPlace, Orientation,
+    PT_PER_MM, ScaleBarStyle, ScaleUnits, TickSide, UnitLabel, UnitPlace, frame_camera, line_angle, line_length,
 };
 use serde_json::{Value, json};
 
@@ -1378,6 +1378,116 @@ pub(crate) fn save_drafts(app: &mut RustGisApp) {
 
 /// A text field whose typing is kept in the view's state while it has focus. Returns the new text
 /// when the field loses focus with a change.
+/// A gallery of a north arrow's or scale bar's styles drawn as they print (`arrow`: north
+/// arrows), the one in use marked; the style clicked.
+fn style_gallery(ui: &mut Ui, items: &[(&'static str, &'static str)], now: &str, arrow: bool) -> Option<&'static str> {
+    let (w, h, per_row) = if arrow { (40.0, 56.0, 5) } else { (104.0, 26.0, 2) };
+    let mut picked = None;
+    egui::Grid::new(("style_gallery", arrow)).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
+        for (i, (code, label)) in items.iter().enumerate() {
+            let tex = swatch(ui.ctx(), code, arrow, (w, h));
+            let on = *code == now;
+            let mut button = egui::Button::image(egui::Image::new(&tex).fit_to_exact_size(vec2(w, h))).fill(Color32::WHITE).selected(on);
+            if on {
+                button = button.stroke(Stroke::new(2.0, ui.visuals().selection.stroke.color));
+            }
+            let r = ui.add(button).on_hover_text(tl!(label));
+            r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, tl!(label)));
+            if r.clicked() && !on {
+                picked = Some(*code);
+            }
+            if (i + 1) % per_row == 0 {
+                ui.end_row();
+            }
+        }
+    });
+    if let Some((_, label)) = items.iter().find(|(c, _)| *c == now) {
+        ui.label(egui::RichText::new(tl!(label)).weak().small());
+    }
+    picked
+}
+
+/// A style's picture, drawn once at twice its size and kept.
+fn swatch(ctx: &egui::Context, code: &str, arrow: bool, (w, h): (f32, f32)) -> egui::TextureHandle {
+    let key = egui::Id::new(("layout_style_swatch", arrow, code.to_string()));
+    if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
+        return t;
+    }
+    let (pw, ph) = ((w * 2.0) as u32, (h * 2.0) as u32);
+    let pm = if arrow {
+        ArrowStyle::from_name(code).and_then(|s| rustgis_engine::render::layout::north_arrow_swatch(s, pw, ph))
+    } else {
+        ScaleBarStyle::from_name(code).and_then(|s| rustgis_engine::render::layout::scale_bar_swatch(s, pw, ph))
+    };
+    let img = match pm {
+        Some(pm) => egui::ColorImage::from_rgba_premultiplied([pm.width() as usize, pm.height() as usize], pm.data()),
+        None => egui::ColorImage::new([1, 1], vec![Color32::TRANSPARENT]),
+    };
+    let t = ctx.load_texture(format!("layout-style-{code}"), img, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(key, t.clone()));
+    t
+}
+
+/// The type of a north arrow's letter or a scale bar's numbers and unit: size (automatic at 0),
+/// colour (the element's `own` unless set), weight, slant and family.
+fn label_type(
+    app: &mut RustGisApp,
+    ui: &mut Ui,
+    (li, id): (usize, u32),
+    text: &LabelText,
+    own: rustgis_engine::map::Rgba,
+    title: &str,
+    update: &dyn Fn(&mut RustGisApp, Value),
+) {
+    let mut none = String::new();
+    let (mut sz, mut c, mut bb, mut it) = (text.size, crate::theme::c32(text.color.unwrap_or(own)), text.bold, text.italic);
+    let (mut fam, mut named) = (text.font, text.font_name.clone());
+    let fields = crate::textform::Fields {
+        text: &mut none,
+        size: &mut sz,
+        color: Some(&mut c),
+        bold: Some(&mut bb),
+        italic: Some(&mut it),
+        align: None,
+        letter_spacing: None,
+        font: Some(&mut fam),
+        font_name: Some(&mut named),
+        named_fonts: true,
+        select: false,
+    };
+    let Some(settled) = crate::textform::section(ui, title, |ui| {
+        let settled = crate::textform::show_type(ui, ("layout_label_type", li, id), fields, true);
+        let reset = text.color.is_some() && ui.small_button(tl!("Use the element's color")).clicked();
+        (settled, reset)
+    }) else {
+        return;
+    };
+    let (settled, reset) = settled;
+    if settled.size {
+        update(app, json!({"textSize": sz}));
+    }
+    if let Some(resp) = &settled.color {
+        crate::widgets::one_step_per_press(app, resp);
+        update(app, json!({"textColor": crate::theme::rgba(c).hex()}));
+    }
+    if reset {
+        update(app, json!({"textColor": ""}));
+    }
+    if settled.bold {
+        update(app, json!({"bold": bb}));
+    }
+    if settled.italic {
+        update(app, json!({"italic": it}));
+    }
+    if settled.font {
+        let font = match &named {
+            Some(n) => json!({"font": n, "fallback": fam.code()}),
+            None => json!({"font": fam.code()}),
+        };
+        update(app, font);
+    }
+}
+
 fn text_field(
     app: &mut RustGisApp,
     ui: &mut Ui,
@@ -1839,20 +1949,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             ui.end_row();
                         }
                     }
-                    ElementKind::NorthArrow { style, fill, outline, .. } => {
-                        let input_label = ui.label(tl!("Style"));
-                        egui::ComboBox::from_id_salt(("arrow_style", id))
-                            .selected_text(tl!(style.label()))
-                            .show_ui(ui, |ui| {
-                                for v in ArrowStyle::ALL {
-                                    if ui.selectable_label(*style == v, tl!(v.label())).clicked() && *style != v {
-                                        update(app, json!({"style": v.code()}));
-                                    }
-                                }
-                            })
-                            .response
-                            .labelled_by(input_label.id);
-                        ui.end_row();
+                    ElementKind::NorthArrow { fill, outline, label, .. } => {
                         for (label, key, current) in [("Fill", "fill", *fill), ("Outline", "outline", *outline)] {
                             ui.label(tl!(label));
                             let mut c = crate::theme::c32(current);
@@ -1863,34 +1960,52 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             }
                             ui.end_row();
                         }
+                        // The letter over the arrow, typed as wanted: N, น, North, ทิศเหนือ; none.
+                        let input_label = ui.label(tl!("Letter"));
+                        if let Some(t) = text_field(app, ui, (li, id, "label"), label, false, input_label.id) {
+                            update(app, json!({"label": t}));
+                        }
+                        ui.end_row();
                     }
-                    ElementKind::ScaleBar { units, divisions, style, .. } => {
-                        let input_label = ui.label(tl!("Style"));
-                        egui::ComboBox::from_id_salt(("scale_style", id))
-                            .selected_text(tl!(style.label()))
-                            .show_ui(ui, |ui| {
-                                for v in ScaleBarStyle::ALL {
-                                    if ui.selectable_label(*style == v, tl!(v.label())).clicked() && *style != v {
-                                        update(app, json!({"style": v.code()}));
-                                    }
-                                }
-                            })
-                            .response
-                            .labelled_by(input_label.id);
-                        ui.end_row();
-                        let input_label = ui.label(tl!("Units"));
-                        egui::ComboBox::from_id_salt(("scale_units", id))
-                            .selected_text(tl!(units.label()))
-                            .show_ui(ui, |ui| {
-                                for v in ScaleUnits::ALL {
-                                    if ui.selectable_label(*units == v, tl!(v.label())).clicked() && *units != v {
-                                        update(app, json!({"units": v.code()}));
-                                    }
-                                }
-                            })
-                            .response
-                            .labelled_by(input_label.id);
-                        ui.end_row();
+                    ElementKind::ScaleBar {
+                        units,
+                        divisions,
+                        subdivisions,
+                        division,
+                        unit_label,
+                        unit_text,
+                        unit_place,
+                        numbers,
+                        color,
+                        alt_color,
+                        bar_height,
+                        ..
+                    } => {
+                        let combo =
+                            |app: &mut RustGisApp, ui: &mut Ui, label: &str, key: &str, now: (&str, &str), all: Vec<(&str, &str)>| {
+                                let input_label = ui.label(tl!(label));
+                                egui::ComboBox::from_id_salt((key, id))
+                                    .selected_text(tl!(now.1))
+                                    .show_ui(ui, |ui| {
+                                        for (code, shown) in all {
+                                            if ui.selectable_label(now.0 == code, tl!(shown)).clicked() && now.0 != code {
+                                                update(app, json!({key: code}));
+                                            }
+                                        }
+                                    })
+                                    .response
+                                    .labelled_by(input_label.id);
+                                ui.end_row();
+                            };
+                        let pairs = |v: Vec<(&'static str, &'static str)>| v;
+                        combo(
+                            app,
+                            ui,
+                            "Units",
+                            "units",
+                            (units.code(), units.label()),
+                            pairs(ScaleUnits::ALL.iter().map(|v| (v.code(), v.label())).collect()),
+                        );
                         let input_label = ui.label(tl!("Divisions"));
                         let mut n = *divisions as u64;
                         let drag = Dragged::lend(ui, drag_key("divisions"), &mut n);
@@ -1899,6 +2014,125 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             update(app, json!({"divisions": n}));
                         }
                         ui.end_row();
+                        // The first division split again, as ArcGIS's subdivisions.
+                        let input_label = ui.label(tl!("Subdivisions"));
+                        let mut n = *subdivisions as u64;
+                        let drag = Dragged::lend(ui, drag_key("subdivisions"), &mut n);
+                        let none = tl!("None");
+                        let r = ui
+                            .add(
+                                egui::DragValue::new(&mut n)
+                                    .range(0..=MAX_SCALE_DIVISIONS as u64)
+                                    .custom_formatter(move |v, _| if v < 2.0 { none.to_string() } else { format!("{v}") }),
+                            )
+                            .labelled_by(input_label.id)
+                            .on_hover_text(tl!("Split the first division into this many parts"));
+                        if drag.settled(ui, &r, &mut n) && n as usize != *subdivisions {
+                            update(app, json!({"subdivisions": n}));
+                        }
+                        ui.end_row();
+                        // Each division's length; 0 fits a round one to the element.
+                        let input_label = ui.label(tl!("Division length"));
+                        let unit = if *units == ScaleUnits::Auto { "m" } else { units.resolve(1.0).1 };
+                        let mut v = *division;
+                        let drag = Dragged::lend(ui, drag_key("division"), &mut v);
+                        let auto = tl!("Auto");
+                        let r = ui
+                            .add(
+                                egui::DragValue::new(&mut v)
+                                    .range(0.0..=1.0e7)
+                                    .speed((v * 0.01).max(0.01))
+                                    .custom_formatter(move |v, _| if v <= 0.0 { auto.to_string() } else { format!("{v} {unit}") })
+                                    .custom_parser(|t| {
+                                        let t: String = t.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+                                        Some(t.parse::<f64>().unwrap_or(0.0))
+                                    }),
+                            )
+                            .labelled_by(input_label.id)
+                            .on_hover_text(tl!("Each division's length, e.g. 1 km; Auto picks a round one that fits"));
+                        if drag.settled(ui, &r, &mut v) && (v - division).abs() > 1e-9 {
+                            update(app, json!({"division": v}));
+                        }
+                        ui.end_row();
+                        combo(
+                            app,
+                            ui,
+                            "Unit name",
+                            "unitLabel",
+                            (unit_label.code(), unit_label.label()),
+                            pairs(UnitLabel::ALL.iter().map(|v| (v.code(), v.label())).collect()),
+                        );
+                        // The unit as typed: anything typed here names it (custom).
+                        let input_label = ui.label(tl!("Unit text"));
+                        let key = (li, id, "unitText");
+                        let shown = if *unit_label == UnitLabel::Custom { unit_text.clone() } else { String::new() };
+                        let mut buf = app.layout.typing.remove(&key).unwrap_or_else(|| shown.clone());
+                        let abbr = if *units == ScaleUnits::Auto { "km" } else { units.resolve(1.0).1 };
+                        let hint = unit_label.name(abbr, "");
+                        let r = ui
+                            .add(egui::TextEdit::singleline(&mut buf).hint_text(hint).desired_width(140.0))
+                            .labelled_by(input_label.id)
+                            .on_hover_text(tl!("Type the unit as it should read, e.g. กิโลเมตร; empty goes back to the unit name"));
+                        if r.lost_focus() {
+                            if buf.trim() != shown.trim() {
+                                if buf.trim().is_empty() {
+                                    update(app, json!({"unitText": "", "unitLabel": "abbreviation"}));
+                                } else {
+                                    update(app, json!({"unitText": buf}));
+                                }
+                            }
+                        } else if r.has_focus() {
+                            app.layout.typing.insert(key, buf);
+                        }
+                        ui.end_row();
+                        combo(
+                            app,
+                            ui,
+                            "Unit place",
+                            "unitPlace",
+                            (unit_place.code(), unit_place.label()),
+                            pairs(UnitPlace::ALL.iter().map(|v| (v.code(), v.label())).collect()),
+                        );
+                        combo(
+                            app,
+                            ui,
+                            "Numbers",
+                            "numbers",
+                            (numbers.code(), numbers.label()),
+                            pairs(NumberPlace::ALL.iter().map(|v| (v.code(), v.label())).collect()),
+                        );
+                        let input_label = ui.label(tl!("Bar height"));
+                        let mut v = *bar_height;
+                        let drag = Dragged::lend(ui, drag_key("barHeight"), &mut v);
+                        let auto = tl!("Auto");
+                        let r = ui
+                            .add(
+                                egui::DragValue::new(&mut v)
+                                    .range(0.0..=MAX_BAR_HEIGHT)
+                                    .speed(0.1)
+                                    .custom_formatter(
+                                        move |v, _| if v <= 0.0 { auto.to_string() } else { format!("{} pt", (v * 10.0).round() / 10.0) },
+                                    )
+                                    .custom_parser(|t| {
+                                        let t: String = t.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+                                        Some(t.parse::<f64>().unwrap_or(0.0))
+                                    }),
+                            )
+                            .labelled_by(input_label.id);
+                        if drag.settled(ui, &r, &mut v) && (v - bar_height).abs() > 1e-9 {
+                            update(app, json!({"barHeight": v}));
+                        }
+                        ui.end_row();
+                        for (label, key, current) in [("Bar color", "color", *color), ("Light color", "altColor", *alt_color)] {
+                            ui.label(tl!(label));
+                            let mut c = crate::theme::c32(current);
+                            let resp = crate::widgets::color_button(ui, &mut c);
+                            if resp.changed() {
+                                crate::widgets::one_step_per_press(app, &resp);
+                                update(app, json!({key: crate::theme::rgba(c).hex()}));
+                            }
+                            ui.end_row();
+                        }
                     }
                     ElementKind::Table { rows, .. } => {
                         let input_label = ui.label(tl!("Rows"));
@@ -1983,6 +2217,26 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
             },
         );
     });
+    // A north arrow's or scale bar's style, picked from pictures of them as ArcGIS shows them, and
+    // the type of its letter or numbers.
+    let surround = match &e.kind {
+        ElementKind::NorthArrow { style, outline, text, .. } => {
+            let items: Vec<(&'static str, &'static str)> = ArrowStyle::ALL.iter().map(|v| (v.code(), v.label())).collect();
+            Some((style.code(), items, true, text.clone(), *outline))
+        }
+        ElementKind::ScaleBar { style, color, text, .. } => {
+            let items: Vec<(&'static str, &'static str)> = ScaleBarStyle::ALL.iter().map(|v| (v.code(), v.label())).collect();
+            Some((style.code(), items, false, text.clone(), *color))
+        }
+        _ => None,
+    };
+    if let Some((now, items, arrow, text, own)) = surround {
+        let picked = crate::textform::section(ui, "Style", |ui| style_gallery(ui, &items, now, arrow)).flatten();
+        if let Some(code) = picked {
+            update(app, json!({"style": code}));
+        }
+        label_type(app, ui, (li, id), &text, own, if arrow { "Letter type" } else { "Number type" }, &update);
+    }
     // A layout's text: the form a text graphic has too (#516, #535), with the page's dynamic text.
     if let ElementKind::Text { text, size, color, bold, italic, align, letter_spacing, font, font_name } = &e.kind {
         let key = (li, id, "text");
@@ -3518,6 +3772,65 @@ mod tests {
         h.get_by_label("Short labels").click();
         h.run_steps(2);
         assert!(grid(&h).short);
+    }
+
+    /// A scale bar's and a north arrow's style is picked from pictures in the Format pane, the
+    /// unit typed in Thai, the arrow's letter typed.
+    #[test]
+    fn surrounds_are_styled_from_pictures_in_the_format_pane() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        use rustgis_engine::map::layout::{ElementKind, UnitLabel};
+        let mut app = RustGisApp::with_sample();
+        app.run("layout.new", json!({"name": "Thai"})).unwrap();
+        let li = app.session.active_layout.unwrap();
+        let find =
+            |app: &RustGisApp, code: &str| app.session.project.layouts[li].elements.iter().find(|e| e.kind.code() == code).unwrap().id;
+        let (bar, arrow) = (find(&app, "scaleBar"), find(&app, "northArrow"));
+        app.run("ui.pane.format", json!({})).unwrap();
+        app.layout.selected = Some(bar);
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1200.0, 1600.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                with_format(app, ui);
+            },
+            app,
+        );
+        h.run_steps(3);
+        let kind =
+            |h: &egui_kittest::Harness<'_, RustGisApp>, id: u32| h.state().session.project.layouts[li].element(id).unwrap().kind.clone();
+        h.get_by_role_and_label(Role::Button, "Ruler").click();
+        h.run_steps(2);
+        assert!(matches!(kind(&h, bar), ElementKind::ScaleBar { style: ScaleBarStyle::Ruler, .. }));
+        h.get_by_role_and_label(Role::TextInput, "Unit text").focus();
+        h.run_steps(2);
+        h.get_by_role_and_label(Role::TextInput, "Unit text").type_text("กิโลเมตร");
+        h.run_steps(2);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert!(
+            matches!(kind(&h, bar), ElementKind::ScaleBar { unit_label: UnitLabel::Custom, ref unit_text, .. } if unit_text == "กิโลเมตร"),
+            "{:?}",
+            kind(&h, bar)
+        );
+        h.state_mut().layout.selected = Some(arrow);
+        h.run_steps(3);
+        h.get_by_role_and_label(Role::Button, "Star in a ring").click();
+        h.run_steps(2);
+        assert!(matches!(kind(&h, arrow), ElementKind::NorthArrow { style: ArrowStyle::Rose, .. }));
+        h.get_by_role_and_label(Role::TextInput, "Letter").focus();
+        h.run_steps(2);
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get_by_role_and_label(Role::TextInput, "Letter").type_text("น");
+        h.run_steps(2);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert!(matches!(kind(&h, arrow), ElementKind::NorthArrow { ref label, .. } if label == "น"), "{:?}", kind(&h, arrow));
     }
 
     /// Selecting an element opens the Format pane, a tab like the others (#516). Closing it keeps

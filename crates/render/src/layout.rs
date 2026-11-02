@@ -4,8 +4,8 @@
 use rustgis_data::GeometryType;
 use rustgis_geom::{Coord, Extent};
 use rustgis_map::layout::{
-    ArrowStyle, ColorScale, ElementKind, FrameShape, Grid, GridKind, Layout, LineHead, Orientation, PT_PER_MM, ScaleBarStyle, ScaleUnits,
-    TextAlign, TickSide, frame_camera,
+    ArrowStyle, ColorScale, ElementKind, FontFamily, FrameShape, Grid, GridKind, LabelText, Layout, LineHead, NumberPlace, Orientation,
+    PT_PER_MM, ScaleBarStyle, ScaleUnits, TextAlign, TickSide, UnitLabel, UnitPlace, frame_camera,
 };
 use rustgis_map::symbology::LegendEntry;
 use rustgis_map::{Map, Rgba};
@@ -235,16 +235,17 @@ fn draw_page(
                     outside_labels(target, outside, (x0, y0, ew.max(1.0), eh.max(1.0)), up, ppp as f32, vertical);
                 }
             }
-            ElementKind::NorthArrow { frame: f, style, fill, outline } => {
+            ElementKind::NorthArrow { frame: f, style, fill, outline, label, text } => {
                 // Turned with its frame's map.
                 let bearing = frame(*f).map_or(0.0, |fr| fr.2.bearing);
-                north_arrow(target, r, *style, *fill, *outline, ppp, bearing)
+                north_arrow(target, r, &Arrow { style: *style, fill: *fill, outline: *outline, label, text }, ppp, bearing)
             }
-            ElementKind::ScaleBar { frame: f, units, divisions, style } => {
+            ElementKind::ScaleBar { frame: f, .. } => {
                 if let Some(&(_, mi, cam, _, _)) = frame(*f)
                     && let Some(map) = maps.get(mi)
+                    && let Some(look) = ScaleLook::of(&e.kind)
                 {
-                    scale_bar(target, r, map.ground_res_at(&cam), (*units, *divisions, *style), ppp, layout.decimal_comma);
+                    scale_bar(target, r, map.ground_res_at(&cam), &look, ppp, layout.decimal_comma);
                 }
             }
             ElementKind::Legend { frame: f, title, all_classes, hide_other, exclude } => {
@@ -990,14 +991,73 @@ fn shape(pm: &mut Pixmap, pts: &[(f32, f32)], fill: Rgba, outline: Rgba, width: 
     }
 }
 
-/// A north arrow in `style`, with an `N` above it, pointing north on a map turned to `bearing`
-/// (degrees clockwise from north): turned about the middle of `r`, the `N` kept upright.
-fn north_arrow(pm: &mut Pixmap, r: Rect, style: ArrowStyle, fill: Rgba, outline: Rgba, ppp: f64, bearing: f64) {
+/// A north arrow's look, as its element has it.
+pub struct Arrow<'a> {
+    pub style: ArrowStyle,
+    pub fill: Rgba,
+    pub outline: Rgba,
+    /// The letter over it (`N`); empty for none.
+    pub label: &'a str,
+    pub text: &'a LabelText,
+}
+
+/// The face a north arrow's letter or a scale bar's numbers are drawn in.
+fn label_face(t: &LabelText) -> text::Face {
+    let family = t.font_name.as_deref().and_then(crate::families::find_ready);
+    text::Face { bold: t.bold, italic: t.italic, serif: t.font == FontFamily::Serif, family }
+}
+
+/// One line of `s` in `face` at `px`, its middle at `cy`: centred on `x`, or starting at it
+/// (`centred` false). Returns how wide its ink is.
+#[allow(clippy::too_many_arguments)]
+fn label_at(pm: &mut Pixmap, s: &str, x: f32, cy: f32, px: f32, color: Rgba, face: text::Face, centred: bool) -> f32 {
+    let (lo, hi) = text::styled_extent(s, px, face, 0.0);
+    let left = if centred { x - (lo + hi) / 2.0 } else { x - lo };
+    text::styled_at(pm, s, left, cy, px, color, face, 0.0);
+    hi - lo
+}
+
+/// How wide `s`'s ink is in `face` at `px`.
+fn label_width(s: &str, px: f32, face: text::Face) -> f32 {
+    let (lo, hi) = text::styled_extent(s, px, face, 0.0);
+    hi - lo
+}
+
+/// Strokes the polyline `pts` (closed when `close`) in `color`.
+fn polyline(pm: &mut Pixmap, pts: &[(f32, f32)], color: Rgba, width: f32, close: bool) {
+    let mut pb = PathBuilder::new();
+    for (i, (x, y)) in pts.iter().enumerate() {
+        if i == 0 { pb.move_to(*x, *y) } else { pb.line_to(*x, *y) }
+    }
+    if close {
+        pb.close();
+    }
+    if let Some(p) = pb.finish() {
+        let stroke = Stroke { width, line_cap: tiny_skia::LineCap::Round, line_join: tiny_skia::LineJoin::Round, ..Stroke::default() };
+        pm.stroke_path(&p, &paint(color, 1.0), &stroke, Transform::identity(), None);
+    }
+}
+
+/// A ring of radius `rad` about (`x`, `y`).
+fn ring(pm: &mut Pixmap, (x, y): (f32, f32), rad: f32, color: Rgba, width: f32) {
+    if let Some(p) = PathBuilder::from_circle(x, y, rad.max(0.5)) {
+        pm.stroke_path(&p, &paint(color, 1.0), &Stroke { width, ..Stroke::default() }, Transform::identity(), None);
+    }
+}
+
+/// A north arrow in its style, with its letter (`N`) above it, pointing north on a map turned to
+/// `bearing` (degrees clockwise from north): turned about the middle of `r`, the letter kept
+/// upright.
+pub fn north_arrow(pm: &mut Pixmap, r: Rect, a: &Arrow, ppp: f64, bearing: f64) {
+    let (style, fill, outline) = (a.style, a.fill, a.outline);
     let white = Rgba::rgb(0xFF, 0xFF, 0xFF);
     let sw = 0.8 * ppp as f32;
     let (cx, top) = (r.x() + r.width() / 2.0, r.y());
-    let label_h = (r.height() * 0.25).min(14.0 * ppp as f32);
-    let (tip, base) = (top + label_h + 2.0, r.y() + r.height());
+    let label = a.label.trim();
+    // The letter's height: its size when set, else a quarter of the element (14 points at most).
+    let px = if a.text.size > 0.0 { (a.text.size * 1.33 * ppp) as f32 } else { (r.height() * 0.25).min(14.0 * ppp as f32) * 1.1 };
+    let label_h = if label.is_empty() { 0.0 } else { (px / 1.1).min(r.height() * 0.6) };
+    let (tip, base) = (top + label_h + if label.is_empty() { 1.0 } else { 2.0 }, r.y() + r.height() - 1.0);
     // North lies `bearing` anticlockwise of the page's up.
     let (sin, cos) = if bearing.is_finite() { (-bearing.to_radians()).sin_cos() } else { (0.0, 1.0) };
     let (sin, cos) = (sin as f32, cos as f32);
@@ -1010,41 +1070,95 @@ fn north_arrow(pm: &mut Pixmap, r: Rect, style: ArrowStyle, fill: Rgba, outline:
         let pts: Vec<(f32, f32)> = pts.iter().map(|p| turn(*p)).collect();
         shape(pm, &pts, fill, outline, sw)
     };
+    let lines = |pm: &mut Pixmap, pts: &[(f32, f32)], w: f32| {
+        let pts: Vec<(f32, f32)> = pts.iter().map(|p| turn(*p)).collect();
+        polyline(pm, &pts, fill, w, false)
+    };
+    let (h, cy) = (base - tip, (tip + base) / 2.0);
+    let rad = (r.width() / 2.0 - sw).min(h / 2.0).max(1.0);
+    // A split arrowhead from `tip` to `base`, `s` either side.
+    let split = |pm: &mut Pixmap, tip: f32, base: f32, s: f32| {
+        let mid = tip + (base - tip) * 0.68;
+        shape(pm, &[(cx, tip), (cx - s, base), (cx, mid)], fill, fill, sw);
+        shape(pm, &[(cx, tip), (cx + s, base), (cx, mid)], white, outline, sw);
+    };
+    // An arm from the centre, split down its length: one half filled, one light.
+    let arm = |pm: &mut Pixmap, angle: f32, len: f32, half: f32| {
+        let (dx, dy) = (angle.sin(), -angle.cos());
+        let end = (cx + dx * len, cy + dy * len);
+        let (lx, ly) = (cx + dy * half, cy - dx * half);
+        let (rx, ry) = (cx - dy * half, cy + dx * half);
+        shape(pm, &[(cx, cy), end, (lx, ly)], fill, outline, sw);
+        shape(pm, &[(cx, cy), end, (rx, ry)], white, outline, sw);
+    };
+    let quarter = std::f32::consts::FRAC_PI_2;
     match style {
-        ArrowStyle::Classic => {
-            let s = (r.width() * 0.5).min(r.height() * 0.32);
-            let mid = tip + (base - tip) * 0.68;
-            shape(pm, &[(cx, tip), (cx - s, base), (cx, mid)], fill, fill, sw);
-            shape(pm, &[(cx, tip), (cx + s, base), (cx, mid)], white, outline, sw);
-        }
+        ArrowStyle::Classic => split(pm, tip, base, (r.width() * 0.5).min(r.height() * 0.32)),
         ArrowStyle::Triangle => {
             let s = (r.width() * 0.4).min(r.height() * 0.25);
             shape(pm, &[(cx, tip), (cx + s, base), (cx - s, base)], fill, outline, sw);
         }
-        ArrowStyle::Compass | ArrowStyle::Star => {
-            let cy = (tip + base) / 2.0;
-            let rad = (r.width() / 2.0).min((base - tip) / 2.0);
-            let arm = |pm: &mut Pixmap, angle: f32, len: f32, half: f32| {
-                // An arm from the centre, split down its length: one half filled, one light.
-                let (dx, dy) = (angle.sin(), -angle.cos());
-                let end = (cx + dx * len, cy + dy * len);
-                let (lx, ly) = (cx + dy * half, cy - dx * half);
-                let (rx, ry) = (cx - dy * half, cy + dx * half);
-                shape(pm, &[(cx, cy), end, (lx, ly)], fill, outline, sw);
-                shape(pm, &[(cx, cy), end, (rx, ry)], white, outline, sw);
-            };
-            if style == ArrowStyle::Star {
+        ArrowStyle::Compass | ArrowStyle::Star | ArrowStyle::Rose => {
+            if style == ArrowStyle::Rose {
+                ring(pm, turn((cx, cy)), rad * 0.72, outline, sw * 1.4);
+            }
+            if style != ArrowStyle::Compass {
                 for k in 0..4 {
-                    arm(pm, std::f32::consts::FRAC_PI_4 + k as f32 * std::f32::consts::FRAC_PI_2, rad * 0.6, rad * 0.14);
+                    arm(pm, std::f32::consts::FRAC_PI_4 + k as f32 * quarter, rad * 0.6, rad * 0.14);
                 }
             }
             for k in 0..4 {
-                arm(pm, k as f32 * std::f32::consts::FRAC_PI_2, rad, rad * 0.2);
+                arm(pm, k as f32 * quarter, rad, rad * 0.2);
             }
         }
+        ArrowStyle::Needle => {
+            let s = (r.width() * 0.22).min(h * 0.14);
+            shape(pm, &[(cx, tip), (cx + s, cy), (cx - s, cy)], fill, outline, sw);
+            shape(pm, &[(cx, base), (cx - s, cy), (cx + s, cy)], white, outline, sw);
+        }
+        ArrowStyle::Circle => {
+            ring(pm, turn((cx, cy)), rad, outline, sw * 1.5);
+            split(pm, cy - rad * 0.82, cy + rad * 0.62, rad * 0.45);
+        }
+        ArrowStyle::Simple => {
+            let s = (r.width() * 0.35).min(h * 0.22);
+            let w = (r.width() * 0.06).max(1.5 * ppp as f32);
+            lines(pm, &[(cx, base), (cx, tip)], w);
+            lines(pm, &[(cx - s, tip + s * 1.2), (cx, tip), (cx + s, tip + s * 1.2)], w);
+        }
+        ArrowStyle::Chevron => {
+            let s = (r.width() * 0.45).min(h * 0.4);
+            shape(pm, &[(cx, tip), (cx + s, base), (cx, base - h * 0.3), (cx - s, base)], fill, outline, sw);
+        }
+        ArrowStyle::Block => {
+            let (s, hh) = ((r.width() * 0.45).min(h * 0.35), h * 0.45);
+            let sh = s * 0.42;
+            let pts = [
+                (cx, tip),
+                (cx + s, tip + hh),
+                (cx + sh, tip + hh),
+                (cx + sh, base),
+                (cx - sh, base),
+                (cx - sh, tip + hh),
+                (cx - s, tip + hh),
+            ];
+            shape(pm, &pts, fill, outline, sw);
+        }
     }
-    let (nx, ny) = turn((cx, top + label_h / 2.0));
-    text::text_at(pm, "N", nx, ny, label_h * 1.1, outline, true, text::Align::Center, false);
+    if !label.is_empty() {
+        let (nx, ny) = turn((cx, top + label_h / 2.0));
+        label_at(pm, label, nx, ny, px, a.text.color.unwrap_or(outline), label_face(a.text), true);
+    }
+}
+
+/// A picture of a north arrow style for a gallery: `w` × `h` pixels, dark on clear.
+pub fn north_arrow_swatch(style: ArrowStyle, w: u32, h: u32) -> Option<Pixmap> {
+    let mut pm = Pixmap::new(w, h)?;
+    let r = Rect::from_xywh(2.0, 2.0, w as f32 - 4.0, h as f32 - 4.0)?;
+    let ink = Rgba::rgb(0x22, 0x22, 0x22);
+    let text = LabelText::arrow();
+    north_arrow(&mut pm, r, &Arrow { style, fill: ink, outline: ink, label: "N", text: &text }, (h as f64 / 40.0).max(0.5), 0.0);
+    Some(pm)
 }
 
 /// A scale bar label for `v`, a multiple of `step`: with the decimals the step needs (up to 6), so
@@ -1064,89 +1178,272 @@ fn scale_number(v: f64, step: f64) -> String {
     if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s }
 }
 
-/// A scale bar filling most of the element's width, in `units`, with `divisions` labelled steps.
+/// A scale bar's look, as its element has it.
+pub struct ScaleLook<'a> {
+    pub units: ScaleUnits,
+    pub divisions: usize,
+    pub style: ScaleBarStyle,
+    pub subdivisions: usize,
+    pub division: f64,
+    pub unit_label: UnitLabel,
+    pub unit_text: &'a str,
+    pub unit_place: UnitPlace,
+    pub numbers: NumberPlace,
+    pub color: Rgba,
+    pub alt_color: Rgba,
+    pub bar_height: f64,
+    pub text: &'a LabelText,
+}
+
+impl<'a> ScaleLook<'a> {
+    /// A scale bar element's look; `None` for other elements.
+    pub fn of(kind: &'a ElementKind) -> Option<ScaleLook<'a>> {
+        match kind {
+            ElementKind::ScaleBar {
+                units,
+                divisions,
+                style,
+                subdivisions,
+                division,
+                unit_label,
+                unit_text,
+                unit_place,
+                numbers,
+                color,
+                alt_color,
+                bar_height,
+                text,
+                ..
+            } => Some(ScaleLook {
+                units: *units,
+                divisions: *divisions,
+                style: *style,
+                subdivisions: *subdivisions,
+                division: *division,
+                unit_label: *unit_label,
+                unit_text,
+                unit_place: *unit_place,
+                numbers: *numbers,
+                color: *color,
+                alt_color: *alt_color,
+                bar_height: *bar_height,
+                text,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// The length a scale bar counts to, in its unit, with the unit's metres and abbreviation:
+/// `division` × `divisions` when the division is set (in the units, or in metres when they are
+/// automatic), else a round length that fits `room_m` ground metres.
+pub fn scale_length(units: ScaleUnits, divisions: usize, division: f64, room_m: f64) -> (f64, f64, &'static str) {
+    if division.is_finite() && division > 0.0 {
+        let fixed = units.resolve(1.0).0;
+        let total_m = division * divisions.max(1) as f64 * if units == ScaleUnits::Auto { 1.0 } else { fixed };
+        let (unit_m, abbr) = units.resolve(total_m);
+        return (total_m / unit_m, unit_m, abbr);
+    }
+    let (unit_m, abbr) = units.resolve(rustgis_geom::nice_distance(room_m));
+    (rustgis_geom::nice_distance(room_m / unit_m), unit_m, abbr)
+}
+
+/// A scale bar across most of the element's width, in its units, with its divisions labelled.
 /// `ground_per_pt` is ground metres per logical point of paper.
-fn scale_bar(pm: &mut Pixmap, r: Rect, ground_per_pt: f64, bar: (ScaleUnits, usize, ScaleBarStyle), ppp: f64, comma: bool) {
-    let (units, divisions, style) = bar;
+pub fn scale_bar(pm: &mut Pixmap, r: Rect, ground_per_pt: f64, look: &ScaleLook, ppp: f64, comma: bool) {
     if !(ground_per_pt.is_finite() && ground_per_pt > 0.0) {
         return;
     }
-    let divisions = divisions.clamp(1, rustgis_map::layout::MAX_SCALE_DIVISIONS);
-    let room_m = ground_per_pt * r.width() as f64 / ppp * 0.85;
-    let (unit_m, abbr) = units.resolve(rustgis_geom::nice_distance(room_m));
-    let total = rustgis_geom::nice_distance(room_m / unit_m);
-    if total <= 0.0 {
+    let divisions = look.divisions.clamp(1, rustgis_map::layout::MAX_SCALE_DIVISIONS);
+    let px = if look.text.size > 0.0 { look.text.size * 1.33 * ppp } else { 8.0 * 1.33 * ppp } as f32;
+    let face = label_face(look.text);
+    let (dark, light) = (look.color, look.alt_color);
+    let ink = look.text.color.unwrap_or(dark);
+    let gap = 3.0 * ppp as f32;
+    let name_of = |abbr: &str| look.unit_label.name(abbr, look.unit_text.trim());
+    // Room along the element; a unit after the bar takes its share.
+    let mut room = r.width() - 4.0;
+    let (mut total, mut unit_m, mut abbr) = scale_length(look.units, divisions, look.division, ground_per_pt * room as f64 / ppp * 0.85);
+    if look.unit_place == UnitPlace::AfterBar && look.division <= 0.0 {
+        let w = label_width(&name_of(abbr), px, face);
+        if w > 0.0 {
+            room = (room - w - gap).max(room * 0.3);
+            (total, unit_m, abbr) = scale_length(look.units, divisions, 0.0, ground_per_pt * room as f64 / ppp * 0.95);
+        }
+    }
+    if !(total.is_finite() && total > 0.0) {
         return;
     }
+    let name = name_of(abbr);
     let len = (total * unit_m / ground_per_pt * ppp) as f32;
-    let bar_h = (r.height() * 0.28).min(6.0 * ppp as f32);
-    let (x0, y0) = (r.x() + 2.0, r.y() + r.height() * 0.62 - bar_h / 2.0);
-    let dark = Rgba::rgb(0x22, 0x22, 0x22);
+    if !(len.is_finite() && len > 0.5) || len > 1.0e6 {
+        return;
+    }
+    let bar_h = if look.bar_height > 0.0 { (look.bar_height * ppp) as f32 } else { (r.height() * 0.28).min(6.0 * ppp as f32) };
+    // Rows from the top: the unit above, the numbers above, the bar, the numbers below, the unit
+    // below; centred down the element.
+    let row = px * 1.3;
+    let unit_row = |p: UnitPlace| look.unit_place == p && !name.is_empty();
+    let above = matches!(look.numbers, NumberPlace::Above | NumberPlace::Ends);
+    let below = look.numbers == NumberPlace::Below;
+    let rows_h = [unit_row(UnitPlace::Above), above, below, unit_row(UnitPlace::Below)].iter().filter(|v| **v).count() as f32 * row;
+    let mut y = r.y() + ((r.height() - rows_h - bar_h) / 2.0).max(0.0);
+    let x0 = r.x() + 2.0;
+    let mut unit_above_y = None;
+    if unit_row(UnitPlace::Above) {
+        unit_above_y = Some(y + row / 2.0);
+        y += row;
+    }
+    let numbers_above_y = above.then(|| y + row * 0.45);
+    if above {
+        y += row;
+    }
+    let y0 = y;
+    let numbers_below_y = below.then(|| y0 + bar_h + row * 0.6);
+    let unit_below_y = unit_row(UnitPlace::Below).then(|| y0 + bar_h + if below { row } else { 0.0 } + row / 2.0);
+
+    // The parts the bar is drawn in: the first division split into its subdivisions.
     let seg = len / divisions as f32;
-    let line = Stroke { width: 0.6 * ppp as f32, ..Stroke::default() };
-    let stroke = |pm: &mut Pixmap, pts: &[(f32, f32)], w: &Stroke| {
-        let mut pb = PathBuilder::new();
-        for (i, (x, y)) in pts.iter().enumerate() {
-            if i == 0 { pb.move_to(*x, *y) } else { pb.line_to(*x, *y) }
-        }
-        if let Some(p) = pb.finish() {
-            pm.stroke_path(&p, &paint(dark, 1.0), w, Transform::identity(), None);
+    let sub = if look.subdivisions >= 2 { look.subdivisions } else { 1 };
+    let mut cuts: Vec<(f32, u8)> = vec![(x0, 2)];
+    for k in 1..sub {
+        cuts.push((x0 + seg * k as f32 / sub as f32, 0));
+    }
+    for i in 1..=divisions {
+        cuts.push((x0 + seg * i as f32, if i == divisions { 2 } else { 1 }));
+    }
+    let parts: Vec<(f32, f32)> = cuts.windows(2).map(|w| (w[0].0, w[1].0)).collect();
+    let thin = Stroke { width: 0.6 * ppp as f32, ..Stroke::default() };
+    let line_w = 1.0 * ppp as f32;
+    let fill = |pm: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, c: Rgba| {
+        if let Some(b) = Rect::from_xywh(x, y, w, h) {
+            pm.fill_rect(b, &paint(c, 1.0), Transform::identity(), None);
         }
     };
-    match style {
+    let frame = |pm: &mut Pixmap, x: f32, y: f32, w: f32, h: f32| {
+        if let Some(b) = Rect::from_xywh(x, y, w, h) {
+            pm.stroke_path(&PathBuilder::from_rect(b), &paint(dark, 1.0), &thin, Transform::identity(), None);
+        }
+    };
+    // A tick's length for a cut: the ends, the divisions, the subdivisions.
+    let tick = |rank: u8| match rank {
+        2 => bar_h,
+        1 => bar_h * 0.6,
+        _ => bar_h * 0.35,
+    };
+    match look.style {
         ScaleBarStyle::Alternating => {
-            for i in 0..divisions {
-                let c = if i % 2 == 0 { dark } else { Rgba::rgb(0xFF, 0xFF, 0xFF) };
-                if let Some(b) = Rect::from_xywh(x0 + seg * i as f32, y0, seg, bar_h) {
-                    pm.fill_rect(b, &paint(c, 1.0), Transform::identity(), None);
-                }
+            for (i, (a, b)) in parts.iter().enumerate() {
+                fill(pm, *a, y0, b - a, bar_h, if i % 2 == 0 { dark } else { light });
             }
-            if let Some(b) = Rect::from_xywh(x0, y0, len, bar_h) {
-                pm.stroke_path(&PathBuilder::from_rect(b), &paint(dark, 1.0), &line, Transform::identity(), None);
+            frame(pm, x0, y0, len, bar_h);
+        }
+        ScaleBarStyle::DoubleAlternating => {
+            let half = bar_h / 2.0;
+            for (i, (a, b)) in parts.iter().enumerate() {
+                fill(pm, *a, y0, b - a, half, if i % 2 == 0 { dark } else { light });
+                fill(pm, *a, y0 + half, b - a, half, if i % 2 == 0 { light } else { dark });
+            }
+            frame(pm, x0, y0, len, bar_h);
+            polyline(pm, &[(x0, y0 + half), (x0 + len, y0 + half)], dark, thin.width, false);
+        }
+        ScaleBarStyle::Hollow => {
+            fill(pm, x0, y0, len, bar_h, light);
+            for (a, b) in &parts {
+                frame(pm, *a, y0, b - a, bar_h);
             }
         }
         ScaleBarStyle::Stepped => {
             let mut pts = vec![(x0, y0 + bar_h)];
-            for i in 0..divisions {
+            for (i, (a, b)) in parts.iter().enumerate() {
                 let y = if i % 2 == 0 { y0 } else { y0 + bar_h };
-                let (a, b) = (x0 + seg * i as f32, x0 + seg * (i + 1) as f32);
-                pts.extend([(a, y), (b, y)]);
+                pts.extend([(*a, y), (*b, y)]);
             }
             pts.push((x0 + len, y0 + bar_h));
-            stroke(pm, &pts, &Stroke { width: 1.0 * ppp as f32, ..Stroke::default() });
+            polyline(pm, &pts, dark, line_w, false);
         }
-        ScaleBarStyle::Line => {
-            let base = y0 + bar_h;
-            stroke(pm, &[(x0, base), (x0 + len, base)], &Stroke { width: 1.0 * ppp as f32, ..Stroke::default() });
-            for i in 0..=divisions {
-                let tall = if i == 0 || i == divisions { bar_h } else { bar_h * 0.6 };
-                let x = x0 + seg * i as f32;
-                stroke(pm, &[(x, base), (x, base - tall)], &line);
+        ScaleBarStyle::Line | ScaleBarStyle::LineDown | ScaleBarStyle::LineCross => {
+            let base = match look.style {
+                ScaleBarStyle::Line => y0 + bar_h,
+                ScaleBarStyle::LineDown => y0,
+                _ => y0 + bar_h / 2.0,
+            };
+            polyline(pm, &[(x0, base), (x0 + len, base)], dark, line_w, false);
+            for (x, rank) in &cuts {
+                let t = tick(*rank);
+                let (a, b) = match look.style {
+                    ScaleBarStyle::Line => (base, base - t),
+                    ScaleBarStyle::LineDown => (base, base + t),
+                    _ => (base - t / 2.0, base + t / 2.0),
+                };
+                polyline(pm, &[(*x, a), (*x, b)], dark, thin.width, false);
+            }
+        }
+        ScaleBarStyle::Ruler => {
+            let strip = (bar_h * 0.3).max(1.0);
+            fill(pm, x0, y0 + bar_h - strip, len, strip, dark);
+            for (x, rank) in &cuts {
+                polyline(pm, &[(*x, y0 + bar_h), (*x, y0 + bar_h - tick(*rank))], dark, thin.width, false);
             }
         }
     }
-    // Labels at the divisions, the last with the unit; one that would touch its neighbour is left
-    // out (never the ends).
-    let px = 8.0 * 1.33 * ppp as f32;
-    let ty = y0 - px * 0.7;
-    let gap = 3.0 * ppp as f32;
-    let labels: Vec<(f32, String)> = (0..=divisions)
-        .map(|i| {
-            let v = decimal(scale_number(total * i as f64 / divisions as f64, total / divisions as f64), comma);
-            (x0 + seg * i as f32, if i == divisions { format!("{v} {abbr}") } else { v })
-        })
-        .collect();
-    let half = |s: &str| text::measure(s, px / 1.33, false) / 2.0;
-    let last = labels.last().map(|(x, s)| x - half(s)).unwrap_or(f32::MAX);
-    let mut right = f32::MIN;
-    for (i, (x, s)) in labels.iter().enumerate() {
-        let end = i == divisions;
-        if !end && (x - half(s) < right + gap || x + half(s) + gap > last) && i != 0 {
-            continue;
+    // The numbers at the divisions, the last with the unit when it goes there; one that would touch
+    // its neighbour is left out (never the ends).
+    if let Some(ty) = numbers_above_y.or(numbers_below_y) {
+        let ends = look.numbers == NumberPlace::Ends;
+        let with_unit = look.unit_place == UnitPlace::AfterLabel && !name.is_empty();
+        let labels: Vec<(f32, String)> = (0..=divisions)
+            .filter(|i| !ends || *i == 0 || *i == divisions)
+            .map(|i| {
+                let v = decimal(scale_number(total * i as f64 / divisions as f64, total / divisions as f64), comma);
+                (x0 + seg * i as f32, if i == divisions && with_unit { format!("{v} {name}") } else { v })
+            })
+            .collect();
+        let half = |s: &str| label_width(s, px, face) / 2.0;
+        let n = labels.len();
+        let last = labels.last().map(|(x, s)| x - half(s)).unwrap_or(f32::MAX);
+        let mut right = f32::MIN;
+        for (i, (x, s)) in labels.iter().enumerate() {
+            let end = i + 1 == n;
+            if !end && i != 0 && (x - half(s) < right + gap || x + half(s) + gap > last) {
+                continue;
+            }
+            // The last number with its unit is centred on its number, as a plain one is.
+            let shift = if end && with_unit { half(s) - half(s.rsplit_once(' ').map_or(s.as_str(), |(v, _)| v)) } else { 0.0 };
+            label_at(pm, s, x + shift, ty, px, ink, face, true);
+            right = x + shift + half(s);
         }
-        text::text_at(pm, s, *x, ty, px, dark, false, text::Align::Center, false);
-        right = x + half(s);
     }
+    if look.unit_place == UnitPlace::AfterBar && !name.is_empty() {
+        label_at(pm, &name, x0 + len + gap, y0 + bar_h / 2.0, px, ink, face, false);
+    }
+    for uy in [unit_above_y, unit_below_y].into_iter().flatten() {
+        label_at(pm, &name, x0 + len / 2.0, uy, px, ink, face, true);
+    }
+}
+
+/// A picture of a scale bar style for a gallery: `w` × `h` pixels, four divisions, no numbers.
+pub fn scale_bar_swatch(style: ScaleBarStyle, w: u32, h: u32) -> Option<Pixmap> {
+    let mut pm = Pixmap::new(w, h)?;
+    let r = Rect::from_xywh(2.0, 0.0, w as f32 - 4.0, h as f32)?;
+    let text = LabelText::scale_bar();
+    let look = ScaleLook {
+        units: ScaleUnits::Meters,
+        divisions: 4,
+        style,
+        subdivisions: 0,
+        division: (w as f64 - 10.0) / 4.0,
+        unit_label: UnitLabel::None,
+        unit_text: "",
+        unit_place: UnitPlace::AfterLabel,
+        numbers: NumberPlace::None,
+        color: Rgba::rgb(0x22, 0x22, 0x22),
+        alt_color: Rgba::rgb(0xFF, 0xFF, 0xFF),
+        bar_height: h as f64 * 0.45,
+        text: &text,
+    };
+    scale_bar(&mut pm, r, 1.0, &look, 1.0, false);
+    Some(pm)
 }
 
 /// Each visible layer's legend for what it draws at a scale denominator (#207), by layer id; a
@@ -2697,7 +2994,9 @@ mod tests {
         let draw = |style, fill| {
             let mut pm = Pixmap::new(80, 120).unwrap();
             pm.fill(tiny_skia::Color::WHITE);
-            north_arrow(&mut pm, Rect::from_xywh(0.0, 0.0, 80.0, 120.0).unwrap(), style, fill, Rgba::rgb(0x22, 0x22, 0x22), 1.0, 0.0);
+            let text = LabelText::arrow();
+            let a = Arrow { style, fill, outline: Rgba::rgb(0x22, 0x22, 0x22), label: "N", text: &text };
+            north_arrow(&mut pm, Rect::from_xywh(0.0, 0.0, 80.0, 120.0).unwrap(), &a, 1.0, 0.0);
             pm
         };
         let red_fill = Rgba::rgb(0xFF, 0, 0);
@@ -2719,7 +3018,15 @@ mod tests {
             let mut pm = Pixmap::new(80, 120).unwrap();
             pm.fill(tiny_skia::Color::WHITE);
             let r = Rect::from_xywh(0.0, 0.0, 80.0, 120.0).unwrap();
-            north_arrow(&mut pm, r, ArrowStyle::Triangle, Rgba::rgb(0xFF, 0, 0), Rgba::rgb(0x22, 0x22, 0x22), 1.0, bearing);
+            let text = LabelText::arrow();
+            let a = Arrow {
+                style: ArrowStyle::Triangle,
+                fill: Rgba::rgb(0xFF, 0, 0),
+                outline: Rgba::rgb(0x22, 0x22, 0x22),
+                label: "N",
+                text: &text,
+            };
+            north_arrow(&mut pm, r, &a, 1.0, bearing);
             let pts: Vec<(f64, f64)> = (0..120)
                 .flat_map(|y| (0..80).map(move |x| (x, y)))
                 .filter(|&(x, y)| pm.pixel(x, y).is_some_and(red))
@@ -2738,13 +3045,171 @@ mod tests {
         assert!(x < -3.0, "{x}");
     }
 
+    /// A scale bar's element, changed by `f`.
+    fn bar_kind(f: impl FnOnce(&mut ElementKind)) -> ElementKind {
+        let mut k = ElementKind::scale_bar(1);
+        f(&mut k);
+        k
+    }
+
+    /// A 300 × 60 scale bar at 100 m of ground per point.
+    fn bar_page(kind: &ElementKind) -> Pixmap {
+        let mut pm = Pixmap::new(300, 60).unwrap();
+        pm.fill(tiny_skia::Color::WHITE);
+        scale_bar(&mut pm, Rect::from_xywh(0.0, 0.0, 300.0, 60.0).unwrap(), 100.0, &ScaleLook::of(kind).unwrap(), 1.0, false);
+        pm
+    }
+
+    #[test]
+    fn scale_bar_styles_units_and_labels_differ() {
+        let plain = bar_page(&ElementKind::scale_bar(1));
+        let mut seen = vec![plain.data().to_vec()];
+        let mut differs = |what: &str, f: &dyn Fn(&mut ElementKind)| {
+            let pm = bar_page(&bar_kind(f));
+            assert!(pm.pixels().iter().any(|p| p.red() < 0x80), "{what} draws");
+            assert!(!seen.iter().any(|d| d == pm.data()), "{what} draws differently");
+            seen.push(pm.data().to_vec());
+        };
+        for style in ScaleBarStyle::ALL.into_iter().skip(1) {
+            differs(style.code(), &move |k| {
+                if let ElementKind::ScaleBar { style: s, .. } = k {
+                    *s = style;
+                }
+            });
+        }
+        for label in [UnitLabel::Name, UnitLabel::None] {
+            differs(label.code(), &move |k| {
+                if let ElementKind::ScaleBar { unit_label, .. } = k {
+                    *unit_label = label;
+                }
+            });
+        }
+        for place in [UnitPlace::AfterBar, UnitPlace::Above, UnitPlace::Below] {
+            differs(place.code(), &move |k| {
+                if let ElementKind::ScaleBar { unit_place, .. } = k {
+                    *unit_place = place;
+                }
+            });
+        }
+        for numbers in [NumberPlace::Below, NumberPlace::Ends, NumberPlace::None] {
+            differs(numbers.code(), &move |k| {
+                if let ElementKind::ScaleBar { numbers: n, .. } = k {
+                    *n = numbers;
+                }
+            });
+        }
+        differs("subdivisions", &|k| {
+            if let ElementKind::ScaleBar { subdivisions, .. } = k {
+                *subdivisions = 4;
+            }
+        });
+        differs("a set division", &|k| {
+            if let ElementKind::ScaleBar { division, .. } = k {
+                *division = 1000.0;
+            }
+        });
+        differs("a larger type", &|k| {
+            if let ElementKind::ScaleBar { text, .. } = k {
+                text.size = 12.0;
+            }
+        });
+        differs("colours", &|k| {
+            if let ElementKind::ScaleBar { color, .. } = k {
+                *color = Rgba::rgb(0x00, 0x40, 0x90);
+            }
+        });
+    }
+
+    /// Every style on one sheet, written to `RUSTGIS_SURROUNDS_SHEET` when it is set (to look at).
+    #[test]
+    fn surrounds_sheet() {
+        let Some(path) = std::env::var_os("RUSTGIS_SURROUNDS_SHEET") else { return };
+        let mut pm = Pixmap::new(1300, 900).unwrap();
+        pm.fill(tiny_skia::Color::WHITE);
+        let ink = Rgba::rgb(0x22, 0x22, 0x22);
+        for (i, style) in ArrowStyle::ALL.into_iter().enumerate() {
+            let t = LabelText::arrow();
+            let r = Rect::from_xywh(20.0 + i as f32 * 125.0, 10.0, 70.0, 110.0).unwrap();
+            north_arrow(&mut pm, r, &Arrow { style, fill: ink, outline: ink, label: if i == 9 { "น" } else { "N" }, text: &t }, 1.5, 0.0);
+        }
+        let looks: Vec<ElementKind> = ScaleBarStyle::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(i, style)| {
+                bar_kind(|k| {
+                    if let ElementKind::ScaleBar { style: s, unit_label, unit_place, numbers, subdivisions, .. } = k {
+                        *s = style;
+                        *unit_label = [UnitLabel::Thai, UnitLabel::ThaiAbbreviation, UnitLabel::Name, UnitLabel::Abbreviation][i % 4];
+                        *unit_place = UnitPlace::ALL[i % 4];
+                        *numbers = [NumberPlace::Above, NumberPlace::Below, NumberPlace::Ends, NumberPlace::Above][i % 4];
+                        *subdivisions = if i == 0 { 4 } else { 0 };
+                    }
+                })
+            })
+            .collect();
+        for (i, k) in looks.iter().enumerate() {
+            let (col, row) = (i % 2, i / 2);
+            let r = Rect::from_xywh(20.0 + col as f32 * 640.0, 150.0 + row as f32 * 180.0, 600.0, 150.0).unwrap();
+            scale_bar(&mut pm, r, 50.0, &ScaleLook::of(k).unwrap(), 1.5, false);
+        }
+        pm.save_png(path).unwrap();
+    }
+
+    #[test]
+    fn scale_units_are_named_in_english_or_thai() {
+        assert_eq!(UnitLabel::Abbreviation.name("km", ""), "km");
+        assert_eq!(UnitLabel::Name.name("m", ""), "Meters");
+        assert_eq!(UnitLabel::ThaiAbbreviation.name("km", ""), "กม.");
+        assert_eq!(UnitLabel::Thai.name("km", ""), "กิโลเมตร");
+        assert_eq!(UnitLabel::Thai.name("NM", ""), "ไมล์ทะเล");
+        assert_eq!(UnitLabel::Custom.name("km", "ก.ม."), "ก.ม.");
+        assert_eq!(UnitLabel::None.name("km", ""), "");
+        // A set division counts in the units, or in metres when they are automatic.
+        assert_eq!(scale_length(ScaleUnits::Kilometers, 4, 2.5, 1.0), (10.0, 1000.0, "km"));
+        assert_eq!(scale_length(ScaleUnits::Auto, 5, 500.0, 1.0), (2.5, 1000.0, "km"));
+        assert_eq!(scale_length(ScaleUnits::Auto, 4, 50.0, 1.0), (200.0, 1.0, "m"));
+    }
+
+    #[test]
+    fn north_arrows_take_a_typed_letter_or_none() {
+        let draw = |label: &str, text: &LabelText| {
+            let mut pm = Pixmap::new(80, 120).unwrap();
+            pm.fill(tiny_skia::Color::WHITE);
+            let ink = Rgba::rgb(0x22, 0x22, 0x22);
+            let a = Arrow { style: ArrowStyle::Triangle, fill: ink, outline: ink, label, text };
+            north_arrow(&mut pm, Rect::from_xywh(0.0, 0.0, 80.0, 120.0).unwrap(), &a, 1.0, 0.0);
+            pm
+        };
+        let t = LabelText::arrow();
+        let (n, none, word) = (draw("N", &t), draw("", &t), draw("North", &t));
+        assert_ne!(n.data(), none.data());
+        assert_ne!(n.data(), word.data());
+        let red = LabelText { color: Some(Rgba::rgb(0xFF, 0, 0)), size: 20.0, ..LabelText::arrow() };
+        let pm = draw("N", &red);
+        assert!(pm.pixels().iter().any(|p| p.red() > 0xE0 && p.green() < 0x30), "the letter takes its colour");
+        for style in ArrowStyle::ALL {
+            let sw = north_arrow_swatch(style, 40, 56).unwrap();
+            assert!(sw.pixels().iter().any(|p| p.alpha() > 0), "{style:?} has a swatch");
+        }
+        for style in ScaleBarStyle::ALL {
+            let sw = scale_bar_swatch(style, 80, 20).unwrap();
+            assert!(sw.pixels().iter().any(|p| p.alpha() > 0), "{style:?} has a swatch");
+        }
+    }
+
     #[test]
     fn scale_bars_count_in_their_units_and_divisions() {
-        let draw = |bar| {
+        let draw = |(units, divisions, style): (ScaleUnits, usize, ScaleBarStyle)| {
             let mut pm = Pixmap::new(300, 60).unwrap();
             pm.fill(tiny_skia::Color::WHITE);
             // 100 m of ground per point: about 25 km across the bar.
-            scale_bar(&mut pm, Rect::from_xywh(0.0, 0.0, 300.0, 60.0).unwrap(), 100.0, bar, 1.0, false);
+            let kind = bar_kind(|k| {
+                if let ElementKind::ScaleBar { units: u, divisions: d, style: s, .. } = k {
+                    (*u, *d, *s) = (units, divisions, style);
+                }
+            });
+            let look = ScaleLook::of(&kind).unwrap();
+            scale_bar(&mut pm, Rect::from_xywh(0.0, 0.0, 300.0, 60.0).unwrap(), 100.0, &look, 1.0, false);
             pm
         };
         // Dark runs along the bar's middle row: one per dark division of an alternating bar.

@@ -106,13 +106,43 @@ pub fn show(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, tokens: &[&
         }
     });
     out.typing = r.has_focus() && !out.text;
+    style_grid(ui, id, f, &mut out, false);
+    out
+}
+
+/// The type alone, without the text (a north arrow's letter, a scale bar's numbers): `f.text`
+/// isn't shown. With `auto_size`, a size of 0 is offered and shown as automatic (sized to the
+/// element).
+pub fn show_type(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, f: Fields<'_>, auto_size: bool) -> Settled {
+    let id = egui::Id::unique(id);
+    let mut out = Settled::default();
+    style_grid(ui, id, f, &mut out, auto_size);
+    out
+}
+
+/// The size, colour, weight, slant, alignment, spacing and family rows of the form.
+fn style_grid(ui: &mut Ui, id: egui::Id, f: Fields<'_>, out: &mut Settled, auto_size: bool) {
     egui::Grid::new(id.with("style")).num_columns(2).min_col_width(LABEL_W).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
         let input_label = ui.label(tl!("Size"));
         let saved = *f.size;
         let drag = Dragged::lend(ui, id.with("size"), f.size);
-        let r = ui
-            .add(egui::DragValue::new(f.size).range(rustgis_engine::map::graphics::FONT_SIZE).speed(0.2).suffix(" pt"))
-            .labelled_by(input_label.id);
+        let r = if auto_size {
+            let auto = tl!("Auto");
+            ui.add(
+                egui::DragValue::new(f.size)
+                    .range(0.0..=*rustgis_engine::map::graphics::FONT_SIZE.end())
+                    .speed(0.2)
+                    .custom_formatter(move |v, _| if v <= 0.0 { auto.to_string() } else { format!("{} pt", (v * 10.0).round() / 10.0) })
+                    .custom_parser(|t| {
+                        let t = t.trim().trim_end_matches("pt").trim();
+                        t.parse::<f64>().ok().or_else(|| (t.is_empty() || t.chars().any(|c| !c.is_ascii_digit())).then_some(0.0))
+                    }),
+            )
+            .labelled_by(input_label.id)
+        } else {
+            ui.add(egui::DragValue::new(f.size).range(rustgis_engine::map::graphics::FONT_SIZE).speed(0.2).suffix(" pt"))
+                .labelled_by(input_label.id)
+        };
         // Named for assistive technology, as its label sits in the other column.
         let size = *f.size;
         r.widget_info(|| egui::WidgetInfo { label: Some(tl!("Size").to_string()), ..egui::WidgetInfo::drag_value(true, size) });
@@ -277,7 +307,6 @@ pub fn show(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, tokens: &[&
             }
         }
     });
-    out
 }
 
 #[cfg(test)]

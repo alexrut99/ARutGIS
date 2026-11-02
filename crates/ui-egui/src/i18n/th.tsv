@@ -4353,3 +4353,41 @@ Group Elements	จัดกลุ่มองค์ประกอบ
 Ungroup Elements	ยกเลิกการจัดกลุ่มองค์ประกอบ
 Copy Elements	คัดลอกองค์ประกอบ
 Paste Elements	วางองค์ประกอบ
+Letter	ตัวอักษร
+Subdivisions	แบ่งย่อยช่องแรก
+Split the first division into this many parts	แบ่งช่องแรกของมาตราส่วนออกเป็นช่องย่อยตามจำนวนนี้
+Division length	ระยะต่อช่อง
+Each division's length, e.g. 1 km; Auto picks a round one that fits	ระยะของแต่ละช่อง เช่น 1 กม. ถ้าเป็นอัตโนมัติจะเลือกระยะลงตัวที่พอดีกับกรอบ
+Unit name	ชื่อหน่วย
+Unit text	ข้อความหน่วย
+Type the unit as it should read, e.g. กิโลเมตร; empty goes back to the unit name	พิมพ์หน่วยตามที่ต้องการให้แสดง เช่น กิโลเมตร ถ้าเว้นว่างจะกลับไปใช้ชื่อหน่วยที่เลือก
+Unit place	ตำแหน่งหน่วย
+Numbers	ตัวเลข
+Bar height	ความหนาแถบ
+Bar color	สีแถบ
+Light color	สีช่องอ่อน
+Letter type	รูปแบบตัวอักษร
+Number type	รูปแบบตัวเลขและหน่วย
+Use the element's color	ใช้สีเดียวกับองค์ประกอบ
+Compass needle	เข็มทิศ
+Arrow in a ring	ลูกศรในวงกลม
+Line arrow	ลูกศรเส้น
+Chevron	หัวลูกศรบาก
+Block arrow	ลูกศรทึบ
+Star in a ring	ดาวในวงกลม
+Nautical miles	ไมล์ทะเล
+Abbreviation (km)	อักษรย่ออังกฤษ (km)
+Name (Kilometers)	ชื่อเต็มอังกฤษ (Kilometers)
+Thai abbreviation (กม.)	อักษรย่อไทย (กม.)
+Thai (กิโลเมตร)	ชื่อเต็มไทย (กิโลเมตร)
+Custom text	พิมพ์เอง
+After the last number	ต่อท้ายตัวเลขสุดท้าย
+After the bar	ต่อท้ายแถบ
+Above the bar	เหนือแถบ
+Below the bar	ใต้แถบ
+Ends only	เฉพาะหัวและท้าย
+Double alternating bar	แถบสลับสองชั้น
+Hollow bar	แถบโปร่ง
+Line, ticks down	เส้น ขีดลง
+Line, ticks across	เส้น ขีดตัดผ่าน
+Ruler	ไม้บรรทัด

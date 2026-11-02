@@ -666,10 +666,33 @@ pub enum ArrowStyle {
     Triangle,
     /// An eight-point star.
     Star,
+    /// A compass needle: a filled north half, a light south half.
+    Needle,
+    /// A split arrowhead in a ring.
+    Circle,
+    /// A shaft with an open arrowhead, drawn in lines.
+    Simple,
+    /// A filled arrowhead with a notch at its base.
+    Chevron,
+    /// A broad arrow on a shaft, as a block.
+    Block,
+    /// An eight-point star in a ring.
+    Rose,
 }
 
 impl ArrowStyle {
-    pub const ALL: [ArrowStyle; 4] = [ArrowStyle::Classic, ArrowStyle::Compass, ArrowStyle::Triangle, ArrowStyle::Star];
+    pub const ALL: [ArrowStyle; 10] = [
+        ArrowStyle::Classic,
+        ArrowStyle::Compass,
+        ArrowStyle::Triangle,
+        ArrowStyle::Star,
+        ArrowStyle::Needle,
+        ArrowStyle::Circle,
+        ArrowStyle::Simple,
+        ArrowStyle::Chevron,
+        ArrowStyle::Block,
+        ArrowStyle::Rose,
+    ];
 
     pub fn code(self) -> &'static str {
         match self {
@@ -677,6 +700,12 @@ impl ArrowStyle {
             ArrowStyle::Compass => "compass",
             ArrowStyle::Triangle => "triangle",
             ArrowStyle::Star => "star",
+            ArrowStyle::Needle => "needle",
+            ArrowStyle::Circle => "circle",
+            ArrowStyle::Simple => "simple",
+            ArrowStyle::Chevron => "chevron",
+            ArrowStyle::Block => "block",
+            ArrowStyle::Rose => "rose",
         }
     }
 
@@ -686,11 +715,31 @@ impl ArrowStyle {
             ArrowStyle::Compass => "Compass rose",
             ArrowStyle::Triangle => "Triangle",
             ArrowStyle::Star => "Star",
+            ArrowStyle::Needle => "Compass needle",
+            ArrowStyle::Circle => "Arrow in a ring",
+            ArrowStyle::Simple => "Line arrow",
+            ArrowStyle::Chevron => "Chevron",
+            ArrowStyle::Block => "Block arrow",
+            ArrowStyle::Rose => "Star in a ring",
         }
     }
 
     pub fn from_name(s: &str) -> Option<ArrowStyle> {
         ArrowStyle::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+
+    /// The codes, for a message: `classic, compass, … or rose`.
+    pub fn codes() -> String {
+        or_list(&ArrowStyle::ALL.map(ArrowStyle::code))
+    }
+}
+
+/// `a, b or c`.
+fn or_list(codes: &[&str]) -> String {
+    match codes.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} or {last}", rest.join(", ")),
+        Some((last, _)) => last.to_string(),
+        None => String::new(),
     }
 }
 
@@ -704,10 +753,12 @@ pub enum ScaleUnits {
     Meters,
     Miles,
     Feet,
+    NauticalMiles,
 }
 
 impl ScaleUnits {
-    pub const ALL: [ScaleUnits; 5] = [ScaleUnits::Auto, ScaleUnits::Kilometers, ScaleUnits::Meters, ScaleUnits::Miles, ScaleUnits::Feet];
+    pub const ALL: [ScaleUnits; 6] =
+        [ScaleUnits::Auto, ScaleUnits::Kilometers, ScaleUnits::Meters, ScaleUnits::Miles, ScaleUnits::Feet, ScaleUnits::NauticalMiles];
 
     pub fn code(self) -> &'static str {
         match self {
@@ -716,6 +767,7 @@ impl ScaleUnits {
             ScaleUnits::Meters => "meters",
             ScaleUnits::Miles => "miles",
             ScaleUnits::Feet => "feet",
+            ScaleUnits::NauticalMiles => "nauticalMiles",
         }
     }
 
@@ -726,6 +778,7 @@ impl ScaleUnits {
             ScaleUnits::Meters => "Meters",
             ScaleUnits::Miles => "Miles",
             ScaleUnits::Feet => "Feet",
+            ScaleUnits::NauticalMiles => "Nautical miles",
         }
     }
 
@@ -736,6 +789,7 @@ impl ScaleUnits {
             "meters" | "metres" | "m" => Some(ScaleUnits::Meters),
             "miles" | "mi" => Some(ScaleUnits::Miles),
             "feet" | "ft" => Some(ScaleUnits::Feet),
+            "nauticalmiles" | "nautical miles" | "nmi" | "nm" => Some(ScaleUnits::NauticalMiles),
             _ => None,
         }
     }
@@ -751,7 +805,173 @@ impl ScaleUnits {
             ScaleUnits::Kilometers => (1000.0, "km"),
             ScaleUnits::Miles => (1609.344, "mi"),
             ScaleUnits::Feet => (0.3048, "ft"),
+            ScaleUnits::NauticalMiles => (1852.0, "NM"),
         }
+    }
+}
+
+/// How a scale bar names its unit (#scale-labels): the abbreviation, the name in English or in
+/// Thai, text typed for it, or nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnitLabel {
+    /// `km`.
+    #[default]
+    Abbreviation,
+    /// `Kilometers`.
+    Name,
+    /// `กม.`
+    ThaiAbbreviation,
+    /// `กิโลเมตร`
+    Thai,
+    /// The scale bar's `unit_text`.
+    Custom,
+    /// No unit.
+    None,
+}
+
+impl UnitLabel {
+    pub const ALL: [UnitLabel; 6] =
+        [UnitLabel::Abbreviation, UnitLabel::Name, UnitLabel::ThaiAbbreviation, UnitLabel::Thai, UnitLabel::Custom, UnitLabel::None];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            UnitLabel::Abbreviation => "abbreviation",
+            UnitLabel::Name => "name",
+            UnitLabel::ThaiAbbreviation => "thaiAbbreviation",
+            UnitLabel::Thai => "thai",
+            UnitLabel::Custom => "custom",
+            UnitLabel::None => "none",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            UnitLabel::Abbreviation => "Abbreviation (km)",
+            UnitLabel::Name => "Name (Kilometers)",
+            UnitLabel::ThaiAbbreviation => "Thai abbreviation (กม.)",
+            UnitLabel::Thai => "Thai (กิโลเมตร)",
+            UnitLabel::Custom => "Custom text",
+            UnitLabel::None => "None",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<UnitLabel> {
+        UnitLabel::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+
+    pub fn codes() -> String {
+        or_list(&UnitLabel::ALL.map(UnitLabel::code))
+    }
+
+    /// The unit with abbreviation `abbr` (as [`ScaleUnits::resolve`] gives it) named this way;
+    /// `custom` for [`UnitLabel::Custom`].
+    pub fn name(self, abbr: &str, custom: &str) -> String {
+        let names: [&str; 4] = match abbr {
+            "mm" => ["mm", "Millimeters", "มม.", "มิลลิเมตร"],
+            "cm" => ["cm", "Centimeters", "ซม.", "เซนติเมตร"],
+            "m" => ["m", "Meters", "ม.", "เมตร"],
+            "km" => ["km", "Kilometers", "กม.", "กิโลเมตร"],
+            "mi" => ["mi", "Miles", "ไมล์", "ไมล์"],
+            "ft" => ["ft", "Feet", "ฟุต", "ฟุต"],
+            "NM" => ["NM", "Nautical Miles", "ไมล์ทะเล", "ไมล์ทะเล"],
+            other => [other, other, other, other],
+        };
+        match self {
+            UnitLabel::Abbreviation => names[0].to_string(),
+            UnitLabel::Name => names[1].to_string(),
+            UnitLabel::ThaiAbbreviation => names[2].to_string(),
+            UnitLabel::Thai => names[3].to_string(),
+            UnitLabel::Custom => custom.to_string(),
+            UnitLabel::None => String::new(),
+        }
+    }
+}
+
+/// Where a scale bar's unit goes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnitPlace {
+    /// After the last number: `10 km`.
+    #[default]
+    AfterLabel,
+    /// Right of the bar.
+    AfterBar,
+    /// Centred over the bar and its numbers.
+    Above,
+    /// Centred under the bar and its numbers.
+    Below,
+}
+
+impl UnitPlace {
+    pub const ALL: [UnitPlace; 4] = [UnitPlace::AfterLabel, UnitPlace::AfterBar, UnitPlace::Above, UnitPlace::Below];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            UnitPlace::AfterLabel => "afterLabel",
+            UnitPlace::AfterBar => "afterBar",
+            UnitPlace::Above => "above",
+            UnitPlace::Below => "below",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            UnitPlace::AfterLabel => "After the last number",
+            UnitPlace::AfterBar => "After the bar",
+            UnitPlace::Above => "Above the bar",
+            UnitPlace::Below => "Below the bar",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<UnitPlace> {
+        UnitPlace::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+
+    pub fn codes() -> String {
+        or_list(&UnitPlace::ALL.map(UnitPlace::code))
+    }
+}
+
+/// Where a scale bar's numbers go.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NumberPlace {
+    /// Over the bar.
+    #[default]
+    Above,
+    /// Under the bar.
+    Below,
+    /// Only the ends' numbers, over the bar.
+    Ends,
+    /// No numbers.
+    None,
+}
+
+impl NumberPlace {
+    pub const ALL: [NumberPlace; 4] = [NumberPlace::Above, NumberPlace::Below, NumberPlace::Ends, NumberPlace::None];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            NumberPlace::Above => "above",
+            NumberPlace::Below => "below",
+            NumberPlace::Ends => "ends",
+            NumberPlace::None => "none",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            NumberPlace::Above => "Above the bar",
+            NumberPlace::Below => "Below the bar",
+            NumberPlace::Ends => "Ends only",
+            NumberPlace::None => "None",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<NumberPlace> {
+        NumberPlace::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+
+    pub fn codes() -> String {
+        or_list(&NumberPlace::ALL.map(NumberPlace::code))
     }
 }
 
@@ -763,18 +983,42 @@ pub enum ScaleBarStyle {
     Alternating,
     /// A line stepping up and down at each division.
     Stepped,
-    /// A single line with a tick at each division.
+    /// A single line with a tick up at each division.
     Line,
+    /// Two rows of alternating divisions, offset by one.
+    DoubleAlternating,
+    /// Outlined divisions, light inside.
+    Hollow,
+    /// A single line with a tick down at each division.
+    LineDown,
+    /// A single line with ticks across it at each division.
+    LineCross,
+    /// A thin solid bar, a tick up at each division.
+    Ruler,
 }
 
 impl ScaleBarStyle {
-    pub const ALL: [ScaleBarStyle; 3] = [ScaleBarStyle::Alternating, ScaleBarStyle::Stepped, ScaleBarStyle::Line];
+    pub const ALL: [ScaleBarStyle; 8] = [
+        ScaleBarStyle::Alternating,
+        ScaleBarStyle::DoubleAlternating,
+        ScaleBarStyle::Hollow,
+        ScaleBarStyle::Stepped,
+        ScaleBarStyle::Line,
+        ScaleBarStyle::LineDown,
+        ScaleBarStyle::LineCross,
+        ScaleBarStyle::Ruler,
+    ];
 
     pub fn code(self) -> &'static str {
         match self {
             ScaleBarStyle::Alternating => "alternating",
             ScaleBarStyle::Stepped => "stepped",
             ScaleBarStyle::Line => "line",
+            ScaleBarStyle::DoubleAlternating => "doubleAlternating",
+            ScaleBarStyle::Hollow => "hollow",
+            ScaleBarStyle::LineDown => "lineDown",
+            ScaleBarStyle::LineCross => "lineCross",
+            ScaleBarStyle::Ruler => "ruler",
         }
     }
 
@@ -783,12 +1027,97 @@ impl ScaleBarStyle {
             ScaleBarStyle::Alternating => "Alternating bar",
             ScaleBarStyle::Stepped => "Stepped line",
             ScaleBarStyle::Line => "Single line",
+            ScaleBarStyle::DoubleAlternating => "Double alternating bar",
+            ScaleBarStyle::Hollow => "Hollow bar",
+            ScaleBarStyle::LineDown => "Line, ticks down",
+            ScaleBarStyle::LineCross => "Line, ticks across",
+            ScaleBarStyle::Ruler => "Ruler",
         }
     }
 
     pub fn from_name(s: &str) -> Option<ScaleBarStyle> {
         ScaleBarStyle::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
     }
+
+    pub fn codes() -> String {
+        or_list(&ScaleBarStyle::ALL.map(ScaleBarStyle::code))
+    }
+}
+
+/// The type of a north arrow's letter or a scale bar's numbers and unit: its size (points; 0
+/// sizes it to the element), colour, weight, slant and family, as a text element's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LabelText {
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub size: f64,
+    /// None: a north arrow's outline colour, a scale bar's dark colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Rgba>,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub italic: bool,
+    #[serde(default, skip_serializing_if = "is_sans")]
+    pub font: FontFamily,
+    #[serde(default, deserialize_with = "crate::symbology::de_font", skip_serializing_if = "Option::is_none")]
+    pub font_name: Option<String>,
+}
+
+impl LabelText {
+    /// A north arrow's letter: bold, sized to the arrow.
+    pub fn arrow() -> LabelText {
+        LabelText { bold: true, ..LabelText::scale_bar() }
+    }
+
+    /// A scale bar's numbers: regular, 8 points.
+    pub fn scale_bar() -> LabelText {
+        LabelText { size: 0.0, color: None, bold: false, italic: false, font: FontFamily::Sans, font_name: None }
+    }
+
+    fn is_arrow(&self) -> bool {
+        *self == LabelText::arrow()
+    }
+
+    fn is_scale_bar(&self) -> bool {
+        *self == LabelText::scale_bar()
+    }
+}
+
+/// The most text a north arrow's letter or a scale bar's unit takes.
+pub const MAX_SURROUND_TEXT: usize = 80;
+
+/// The largest type a north arrow or scale bar labels in (points).
+pub const MAX_LABEL_SIZE: f64 = 72.0;
+
+/// The thickest scale bar (points).
+pub const MAX_BAR_HEIGHT: f64 = 36.0;
+
+fn north() -> String {
+    "N".into()
+}
+
+fn is_north(s: &String) -> bool {
+    s == "N"
+}
+
+fn white() -> Rgba {
+    Rgba::rgb(0xFF, 0xFF, 0xFF)
+}
+
+fn is_white(c: &Rgba) -> bool {
+    *c == white()
+}
+
+fn is_ink(c: &Rgba) -> bool {
+    *c == ink()
+}
+
+fn is_default<T: Default + PartialEq>(v: &T) -> bool {
+    *v == T::default()
+}
+
+fn is_zero_usize(v: &usize) -> bool {
+    *v == 0
 }
 
 /// The most divisions a scale bar has.
@@ -877,9 +1206,15 @@ pub enum ElementKind {
         /// The filled parts.
         #[serde(default = "ink")]
         fill: Rgba,
-        /// The outline and the `N`.
+        /// The outline.
         #[serde(default = "ink")]
         outline: Rgba,
+        /// The letter over the arrow: `N` unless typed (`น`, `North`); empty for none.
+        #[serde(default = "north", skip_serializing_if = "is_north")]
+        label: String,
+        /// The letter's type (its colour the outline's unless set).
+        #[serde(default = "LabelText::arrow", skip_serializing_if = "LabelText::is_arrow")]
+        text: LabelText,
     },
     ScaleBar {
         frame: u32,
@@ -890,6 +1225,34 @@ pub enum ElementKind {
         divisions: usize,
         #[serde(default)]
         style: ScaleBarStyle,
+        /// The first division split this many times more (0 or 1: not split), as ArcGIS's
+        /// subdivisions.
+        #[serde(default, skip_serializing_if = "is_zero_usize")]
+        subdivisions: usize,
+        /// Each division's length in the bar's units (in metres when they are automatic); 0 picks a
+        /// round one that fits the element.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        division: f64,
+        /// How the unit is named, and the text typed for it.
+        #[serde(default, skip_serializing_if = "is_default")]
+        unit_label: UnitLabel,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        unit_text: String,
+        #[serde(default, skip_serializing_if = "is_default")]
+        unit_place: UnitPlace,
+        #[serde(default, skip_serializing_if = "is_default")]
+        numbers: NumberPlace,
+        /// The dark parts and lines, and the light parts.
+        #[serde(default = "ink", skip_serializing_if = "is_ink")]
+        color: Rgba,
+        #[serde(default = "white", skip_serializing_if = "is_white")]
+        alt_color: Rgba,
+        /// The bar's thickness in points; 0 sizes it to the element.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        bar_height: f64,
+        /// The numbers' and unit's type.
+        #[serde(default = "LabelText::scale_bar", skip_serializing_if = "LabelText::is_scale_bar")]
+        text: LabelText,
     },
     Legend {
         frame: u32,
@@ -1023,12 +1386,34 @@ impl ElementKind {
 
     /// A north arrow for `frame`, in the default style.
     pub fn north_arrow(frame: u32) -> ElementKind {
-        ElementKind::NorthArrow { frame, style: ArrowStyle::default(), fill: ink(), outline: ink() }
+        ElementKind::NorthArrow {
+            frame,
+            style: ArrowStyle::default(),
+            fill: ink(),
+            outline: ink(),
+            label: north(),
+            text: LabelText::arrow(),
+        }
     }
 
     /// A scale bar for `frame`, in the default style.
     pub fn scale_bar(frame: u32) -> ElementKind {
-        ElementKind::ScaleBar { frame, units: ScaleUnits::default(), divisions: divisions(), style: ScaleBarStyle::default() }
+        ElementKind::ScaleBar {
+            frame,
+            units: ScaleUnits::default(),
+            divisions: divisions(),
+            style: ScaleBarStyle::default(),
+            subdivisions: 0,
+            division: 0.0,
+            unit_label: UnitLabel::default(),
+            unit_text: String::new(),
+            unit_place: UnitPlace::default(),
+            numbers: NumberPlace::default(),
+            color: ink(),
+            alt_color: white(),
+            bar_height: 0.0,
+            text: LabelText::scale_bar(),
+        }
     }
 
     pub fn code(&self) -> &'static str {
@@ -1640,7 +2025,18 @@ impl Layout {
                     text.truncate(text.char_indices().nth(5000).map_or(text.len(), |(i, _)| i));
                 }
                 ElementKind::Table { rows, .. } => *rows = (*rows).clamp(1, 500),
-                ElementKind::ScaleBar { divisions, .. } => *divisions = (*divisions).clamp(1, MAX_SCALE_DIVISIONS),
+                ElementKind::ScaleBar { divisions, subdivisions, division, unit_text, bar_height, text, .. } => {
+                    *divisions = (*divisions).clamp(1, MAX_SCALE_DIVISIONS);
+                    *subdivisions = (*subdivisions).min(MAX_SCALE_DIVISIONS);
+                    *division = finite_or(*division, 0.0).max(0.0);
+                    cut(unit_text, MAX_SURROUND_TEXT);
+                    *bar_height = finite_or(*bar_height, 0.0).clamp(0.0, MAX_BAR_HEIGHT);
+                    text.clamp();
+                }
+                ElementKind::NorthArrow { label, text, .. } => {
+                    cut(label, MAX_SURROUND_TEXT);
+                    text.clamp();
+                }
                 ElementKind::Rectangle { width, .. } | ElementKind::Ellipse { width, .. } => {
                     *width = finite_or(*width, 1.0).clamp(0.0, 50.0)
                 }
@@ -1676,6 +2072,20 @@ impl Layout {
             } else {
                 s.margin = finite_or(s.margin, 0.1).clamp(0.0, 5.0);
             }
+        }
+    }
+}
+
+/// `s` cut to `n` characters.
+fn cut(s: &mut String, n: usize) {
+    s.truncate(s.char_indices().nth(n).map_or(s.len(), |(i, _)| i));
+}
+
+impl LabelText {
+    fn clamp(&mut self) {
+        self.size = finite_or(self.size, 0.0).clamp(0.0, MAX_LABEL_SIZE);
+        if self.font_name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+            self.font_name = None;
         }
     }
 }
