@@ -2201,24 +2201,24 @@ fn element_actions(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize
 fn align_buttons(app: &mut RustGisApp, ui: &mut Ui, li: usize, ids: &[u32], heading: &str) {
     use rustgis_engine::map::layout::Align;
     ui.add_space(6.0);
-    ui.label(egui::RichText::new(heading).font(semibold(12.0)));
-    let rows: [&[(Align, &str, &str)]; 3] = [
+    ui.label(egui::RichText::new(heading).strong());
+    let rows: [&[(Align, &str)]; 3] = [
         &[
-            (Align::Left, "⇤", "Line up the left edges"),
-            (Align::Center, "↔", "Line up the centres, across"),
-            (Align::Right, "⇥", "Line up the right edges"),
-            (Align::Top, "⤒", "Line up the top edges"),
-            (Align::Middle, "↕", "Line up the middles, down"),
-            (Align::Bottom, "⤓", "Line up the bottom edges"),
+            (Align::Left, "Line up the left edges"),
+            (Align::Center, "Line up the centres, across"),
+            (Align::Right, "Line up the right edges"),
+            (Align::Top, "Line up the top edges"),
+            (Align::Middle, "Line up the middles, down"),
+            (Align::Bottom, "Line up the bottom edges"),
         ],
         &[
-            (Align::DistributeH, "", "The same space between each, left to right (three or more)"),
-            (Align::DistributeV, "", "The same space between each, top to bottom (three or more)"),
+            (Align::DistributeH, "The same space between each, left to right (three or more)"),
+            (Align::DistributeV, "The same space between each, top to bottom (three or more)"),
         ],
         &[
-            (Align::SameWidth, "", "As wide as the one picked first"),
-            (Align::SameHeight, "", "As high as the one picked first"),
-            (Align::SameSize, "", "As large as the one picked first"),
+            (Align::SameWidth, "As wide as the one picked first"),
+            (Align::SameHeight, "As high as the one picked first"),
+            (Align::SameSize, "As large as the one picked first"),
         ],
     ];
     for (i, row) in rows.iter().enumerate() {
@@ -2226,8 +2226,8 @@ fn align_buttons(app: &mut RustGisApp, ui: &mut Ui, li: usize, ids: &[u32], head
             break;
         }
         ui.horizontal_wrapped(|ui| {
-            for (how, symbol, tip) in row.iter() {
-                let text = if symbol.is_empty() { tl!(how.label()).to_string() } else { format!("{symbol} {}", tl!(how.label())) };
+            for (how, tip) in row.iter() {
+                let text = tl!(how.label());
                 let enough = ids.len() >= how.least();
                 if ui.add_enabled(enough, egui::Button::new(text)).on_hover_text(tl!(tip)).clicked() {
                     let _ = app.run("layout.align", json!({"layout": li, "elements": ids, "to": how.code()}));
@@ -2871,6 +2871,7 @@ mod tests {
 
     fn drag(h: &mut egui_kittest::Harness<'_, RustGisApp>, from: Pos2, to: Pos2, modifiers: Modifiers) {
         let button = |pos: Pos2, pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers };
+        h.event(Event::ModifiersChanged(modifiers));
         h.event(Event::PointerMoved(from));
         h.step();
         h.event(button(from, true));
@@ -2881,14 +2882,18 @@ mod tests {
         }
         h.event(button(to, false));
         h.step();
+        h.event(Event::ModifiersChanged(Modifiers::NONE));
+        h.step();
     }
 
     fn click(h: &mut egui_kittest::Harness<'_, RustGisApp>, at: Pos2, modifiers: Modifiers) {
+        h.event(Event::ModifiersChanged(modifiers));
         h.event(Event::PointerMoved(at));
         h.step();
         h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: true, modifiers });
         h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: false, modifiers });
         h.step();
+        h.event(Event::ModifiersChanged(Modifiers::NONE));
         h.step();
     }
 

@@ -1319,6 +1319,13 @@ pub fn notices(app: &mut RustGisApp, ctx: &egui::Context) {
     }
 }
 
+/// The open layout and its selected elements, when any are selected.
+fn layout_selection(app: &RustGisApp) -> Option<(usize, Vec<u32>)> {
+    let li = app.session.active_layout?;
+    let sel = app.layout.selection(app.session.project.layouts.get(li)?);
+    (!sel.is_empty()).then_some((li, sel))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
@@ -1528,11 +1535,4 @@ mod tests {
             assert_eq!(app.ui.connection.kind, kind);
         }
     }
-}
-
-/// The open layout and its selected elements, when any are selected.
-fn layout_selection(app: &RustGisApp) -> Option<(usize, Vec<u32>)> {
-    let li = app.session.active_layout?;
-    let sel = app.layout.selection(app.session.project.layouts.get(li)?);
-    (!sel.is_empty()).then_some((li, sel))
 }
