@@ -1392,7 +1392,7 @@ fn style_gallery(ui: &mut Ui, items: &[(&'static str, &'static str)], now: &str,
                 button = button.stroke(Stroke::new(2.0, ui.visuals().selection.stroke.color));
             }
             let r = ui.add(button).on_hover_text(tl!(label));
-            r.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, tl!(label)));
+            r.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, tl!(label)));
             if r.clicked() && !on {
                 picked = Some(*code);
             }
@@ -1409,7 +1409,7 @@ fn style_gallery(ui: &mut Ui, items: &[(&'static str, &'static str)], now: &str,
 
 /// A style's picture, drawn once at twice its size and kept.
 fn swatch(ctx: &egui::Context, code: &str, arrow: bool, (w, h): (f32, f32)) -> egui::TextureHandle {
-    let key = egui::Id::new(("layout_style_swatch", arrow, code.to_string()));
+    let key = egui::Id::unique(("layout_style_swatch", arrow, code.to_string()));
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(key)) {
         return t;
     }
@@ -2035,13 +2035,14 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                         let input_label = ui.label(tl!("Division length"));
                         let unit = if *units == ScaleUnits::Auto { "m" } else { units.resolve(1.0).1 };
                         let mut v = *division;
+                        let speed = (v * 0.01).max(0.01);
                         let drag = Dragged::lend(ui, drag_key("division"), &mut v);
                         let auto = tl!("Auto");
                         let r = ui
                             .add(
                                 egui::DragValue::new(&mut v)
                                     .range(0.0..=1.0e7)
-                                    .speed((v * 0.01).max(0.01))
+                                    .speed(speed)
                                     .custom_formatter(move |v, _| if v <= 0.0 { auto.to_string() } else { format!("{v} {unit}") })
                                     .custom_parser(|t| {
                                         let t: String = t.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
@@ -3780,7 +3781,7 @@ mod tests {
     fn surrounds_are_styled_from_pictures_in_the_format_pane() {
         use egui::accesskit::Role;
         use egui_kittest::kittest::Queryable;
-        use rustgis_engine::map::layout::{ElementKind, UnitLabel};
+        use rustgis_engine::map::layout::{ArrowStyle, ElementKind, ScaleBarStyle, UnitLabel};
         let mut app = RustGisApp::with_sample();
         app.run("layout.new", json!({"name": "Thai"})).unwrap();
         let li = app.session.active_layout.unwrap();
