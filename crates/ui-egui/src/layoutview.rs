@@ -3776,7 +3776,8 @@ mod tests {
     }
 
     /// A scale bar's and a north arrow's style is picked from pictures in the Format pane, the
-    /// unit typed in Thai, the arrow's letter typed.
+    /// unit typed in Thai, the arrow's letter typed. (No Thai face is installed here: the app's
+    /// script fonts aren't loaded in tests, so Thai draws as boxes.)
     #[test]
     fn surrounds_are_styled_from_pictures_in_the_format_pane() {
         use egui::accesskit::Role;
@@ -3791,7 +3792,7 @@ mod tests {
         app.run("ui.pane.format", json!({})).unwrap();
         app.layout.selected = Some(bar);
         let mut fonts = false;
-        let mut h = egui_kittest::Harness::builder().with_size(vec2(1200.0, 1600.0)).build_ui_state(
+        let mut h = egui_kittest::Harness::builder().allow_missing_glyphs().with_size(vec2(1200.0, 1600.0)).build_ui_state(
             move |ui, app: &mut RustGisApp| {
                 if !fonts {
                     crate::theme::install_fonts(ui.ctx(), &[], None);
