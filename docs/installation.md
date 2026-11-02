@@ -58,6 +58,18 @@ warning; the command-line tool is too, but macOS checks it online the first time
 `setup.exe`, `.msi` and portable zip are not signed: if SmartScreen warns about an unknown
 publisher, choose **More info › Run anyway**.
 
+### Updating
+
+**Help › Check for Updates** compares this copy with the latest release. When a newer one is out,
+**Update Now** downloads the file for the way this copy was installed (the `setup.exe`, the
+`.msi`, the `.dmg`, the AppImage, the `.deb` or the `.rpm`), checks it against the release's
+`SHA256SUMS`, and starts it as ARutGIS closes (asking first to save a project with unsaved
+changes): the Windows installers open and finish as a fresh install does, the disk image opens
+for you to drag ARutGIS to Applications, an AppImage is replaced where it is and restarts, and a
+package opens in your software installer. A file that doesn't match its checksum is deleted, not
+run. The portable zip, the Microsoft Store's copy and a build from source are updated from the
+release page (or by the Store) instead.
+
 ## Package managers
 
 RustGIS is also published to these package managers, which keep it up to date:

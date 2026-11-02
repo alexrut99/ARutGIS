@@ -327,6 +327,7 @@ impl eframe::App for App {
     fn on_exit(&mut self) {
         self.0.end_autosave();
         running::close(&self.1);
+        self.0.start_update();
     }
 }
 

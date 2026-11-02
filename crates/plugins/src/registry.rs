@@ -208,6 +208,83 @@ pub fn blocked<'a>(list: &'a [Blocked], id: &str, sha256: &str) -> Option<&'a Bl
     list.iter().find(|b| b.id == id && b.sha256.as_deref().is_none_or(|h| h.eq_ignore_ascii_case(sha256)))
 }
 
+/// How far a [`download_file`] has got, read by another thread (a progress bar), which can also
+/// stop it.
+#[derive(Debug, Default)]
+pub struct Progress {
+    /// Bytes written so far.
+    pub got: std::sync::atomic::AtomicU64,
+    /// The size the server gave (0 when it gave none).
+    pub total: std::sync::atomic::AtomicU64,
+    /// Set to stop the download: it ends with an error and removes what it wrote.
+    pub cancel: std::sync::atomic::AtomicBool,
+}
+
+/// Downloads `url` (HTTPS only, at most `limit` bytes) into the file `dest`, a block at a time,
+/// counting in `progress`; gives the file's SHA-256 (lowercase hex). A download that fails, is
+/// too large or is stopped removes its file. Native only: for large files (an installer), which
+/// [`fetch`] would hold in memory and time out on.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn download_file(url: &str, dest: &std::path::Path, limit: u64, progress: &Progress) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::{Read, Write};
+    use std::sync::atomic::Ordering;
+    if !url.starts_with("https://") {
+        return Err(format!("{url}: only HTTPS addresses are allowed"));
+    }
+    // No overall time limit (a large file on a slow line takes minutes): a stalled connection
+    // ends after a minute without data, and the user can stop it.
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(std::time::Duration::from_secs(30)))
+        .timeout_recv_response(Some(std::time::Duration::from_secs(60)))
+        .timeout_global(Some(std::time::Duration::from_secs(60 * 60)))
+        .https_only(true)
+        .max_redirects(5)
+        .build()
+        .into();
+    let mut resp =
+        agent.get(url).header("User-Agent", concat!("RustGIS/", env!("CARGO_PKG_VERSION"))).call().map_err(|e| format!("{url}: {e}"))?;
+    let total = resp.body().content_length().unwrap_or(0);
+    if total > limit {
+        return Err(format!("{url} is larger than {} MB", limit / (1024 * 1024)));
+    }
+    progress.total.store(total, Ordering::Relaxed);
+    progress.got.store(0, Ordering::Relaxed);
+    let result = (|| {
+        let mut file = std::fs::File::create(dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+        let mut reader = resp.body_mut().with_config().limit(limit + 1).reader();
+        let mut hash = Sha256::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut got = 0u64;
+        loop {
+            if progress.cancel.load(Ordering::Relaxed) {
+                return Err("the download was stopped".to_string());
+            }
+            let n = reader.read(&mut buf).map_err(|e| format!("{url}: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            let block = buf.get(..n).unwrap_or_default();
+            got += n as u64;
+            if got > limit {
+                return Err(format!("{url} is larger than {} MB", limit / (1024 * 1024)));
+            }
+            file.write_all(block).map_err(|e| format!("{}: {e}", dest.display()))?;
+            hash.update(block);
+            progress.got.store(got, Ordering::Relaxed);
+        }
+        if total > 0 && got != total {
+            return Err(format!("{url} ended after {got} of {total} bytes"));
+        }
+        file.sync_all().map_err(|e| format!("{}: {e}", dest.display()))?;
+        Ok(hash.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(dest);
+    }
+    result
+}
+
 /// Downloads `url` (at most `limit` bytes). Native only: the browser fetches with its own API.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn fetch(url: &str, limit: usize) -> Result<Vec<u8>, String> {
@@ -230,4 +307,22 @@ pub fn fetch(url: &str, limit: usize) -> Result<Vec<u8>, String> {
         return Err(format!("{url} is larger than {} MB", limit / (1024 * 1024)));
     }
     Ok(buf)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod download_tests {
+    use super::*;
+
+    #[test]
+    fn a_download_must_be_https_and_leaves_no_file_when_refused() {
+        let dir = std::env::temp_dir().join(format!("rustgis-download-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("setup.exe");
+        let p = Progress::default();
+        for url in ["http://github.com/x/setup.exe", "http://localhost:1/setup.exe", "file:///etc/passwd", ""] {
+            assert!(download_file(url, &dest, 1024, &p).unwrap_err().contains("only HTTPS"), "{url}");
+        }
+        assert!(!dest.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

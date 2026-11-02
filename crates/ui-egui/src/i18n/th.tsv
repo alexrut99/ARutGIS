@@ -4408,3 +4408,19 @@ Type the text the legend shows; empty shows the layer's own. Symbology changes t
 Symbology…	สัญลักษณ์…
 Change this layer's symbols and labels	เปลี่ยนสัญลักษณ์และป้ายกำกับของชั้นข้อมูลนี้
 Shown as	แสดงเป็น
+Update Now	อัปเดตตอนนี้
+Downloads {file} ({size} MB), checks it and installs it	ดาวน์โหลด {file} ({size} MB) ตรวจสอบไฟล์ แล้วติดตั้ง
+Downloading {got} of {total} MB…	กำลังดาวน์โหลด {got} จาก {total} MB…
+Downloading {got} MB…	กำลังดาวน์โหลด {got} MB…
+Couldn't download the update: {error}	ดาวน์โหลดอัปเดตไม่สำเร็จ: {error}
+This copy can't update itself (a portable or store copy): download the new version from its release page.	โปรแกรมชุดนี้อัปเดตตัวเองไม่ได้ (เป็นแบบพกพาหรือติดตั้งจาก Store): ดาวน์โหลดเวอร์ชันใหม่จากหน้าเผยแพร่เวอร์ชัน
+The update is ready. ARutGIS closes, then its installer opens: follow it to finish.	อัปเดตพร้อมแล้ว ARutGIS จะปิด แล้วตัวติดตั้งจะเปิดขึ้น: ทำตามขั้นตอนให้เสร็จ
+The update is ready. ARutGIS closes and the disk image opens: drag ARutGIS to Applications, replacing the old one.	อัปเดตพร้อมแล้ว ARutGIS จะปิดและเปิดไฟล์ดิสก์อิมเมจ: ลาก ARutGIS ไปไว้ใน Applications แทนที่ตัวเดิม
+The update is installed. ARutGIS restarts as the new version when it closes.	ติดตั้งอัปเดตแล้ว เมื่อปิด ARutGIS จะเปิดใหม่เป็นเวอร์ชันใหม่
+The update is ready. ARutGIS closes and the package opens in your software installer.	อัปเดตพร้อมแล้ว ARutGIS จะปิดและเปิดแพ็กเกจในโปรแกรมติดตั้งซอฟต์แวร์
+It starts when ARutGIS closes.	จะเริ่มเมื่อปิด ARutGIS
+Close and Install	ปิดและติดตั้ง
+Not Now	ไว้ทีหลัง
+Keep this version: the update isn't started	ใช้เวอร์ชันนี้ต่อ: ยังไม่เริ่มอัปเดต
+The release's checksums don't list {file}.	รายการ checksum ของเวอร์ชันนี้ไม่มี {file}
+{file} doesn't match the release's checksum: it wasn't installed.	{file} ไม่ตรงกับ checksum ของเวอร์ชันนี้: จึงไม่ได้ติดตั้ง

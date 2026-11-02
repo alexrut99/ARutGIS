@@ -1745,6 +1745,12 @@ impl RustGisApp {
         autosave::end(self);
     }
 
+    /// As the app closes (the desktop app's `on_exit`): starts the update Help › Check for
+    /// Updates › Update Now downloaded, if there is one, so its installer can replace the app.
+    pub fn start_update(&mut self) {
+        update::launch(self);
+    }
+
     /// Whether this shell opens files by path (the desktop app; the web app picks them in the
     /// browser instead).
     pub(crate) fn opens_files(&self) -> bool {
