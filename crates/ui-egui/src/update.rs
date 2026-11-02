@@ -3,6 +3,9 @@
 //! copy was installed (setup.exe, .msi, .dmg, AppImage, .deb or .rpm), Update Now downloads it,
 //! checks it against the release's SHA256SUMS and starts it as the app closes.
 
+// The web app updates itself: the installers' code is for the desktop only.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
 use egui::Align2;
 use serde_json::Value;
 
