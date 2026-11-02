@@ -1294,12 +1294,12 @@ pub fn scale_bar(pm: &mut Pixmap, r: Rect, ground_per_pt: f64, look: &ScaleLook,
         unit_above_y = Some(y + row / 2.0);
         y += row;
     }
-    let numbers_above_y = above.then(|| y + row * 0.45);
+    let numbers_above_y = above.then_some(y + row * 0.45);
     if above {
         y += row;
     }
     let y0 = y;
-    let numbers_below_y = below.then(|| y0 + bar_h + row * 0.6);
+    let numbers_below_y = below.then_some(y0 + bar_h + row * 0.6);
     let unit_below_y = unit_row(UnitPlace::Below).then(|| y0 + bar_h + if below { row } else { 0.0 } + row / 2.0);
 
     // The parts the bar is drawn in: the first division split into its subdivisions.
