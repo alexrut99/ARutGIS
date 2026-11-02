@@ -36,6 +36,8 @@ const DEFAULTS: &[(&str, &str, &str)] = &[
     ("Escape", "tool.set", r#"{"tool":"explore"}"#),
     ("Delete", "edit.delete", ""),
     ("Mod+D", "layout.duplicateElement", ""),
+    ("Mod+G", "layout.group", ""),
+    ("Mod+Shift+G", "layout.ungroup", ""),
     // The active layer in the Layers pane's outline, as a word processor's outline keys (#836).
     ("Alt+Shift+ArrowRight", "layer.indent", ""),
     ("Alt+Shift+ArrowLeft", "layer.outdent", ""),

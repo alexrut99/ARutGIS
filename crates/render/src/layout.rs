@@ -76,10 +76,13 @@ pub(crate) fn render_element(layout: &Layout, id: u32, maps: &mut [Map], dpi: f6
         ElementKind::MapFrame { grid: Some(g), .. } if g.outside && g.labels => OUTSIDE_LABEL_MM,
         _ => 0.0,
     };
-    let x0 = ((e.x - m) * k).floor().clamp(0.0, f64::from(w));
-    let y0 = ((e.y - m) * k).floor().clamp(0.0, f64::from(h));
-    let x1 = ((e.x + e.w + m) * k).ceil().clamp(0.0, f64::from(w));
-    let y1 = ((e.y + e.h + m) * k).ceil().clamp(0.0, f64::from(h));
+    // A turned element covers its turned box (its labels outside it turn too, further out).
+    let (bx, by, bw, bh) = e.bounds();
+    let m = if e.rotation != 0.0 { m * std::f64::consts::SQRT_2 } else { m };
+    let x0 = ((bx - m) * k).floor().clamp(0.0, f64::from(w));
+    let y0 = ((by - m) * k).floor().clamp(0.0, f64::from(h));
+    let x1 = ((bx + bw + m) * k).ceil().clamp(0.0, f64::from(w));
+    let y1 = ((by + bh + m) * k).ceil().clamp(0.0, f64::from(h));
     let Some(bounds) = tiny_skia::IntRect::from_xywh(x0 as i32, y0 as i32, (x1 - x0) as u32, (y1 - y0) as u32) else {
         return Some(None);
     };
@@ -134,13 +137,42 @@ fn draw_page(
         }
     }
     for e in layout.elements.iter().filter(visible) {
-        let (x, y, ew, eh) =
+        let (px, py, ew, eh) =
             ((e.x * k - f64::from(bounds.x())) as f32, (e.y * k - f64::from(bounds.y())) as f32, (e.w * k) as f32, (e.h * k) as f32);
+        // A turned element is drawn upright on a sheet of its own, with room around it for
+        // outlines and labels outside it, and laid on the page turned about its centre.
+        let turned = e.rotation != 0.0 && e.kind.turns();
+        let pad = if turned {
+            match &e.kind {
+                ElementKind::MapFrame { .. } => (OUTSIDE_LABEL_MM * k).ceil() as f32 + 2.0,
+                _ => (30.0 * ppp).ceil() as f32 + 2.0,
+            }
+        } else {
+            0.0
+        };
+        let mut sheet = if turned {
+            let (sw, sh) = ((ew.max(1.0) + 2.0 * pad).ceil(), (eh.max(1.0) + 2.0 * pad).ceil());
+            // Too large to draw on a sheet of its own: left out rather than run out of memory.
+            if f64::from(sw) * f64::from(sh) > 4.0 * MAX_PIXELS {
+                continue;
+            }
+            match Pixmap::new(sw as u32, sh as u32) {
+                Some(p) => Some(p),
+                None => continue,
+            }
+        } else {
+            None
+        };
+        let (x, y) = if turned { (pad, pad) } else { (px, py) };
+        let target: &mut Pixmap = match sheet.as_mut() {
+            Some(p) => p,
+            None => &mut pm,
+        };
         let Some(r) = Rect::from_xywh(x, y, ew.max(1.0), eh.max(1.0)) else { continue };
         match &e.kind {
             ElementKind::MapFrame { shape, grid, extent_of, extent_color, extent_width, .. } => {
                 let Some(&(_, mi, cam, fw, fh)) = frame(e.id) else {
-                    placeholder(&mut pm, r, "Missing map", ppp);
+                    placeholder(target, r, "Missing map", ppp);
                     continue;
                 };
                 let Some(map) = maps.get_mut(mi) else { continue };
@@ -181,7 +213,7 @@ fn draw_page(
                     frame_pm.apply_mask(&m);
                 }
                 let place = Transform::from_row(up, 0.0, 0.0, up, x0, y0);
-                pm.draw_pixmap(
+                target.draw_pixmap(
                     0,
                     0,
                     frame_pm.as_ref(),
@@ -190,7 +222,7 @@ fn draw_page(
                     None,
                 );
                 if let Some(p) = &path {
-                    pm.stroke_path(
+                    target.stroke_path(
                         p,
                         &paint(Rgba::rgb(0x30, 0x30, 0x30), 1.0),
                         &Stroke { width: 0.8 * ppp as f32, ..Stroke::default() },
@@ -200,19 +232,19 @@ fn draw_page(
                 }
                 if !outside.is_empty() {
                     let vertical = grid.as_ref().is_some_and(|g| g.label_orientation == Orientation::Vertical);
-                    outside_labels(&mut pm, outside, (x0, y0, ew.max(1.0), eh.max(1.0)), up, ppp as f32, vertical);
+                    outside_labels(target, outside, (x0, y0, ew.max(1.0), eh.max(1.0)), up, ppp as f32, vertical);
                 }
             }
             ElementKind::NorthArrow { frame: f, style, fill, outline } => {
                 // Turned with its frame's map.
                 let bearing = frame(*f).map_or(0.0, |fr| fr.2.bearing);
-                north_arrow(&mut pm, r, *style, *fill, *outline, ppp, bearing)
+                north_arrow(target, r, *style, *fill, *outline, ppp, bearing)
             }
             ElementKind::ScaleBar { frame: f, units, divisions, style } => {
                 if let Some(&(_, mi, cam, _, _)) = frame(*f)
                     && let Some(map) = maps.get(mi)
                 {
-                    scale_bar(&mut pm, r, map.ground_res_at(&cam), (*units, *divisions, *style), ppp, layout.decimal_comma);
+                    scale_bar(target, r, map.ground_res_at(&cam), (*units, *divisions, *style), ppp, layout.decimal_comma);
                 }
             }
             ElementKind::Legend { frame: f, title, all_classes, hide_other, exclude } => {
@@ -222,7 +254,7 @@ fn draw_page(
                     let drawn = (!*all_classes).then(|| shown.iter().find(|(id, _)| id == f).map(|(_, v)| v.as_slice()).unwrap_or(&[]));
                     let scale = map.ground_res_at(&cam) / rustgis_geom::PIXEL_M;
                     wait_for_tile_legends(map, scale, exclude);
-                    legend(&mut pm, r, map, title, drawn, LegendOptions { hide_other: *hide_other, exclude, scale }, ppp);
+                    legend(target, r, map, title, drawn, LegendOptions { hide_other: *hide_other, exclude, scale }, ppp);
                 }
             }
             ElementKind::Colorbar { frame: f, layer, title, orientation, ticks, tick_side, reverse } => {
@@ -233,7 +265,7 @@ fn draw_page(
                     .and_then(rustgis_map::layout::color_scale);
                 match scale {
                     Some(sc) => colorbar(
-                        &mut pm,
+                        target,
                         r,
                         &sc,
                         &Bar {
@@ -246,7 +278,7 @@ fn draw_page(
                         },
                         ppp,
                     ),
-                    None => placeholder(&mut pm, r, "Colorbar", ppp),
+                    None => placeholder(target, r, "Colorbar", ppp),
                 }
             }
             ElementKind::Text { text: t, size, color, bold, italic, align, letter_spacing, font, font_name } => {
@@ -258,7 +290,7 @@ fn draw_page(
                 let family = font_name.as_deref().and_then(crate::families::find_ready);
                 let face = text::Face { bold: *bold, italic: *italic, serif: *font == rustgis_map::layout::FontFamily::Serif, family };
                 let style = TextStyle { face, align: *align, spacing: *letter_spacing as f32 };
-                text_block(&mut pm, r, &s, *size as f32, *color, style, ppp);
+                text_block(target, r, &s, *size as f32, *color, style, ppp);
             }
             ElementKind::Picture { image } => {
                 if let Some(img) = crate::picture::decode(image) {
@@ -266,7 +298,7 @@ fn draw_page(
                     let s = (ew / iw).min(eh / ih);
                     let (dw, dh) = (iw * s, ih * s);
                     let t = Transform::from_row(s, 0.0, 0.0, s, x + (ew - dw) / 2.0, y + (eh - dh) / 2.0);
-                    pm.draw_pixmap(
+                    target.draw_pixmap(
                         0,
                         0,
                         img.as_ref(),
@@ -275,33 +307,33 @@ fn draw_page(
                         None,
                     );
                 } else {
-                    placeholder(&mut pm, r, "Picture", ppp);
+                    placeholder(target, r, "Picture", ppp);
                 }
             }
             ElementKind::Table { frame: f, layer, rows } => {
                 let ds = frame(*f).and_then(|fr| maps.get(fr.1)).and_then(|m| m.layer_by_name(layer)).map(|l| &l.dataset);
                 match ds {
-                    Some(ds) => table(&mut pm, r, ds, *rows, ppp),
-                    None => placeholder(&mut pm, r, "Table", ppp),
+                    Some(ds) => table(target, r, ds, *rows, ppp),
+                    None => placeholder(target, r, "Table", ppp),
                 }
             }
             ElementKind::Chart { frame: f, layer, field, label } => {
                 let ds = frame(*f).and_then(|fr| maps.get(fr.1)).and_then(|m| m.layer_by_name(layer)).map(|l| &l.dataset);
                 match ds {
-                    Some(ds) => chart(&mut pm, r, ds, field, label.as_deref(), ppp),
-                    None => placeholder(&mut pm, r, "Chart", ppp),
+                    Some(ds) => chart(target, r, ds, field, label.as_deref(), ppp),
+                    None => placeholder(target, r, "Chart", ppp),
                 }
             }
             ElementKind::Rectangle { fill, outline, width, radius } => {
                 // Square corners filled as before, so an existing layout draws to the same pixels.
                 let rounded = rounded_rect(r, (*radius * PT_PER_MM * ppp) as f32);
                 match &rounded {
-                    Some(p) => pm.fill_path(p, &paint(*fill, 1.0), FillRule::Winding, Transform::identity(), None),
-                    None => pm.fill_rect(r, &paint(*fill, 1.0), Transform::identity(), None),
+                    Some(p) => target.fill_path(p, &paint(*fill, 1.0), FillRule::Winding, Transform::identity(), None),
+                    None => target.fill_rect(r, &paint(*fill, 1.0), Transform::identity(), None),
                 }
                 let p = rounded.unwrap_or_else(|| PathBuilder::from_rect(r));
                 if *width > 0.0 {
-                    pm.stroke_path(
+                    target.stroke_path(
                         &p,
                         &paint(*outline, 1.0),
                         &Stroke { width: (*width as f32) * ppp as f32, ..Stroke::default() },
@@ -312,10 +344,10 @@ fn draw_page(
             }
             ElementKind::Ellipse { fill, outline, width } => {
                 if let Some(p) = PathBuilder::from_oval(r) {
-                    pm.fill_path(&p, &paint(*fill, 1.0), FillRule::Winding, Transform::identity(), None);
+                    target.fill_path(&p, &paint(*fill, 1.0), FillRule::Winding, Transform::identity(), None);
                     if *width > 0.0 {
                         let stroke = Stroke { width: (*width as f32) * ppp as f32, ..Stroke::default() };
-                        pm.stroke_path(&p, &paint(*outline, 1.0), &stroke, Transform::identity(), None);
+                        target.stroke_path(&p, &paint(*outline, 1.0), &stroke, Transform::identity(), None);
                     }
                 }
             }
@@ -344,7 +376,7 @@ fn draw_page(
                 pb.line_to(s1.0, s1.1);
                 if let Some(p) = pb.finish() {
                     let stroke = Stroke { width: stroke_w, ..Stroke::default() };
-                    pm.stroke_path(&p, &paint(*color, 1.0), &stroke, Transform::identity(), None);
+                    target.stroke_path(&p, &paint(*color, 1.0), &stroke, Transform::identity(), None);
                 }
                 // Each head: a filled triangle, its tip on the line's end.
                 let half = (head_len * 0.45).max(stroke_w);
@@ -356,10 +388,23 @@ fn draw_page(
                     pb.line_to(base.0 + dy * half, base.1 - dx * half);
                     pb.close();
                     if let Some(p) = pb.finish() {
-                        pm.fill_path(&p, &paint(*color, 1.0), FillRule::Winding, Transform::identity(), None);
+                        target.fill_path(&p, &paint(*color, 1.0), FillRule::Winding, Transform::identity(), None);
                     }
                 }
             }
+        }
+        if let Some(sheet) = sheet {
+            // Anticlockwise on the page, whose y runs down: a negative angle to tiny-skia.
+            let (cx, cy) = (px + ew / 2.0, py + eh / 2.0);
+            let place = Transform::from_translate(px - pad, py - pad).post_rotate_at(-(e.rotation as f32), cx, cy);
+            pm.draw_pixmap(
+                0,
+                0,
+                sheet.as_ref(),
+                &PixmapPaint { quality: tiny_skia::FilterQuality::Bilinear, ..PixmapPaint::default() },
+                place,
+                None,
+            );
         }
     }
     Some(pm)
@@ -2787,5 +2832,32 @@ mod tests {
         let scale = point.strip_prefix("Scale ").and_then(|t| t.strip_suffix(", page 1.")).unwrap_or_else(|| panic!("{point}"));
         assert!(scale.starts_with("1:") && scale.contains(','), "{point}");
         assert_eq!(comma, format!("Scale {}, page 1.", scale.replace(',', ".")));
+    }
+
+    /// A turned element is drawn turned about its centre, on the page and on its own.
+    #[test]
+    fn turned_elements_are_drawn_turned() {
+        let info = PageInfo { page: 1, pages: 1, page_name: String::new() };
+        let mut layout = Layout::new("T", 100.0, 100.0);
+        let black = Rgba::rgb(0, 0, 0);
+        let id =
+            layout.add("Bar", (20.0, 45.0, 60.0, 10.0), ElementKind::Rectangle { fill: black, outline: black, width: 0.0, radius: 0.0 });
+        let dark = |pm: &Pixmap, x: f64, y: f64| {
+            let k = f64::from(pm.width()) / 100.0;
+            pm.pixel((x * k) as u32, (y * k) as u32).is_some_and(|p| p.red() < 64)
+        };
+        let pm = render(&layout, &mut [], 96.0, &info).unwrap();
+        assert!(dark(&pm, 25.0, 50.0) && !dark(&pm, 50.0, 25.0), "level");
+        layout.element_mut(id).unwrap().rotation = 90.0;
+        let pm = render(&layout, &mut [], 96.0, &info).unwrap();
+        assert!(!dark(&pm, 25.0, 50.0) && dark(&pm, 50.0, 25.0) && dark(&pm, 50.0, 75.0), "upright");
+        // At 45° the bar runs from bottom-left to top-right.
+        layout.element_mut(id).unwrap().rotation = 45.0;
+        let pm = render(&layout, &mut [], 96.0, &info).unwrap();
+        assert!(dark(&pm, 35.0, 65.0) && dark(&pm, 65.0, 35.0) && !dark(&pm, 35.0, 35.0));
+        // On its own: the picture covers its turned box.
+        let (_, [x, y, w, h]) = render_element(&layout, id, &mut [], 96.0, &info).unwrap().unwrap();
+        let (bx, by, bw, bh) = layout.element(id).unwrap().bounds();
+        assert!(x <= bx + 0.5 && y <= by + 0.5 && x + w >= bx + bw - 0.5 && y + h >= by + bh - 0.5, "{:?}", (x, y, w, h));
     }
 }

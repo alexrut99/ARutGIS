@@ -15753,6 +15753,155 @@ fn layout_elements_duplicate_offset_on_top_and_undo() {
 }
 
 #[test]
+fn layout_elements_align_distribute_and_size_alike() {
+    use rustgis_map::Rgba;
+    use rustgis_map::layout::ElementKind;
+    let mut s = world();
+    s.run("layout.new", &json!({"name": "A", "width": 200, "height": 100})).unwrap();
+    let li = s.active_layout.unwrap();
+    s.project.layouts[li].elements.clear();
+    let add = |s: &mut Session, x: f64, y: f64, w: f64, h: f64| {
+        s.project.layouts[li].add(
+            "Box",
+            (x, y, w, h),
+            ElementKind::Rectangle { fill: Rgba::rgb(255, 255, 255), outline: Rgba::rgb(0, 0, 0), width: 1.0, radius: 0.0 },
+        )
+    };
+    let a = add(&mut s, 10.0, 10.0, 20.0, 10.0);
+    let b = add(&mut s, 50.0, 30.0, 10.0, 20.0);
+    let c = add(&mut s, 120.0, 5.0, 30.0, 10.0);
+    let boxes = |s: &Session| -> Vec<(f64, f64, f64, f64)> {
+        [a, b, c].iter().map(|id| s.project.layouts[li].element(*id).map(|e| (e.x, e.y, e.w, e.h)).unwrap()).collect()
+    };
+    // Left edges together, at the leftmost; one step to undo.
+    s.run("layout.align", &json!({"elements": [a, b, c], "to": "left"})).unwrap();
+    assert!(boxes(&s).iter().all(|b| b.0 == 10.0), "{:?}", boxes(&s));
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(boxes(&s)[2].0, 120.0, "one undo puts them all back");
+    // Bottoms together, at the lowest.
+    s.run("layout.align", &json!({"elements": [a, b, c], "to": "bottom"})).unwrap();
+    assert!(boxes(&s).iter().all(|b| b.1 + b.3 == 50.0), "{:?}", boxes(&s));
+    // The same space between each, the outer two staying: 10..30, 50..60, 120..150 spans 140
+    // mm with 60 mm of boxes, so 40 mm gaps.
+    s.run("layout.align", &json!({"elements": [c, a, b], "to": "distributeHorizontally"})).unwrap();
+    let x: Vec<f64> = boxes(&s).iter().map(|b| b.0).collect();
+    assert_eq!(x, vec![10.0, 70.0, 120.0]);
+    // Sized as the first named.
+    s.run("layout.align", &json!({"elements": [b, a, c], "to": "sameSize"})).unwrap();
+    assert!(boxes(&s).iter().all(|bx| (bx.2, bx.3) == (10.0, 20.0)), "{:?}", boxes(&s));
+    // One element lines up with the page; "page" makes several do so.
+    s.run("layout.align", &json!({"elements": [a], "to": "right"})).unwrap();
+    assert_eq!(boxes(&s)[0].0 + boxes(&s)[0].2, 200.0);
+    s.run("layout.align", &json!({"elements": [a, b], "to": "center", "page": true})).unwrap();
+    assert!(boxes(&s)[..2].iter().all(|bx| bx.0 + bx.2 / 2.0 == 100.0));
+    // Too few, bad values, missing and locked elements change nothing.
+    for bad in [
+        json!({"elements": [a, b], "to": "distributeVertically"}),
+        json!({"elements": [a], "to": "sameWidth"}),
+        json!({"elements": [a, b], "to": "diagonal"}),
+        json!({"elements": [], "to": "left"}),
+        json!({"elements": [a, 99_999], "to": "left"}),
+        json!({"elements": "a", "to": "left"}),
+    ] {
+        assert!(s.run("layout.align", &bad).is_err(), "{bad}");
+    }
+    s.run("layout.update", &json!({"element": c, "locked": true})).unwrap();
+    assert!(s.run("layout.align", &json!({"elements": [a, c], "to": "top"})).is_err());
+    // A move of several is one step.
+    let before = boxes(&s);
+    s.run("layout.moveElements", &json!({"elements": [a, b], "dx": 3, "dy": -2})).unwrap();
+    assert_eq!((boxes(&s)[0].0, boxes(&s)[1].1), (before[0].0 + 3.0, before[1].1 - 2.0));
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(boxes(&s), before);
+}
+
+#[test]
+fn layout_groups_move_copy_and_delete_together() {
+    let mut s = world();
+    s.run("layout.new", &json!({"name": "G"})).unwrap();
+    let li = s.active_layout.unwrap();
+    let id = |s: &Session, name: &str| s.project.layouts[li].elements.iter().find(|e| e.name == name).unwrap().id;
+    let (legend, north, frame) = (id(&s, "Legend"), id(&s, "North Arrow"), s.project.layouts[li].first_frame().unwrap());
+    let r = s.run("layout.group", &json!({"elements": [legend, north]})).unwrap();
+    let g = r["group"].as_u64().unwrap() as u32;
+    let l = &s.project.layouts[li];
+    assert_eq!(l.members(legend), l.members(north));
+    assert_eq!(l.element(north).unwrap().group, Some(g));
+    assert!(s.run("layout.group", &json!({"elements": [frame]})).is_err(), "a group is two or more");
+    // Moving one moves its group.
+    let y0 = s.project.layouts[li].element(north).unwrap().y;
+    s.run("layout.moveElements", &json!({"elements": [legend], "dy": 4})).unwrap();
+    assert_eq!(s.project.layouts[li].element(north).unwrap().y, y0 + 4.0);
+    // Copied with its group, and pasted into the same layout 5 mm off, as a new group; the
+    // surrounds keep their frame.
+    let text = s.run("layout.copyElements", &json!({"elements": [north]})).unwrap()["text"].as_str().unwrap().to_string();
+    assert!(crate::cmd::layout::is_layout_clipboard(&text));
+    let n = s.project.layouts[li].elements.len();
+    let r = s.run("layout.paste", &json!({"text": text})).unwrap();
+    let pasted: Vec<u32> = r["elements"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as u32).collect();
+    let l = &s.project.layouts[li];
+    assert_eq!((pasted.len(), l.elements.len()), (2, n + 2));
+    let copy = l.element(pasted[1]).unwrap();
+    let orig = l.element(north).unwrap().clone();
+    assert_eq!((copy.x, copy.y), (orig.x + 5.0, orig.y + 5.0));
+    assert_eq!(copy.kind.frame(), Some(frame));
+    assert!(copy.group.is_some() && copy.group != Some(g));
+    assert_eq!(l.members(pasted[0]).len(), 2);
+    // Into another layout, where it was; its surrounds take that layout's frame.
+    s.run("layout.new", &json!({"name": "G2"})).unwrap();
+    let l2 = s.active_layout.unwrap();
+    let frame2 = s.project.layouts[l2].first_frame().unwrap();
+    let r = s.run("layout.paste", &json!({"text": text})).unwrap();
+    let id2 = r["elements"][1].as_u64().unwrap() as u32;
+    let e2 = s.project.layouts[l2].element(id2).unwrap();
+    assert_eq!((e2.x, e2.y, e2.kind.frame()), (orig.x, orig.y, Some(frame2)));
+    for bad in
+        [json!({}), json!({"text": "{}"}), json!({"text": "not json"}), json!({"text": "{\"arutgisLayoutElements\":1,\"elements\":[]}"})]
+    {
+        assert!(s.run("layout.paste", &bad).is_err(), "{bad}");
+    }
+    // Deleting one deletes its group, in one step.
+    s.run("layout.activate", &json!({"layout": li})).unwrap();
+    s.run("layout.removeElements", &json!({"elements": [legend]})).unwrap();
+    assert!(s.project.layouts[li].element(north).is_none());
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert!(s.project.layouts[li].element(north).is_some());
+    // Ungrouped, each moves alone.
+    s.run("layout.ungroup", &json!({"elements": [north]})).unwrap();
+    assert_eq!(s.project.layouts[li].members(north), vec![north]);
+    assert_eq!(s.project.layouts[li].members(legend), vec![legend]);
+}
+
+#[test]
+fn layout_elements_turn_about_their_centre() {
+    use rustgis_map::layout::ElementKind;
+    let mut s = world();
+    s.run("layout.new", &json!({"name": "R"})).unwrap();
+    let li = s.active_layout.unwrap();
+    let r = s.run("layout.addElement", &json!({"kind": "text", "text": "Turned", "x": 20, "y": 20, "w": 40, "h": 10})).unwrap();
+    let t = r["element"].as_u64().unwrap() as u32;
+    s.run("layout.update", &json!({"element": t, "rotation": 450})).unwrap();
+    let e = s.project.layouts[li].element(t).unwrap().clone();
+    assert_eq!(e.rotation, 90.0, "a whole turn is none");
+    // Standing on end: its box covers 10 × 40 mm about the same centre, and a point above its
+    // middle, off its unturned box, is on it.
+    let (bx, by, bw, bh) = e.bounds();
+    assert!((bw - 10.0).abs() < 1e-9 && (bh - 40.0).abs() < 1e-9 && (bx - 35.0).abs() < 1e-9 && (by - 5.0).abs() < 1e-9);
+    assert!(e.contains(40.0, 8.0) && !e.contains(22.0, 25.0));
+    assert_eq!(s.project.layouts[li].hit(40.0, 8.0), Some(t));
+    // Saved and read back.
+    let text = serde_json::to_string(&s.project.layouts[li]).unwrap();
+    let back: rustgis_map::layout::Layout = serde_json::from_str(&text).unwrap();
+    assert_eq!(back.element(t).unwrap().rotation, 90.0);
+    // A line turns by its angle; a rotation must be a number.
+    let r = s.run("layout.addElement", &json!({"kind": "line"})).unwrap();
+    let line = r["element"].as_u64().unwrap() as u32;
+    assert!(s.run("layout.update", &json!({"element": line, "rotation": 30})).is_err());
+    assert!(s.run("layout.update", &json!({"element": t, "rotation": "up"})).is_err());
+    assert!(matches!(s.project.layouts[li].element(line).unwrap().kind, ElementKind::Line { .. }));
+}
+
+#[test]
 fn locked_layout_elements_take_no_change_until_unlocked() {
     use rustgis_map::layout::ElementKind;
     let mut s = world();

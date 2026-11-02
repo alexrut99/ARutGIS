@@ -228,6 +228,28 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   element over or under every other, and **Bring Forward** and **Send Backward** move it one
   place, to put a legend over a map frame, say. A locked element keeps its place. From a command:
   `layout.arrange={"element":4,"to":"front"}` (`front`, `forward`, `backward` or `back`).
+- **Several at once**: **Shift**- or **Ctrl**-click (**⌘** on a Mac) adds an element to the
+  selection or takes it out, and **Ctrl**-dragging a box selects every element wholly inside it
+  (with **Shift** as well, adding them). Dragging one of them moves them all, the arrow keys nudge
+  them all, and **Delete** deletes them all, each in one step to undo. The Format pane then lines
+  them up (**Align Left**, **Center**, **Right**, **Top**, **Middle**, **Bottom**: by the box
+  around them all, or the page for one element), spaces them evenly (**Distribute Horizontally**
+  or **Vertically**, three or more, the outer two staying) and sizes them alike (**Same Width**,
+  **Height** or **Size**, as the one picked first). Right-click an element for the same commands.
+  From a command: `layout.align={"elements":[4,5,6],"to":"left"}`, and
+  `layout.moveElements={"elements":[4,5],"dx":10}`.
+- **Groups**: **Ctrl+G** (or **Group** in the Format pane) makes the selected elements a group,
+  picked, moved, copied and deleted as one; **Ctrl+Shift+G** takes it apart (`layout.group`,
+  `layout.ungroup`).
+- **Copy and paste**: **Ctrl+C** copies the selected elements (and their groups), **Ctrl+X** cuts
+  them, and **Ctrl+V** pastes them into the open layout, selected: 5 mm off in the layout they
+  came from, where they were in another. Surrounds copied with their map frame follow the copy;
+  without it, they take the layout's own map frame. From a command: `layout.copyElements` gives
+  the text `layout.paste` takes.
+- **Turning**: every element has a round handle above it: drag it to turn the element about its
+  centre, snapping to every 45° (**Shift**: 15° steps), or type **Rotation (°)** in the Format pane
+  (degrees anticlockwise; `layout.update` `{"rotation": 30}`). A turned element is printed and
+  exported turned, and is sized in the Format pane. Lines turn by their own angle, as before.
 - **Locked**, at the top of the Format pane, keeps a finished element from being changed by
   mistake: it can still be selected (a lock marks its corner, and it has no handles), but not
   moved, resized, deleted or edited, and a locked map frame's map isn't panned or zoomed. A map

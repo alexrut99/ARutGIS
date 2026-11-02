@@ -4310,3 +4310,46 @@ Whether the service is asked for one picture of the view or for tiles.	เลื
 e.g.  pop_est / 1000000   or   upper(name) || ' ' || round(area, 1)	เช่น  pop_est / 1000000   หรือ   upper(name) || ' ' || round(area, 1)
 Labels outside	ป้ายกำกับนอกกรอบ
 Past the frame's edges, as ArcGIS and topographic maps print them; off, just inside the frame.	วางนอกขอบกรอบแผนที่ แบบที่ ArcGIS และแผนที่ภูมิประเทศใช้ ถ้าปิดจะวางชิดด้านในกรอบ
+Rotation (°)	การหมุน (°)
+Degrees anticlockwise about its centre; or drag its round handle	องศาทวนเข็มนาฬิการอบจุดกึ่งกลาง หรือลากปุ่มกลมที่อยู่ด้านบน
+Align to the page	จัดแนวกับหน้ากระดาษ
+Take the group apart (Ctrl+Shift+G)	ยกเลิกการจัดกลุ่ม (Ctrl+Shift+G)
+Align Left	ชิดซ้าย
+Align Center	กึ่งกลางแนวนอน
+Align Right	ชิดขวา
+Align Top	ชิดบน
+Align Middle	กึ่งกลางแนวตั้ง
+Align Bottom	ชิดล่าง
+Distribute Horizontally	เว้นระยะเท่ากันแนวนอน
+Distribute Vertically	เว้นระยะเท่ากันแนวตั้ง
+Same Width	กว้างเท่ากัน
+Same Height	สูงเท่ากัน
+Same Size	ขนาดเท่ากัน
+Line up the left edges	จัดขอบซ้ายให้ตรงกัน
+Line up the centres, across	จัดกึ่งกลางให้ตรงกันในแนวนอน
+Line up the right edges	จัดขอบขวาให้ตรงกัน
+Line up the top edges	จัดขอบบนให้ตรงกัน
+Line up the middles, down	จัดกึ่งกลางให้ตรงกันในแนวตั้ง
+Line up the bottom edges	จัดขอบล่างให้ตรงกัน
+The same space between each, left to right (three or more)	เว้นระยะระหว่างแต่ละชิ้นให้เท่ากัน จากซ้ายไปขวา (ตั้งแต่ 3 ชิ้น)
+The same space between each, top to bottom (three or more)	เว้นระยะระหว่างแต่ละชิ้นให้เท่ากัน จากบนลงล่าง (ตั้งแต่ 3 ชิ้น)
+As wide as the one picked first	กว้างเท่าชิ้นที่เลือกเป็นชิ้นแรก
+As high as the one picked first	สูงเท่าชิ้นที่เลือกเป็นชิ้นแรก
+As large as the one picked first	ขนาดเท่าชิ้นที่เลือกเป็นชิ้นแรก
+Layout: {n} elements	Layout: {n} ชิ้น
+Shift- or Ctrl-click adds or takes one away; Ctrl-drag selects those inside a box.	Shift หรือ Ctrl + คลิก เพื่อเพิ่มหรือเอาออกจากที่เลือก · Ctrl + ลาก เพื่อเลือกทุกชิ้นในกรอบ
+One of them is locked: unlock it to move them together.	มีชิ้นที่ล็อกอยู่: ปลดล็อกก่อนจึงจะย้ายพร้อมกันได้
+Align	จัดแนว
+Centre them all on the page, across and down	จัดทั้งหมดไว้กึ่งกลางหน้ากระดาษ ทั้งแนวนอนและแนวตั้ง
+Pick and move them as one (Ctrl+G)	รวมเป็นกลุ่ม เลือกและย้ายไปพร้อมกัน (Ctrl+G)
+Copy them, to paste here or in another layout (Ctrl+C, Ctrl+V)	คัดลอกไปวางที่นี่หรือใน Layout อื่น (Ctrl+C, Ctrl+V)
+Copy them (Ctrl+D, ⌘D on a Mac)	ทำสำเนา (Ctrl+D, ⌘D บน Mac)
+Delete Elements	ลบองค์ประกอบที่เลือก
+{name} and {n} more	{name} และอีก {n} ชิ้น
+Right-click an element for what it can do; paste with Ctrl+V.	คลิกขวาที่องค์ประกอบเพื่อดูคำสั่ง · วางด้วย Ctrl+V
+Align Elements	จัดแนวองค์ประกอบ
+Move Elements	ย้ายองค์ประกอบ
+Group Elements	จัดกลุ่มองค์ประกอบ
+Ungroup Elements	ยกเลิกการจัดกลุ่มองค์ประกอบ
+Copy Elements	คัดลอกองค์ประกอบ
+Paste Elements	วางองค์ประกอบ

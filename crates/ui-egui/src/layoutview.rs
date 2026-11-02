@@ -1,6 +1,7 @@
 //! The layout view: the page with its elements, shown instead of the map when a layout is open.
-//! Click an element to select it, drag it to move, drag its handles to resize, Shift-drag a map
-//! frame to pan its map; the wheel zooms the page. The properties panel edits the selection.
+//! Click an element to select it (Shift- or Ctrl-click adds or takes one away, Ctrl-drag selects
+//! those inside a box; a group is picked whole), drag it to move, drag its handles to resize, its
+//! round knob to turn it, Shift-drag a map frame to pan its map; the wheel zooms the page. The properties panel edits the selection.
 //! Rulers run along the top and left: drag out of one to add a guide, drag a guide back onto one
 //! to remove it. Dragged elements snap to guides, the page and each other (Alt places freely).
 
@@ -32,9 +33,13 @@ enum Drag {
     NewGuide(bool),
     /// Moving a guide: vertical or horizontal, and its index.
     Guide(bool, usize),
-    /// Turning a line or arrow by its rotation handle: its id, its angle at the start, and the
-    /// pointer's angle about its centre then (degrees).
+    /// Turning an element by its rotation handle: its id, its angle at the start (a line's
+    /// direction, another element's rotation), and the pointer's angle about its centre then
+    /// (degrees).
     Rotate(u32, f64, f64),
+    /// Selecting the elements inside a box (Ctrl-drag): where it started (mm), and whether they
+    /// are added to the selection (Shift as well).
+    Marquee((f64, f64), bool),
 }
 
 /// Width of the rulers along the view's top and left edges (points).
@@ -61,6 +66,10 @@ pub struct LayoutView {
     zoom: f32,
     pan: egui::Vec2,
     pub selected: Option<u32>,
+    /// The others selected with `selected` (Shift- or Ctrl-click, a box, a group): the element
+    /// they were picked with, and theirs. They count only while it is still `selected`, so
+    /// anything that selects another element on its own drops them.
+    also: (Option<u32>, Vec<u32>),
     /// The selection the Format pane last opened for, by layout and element (ids are per layout):
     /// a new one opens it again, so closing the pane keeps the selection without the pane coming
     /// back by itself.
@@ -108,6 +117,71 @@ pub struct LayoutView {
     nudged: Option<(usize, u32, f64)>,
 }
 
+impl LayoutView {
+    /// Every element of `layout` selected: the one picked first, then the others.
+    pub fn selection(&self, layout: &Layout) -> Vec<u32> {
+        let Some(first) = self.selected.filter(|id| layout.element(*id).is_some()) else { return Vec::new() };
+        let mut out = vec![first];
+        if self.also.0 == Some(first) {
+            for id in &self.also.1 {
+                if layout.element(*id).is_some() && !out.contains(id) {
+                    out.push(*id);
+                }
+            }
+        }
+        out
+    }
+
+    /// Selects these elements, the first as the one picked first, with the groups they are in;
+    /// none, when the list is empty.
+    pub fn select_all(&mut self, layout: &Layout, ids: &[u32]) {
+        let mut all = layout.with_groups(ids);
+        self.selected = ids.iter().copied().find(|id| layout.element(*id).is_some()).or(all.first().copied());
+        all.retain(|id| Some(*id) != self.selected);
+        self.also = (self.selected, all);
+    }
+
+    /// Selects `id` with its group, or nothing.
+    pub fn select(&mut self, layout: &Layout, id: Option<u32>) {
+        match id {
+            Some(id) => self.select_all(layout, &[id]),
+            None => {
+                self.selected = None;
+                self.also = (None, Vec::new());
+            }
+        }
+    }
+
+    /// Adds `id` and its group to the selection, or takes them out when it is in it.
+    pub fn toggle(&mut self, layout: &Layout, id: u32) {
+        let mut sel = self.selection(layout);
+        let members = layout.members(id);
+        if sel.contains(&id) {
+            sel.retain(|x| !members.contains(x));
+        } else {
+            sel.extend(members);
+        }
+        self.select_all(layout, &sel);
+    }
+}
+
+/// The one element selected, when only one is.
+fn single<'a>(app: &RustGisApp, layout: &'a Layout) -> Option<&'a rustgis_engine::map::layout::Element> {
+    match app.layout.selection(layout).as_slice() {
+        [id] => layout.element(*id),
+        _ => None,
+    }
+}
+
+/// An element's corners on screen, turned as it is, or as it would be at `rotation`.
+fn screen_corners(page: Rect, s: f32, e: &rustgis_engine::map::layout::Element, rotation: Option<f64>) -> [Pos2; 4] {
+    let mut e2 = e.clone();
+    if let Some(r) = rotation {
+        e2.rotation = r;
+    }
+    e2.corners().map(|p| to_screen(page, s, p))
+}
+
 /// How far (mm) an arrow key nudges the selected layout element, and with Shift.
 pub const NUDGE_MM: f64 = 1.0;
 pub const NUDGE_FAST_MM: f64 = 10.0;
@@ -133,6 +207,7 @@ pub(crate) fn follow_project(app: &mut RustGisApp) {
     let opened = app.session.opened;
     if app.layout.project.is_some_and(|p| p != opened) {
         app.layout.selected = None;
+        app.layout.also = (None, Vec::new());
         app.layout.formatted = None;
         app.layout.drawn = None;
         app.layout.typing.clear();
@@ -222,7 +297,8 @@ fn handle_at(app: &RustGisApp, layout: &Layout, page: Rect, s: f32, pos: Pos2) -
     if nav_frame(app, layout, page, s, pos).is_some() {
         return None;
     }
-    let e = app.layout.selected.and_then(|id| layout.element(id)).filter(|e| !e.locked)?;
+    // One element, upright: a turned one is sized in the Format pane.
+    let e = single(app, layout).filter(|e| !e.locked && (e.rotation == 0.0 || !e.kind.turns()))?;
     let r = Rect::from_min_max(to_screen(page, s, (e.x, e.y)), to_screen(page, s, (e.x + e.w, e.y + e.h)));
     let third = r.width().min(r.height()) / 3.0;
     let reach = HANDLE_PICK.min(if r.contains(pos) { third } else { third.max(5.0) });
@@ -235,15 +311,24 @@ fn handle_at(app: &RustGisApp, layout: &Layout, page: Rect, s: f32, pos: Pos2) -
         .map(|(i, _)| (e.id, i))
 }
 
-/// How far (points) above a selected line or arrow its rotation handle sits.
+/// How far (points) above a selected element its rotation handle sits.
 const ROTATE_GAP: f32 = 22.0;
 
-/// The selected line's rotation handle, unless it's locked: the line, where the handle is and the
-/// line's centre, on screen.
+/// The selected element's rotation handle, unless it's locked or more are selected: the element,
+/// where the handle is and the element's centre, on screen. It sits above the middle of the
+/// element's top edge, turned with it.
 fn rotate_handle(app: &RustGisApp, layout: &Layout, page: Rect, s: f32) -> Option<(u32, Pos2, Pos2)> {
-    let e = app.layout.selected.and_then(|id| layout.element(id)).filter(|e| !e.locked && matches!(e.kind, ElementKind::Line { .. }))?;
-    let r = Rect::from_min_max(to_screen(page, s, (e.x, e.y)), to_screen(page, s, (e.x + e.w, e.y + e.h)));
-    Some((e.id, pos2(r.center().x, r.top() - ROTATE_GAP), r.center()))
+    let e = single(app, layout).filter(|e| !e.locked)?;
+    if !e.kind.turns() {
+        let r = Rect::from_min_max(to_screen(page, s, (e.x, e.y)), to_screen(page, s, (e.x + e.w, e.y + e.h)));
+        return Some((e.id, pos2(r.center().x, r.top() - ROTATE_GAP), r.center()));
+    }
+    let k = screen_corners(page, s, e, None);
+    let top = k[0] + (k[1] - k[0]) / 2.0;
+    let c = to_screen(page, s, e.center());
+    let up = (top - c).normalized();
+    let up = if up.is_finite() && up.length() > 0.5 { up } else { vec2(0.0, -1.0) };
+    Some((e.id, top + up * ROTATE_GAP, c))
 }
 
 /// The rotation handle at a screen point: the line, and its centre on screen.
@@ -252,12 +337,12 @@ fn rotate_at(app: &RustGisApp, layout: &Layout, page: Rect, s: f32, pos: Pos2) -
     ((h - pos).length() <= HANDLE_PICK).then_some((id, c))
 }
 
-/// A line element's angle (degrees, anticlockwise from pointing right).
+/// An element's angle (degrees, anticlockwise): a line's from pointing right, another's rotation.
 fn element_angle(layout: &Layout, id: u32) -> Option<f64> {
     let e = layout.element(id)?;
     match e.kind {
         ElementKind::Line { dir, head, .. } => Some(line_angle((e.x, e.y, e.w, e.h), dir, head)),
-        _ => None,
+        _ => Some(e.rotation),
     }
 }
 
@@ -326,14 +411,16 @@ fn resized((x, y, w, h): (f64, f64, f64, f64), handle: usize, dx: f64, dy: f64) 
 
 /// The lines a dragged element snaps to (mm): the page's edges and centre, the guides, and the
 /// other visible elements' edges and centres; vertical lines (x), then horizontal (y).
-fn snap_lines(l: &Layout, moving: u32) -> (Vec<f64>, Vec<f64>) {
+fn snap_lines(l: &Layout, moving: &[u32]) -> (Vec<f64>, Vec<f64>) {
     let mut xs = vec![0.0, l.width / 2.0, l.width];
     let mut ys = vec![0.0, l.height / 2.0, l.height];
     xs.extend(&l.guides.x);
     ys.extend(&l.guides.y);
-    for e in l.elements.iter().filter(|e| e.id != moving && e.visible) {
-        xs.extend([e.x, e.x + e.w / 2.0, e.x + e.w]);
-        ys.extend([e.y, e.y + e.h / 2.0, e.y + e.h]);
+    for e in l.elements.iter().filter(|e| !moving.contains(&e.id) && e.visible) {
+        // A turned element by the box it covers.
+        let (x, y, w, h) = e.bounds();
+        xs.extend([x, x + w / 2.0, x + w]);
+        ys.extend([y, y + h / 2.0, y + h]);
     }
     (xs, ys)
 }
@@ -403,9 +490,19 @@ fn drag_landing(lv: &LayoutView, ui: &Ui, layout: &Layout, s: f32, at: (f64, f64
     };
     let e = layout.element(id)?;
     let free = lv.no_snap || ui.input(|i| i.modifiers.alt);
-    let lines = (!free).then(|| snap_lines(layout, id));
+    // Moved with others, it snaps to none of them.
+    let sel = lv.selection(layout);
+    let moving = if sel.contains(&id) { sel } else { vec![id] };
+    let lines = (!free).then(|| snap_lines(layout, &moving));
     let tol = f64::from(SNAP_PT / s.max(1e-3));
-    let (r, sx, sy) = landing((e.x, e.y, e.w, e.h), handle, (at.0 - start.0, at.1 - start.1), lines.as_ref().map(|l| (l, tol)));
+    let d = (at.0 - start.0, at.1 - start.1);
+    if handle.is_none() {
+        // Moved, it snaps by the box it covers, turned or not.
+        let b = e.bounds();
+        let (r, sx, sy) = landing(b, None, d, lines.as_ref().map(|l| (l, tol)));
+        return Some((id, (e.x + r.0 - b.0, e.y + r.1 - b.1, e.w, e.h), sx, sy));
+    }
+    let (r, sx, sy) = landing((e.x, e.y, e.w, e.h), handle, d, lines.as_ref().map(|l| (l, tol)));
     Some((id, r, sx, sy))
 }
 
@@ -572,6 +669,19 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
     painter.rect_filled(area, 0.0, if t.dark { Color32::from_gray(38) } else { Color32::from_rgb(0xD9, 0xDD, 0xE3) });
     let (page, s) = page_rect(&app.layout, area, &layout);
     interact(app, ui, &resp, &layout, li, page, s);
+    // Right-click: what the element under the pointer, and the others selected with it, can do.
+    // An element not selected is selected first.
+    if resp.secondary_clicked()
+        && let Some(pos) = resp.interact_pointer_pos()
+    {
+        let (x, y) = to_mm(page, s, pos);
+        match layout.hit(x, y) {
+            Some(id) if !app.layout.selection(&layout).contains(&id) => app.layout.select(&layout, Some(id)),
+            None => app.layout.select(&layout, None),
+            _ => {}
+        }
+    }
+    resp.context_menu(|ui| element_menu(app, ui, &layout, li));
     // The properties or a drag may have just changed the layout: draw the page as it is now,
     // or the texture would be keyed to the new revision but show the old layout (#325).
     let Some(layout) = shown_layout(app, li) else { return };
@@ -687,7 +797,7 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
     }
     // The dragged element's outline where it will land, and the lines it snapped to.
     if let Some(p) = pointer
-        && let Some((_, r, sx, sy)) = drag_landing(&app.layout, ui, &layout, s, to_mm(page, s, p))
+        && let Some((id, r, sx, sy)) = drag_landing(&app.layout, ui, &layout, s, to_mm(page, s, p))
     {
         if let Some(x) = sx {
             vline(to_screen(page, s, (x, 0.0)).x, SNAP_COLOR);
@@ -695,56 +805,105 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
         if let Some(y) = sy {
             hline(to_screen(page, s, (0.0, y)).y, SNAP_COLOR);
         }
-        let rr = Rect::from_min_max(to_screen(page, s, (r.0, r.1)), to_screen(page, s, (r.0 + r.2, r.1 + r.3)));
-        painter.rect_stroke(rr, 0.0, Stroke::new(1.5, accent), egui::StrokeKind::Middle);
+        // Where it lands, and the others moved with it, turned as they are.
+        let moved = match app.layout.drag {
+            Some(Drag::Move(..)) => {
+                let sel = app.layout.selection(&layout);
+                let others = if sel.contains(&id) { sel } else { vec![id] };
+                let (dx, dy) = layout.element(id).map_or((0.0, 0.0), |e| (r.0 - e.x, r.1 - e.y));
+                others.iter().filter_map(|o| layout.element(*o)).map(|e| (e.clone(), dx, dy)).collect()
+            }
+            _ => Vec::new(),
+        };
+        if moved.is_empty() {
+            let rr = Rect::from_min_max(to_screen(page, s, (r.0, r.1)), to_screen(page, s, (r.0 + r.2, r.1 + r.3)));
+            painter.rect_stroke(rr, 0.0, Stroke::new(1.5, accent), egui::StrokeKind::Middle);
+        }
+        for (mut e, dx, dy) in moved {
+            e.x += dx;
+            e.y += dy;
+            let k = screen_corners(page, s, &e, None);
+            painter.add(egui::Shape::closed_line(k.to_vec(), Stroke::new(1.5, accent)));
+        }
     }
-    if let Some(e) = app.layout.selected.and_then(|id| layout.element(id)) {
+    let sel = app.layout.selection(&layout);
+    let one = sel.len() == 1;
+    for (i, e) in sel.iter().filter_map(|id| layout.element(*id)).enumerate() {
+        let k = screen_corners(page, s, e, None);
         let r = Rect::from_min_max(to_screen(page, s, (e.x, e.y)), to_screen(page, s, (e.x + e.w, e.y + e.h)));
+        // The one picked first a little bolder: sizing alike goes by it.
         painter.extend(egui::Shape::dashed_line(
-            &[r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()],
-            Stroke::new(1.2, accent),
+            &[k[0], k[1], k[2], k[3], k[0]],
+            Stroke::new(if i == 0 { 1.6 } else { 1.0 }, accent),
             5.0,
             3.0,
         ));
-        // The handle under the pointer, or being dragged, is filled.
-        let active = match app.layout.drag {
-            Some(Drag::Resize(id, h, _)) if id == e.id => Some(h),
-            None => pointer.and_then(|p| handle_at(app, &layout, page, s, p)).map(|(_, h)| h),
-            _ => None,
-        };
         if e.locked {
             // No handles: a lock at the top-right corner says why.
-            crate::icons::paint(&painter, Rect::from_center_size(r.right_top(), vec2(16.0, 16.0)), "lock", accent, accent);
-        } else {
-            for (i, h) in handles(r).into_iter().enumerate() {
-                let hr = Rect::from_center_size(h, vec2(HANDLE, HANDLE));
-                painter.rect_filled(hr, 2.0, if active == Some(i) { accent } else { Color32::WHITE });
-                painter.rect_stroke(hr, 2.0, Stroke::new(1.5, accent), egui::StrokeKind::Middle);
+            crate::icons::paint(&painter, Rect::from_center_size(k[1], vec2(16.0, 16.0)), "lock", accent, accent);
+        } else if one {
+            // The handle under the pointer, or being dragged, is filled. A turned element has
+            // none: it is sized in the Format pane.
+            let active = match app.layout.drag {
+                Some(Drag::Resize(id, h, _)) if id == e.id => Some(h),
+                None => pointer.and_then(|p| handle_at(app, &layout, page, s, p)).map(|(_, h)| h),
+                _ => None,
+            };
+            if e.rotation == 0.0 || !e.kind.turns() {
+                for (i, h) in handles(r).into_iter().enumerate() {
+                    let hr = Rect::from_center_size(h, vec2(HANDLE, HANDLE));
+                    painter.rect_filled(hr, 2.0, if active == Some(i) { accent } else { Color32::WHITE });
+                    painter.rect_stroke(hr, 2.0, Stroke::new(1.5, accent), egui::StrokeKind::Middle);
+                }
             }
-            // A line's rotation handle: a round knob on a stem above it, filled while it's under
-            // the pointer or turning.
-            if let Some((_, knob, _)) = rotate_handle(app, &layout, page, s) {
+            // The rotation handle: a round knob on a stem above it, filled while it's under the
+            // pointer or turning.
+            if let Some((_, knob, c)) = rotate_handle(app, &layout, page, s) {
                 let on = matches!(app.layout.drag, Some(Drag::Rotate(..)))
                     || (app.layout.drag.is_none() && pointer.is_some_and(|p| rotate_at(app, &layout, page, s, p).is_some()));
-                painter.line_segment([pos2(r.center().x, r.top()), knob], Stroke::new(1.2, accent));
+                let up = (knob - c).normalized();
+                painter.line_segment([knob - up * ROTATE_GAP, knob], Stroke::new(1.2, accent));
                 painter.circle(knob, HANDLE * 0.6, if on { accent } else { Color32::WHITE }, Stroke::new(1.5, accent));
             }
         }
-        painter.text(r.left_top() + vec2(0.0, -4.0), Align2::LEFT_BOTTOM, &e.name, regular(11.0), accent);
+        if i == 0 {
+            let label = if one {
+                e.name.clone()
+            } else {
+                crate::i18n::fmt("{name} and {n} more", &[("name", &e.name), ("n", &(sel.len() - 1).to_string())])
+            };
+            let top = k.iter().fold(k[0], |a, p| if p.y < a.y { *p } else { a });
+            painter.text(
+                pos2(k.iter().map(|p| p.x).fold(f32::MAX, f32::min), top.y - 4.0),
+                Align2::LEFT_BOTTOM,
+                label,
+                regular(11.0),
+                accent,
+            );
+        }
     }
-    // A line being turned: where it will point, and its angle.
+    // An element being turned: where it will point, and its angle.
     if let (Some(Drag::Rotate(id, a0, from)), Some(p)) = (app.layout.drag, pointer)
         && let Some(e) = layout.element(id)
-        && let ElementKind::Line { dir, .. } = e.kind
     {
-        let r = Rect::from_min_max(to_screen(page, s, (e.x, e.y)), to_screen(page, s, (e.x + e.w, e.y + e.h)));
-        let c = r.center();
+        let c = to_screen(page, s, e.center());
         let a = turned(a0, from, screen_angle(c, p), ui.input(|i| i.modifiers.shift));
-        let half = (line_length((e.x, e.y, e.w, e.h), dir) * f64::from(s) / 2.0) as f32;
-        let u = vec2(a.to_radians().cos() as f32, -(a.to_radians().sin() as f32));
-        painter.line_segment([c - u * half, c + u * half], Stroke::new(2.0, accent));
-        painter.circle_filled(c + u * half, 3.5, accent);
+        if let ElementKind::Line { dir, .. } = e.kind {
+            let half = (line_length((e.x, e.y, e.w, e.h), dir) * f64::from(s) / 2.0) as f32;
+            let u = vec2(a.to_radians().cos() as f32, -(a.to_radians().sin() as f32));
+            painter.line_segment([c - u * half, c + u * half], Stroke::new(2.0, accent));
+            painter.circle_filled(c + u * half, 3.5, accent);
+        } else {
+            let k = screen_corners(page, s, e, Some(a));
+            painter.add(egui::Shape::closed_line(k.to_vec(), Stroke::new(2.0, accent)));
+        }
         painter.text(p + vec2(12.0, 12.0), Align2::LEFT_TOP, format!("{a:.0}°"), semibold(12.0), accent);
+    }
+    // A box being dragged out to select what's inside it.
+    if let (Some(Drag::Marquee(start, _)), Some(p)) = (app.layout.drag, pointer) {
+        let r = Rect::from_two_pos(to_screen(page, s, start), p);
+        painter.rect_filled(r, 0.0, accent.gamma_multiply(0.08));
+        painter.rect_stroke(r, 0.0, Stroke::new(1.0, accent), egui::StrokeKind::Middle);
     }
     // A frame being drawn.
     if app.layout.tool.is_some() && !app.layout.sketch.is_empty() {
@@ -975,7 +1134,14 @@ fn interact(app: &mut RustGisApp, ui: &mut Ui, resp: &egui::Response, layout: &L
                 && rotate_at(app, layout, page, s, pos).is_none()
         })
     {
-        app.layout.selected = layout.hit(p.0, p.1);
+        // Shift or Ctrl (⌘) adds the element clicked to the selection, or takes it out; a plain
+        // click selects it alone (its group with it), or nothing.
+        let adding = ui.input(|i| i.modifiers.shift || i.modifiers.command);
+        match layout.hit(p.0, p.1) {
+            Some(id) if adding => app.layout.toggle(layout, id),
+            None if adding => {}
+            hit => app.layout.select(layout, hit),
+        }
         // A click on the element already selected brings back the pane closed over it.
         if app.layout.selected.is_some_and(|id| app.layout.formatted == Some((li, id))) {
             app.ui.open_right(crate::RightPane::Format);
@@ -1001,10 +1167,15 @@ fn interact(app: &mut RustGisApp, ui: &mut Ui, resp: &egui::Response, layout: &L
         let handle = handle_at(app, layout, page, s, origin);
         let ruler = ruler_at(&app.layout, resp.rect, origin);
         let guide = guide_at(layout, page, s, origin);
-        // A line's rotation knob, outside its box, comes before anything under it.
+        // The rotation knob, outside the element's box, comes before anything under it.
         let rotate = ruler.is_none().then(|| rotate_at(app, layout, page, s, origin)).flatten();
+        // Ctrl (⌘) drags out a box selecting what's inside it, Shift as well adding to the
+        // selection.
+        let (command, adding) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
         app.layout.drag = if let Some((id, c)) = rotate {
             element_angle(layout, id).map(|a| Drag::Rotate(id, a, screen_angle(c, origin)))
+        } else if command && ruler.is_none() && handle.is_none() && app.layout.tool.is_none() {
+            Some(Drag::Marquee(p, adding))
         } else {
             match (ruler, handle, guide, layout.hit(p.0, p.1)) {
                 (Some(vertical), ..) => Some(Drag::NewGuide(vertical)),
@@ -1012,17 +1183,20 @@ fn interact(app: &mut RustGisApp, ui: &mut Ui, resp: &egui::Response, layout: &L
                 (None, None, Some((vertical, i)), _) => Some(Drag::Guide(vertical, i)),
                 // A locked element is selected and stays put, its map too.
                 (None, None, None, Some(id)) if locked(layout, id) => {
-                    app.layout.selected = Some(id);
+                    app.layout.select(layout, Some(id));
                     None
                 }
                 (None, None, None, Some(id))
                     if shift && matches!(layout.element(id).map(|e| &e.kind), Some(ElementKind::MapFrame { .. })) =>
                 {
-                    app.layout.selected = Some(id);
+                    app.layout.select(layout, Some(id));
                     Some(Drag::PanFrame(id, p))
                 }
                 (None, None, None, Some(id)) => {
-                    app.layout.selected = Some(id);
+                    // Dragging one of the selection moves it all; another is selected first.
+                    if !app.layout.selection(layout).contains(&id) {
+                        app.layout.select(layout, Some(id));
+                    }
                     Some(Drag::Move(id, p))
                 }
                 (None, None, None, None) => Some(Drag::Pan),
@@ -1040,8 +1214,35 @@ fn interact(app: &mut RustGisApp, ui: &mut Ui, resp: &egui::Response, layout: &L
                 if ((end.0 - start.0).abs() > 0.2 || (end.1 - start.1).abs() > 0.2)
                     && let Some((id, (x, y, _, _), _, _)) = drag_landing(&app.layout, ui, layout, s, end)
                 {
-                    let _ = app.run("layout.update", json!({"layout": li, "element": id, "x": x, "y": y}));
+                    // With others selected (or in its group), they all move, in one step.
+                    let sel = app.layout.selection(layout);
+                    if sel.len() > 1
+                        && sel.contains(&id)
+                        && let Some(e) = layout.element(id)
+                    {
+                        let _ = app.run("layout.moveElements", json!({"layout": li, "elements": sel, "dx": x - e.x, "dy": y - e.y}));
+                    } else {
+                        let _ = app.run("layout.update", json!({"layout": li, "element": id, "x": x, "y": y}));
+                    }
                 }
+            }
+            (Some(Drag::Marquee(start, adding)), Some(end)) => {
+                // What lies wholly inside the box.
+                let (x0, x1) = (start.0.min(end.0), start.0.max(end.0));
+                let (y0, y1) = (start.1.min(end.1), start.1.max(end.1));
+                let inside: Vec<u32> = layout
+                    .elements
+                    .iter()
+                    .filter(|e| e.visible)
+                    .filter(|e| {
+                        let (x, y, w, h) = e.bounds();
+                        x >= x0 && y >= y0 && x + w <= x1 && y + h <= y1
+                    })
+                    .map(|e| e.id)
+                    .collect();
+                let mut ids = if adding { app.layout.selection(layout) } else { Vec::new() };
+                ids.extend(inside.iter().filter(|id| !ids.contains(id)).copied().collect::<Vec<_>>());
+                app.layout.select_all(layout, &ids);
             }
             (Some(Drag::Resize(..)), Some(end)) => {
                 if let Some((id, (x, y, w, hh), _, _)) = drag_landing(&app.layout, ui, layout, s, end) {
@@ -1062,7 +1263,9 @@ fn interact(app: &mut RustGisApp, ui: &mut Ui, resp: &egui::Response, layout: &L
                     let c = Rect::from_min_max(to_screen(page, s, (e.x, e.y)), to_screen(page, s, (e.x + e.w, e.y + e.h))).center();
                     let a = turned(a0, from, screen_angle(c, at), ui.input(|i| i.modifiers.shift));
                     if (a - a0).abs() > 0.05 {
-                        let _ = app.run("layout.update", json!({"layout": li, "element": id, "angle": a}));
+                        // A line turns by its direction, any other element by its rotation.
+                        let key = if e.kind.turns() { "rotation" } else { "angle" };
+                        let _ = app.run("layout.update", json!({"layout": li, "element": id, key: a}));
                     }
                 }
             }
@@ -1411,6 +1614,15 @@ pub fn format(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     let on_screen = app.session.active_layout.filter(|_| !app.mb.shown());
     let layout = on_screen.and_then(|li| Some((li, shown_layout(app, li)?)));
     let selected = layout.as_ref().and_then(|(li, l)| Some((*li, app.layout.selected.filter(|id| l.element(*id).is_some())?)));
+    // More than one selected: what they can do together.
+    if let Some((li, l)) = layout.as_ref()
+        && app.layout.selection(l).len() > 1
+    {
+        let (li, l) = (*li, l.clone());
+        app.layout.drawn = selected;
+        many(app, ui, &l, li);
+        return;
+    }
     match (layout, selected) {
         (Some((li, layout)), Some(drawn)) => {
             app.layout.drawn = Some(drawn);
@@ -1465,6 +1677,21 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                     let r = ui.add(egui::DragValue::new(&mut val).speed(0.5).max_decimals(1)).labelled_by(input_label.id);
                     if drag.settled(ui, &r, &mut val) && (val - v).abs() > 1e-6 {
                         update(app, json!({key: val}));
+                    }
+                    ui.end_row();
+                }
+                // Turned about its centre; a line turns by its angle, below.
+                if e.kind.turns() {
+                    let input_label = ui.label(tl!("Rotation (°)"));
+                    let v = e.rotation;
+                    let mut val = v;
+                    let drag = Dragged::lend(ui, drag_key("rotation"), &mut val);
+                    let r = ui
+                        .add(egui::DragValue::new(&mut val).speed(1.0).range(-180.0..=180.0).max_decimals(1))
+                        .labelled_by(input_label.id)
+                        .on_hover_text(tl!("Degrees anticlockwise about its centre; or drag its round handle"));
+                    if drag.settled(ui, &r, &mut val) && (val - v).abs() > 1e-6 {
+                        update(app, json!({"rotation": val}));
                     }
                     ui.end_row();
                 }
@@ -1937,6 +2164,15 @@ fn element_actions(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize
             app.layout.selected = None;
         }
     });
+    // Lined up with the page.
+    let locked_now = layout.element(id).is_some_and(|e| e.locked);
+    ui.add_enabled_ui(!locked_now, |ui| align_buttons(app, ui, li, &[id], tl!("Align to the page")));
+    if layout.element(id).is_some_and(|e| e.group.is_some()) {
+        // A grouped element is picked with its group; this takes it out.
+        if ui.button(tl!("Ungroup")).on_hover_text(tl!("Take the group apart (Ctrl+Shift+G)")).clicked() {
+            let _ = app.run("layout.ungroup", json!({"layout": li, "elements": [id]}));
+        }
+    }
     // The drawing order: a legend brought to the front is drawn over the map frame under it.
     // A step it can't take (already on top, or at the bottom) is greyed, as is a locked element.
     let Some((at, n)) = layout.draw_order(id) else { return };
@@ -1958,6 +2194,187 @@ fn element_actions(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize
             }
         }
     });
+}
+
+/// The align buttons for `ids`: lined up by the box around them, or one by the page; spaced and
+/// sized alike when there are enough of them.
+fn align_buttons(app: &mut RustGisApp, ui: &mut Ui, li: usize, ids: &[u32], heading: &str) {
+    use rustgis_engine::map::layout::Align;
+    ui.add_space(6.0);
+    ui.label(egui::RichText::new(heading).font(semibold(12.0)));
+    let rows: [&[(Align, &str, &str)]; 3] = [
+        &[
+            (Align::Left, "⇤", "Line up the left edges"),
+            (Align::Center, "↔", "Line up the centres, across"),
+            (Align::Right, "⇥", "Line up the right edges"),
+            (Align::Top, "⤒", "Line up the top edges"),
+            (Align::Middle, "↕", "Line up the middles, down"),
+            (Align::Bottom, "⤓", "Line up the bottom edges"),
+        ],
+        &[
+            (Align::DistributeH, "", "The same space between each, left to right (three or more)"),
+            (Align::DistributeV, "", "The same space between each, top to bottom (three or more)"),
+        ],
+        &[
+            (Align::SameWidth, "", "As wide as the one picked first"),
+            (Align::SameHeight, "", "As high as the one picked first"),
+            (Align::SameSize, "", "As large as the one picked first"),
+        ],
+    ];
+    for (i, row) in rows.iter().enumerate() {
+        if i > 0 && ids.len() < 2 {
+            break;
+        }
+        ui.horizontal_wrapped(|ui| {
+            for (how, symbol, tip) in row.iter() {
+                let text = if symbol.is_empty() { tl!(how.label()).to_string() } else { format!("{symbol} {}", tl!(how.label())) };
+                let enough = ids.len() >= how.least();
+                if ui.add_enabled(enough, egui::Button::new(text)).on_hover_text(tl!(tip)).clicked() {
+                    let _ = app.run("layout.align", json!({"layout": li, "elements": ids, "to": how.code()}));
+                }
+            }
+        });
+    }
+}
+
+/// The Format pane for several elements: lining them up, spacing and sizing them alike,
+/// grouping, copying and deleting them together.
+fn many(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
+    let ids = app.layout.selection(layout);
+    let heading = crate::i18n::fmt("Layout: {n} elements", &[("n", &ids.len().to_string())]);
+    ui.label(egui::RichText::new(heading).font(semibold(14.0)));
+    ui.label(
+        egui::RichText::new(tl!("Shift- or Ctrl-click adds or takes one away; Ctrl-drag selects those inside a box."))
+            .small()
+            .color(ui.visuals().weak_text_color()),
+    );
+    ui.separator();
+    let locked = ids.iter().filter_map(|id| layout.element(*id)).any(|e| e.locked);
+    if locked {
+        ui.label(egui::RichText::new(tl!("One of them is locked: unlock it to move them together.")).color(ui.visuals().warn_fg_color));
+    }
+    ui.add_enabled_ui(!locked, |ui| {
+        align_buttons(app, ui, li, &ids, tl!("Align"));
+        if ui.button(tl!("Align to the page")).on_hover_text(tl!("Centre them all on the page, across and down")).clicked() {
+            let _ = app.run("layout.align", json!({"layout": li, "elements": ids, "to": "center", "page": true}));
+            let _ = app.run("layout.align", json!({"layout": li, "elements": ids, "to": "middle", "page": true}));
+        }
+    });
+    ui.add_space(8.0);
+    let grouped = ids.iter().filter_map(|id| layout.element(*id)?.group).collect::<std::collections::HashSet<_>>();
+    let all_one = grouped.len() == 1 && ids.iter().all(|id| layout.element(*id).is_some_and(|e| e.group.is_some()));
+    ui.horizontal_wrapped(|ui| {
+        if ui.add_enabled(!all_one, egui::Button::new(tl!("Group"))).on_hover_text(tl!("Pick and move them as one (Ctrl+G)")).clicked() {
+            let _ = app.run("layout.group", json!({"layout": li, "elements": ids}));
+        }
+        if ui
+            .add_enabled(!grouped.is_empty(), egui::Button::new(tl!("Ungroup")))
+            .on_hover_text(tl!("Take the group apart (Ctrl+Shift+G)"))
+            .clicked()
+        {
+            let _ = app.run("layout.ungroup", json!({"layout": li, "elements": ids}));
+            // Still selected, each now on its own.
+            app.layout.select_all(layout, &ids);
+        }
+        if ui.button(tl!("Copy")).on_hover_text(tl!("Copy them, to paste here or in another layout (Ctrl+C, Ctrl+V)")).clicked() {
+            copy_selection(app, li, &ids);
+        }
+        if ui.button(tl!("Duplicate")).on_hover_text(tl!("Copy them (Ctrl+D, ⌘D on a Mac)")).clicked() {
+            duplicate_selection(app, li, &ids);
+        }
+        let can_delete = ids.iter().all(|id| layout.locked_in_removal(*id).is_none());
+        if ui
+            .add_enabled(can_delete, egui::Button::new(tl!("Delete Elements")))
+            .on_hover_text(tl!("Delete (or Backspace)"))
+            .on_disabled_hover_text(locked_delete())
+            .clicked()
+            && app.run("layout.removeElements", json!({"layout": li, "elements": ids})).is_ok()
+        {
+            app.layout.select(layout, None);
+        }
+    });
+}
+
+/// The right-click menu on the page: the selected elements' copy, paste, group, order and
+/// delete.
+fn element_menu(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
+    let ids = app.layout.selection(layout);
+    if ids.is_empty() {
+        ui.label(egui::RichText::new(tl!("Right-click an element for what it can do; paste with Ctrl+V.")).small());
+        return;
+    }
+    let locked = ids.iter().any(|id| layout.locked_in_removal(*id).is_some());
+    if ui.button(tl!("Copy")).on_hover_text("Ctrl+C").clicked() {
+        copy_selection(app, li, &ids);
+        ui.close();
+    }
+    if ui.add_enabled(!locked, egui::Button::new(tl!("Cut"))).on_hover_text("Ctrl+X").clicked() {
+        if copy_selection(app, li, &ids) && app.run("layout.removeElements", json!({"layout": li, "elements": ids})).is_ok() {
+            app.layout.select(layout, None);
+        }
+        ui.close();
+    }
+    if ui.button(tl!("Duplicate")).on_hover_text("Ctrl+D").clicked() {
+        duplicate_selection(app, li, &ids);
+        ui.close();
+    }
+    ui.separator();
+    let grouped = ids.iter().any(|id| layout.element(*id).is_some_and(|e| e.group.is_some()));
+    if ids.len() > 1 && ui.button(tl!("Group")).on_hover_text("Ctrl+G").clicked() {
+        let _ = app.run("layout.group", json!({"layout": li, "elements": ids}));
+        ui.close();
+    }
+    if grouped && ui.button(tl!("Ungroup")).on_hover_text("Ctrl+Shift+G").clicked() {
+        let _ = app.run("layout.ungroup", json!({"layout": li, "elements": ids}));
+        app.layout.select_all(layout, &ids);
+        ui.close();
+    }
+    if let [id] = ids.as_slice() {
+        ui.add_enabled_ui(!locked, |ui| {
+            for to in [Arrange::Front, Arrange::Back] {
+                if ui.button(tl!(to.label())).clicked() {
+                    let _ = app.run("layout.arrange", json!({"layout": li, "element": id, "to": to.code()}));
+                    ui.close();
+                }
+            }
+        });
+    }
+    ui.separator();
+    let delete = if ids.len() > 1 { "Delete Elements" } else { "Delete Element" };
+    if ui.add_enabled(!locked, egui::Button::new(tl!(delete))).on_hover_text("Delete").on_disabled_hover_text(locked_delete()).clicked() {
+        if app.run("layout.removeElements", json!({"layout": li, "elements": ids})).is_ok() {
+            app.layout.select(layout, None);
+        }
+        ui.close();
+    }
+}
+
+/// Puts the elements on the clipboard, as text `layout.paste` takes, here or in another layout.
+pub(crate) fn copy_selection(app: &mut RustGisApp, li: usize, ids: &[u32]) -> bool {
+    match app.run("layout.copyElements", json!({"layout": li, "elements": ids})) {
+        Ok(v) => {
+            app.ui.copy_out = v["text"].as_str().map(str::to_string);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Copies of the elements 5 mm off, selected.
+pub(crate) fn duplicate_selection(app: &mut RustGisApp, li: usize, ids: &[u32]) {
+    let Ok(v) = app.run("layout.copyElements", json!({"layout": li, "elements": ids})) else { return };
+    let Some(text) = v["text"].as_str().map(str::to_string) else { return };
+    if let Ok(r) = app.run("layout.paste", json!({"layout": li, "text": text, "dx": 5, "dy": 5})) {
+        select_pasted(app, li, &r);
+    }
+}
+
+/// Selects what a paste added.
+pub(crate) fn select_pasted(app: &mut RustGisApp, li: usize, r: &Value) {
+    let ids: Vec<u32> = r["elements"].as_array().into_iter().flatten().filter_map(|v| u32::try_from(v.as_u64()?).ok()).collect();
+    if let Some(l) = app.session.project.layouts.get(li).cloned() {
+        app.layout.select_all(&l, &ids);
+    }
 }
 
 /// Why a locked element, or a frame with a locked surround, isn't deleted.
@@ -2414,6 +2831,166 @@ mod tests {
         h.event(key(Key::ArrowUp, Modifiers::NONE, false));
         h.step();
         assert_eq!(at(&h), (0.0, 0.0));
+    }
+
+    /// A harness drawing the layout view with the app's shortcuts, and the view's area.
+    fn view_harness(app: RustGisApp) -> (egui_kittest::Harness<'static, RustGisApp>, Rc<Cell<Rect>>) {
+        let area = Rc::new(Cell::new(Rect::NOTHING));
+        let shown = area.clone();
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1000.0, 760.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                let ctx = ui.ctx().clone();
+                crate::chrome::shortcuts(app, &ctx);
+                shown.set(ui.available_rect_before_wrap());
+                super::show(app, ui);
+            },
+            app,
+        );
+        h.run_steps(3);
+        (h, area)
+    }
+
+    /// A blank layout with three boxes, side by side: the app, the layout and their ids.
+    fn three_boxes() -> (RustGisApp, usize, [u32; 3]) {
+        let mut app = RustGisApp::with_sample();
+        app.run("layout.new", json!({"name": "Boxes", "template": "blank"})).unwrap();
+        let li = app.session.active_layout.unwrap();
+        let mut ids = [0; 3];
+        for (i, x) in [20.0, 80.0, 140.0].into_iter().enumerate() {
+            let r = app.run("layout.addElement", json!({"layout": li, "kind": "rectangle", "x": x, "y": 40, "w": 30, "h": 20})).unwrap();
+            ids[i] = r["element"].as_u64().unwrap() as u32;
+        }
+        (app, li, ids)
+    }
+
+    fn drag(h: &mut egui_kittest::Harness<'_, RustGisApp>, from: Pos2, to: Pos2, modifiers: Modifiers) {
+        let button = |pos: Pos2, pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers };
+        h.event(Event::PointerMoved(from));
+        h.step();
+        h.event(button(from, true));
+        h.step();
+        for i in 1..=6 {
+            h.event(Event::PointerMoved(from + (to - from) * i as f32 / 6.0));
+            h.step();
+        }
+        h.event(button(to, false));
+        h.step();
+    }
+
+    fn click(h: &mut egui_kittest::Harness<'_, RustGisApp>, at: Pos2, modifiers: Modifiers) {
+        h.event(Event::PointerMoved(at));
+        h.step();
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: true, modifiers });
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: false, modifiers });
+        h.step();
+        h.step();
+    }
+
+    /// Shift-clicking adds an element to the selection; dragging one of them moves both, in one
+    /// step to undo; a plain click selects one again.
+    #[test]
+    fn shift_click_selects_several_and_a_drag_moves_them_all() {
+        let (app, li, [a, b, c]) = three_boxes();
+        let (mut h, area) = view_harness(app);
+        let layout = h.state().session.project.layouts[li].clone();
+        let (page, s) = page_rect(&h.state().layout, area.get(), &layout);
+        let centre = |id: u32| to_screen(page, s, layout.element(id).unwrap().center());
+        click(&mut h, centre(a), Modifiers::NONE);
+        click(&mut h, centre(b), Modifiers::SHIFT);
+        assert_eq!(h.state().layout.selection(&layout), vec![a, b]);
+        let depth = h.state().session.undo_depth();
+        drag(&mut h, centre(b), centre(b) + vec2(0.0, 10.0 * s), Modifiers::NONE);
+        let l = &h.state().session.project.layouts[li];
+        let dy = |id: u32| l.element(id).unwrap().y - layout.element(id).unwrap().y;
+        assert!(dy(a) > 5.0 && (dy(a) - dy(b)).abs() < 1e-9, "both moved alike: {} {}", dy(a), dy(b));
+        assert_eq!(dy(c), 0.0, "the third stays");
+        assert_eq!(h.state().session.undo_depth(), depth + 1, "one step to undo");
+        // Shift-clicking a selected one takes it out; a plain click selects one alone.
+        click(&mut h, centre(a) + vec2(0.0, dy(a) as f32 * s), Modifiers::SHIFT);
+        let l = h.state().session.project.layouts[li].clone();
+        assert_eq!(h.state().layout.selection(&l), vec![b]);
+        click(&mut h, centre(c), Modifiers::NONE);
+        assert_eq!(h.state().layout.selection(&l), vec![c]);
+    }
+
+    /// Ctrl-dragging a box selects what lies wholly inside it; Ctrl+G groups them, and clicking
+    /// one then picks the group.
+    #[test]
+    fn a_box_selects_what_is_inside_and_ctrl_g_groups_it() {
+        let (app, li, [a, b, c]) = three_boxes();
+        let (mut h, area) = view_harness(app);
+        let layout = h.state().session.project.layouts[li].clone();
+        let (page, s) = page_rect(&h.state().layout, area.get(), &layout);
+        // From above-left of the first to below-right of the second, short of the third.
+        drag(&mut h, to_screen(page, s, (10.0, 30.0)), to_screen(page, s, (120.0, 70.0)), Modifiers::COMMAND);
+        assert_eq!(h.state().layout.selection(&layout), vec![a, b]);
+        h.event(Event::Key { key: Key::G, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND });
+        h.step();
+        let l = h.state().session.project.layouts[li].clone();
+        assert!(l.element(a).unwrap().group.is_some() && l.element(a).unwrap().group == l.element(b).unwrap().group);
+        click(&mut h, to_screen(page, s, l.element(c).unwrap().center()), Modifiers::NONE);
+        click(&mut h, to_screen(page, s, l.element(b).unwrap().center()), Modifiers::NONE);
+        assert_eq!(h.state().layout.selection(&l), vec![b, a], "the group comes with it");
+    }
+
+    /// Copying selected elements and pasting them adds copies 5 mm off, selected; in another
+    /// layout they land where they were.
+    #[test]
+    fn copied_elements_paste_here_and_in_another_layout() {
+        let (mut app, li, [a, b, _]) = three_boxes();
+        let layout = app.session.project.layouts[li].clone();
+        app.layout.select_all(&layout, &[a, b]);
+        let (mut h, _) = view_harness(app);
+        h.event(Event::Copy);
+        h.step();
+        let text = h.state_mut().ui.copy_out.take().expect("copied to the clipboard");
+        let n = h.state().session.project.layouts[li].elements.len();
+        h.event(Event::Paste(text.clone()));
+        h.step();
+        let l = h.state().session.project.layouts[li].clone();
+        assert_eq!(l.elements.len(), n + 2);
+        let sel = h.state().layout.selection(&l);
+        assert_eq!(sel.len(), 2, "the copies are selected");
+        let copy = l.element(sel[0]).unwrap();
+        assert_eq!((copy.x, copy.y), (layout.element(a).unwrap().x + 5.0, layout.element(a).unwrap().y + 5.0));
+        // Another layout: where they were.
+        h.state_mut().run("layout.new", json!({"name": "Other", "template": "blank"})).unwrap();
+        let other = h.state().session.active_layout.unwrap();
+        h.step();
+        h.event(Event::Paste(text));
+        h.step();
+        let l2 = &h.state().session.project.layouts[other];
+        assert_eq!(l2.elements.len(), 2);
+        assert_eq!((l2.elements[0].x, l2.elements[0].y), (layout.element(a).unwrap().x, layout.element(a).unwrap().y));
+    }
+
+    /// A rectangle turns by its round handle like a line: dragged from above its centre round to
+    /// its right, a quarter turn clockwise; its corners' handles go, as it's sized in the pane.
+    #[test]
+    fn a_rectangle_turns_by_its_rotation_handle() {
+        let (mut app, li, [a, _, _]) = three_boxes();
+        let layout = app.session.project.layouts[li].clone();
+        app.layout.select(&layout, Some(a));
+        let (mut h, area) = view_harness(app);
+        let (page, s) = page_rect(&h.state().layout, area.get(), &layout);
+        let (_, knob, c) = rotate_handle(h.state(), &layout, page, s).unwrap();
+        assert!(knob.y < c.y && (knob.x - c.x).abs() < 0.5, "above its centre");
+        drag(&mut h, knob, c + vec2((knob - c).length(), 0.0), Modifiers::NONE);
+        let l = h.state().session.project.layouts[li].clone();
+        let e = l.element(a).unwrap();
+        assert_eq!(e.rotation, -90.0);
+        assert_eq!(e.center(), layout.element(a).unwrap().center(), "about its centre");
+        // Turned, it has no resize handles, and the knob turns with it, to its right.
+        let corner = to_screen(page, s, (e.x, e.y));
+        assert!(super::handle_at(h.state(), &l, page, s, corner).is_none());
+        let (_, knob, c) = rotate_handle(h.state(), &l, page, s).unwrap();
+        assert!(knob.x > c.x && (knob.y - c.y).abs() < 0.5);
     }
 
     /// The selected element's Bring to Front and Send to Back buttons move it in the drawing

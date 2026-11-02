@@ -522,7 +522,7 @@ pub fn shortcuts(app: &mut RustGisApp, ctx: &egui::Context) {
             }
             // Duplicating needs a selected layout element, and not a text field being typed in;
             // otherwise the key is left alone.
-            if b.command == "layout.duplicateElement" && (!element || typing) {
+            if matches!(b.command.as_str(), "layout.duplicateElement" | "layout.group" | "layout.ungroup") && (!element || typing) {
                 continue;
             }
             // With a layout element selected, the arrows nudge it (below), whatever else they run;
@@ -574,6 +574,17 @@ pub fn shortcuts(app: &mut RustGisApp, ctx: &egui::Context) {
         // taps close together, are one step to undo.
         if id == "ui.layoutNudge" {
             let (dx, dy) = (p["dx"].as_f64().unwrap_or(0.0), p["dy"].as_f64().unwrap_or(0.0));
+            // Several selected (or a group) move together, unless one of them is locked.
+            if let Some((li, sel)) = layout_selection(app).filter(|(_, sel)| sel.len() > 1) {
+                let free =
+                    app.session.project.layouts.get(li).is_some_and(|l| sel.iter().all(|id| l.element(*id).is_some_and(|e| !e.locked)));
+                if free {
+                    let key = app.layout.nudge_key(li, sel[0], ctx.input(|i| i.time));
+                    app.session.merge_undo(key);
+                    let _ = app.run("layout.moveElements", json!({"layout": li, "elements": sel, "dx": dx, "dy": dy}));
+                }
+                continue;
+            }
             if let (Some(li), Some(el)) = (app.session.active_layout, app.layout.selected)
                 && let Some((x, y)) =
                     app.session.project.layouts.get(li).and_then(|l| l.element(el)).filter(|e| !e.locked).map(|e| (e.x + dx, e.y + dy))
@@ -582,6 +593,23 @@ pub fn shortcuts(app: &mut RustGisApp, ctx: &egui::Context) {
                 app.session.merge_undo(key);
                 let _ = app.run("layout.update", json!({"layout": li, "element": el, "x": x, "y": y}));
             }
+            continue;
+        }
+        // Ctrl+G groups the selected layout elements, Ctrl+Shift+G takes their groups apart.
+        if matches!(id, "layout.group" | "layout.ungroup") {
+            if let Some((li, sel)) = layout_selection(app) {
+                let _ = app.run(id, json!({"layout": li, "elements": sel}));
+                if let Some(l) = app.session.project.layouts.get(li).cloned() {
+                    app.layout.select_all(&l, &sel);
+                }
+            }
+            continue;
+        }
+        // Several selected are duplicated together, and the copies selected.
+        if id == "layout.duplicateElement"
+            && let Some((li, sel)) = layout_selection(app).filter(|(_, sel)| sel.len() > 1)
+        {
+            crate::layoutview::duplicate_selection(app, li, &sel);
             continue;
         }
         // Ctrl+D (Cmd+D on a Mac) duplicates the selected layout element and selects the copy.
@@ -599,6 +627,47 @@ pub fn shortcuts(app: &mut RustGisApp, ctx: &egui::Context) {
             && app.session.tool == rustgis_engine::Tool::EditVertices
             && crate::vertexedit::delete_chosen(app)
         {
+            continue;
+        }
+        // Several selected (or a group) are deleted together, unless one of them is locked.
+        if id == "edit.delete"
+            && let Some((li, sel)) = layout_selection(app).filter(|(_, sel)| sel.len() > 1)
+        {
+            let kept = app.session.project.layouts.get(li).is_some_and(|l| sel.iter().any(|id| l.locked_in_removal(*id).is_some()));
+            if kept {
+                let text = crate::i18n::fmt(
+                    "{command}: {reason}",
+                    &[("command", tl_raw!("Delete Elements")), ("reason", crate::layoutview::locked_delete())],
+                );
+                if !app.map.toasts.iter().any(|t| t.text == text) {
+                    app.session.notify(text, true);
+                }
+            } else if app.run("layout.removeElements", json!({"layout": li, "elements": sel})).is_ok() {
+                app.layout.selected = None;
+            }
+            continue;
+        }
+        // Copy and cut in a layout take its selected elements, as text another layout can paste.
+        if matches!(id, "ui.copy" | "ui.cut")
+            && let Some((li, sel)) = layout_selection(app)
+        {
+            if crate::layoutview::copy_selection(app, li, &sel) && id == "ui.cut" {
+                let locked = app.session.project.layouts.get(li).is_some_and(|l| sel.iter().any(|id| l.locked_in_removal(*id).is_some()));
+                if !locked && app.run("layout.removeElements", json!({"layout": li, "elements": sel})).is_ok() {
+                    app.layout.selected = None;
+                }
+            }
+            continue;
+        }
+        // Copied layout elements paste into the open layout, selected.
+        if id == "edit.paste"
+            && let Some(li) = app.session.active_layout
+            && p.get("text").and_then(Value::as_str).is_some_and(rustgis_engine::cmd::layout::is_layout_clipboard)
+        {
+            let text = p["text"].as_str().unwrap_or_default().to_string();
+            if let Ok(r) = app.run("layout.paste", json!({"layout": li, "text": text})) {
+                crate::layoutview::select_pasted(app, li, &r);
+            }
             continue;
         }
         // In a layout, Delete removes the selected element (and never the map's hidden features).
@@ -1459,4 +1528,11 @@ mod tests {
             assert_eq!(app.ui.connection.kind, kind);
         }
     }
+}
+
+/// The open layout and its selected elements, when any are selected.
+fn layout_selection(app: &RustGisApp) -> Option<(usize, Vec<u32>)> {
+    let li = app.session.active_layout?;
+    let sel = app.layout.selection(app.session.project.layouts.get(li)?);
+    (!sel.is_empty()).then_some((li, sel))
 }

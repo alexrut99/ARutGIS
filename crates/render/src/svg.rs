@@ -35,6 +35,13 @@ pub fn layout_svg(layout: &Layout, maps: &mut [Map], dpi: f64, info: &PageInfo) 
     for e in layout.elements.iter().filter(|e| e.visible) {
         let _ = writeln!(s, r#"<g id="element-{}" inkscape:label="{}" inkscape:groupmode="layer">"#, e.id, esc(&e.name));
         let (x, y, w, h) = (e.x, e.y, e.w, e.h);
+        // Text and shapes written as SVG turn as a group; pictures are drawn turned already.
+        let turned =
+            e.rotation != 0.0 && matches!(e.kind, ElementKind::Text { .. } | ElementKind::Rectangle { .. } | ElementKind::Ellipse { .. });
+        if turned {
+            let (cx, cy) = e.center();
+            let _ = writeln!(s, r#"<g transform="rotate({} {} {})">"#, num(-e.rotation), num(cx), num(cy));
+        }
         match &e.kind {
             ElementKind::Text { text: t, size, color, bold, italic, align, letter_spacing, font, font_name } => {
                 let first = layout.first_frame().and_then(|id| layout.element(id)).and_then(|f| match &f.kind {
@@ -130,6 +137,9 @@ pub fn layout_svg(layout: &Layout, maps: &mut [Map], dpi: f64, info: &PageInfo) 
                     );
                 }
             }
+        }
+        if turned {
+            s.push_str("</g>\n");
         }
         s.push_str("</g>\n");
     }

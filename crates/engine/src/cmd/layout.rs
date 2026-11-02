@@ -6,9 +6,10 @@ use std::path::Path;
 use rustgis_geom::{Coord, Extent};
 use rustgis_map::Rgba;
 use rustgis_map::layout::{
-    Arrange, ArrowStyle, CoordFormat, ElementKind, FontFamily, FrameShape, Grid, GridEdges, GridKind, GridStyle, Guides, Layout, LineDir,
-    LineHead, MAX_COLORBAR_TICKS, MAX_GRID_WIDTH, MAX_GUIDES, MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_ELEMENT_MM, MapSeries, Orientation,
-    PAGES, ScaleBarStyle, ScaleUnits, TextAlign, TickSide, fit_scale, line_angle, line_at_angle, line_length,
+    Align, Arrange, ArrowStyle, CoordFormat, ElementKind, FontFamily, FrameShape, Grid, GridEdges, GridKind, GridStyle, Guides, Layout,
+    LineDir, LineHead, MAX_COLORBAR_TICKS, MAX_GRID_WIDTH, MAX_GUIDES, MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_ELEMENT_MM, MapSeries,
+    Orientation, PAGES, ScaleBarStyle, ScaleUnits, TextAlign, TickSide, fit_scale, line_angle, line_at_angle, line_length,
+    normalize_rotation,
 };
 use serde_json::{Value, json};
 
@@ -88,7 +89,7 @@ pub fn commands() -> Vec<C> {
             r##"{"layout"?, "kind": "northArrow"|"scaleBar"|"legend"|"colorbar"|"text"|"dynamicText"|"picture"|"table"|"chart"|"rectangle" (a neatline framing the page unless any of x, y, w, h is given)|"ellipse"|"circle"|"line"|"arrow"|"extentIndicator"|"grid", "frame"?: element id (default: the first map frame), "of"?: frame id (extentIndicator, which also takes "color" and "width" in points, default red and 2), "text"?, "size"?, "color"?: "#RRGGBB"|"#RRGGBBAA", "bold"?: bool (text), "italic"?: bool, "align"?: "left"|"center"|"right", "letterSpacing"?: points, -5 to 50 (text, dynamicText), "font"?: "sans"|"serif"|an installed font family's name, as labels.fonts lists them (text, dynamicText; a family not installed here is drawn in its fallback, and a serif where none is installed in the sans, with a warning; refused for other kinds), "fallback"?: "sans"|"serif" (a named font's, where it isn't installed; default its own class, else sans), "title"?: legend title (default "Legend"), "allClasses"?: bool (legend: every class, not only those the frame draws), "hideOther"?: bool (legend: leave out <all other values>), "exclude"?: [layer names] (legend: layers it leaves out though the map draws them), "orientation"?: "horizontal"|"vertical" (colorbar), "ticks"?: 2..21 (colorbar: labelled values, ends included), "tickSide"?: "below"|"above"|"right"|"left" (colorbar), "reverse"?: bool (colorbar: high values first), "fill"?: "#RRGGBBAA" (rectangle, ellipse, circle, northArrow), "width"?: outline width in points (rectangle, ellipse, circle; 0 for none) or line width in points (line, grid), "radius"?: mm, 0 to 50 (rectangle: rounded corners), "dir"?: "horizontal"|"vertical"|"falling"|"rising" (line), "head"?: "none"|"end"|"start"|"both" (line; default "end" for an arrow), "angle"?: degrees anticlockwise from pointing right, centred on the page unless x or y is given (line, arrow; it sets the box and the direction, so w, h and dir are not used with it), "length"?: mm (line, arrow), "image"?: base64, "path"?: picture file, "layer"?: (table, chart; colorbar: a raster layer, default the top visible one), "field"?, "label"?, "rows"?, "step"?: degrees, or a measured grid's units (metres) (0 picks one), "type"?: "graticule" (latitudes and longitudes, default) | "measured" (eastings and northings in a projected system, as ArcGIS Pro's measured grid), "crs"?: a measured grid's coordinate system: EPSG:25832, WKT or a PROJ string ("" or none: the map's when projected, else the UTM zone at the frame's centre), "short"?: bool (a measured grid's labels as their kilometres' last two digits, 43 for 543000), "outside"?: bool (grid: the labels outside the frame, as ArcGIS prints them; default inside it), "labels"?: bool, "style"?: "lines"|"ticks"|"linesAndTicks" (grid) or "classic"|"compass"|"triangle"|"star" (northArrow) or "alternating"|"stepped"|"line" (scaleBar), "tickLength"?: mm, "format"?: "decimal"|"dms", "hemisphere"?: bool (N/S/E/W rather than a sign), "edges"?: ["top","bottom","left","right"] (labelled edges), "labelOrientation"?: "horizontal"|"vertical", "off"?: bool (grid; options not given keep the grid's), "outline"?: "#RRGGBB" (northArrow), "units"?: "auto"|"kilometers"|"meters"|"miles"|"feet", "divisions"?: 1..10 (scaleBar), "x"?, "y"?, "w"?, "h"?: mm}"##,
         ),
         C::new("layout.update", "Element Properties", "Publish › Element", update).params(
-            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line), "bold"?, "italic"?, "align"?, "letterSpacing"?, "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "exclude"?: [layer names] (legend; [] lists every layer again), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse; for a rectangle or ellipse, color sets it when outline is not given), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"? (scaleBar), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster), "field"?, "rows"?}"##,
+            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line), "bold"?, "italic"?, "align"?, "letterSpacing"?, "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "exclude"?: [layer names] (legend; [] lists every layer again), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse; for a rectangle or ellipse, color sets it when outline is not given), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"? (scaleBar), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster), "field"?, "rows"?}"##,
         ),
         C::new("layout.guides", "Guides", "Publish › Page Setup", guides).params(
             r#"{"layout"?, "x"?: [mm] (vertical guides, from the page's left edge), "y"?: [mm] (horizontal guides, from its top edge), "clear"?: bool (remove every guide first)}"#,
@@ -99,6 +100,39 @@ pub fn commands() -> Vec<C> {
         C::new("layout.arrange", "Arrange Element", "Publish › Element", arrange).params(
             r#"{"layout"?, "element": id, "to": "front"|"forward"|"backward"|"back" (later elements are drawn over earlier ones: front puts it over every other, forward over the one above it, backward under the one below, back under every other)}"#,
         ),
+        C::new("layout.align", "Align Elements", "Publish › Element", align).params(
+            r#"{"layout"?, "elements": [ids] (grouped elements come with them), "to": "left"|"center"|"right"|"top"|"middle"|"bottom" (lined up by the box around them all, or the page for one) | "distributeHorizontally"|"distributeVertically" (three or more: the same space between each, the outer two staying) | "sameWidth"|"sameHeight"|"sameSize" (as the first), "page"?: bool (line up by the page, however many)}"#,
+        ),
+        C::new("layout.moveElements", "Move Elements", "Publish › Element", move_elements)
+            .params(r#"{"layout"?, "elements": [ids] (grouped elements come with them), "dx"?, "dy"?: mm}"#),
+        C::new("layout.removeElements", "Delete Elements", "Publish › Element", remove_elements)
+            .params(r#"{"layout"?, "elements": [ids] (grouped elements go with them; a frame's surrounds too)}"#),
+        C::new("layout.group", "Group Elements", "Publish › Element", |s, p| {
+            let ids = element_ids(p)?;
+            let l = active(s, p)?;
+            let ids = l.with_groups(&ids);
+            if ids.len() < 2 {
+                return Err("group two elements or more".into());
+            }
+            let g = l.group(&ids).ok_or("group two elements or more")?;
+            Ok(json!({"group": g, "elements": ids}))
+        })
+        .params(r#"{"layout"?, "elements": [ids] (two or more; the groups they are in are merged)}"#),
+        C::new("layout.ungroup", "Ungroup Elements", "Publish › Element", |s, p| {
+            let ids = element_ids(p)?;
+            let l = active(s, p)?;
+            let n = l.ungroup(&ids);
+            if n == 0 {
+                s.request_only = true;
+            }
+            Ok(json!({"ungrouped": n}))
+        })
+        .params(r#"{"layout"?, "elements": [ids] (their groups are taken apart)}"#),
+        C::new("layout.copyElements", "Copy Elements", "Publish › Element", copy_elements)
+            .view()
+            .params(r#"{"layout"?, "elements": [ids] (grouped elements come with them)} → {"text": what layout.paste takes}"#),
+        C::new("layout.paste", "Paste Elements", "Publish › Element", paste)
+            .params(r#"{"layout"?, "text": layout.copyElements' text, "dx"?, "dy"?: mm (default 5 into the layout copied from, else 0)}"#),
         C::new("layout.removeElement", "Delete Element", "Publish › Element", |s, p| {
             let id = element_id(p)?;
             let l = active(s, p)?;
@@ -208,6 +242,169 @@ fn arrange(s: &mut Session, p: &Value) -> CmdResult {
         s.request_only = true;
     }
     Ok(json!({"element": id, "index": index, "of": of}))
+}
+
+/// What [`copy_elements`] puts on the clipboard: elements, and the layout they came from.
+const CLIPBOARD_KEY: &str = "arutgisLayoutElements";
+/// Most elements one paste adds.
+const MAX_PASTE: usize = 500;
+
+/// The elements named by `elements`: a list of ids.
+fn element_ids(p: &Value) -> Result<Vec<u32>, String> {
+    let a = p.get("elements").and_then(Value::as_array).ok_or("elements is a list of element ids")?;
+    let ids: Vec<u32> = a
+        .iter()
+        .map(|v| v.as_u64().and_then(|v| u32::try_from(v).ok()))
+        .collect::<Option<_>>()
+        .ok_or("elements is a list of element ids")?;
+    if ids.is_empty() {
+        return Err("elements is a list of element ids".into());
+    }
+    Ok(ids)
+}
+
+/// The elements named, with those grouped with them; refused when one is missing or locked.
+fn movable(l: &Layout, ids: &[u32]) -> Result<Vec<u32>, String> {
+    if let Some(id) = ids.iter().find(|id| l.element(**id).is_none()) {
+        return Err(format!("no element {id}"));
+    }
+    let all = l.with_groups(ids);
+    for id in &all {
+        unlocked(l, *id)?;
+    }
+    Ok(all)
+}
+
+/// Lines elements up, spaces them evenly or sizes them alike, in one step to undo.
+fn align(s: &mut Session, p: &Value) -> CmdResult {
+    let ids = element_ids(p)?;
+    let how = ps(p, "to").and_then(Align::from_name).ok_or_else(|| {
+        let codes: Vec<&str> = Align::ALL.iter().map(|a| a.code()).collect();
+        format!("to is one of {}", codes.join(", "))
+    })?;
+    let page = b(p, "page").unwrap_or(false);
+    let l = active(s, p)?;
+    let all = movable(l, &ids)?;
+    // The first named comes first, for sizing by it.
+    let mut order: Vec<u32> = Vec::new();
+    for id in ids.iter().chain(all.iter()) {
+        if all.contains(id) && !order.contains(id) {
+            order.push(*id);
+        }
+    }
+    if order.len() < how.least() {
+        return Err(match how.least() {
+            3 => "distribute three elements or more".to_string(),
+            _ => "size two elements or more alike".to_string(),
+        });
+    }
+    let changed = l.align(&order, how, page);
+    if changed.is_empty() {
+        s.request_only = true;
+    }
+    Ok(json!({"elements": changed}))
+}
+
+/// Moves elements (and those grouped with them) together, in one step to undo.
+fn move_elements(s: &mut Session, p: &Value) -> CmdResult {
+    let ids = element_ids(p)?;
+    let (dx, dy) = (f(p, "dx").unwrap_or(0.0), f(p, "dy").unwrap_or(0.0));
+    if dx.abs() > 5000.0 || dy.abs() > 5000.0 {
+        return Err("a move is up to 5000 mm".into());
+    }
+    let l = active(s, p)?;
+    let all = movable(l, &ids)?;
+    if dx == 0.0 && dy == 0.0 {
+        s.request_only = true;
+        return Ok(json!({"elements": all}));
+    }
+    for id in &all {
+        if let Some(e) = l.element_mut(*id) {
+            e.x = (e.x + dx).clamp(-5000.0, 5000.0);
+            e.y = (e.y + dy).clamp(-5000.0, 5000.0);
+        }
+    }
+    Ok(json!({"elements": all}))
+}
+
+/// Deletes elements (and those grouped with them, and frames' surrounds) in one step to undo.
+fn remove_elements(s: &mut Session, p: &Value) -> CmdResult {
+    let ids = element_ids(p)?;
+    let l = active(s, p)?;
+    if let Some(id) = ids.iter().find(|id| l.element(**id).is_none()) {
+        return Err(format!("no element {id}"));
+    }
+    let all = l.with_groups(&ids);
+    for id in &all {
+        if let Some(locked) = l.locked_in_removal(*id).map(|e| e.id) {
+            unlocked(l, locked)?;
+        }
+    }
+    let before = l.elements.len();
+    for id in &all {
+        l.remove(*id);
+    }
+    l.clamp();
+    Ok(json!({"removed": before - l.elements.len()}))
+}
+
+/// The elements as text for the clipboard, grouped ones with them, in drawing order.
+fn copy_elements(s: &mut Session, p: &Value) -> CmdResult {
+    let ids = element_ids(p)?;
+    let li = index(s, p)?;
+    let l = s.project.layouts.get(li).ok_or("no layout")?;
+    if let Some(id) = ids.iter().find(|id| l.element(**id).is_none()) {
+        return Err(format!("no element {id}"));
+    }
+    let all = l.with_groups(&ids);
+    let items: Vec<&rustgis_map::layout::Element> = all.iter().filter_map(|id| l.element(*id)).collect();
+    let text = serde_json::to_string(&json!({CLIPBOARD_KEY: 1, "layout": l.name, "elements": items})).map_err(|e| e.to_string())?;
+    Ok(json!({"text": text, "elements": all}))
+}
+
+/// Whether clipboard text holds copied layout elements.
+pub fn is_layout_clipboard(text: &str) -> bool {
+    let t = text.trim_start();
+    t.starts_with('{') && t.get(..200).unwrap_or(t).contains(CLIPBOARD_KEY)
+}
+
+/// Adds the copied elements to the layout: in it, the copies sit 5 mm off; in another, where
+/// they were.
+fn paste(s: &mut Session, p: &Value) -> CmdResult {
+    let text = ps(p, "text").ok_or("text is required: what layout.copyElements gave")?;
+    if text.len() as u64 > MAX_LAYOUT {
+        return Err("the copied elements are too large".into());
+    }
+    let v: Value = serde_json::from_str(text).map_err(|_| "the clipboard holds no layout elements".to_string())?;
+    if v.get(CLIPBOARD_KEY).is_none() {
+        return Err("the clipboard holds no layout elements".into());
+    }
+    let mut items: Vec<rustgis_map::layout::Element> = serde_json::from_value(v.get("elements").cloned().unwrap_or(Value::Null))
+        .map_err(|e| format!("the copied elements can't be read: {e}"))?;
+    items.truncate(MAX_PASTE);
+    if items.is_empty() {
+        return Err("the clipboard holds no layout elements".into());
+    }
+    let li = index(s, p)?;
+    let l = s.project.layouts.get_mut(li).ok_or("no layout")?;
+    let same = v.get("layout").and_then(Value::as_str).is_some_and(|n| n.eq_ignore_ascii_case(&l.name));
+    let d = if same { 5.0 } else { 0.0 };
+    let (dx, dy) = (f(p, "dx").unwrap_or(d), f(p, "dy").unwrap_or(d));
+    if dx.abs() > 5000.0 || dy.abs() > 5000.0 {
+        return Err("the copies' offset is up to 5000 mm".into());
+    }
+    // Copies are unlocked, and named apart from what is already here.
+    for e in &mut items {
+        e.locked = false;
+        e.name = numbered(&e.name, |n| l.elements.iter().any(|x| x.name == n));
+    }
+    let added = l.paste(&items, (dx, dy));
+    if added.is_empty() {
+        return Err("nothing to paste: the copied surrounds need a map frame in this layout".into());
+    }
+    l.clamp();
+    let added: Vec<u32> = added.into_iter().filter(|id| l.element(*id).is_some()).collect();
+    Ok(json!({"elements": added}))
 }
 
 /// Refuses to change a locked element (#536).
@@ -2061,6 +2258,7 @@ fn duplicate_element(s: &mut Session, p: &Value) -> CmdResult {
     let copy = l.add(name.clone(), (e.x + dx, e.y + dy, e.w, e.h), e.kind);
     if let Some(c) = l.element_mut(copy) {
         c.visible = e.visible;
+        c.rotation = e.rotation;
     }
     Ok(json!({"element": copy, "name": name}))
 }
@@ -2993,8 +3191,15 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             _ => None,
         }
     };
+    let rotation = given_num(p, "rotation", "a number of degrees")?;
+    if rotation.is_some() && s.project.layouts.get(li).and_then(|l| l.element(id)).is_some_and(|e| !e.kind.turns()) {
+        return Err("a line turns by its angle, not a rotation".into());
+    }
     let l = active(s, p)?;
     let e = l.element_mut(id).ok_or_else(|| format!("no element {id}"))?;
+    if let Some(r) = rotation {
+        e.rotation = normalize_rotation(r);
+    }
     let num = |k: &str, lo: f64, hi: f64| f(p, k).map(|v| v.clamp(lo, hi));
     if let Some(v) = num("x", -5000.0, 5000.0) {
         e.x = v;

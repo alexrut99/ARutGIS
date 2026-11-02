@@ -1075,6 +1075,25 @@ impl ElementKind {
             _ => None,
         }
     }
+
+    /// The map frame this element belongs to, to point it at another.
+    pub fn frame_mut(&mut self) -> Option<&mut u32> {
+        match self {
+            ElementKind::NorthArrow { frame, .. }
+            | ElementKind::ScaleBar { frame, .. }
+            | ElementKind::Legend { frame, .. }
+            | ElementKind::Colorbar { frame, .. }
+            | ElementKind::Table { frame, .. }
+            | ElementKind::Chart { frame, .. } => Some(frame),
+            _ => None,
+        }
+    }
+
+    /// Whether it turns by [`Element::rotation`]: every element but a line, which turns by its
+    /// own angle (its box and direction).
+    pub fn turns(&self) -> bool {
+        !matches!(self, ElementKind::Line { .. })
+    }
 }
 
 /// An element on the page.
@@ -1092,12 +1111,151 @@ pub struct Element {
     /// Locked, it can be selected but not moved, resized, deleted or edited until unlocked.
     #[serde(default, skip_serializing_if = "is_false")]
     pub locked: bool,
+    /// Turned about its centre, in degrees anticlockwise (-180 to 180). A line keeps 0: it turns
+    /// by its own angle.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rotation: f64,
+    /// The group it is in: the elements of a group are selected, moved and copied together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<u32>,
     pub kind: ElementKind,
 }
 
 impl Element {
+    /// Whether a page point (mm) is on the element, turned as it is.
     pub fn contains(&self, x: f64, y: f64) -> bool {
+        let (x, y) = self.unturn(x, y);
         x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
+    }
+
+    pub fn center(&self) -> (f64, f64) {
+        (self.x + self.w / 2.0, self.y + self.h / 2.0)
+    }
+
+    /// A page point (mm) turned back by the element's rotation about its centre: where it is
+    /// on the element's own, unturned box.
+    pub fn unturn(&self, x: f64, y: f64) -> (f64, f64) {
+        turn((x, y), self.center(), -self.rotation)
+    }
+
+    /// The corners of the element on the page, turned as it is: top-left, top-right,
+    /// bottom-right, bottom-left of its own box.
+    pub fn corners(&self) -> [(f64, f64); 4] {
+        let c = self.center();
+        [(self.x, self.y), (self.x + self.w, self.y), (self.x + self.w, self.y + self.h), (self.x, self.y + self.h)]
+            .map(|p| turn(p, c, self.rotation))
+    }
+
+    /// The box (x, y, w, h, in mm) the element covers on the page, turned as it is.
+    pub fn bounds(&self) -> (f64, f64, f64, f64) {
+        if self.rotation == 0.0 {
+            return (self.x, self.y, self.w, self.h);
+        }
+        let k = self.corners();
+        let (x0, x1) = k.iter().fold((f64::MAX, f64::MIN), |a, p| (a.0.min(p.0), a.1.max(p.0)));
+        let (y0, y1) = k.iter().fold((f64::MAX, f64::MIN), |a, p| (a.0.min(p.1), a.1.max(p.1)));
+        (x0, y0, x1 - x0, y1 - y0)
+    }
+}
+
+/// `p` turned `degrees` anticlockwise (as it looks on the page, whose y runs down) about `c`.
+pub fn turn(p: (f64, f64), c: (f64, f64), degrees: f64) -> (f64, f64) {
+    if degrees == 0.0 {
+        return p;
+    }
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    let (dx, dy) = (p.0 - c.0, p.1 - c.1);
+    (c.0 + dx * cos + dy * sin, c.1 - dx * sin + dy * cos)
+}
+
+/// A rotation in degrees within -180 to 180 (a whole turn is none), or 0 when not a number.
+pub fn normalize_rotation(degrees: f64) -> f64 {
+    if !degrees.is_finite() {
+        return 0.0;
+    }
+    let a = (degrees + 180.0).rem_euclid(360.0) - 180.0;
+    // -180 and 180 are the same turn: kept as 180.
+    if a <= -180.0 + 1e-9 { 180.0 } else { a }
+}
+
+/// How [`Layout::align`] lines elements up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Align {
+    Left,
+    Center,
+    Right,
+    Top,
+    Middle,
+    Bottom,
+    /// The same space between each, left to right.
+    DistributeH,
+    /// The same space between each, top to bottom.
+    DistributeV,
+    /// As wide, as high, or as large as the first.
+    SameWidth,
+    SameHeight,
+    SameSize,
+}
+
+impl Align {
+    pub const ALL: [Align; 11] = [
+        Align::Left,
+        Align::Center,
+        Align::Right,
+        Align::Top,
+        Align::Middle,
+        Align::Bottom,
+        Align::DistributeH,
+        Align::DistributeV,
+        Align::SameWidth,
+        Align::SameHeight,
+        Align::SameSize,
+    ];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            Align::Left => "left",
+            Align::Center => "center",
+            Align::Right => "right",
+            Align::Top => "top",
+            Align::Middle => "middle",
+            Align::Bottom => "bottom",
+            Align::DistributeH => "distributeHorizontally",
+            Align::DistributeV => "distributeVertically",
+            Align::SameWidth => "sameWidth",
+            Align::SameHeight => "sameHeight",
+            Align::SameSize => "sameSize",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Align::Left => "Align Left",
+            Align::Center => "Align Center",
+            Align::Right => "Align Right",
+            Align::Top => "Align Top",
+            Align::Middle => "Align Middle",
+            Align::Bottom => "Align Bottom",
+            Align::DistributeH => "Distribute Horizontally",
+            Align::DistributeV => "Distribute Vertically",
+            Align::SameWidth => "Same Width",
+            Align::SameHeight => "Same Height",
+            Align::SameSize => "Same Size",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<Align> {
+        Align::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+
+    /// Whether it needs more than one element (lining one up takes the page instead) or, to
+    /// distribute, more than two.
+    pub fn least(self) -> usize {
+        match self {
+            Align::DistributeH | Align::DistributeV => 3,
+            Align::SameWidth | Align::SameHeight | Align::SameSize => 2,
+            _ => 1,
+        }
     }
 }
 
@@ -1182,7 +1340,7 @@ impl Layout {
         self.next_id = id.saturating_add(1);
         // Templates on tiny pages can compute sizes near zero.
         let (w, h) = (finite_or(w, 1.0).clamp(MIN_ELEMENT_MM, 5000.0), finite_or(h, 1.0).clamp(MIN_ELEMENT_MM, 5000.0));
-        self.elements.push(Element { id, name: name.into(), x, y, w, h, visible: true, locked: false, kind });
+        self.elements.push(Element { id, name: name.into(), x, y, w, h, visible: true, locked: false, rotation: 0.0, group: None, kind });
         id
     }
 
@@ -1248,6 +1406,170 @@ impl Layout {
         self.elements.len() != before
     }
 
+    /// The elements that go with `id` when it is picked: its group's, in drawing order, else
+    /// itself alone.
+    pub fn members(&self, id: u32) -> Vec<u32> {
+        match self.element(id).and_then(|e| e.group) {
+            Some(g) => self.elements.iter().filter(|e| e.group == Some(g)).map(|e| e.id).collect(),
+            None => self.element(id).map(|e| vec![e.id]).unwrap_or_default(),
+        }
+    }
+
+    /// `ids` with every element grouped with any of them, each once, in drawing order.
+    pub fn with_groups(&self, ids: &[u32]) -> Vec<u32> {
+        let groups: std::collections::HashSet<u32> = ids.iter().filter_map(|id| self.element(*id)?.group).collect();
+        self.elements.iter().filter(|e| ids.contains(&e.id) || e.group.is_some_and(|g| groups.contains(&g))).map(|e| e.id).collect()
+    }
+
+    /// Puts the elements (two or more) in a new group, out of any they were in: its number.
+    pub fn group(&mut self, ids: &[u32]) -> Option<u32> {
+        let ids = self.with_groups(ids);
+        if ids.len() < 2 {
+            return None;
+        }
+        let g = self.elements.iter().filter_map(|e| e.group).max().unwrap_or(0).saturating_add(1);
+        for e in self.elements.iter_mut().filter(|e| ids.contains(&e.id)) {
+            e.group = Some(g);
+        }
+        Some(g)
+    }
+
+    /// Takes the elements, and every element grouped with them, out of their groups: how many
+    /// were in one.
+    pub fn ungroup(&mut self, ids: &[u32]) -> usize {
+        let ids = self.with_groups(ids);
+        let mut n = 0;
+        for e in self.elements.iter_mut().filter(|e| ids.contains(&e.id)) {
+            n += usize::from(e.group.take().is_some());
+        }
+        n
+    }
+
+    /// Lines the elements up, or spaces or sizes them alike, by the boxes they cover on the page
+    /// (turned ones by their turned box). Lined up, one element goes by the page, more by the
+    /// box around them all, or by the page when `page`. Sizing goes by the first. The elements
+    /// moved or sized.
+    pub fn align(&mut self, ids: &[u32], how: Align, page: bool) -> Vec<u32> {
+        let items: Vec<(u32, (f64, f64, f64, f64))> = ids.iter().filter_map(|id| self.element(*id)).map(|e| (e.id, e.bounds())).collect();
+        if items.len() < how.least() {
+            return Vec::new();
+        }
+        let (x0, y0, x1, y1) = if page || items.len() == 1 {
+            (0.0, 0.0, self.width, self.height)
+        } else {
+            items.iter().fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |a, (_, (x, y, w, h))| {
+                (a.0.min(*x), a.1.min(*y), a.2.max(x + w), a.3.max(y + h))
+            })
+        };
+        // Each element's move (dx, dy) or new size (w, h).
+        let mut moves: Vec<(u32, f64, f64)> = Vec::new();
+        let mut sizes: Vec<(u32, Option<f64>, Option<f64>)> = Vec::new();
+        match how {
+            Align::Left => moves = items.iter().map(|(id, b)| (*id, x0 - b.0, 0.0)).collect(),
+            Align::Center => moves = items.iter().map(|(id, b)| (*id, (x0 + x1) / 2.0 - (b.0 + b.2 / 2.0), 0.0)).collect(),
+            Align::Right => moves = items.iter().map(|(id, b)| (*id, x1 - (b.0 + b.2), 0.0)).collect(),
+            Align::Top => moves = items.iter().map(|(id, b)| (*id, 0.0, y0 - b.1)).collect(),
+            Align::Middle => moves = items.iter().map(|(id, b)| (*id, 0.0, (y0 + y1) / 2.0 - (b.1 + b.3 / 2.0))).collect(),
+            Align::Bottom => moves = items.iter().map(|(id, b)| (*id, 0.0, y1 - (b.1 + b.3))).collect(),
+            Align::DistributeH | Align::DistributeV => {
+                let across = how == Align::DistributeH;
+                let at = |b: &(f64, f64, f64, f64)| if across { (b.0, b.2) } else { (b.1, b.3) };
+                let mut sorted = items.clone();
+                sorted.sort_by(|a, b| {
+                    let (pa, sa) = at(&a.1);
+                    let (pb, sb) = at(&b.1);
+                    (pa + sa / 2.0).total_cmp(&(pb + sb / 2.0))
+                });
+                // The first and last stay; the rest are spaced evenly between them.
+                let (start, _) = at(&sorted[0].1);
+                let (last, last_size) = at(&sorted[sorted.len() - 1].1);
+                let total: f64 = sorted.iter().map(|(_, b)| at(b).1).sum();
+                let gap = ((last + last_size) - start - total) / (sorted.len() - 1) as f64;
+                let mut pos = start;
+                for (id, b) in &sorted {
+                    let (p, size) = at(b);
+                    moves.push(if across { (*id, pos - p, 0.0) } else { (*id, 0.0, pos - p) });
+                    pos += size + gap;
+                }
+            }
+            Align::SameWidth | Align::SameHeight | Align::SameSize => {
+                let Some(first) = self.element(items[0].0) else { return Vec::new() };
+                let (w, h) = (first.w, first.h);
+                let (sw, sh) = (how != Align::SameHeight, how != Align::SameWidth);
+                sizes = items[1..].iter().map(|(id, _)| (*id, sw.then_some(w), sh.then_some(h))).collect();
+            }
+        }
+        let mut changed = Vec::new();
+        for (id, dx, dy) in moves {
+            if (dx.abs() > 1e-9 || dy.abs() > 1e-9)
+                && let Some(e) = self.element_mut(id)
+            {
+                e.x = (e.x + dx).clamp(-5000.0, 5000.0);
+                e.y = (e.y + dy).clamp(-5000.0, 5000.0);
+                changed.push(id);
+            }
+        }
+        for (id, w, h) in sizes {
+            if let Some(e) = self.element_mut(id) {
+                // Sized about its centre, so a turned element stays where it is.
+                let (cx, cy) = e.center();
+                let (nw, nh) = (w.unwrap_or(e.w), h.unwrap_or(e.h));
+                if (nw - e.w).abs() > 1e-9 || (nh - e.h).abs() > 1e-9 {
+                    (e.w, e.h) = (nw, nh);
+                    (e.x, e.y) = (cx - nw / 2.0, cy - nh / 2.0);
+                    changed.push(id);
+                }
+            }
+        }
+        changed
+    }
+
+    /// Adds copies of `items` (elements of this or another layout, as copied), moved by
+    /// (`dx`, `dy`) mm: their new ids, in order. Surrounds copied with their frame follow the
+    /// copy; others keep their frame here when it is one, else take this layout's first; with no
+    /// map frame here, they are left out. Copied groups become new groups.
+    pub fn paste(&mut self, items: &[Element], (dx, dy): (f64, f64)) -> Vec<u32> {
+        let frames_here: std::collections::HashSet<u32> =
+            self.elements.iter().filter(|e| matches!(e.kind, ElementKind::MapFrame { .. })).map(|e| e.id).collect();
+        let first_here = self.first_frame();
+        // Frames first, so the surrounds after them know their new ids.
+        let mut order: Vec<&Element> = items.iter().filter(|e| matches!(e.kind, ElementKind::MapFrame { .. })).collect();
+        order.extend(items.iter().filter(|e| !matches!(e.kind, ElementKind::MapFrame { .. })));
+        let mut ids: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        let mut groups: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        let mut next_group = self.elements.iter().filter_map(|e| e.group).max().unwrap_or(0).saturating_add(1);
+        let mut added: Vec<(u32, u32)> = Vec::new();
+        for e in order {
+            let mut kind = e.kind.clone();
+            if let Some(f) = kind.frame_mut() {
+                let to = ids.get(f).copied().or_else(|| frames_here.contains(f).then_some(*f)).or(first_here);
+                match to {
+                    Some(t) => *f = t,
+                    None => continue,
+                }
+            }
+            if let ElementKind::MapFrame { extent_of, .. } = &mut kind {
+                *extent_of = extent_of.and_then(|o| ids.get(&o).copied().or_else(|| frames_here.contains(&o).then_some(o)));
+            }
+            let id = self.add(e.name.clone(), (e.x + dx, e.y + dy, e.w, e.h), kind);
+            ids.insert(e.id, id);
+            if let Some(n) = self.element_mut(id) {
+                n.visible = e.visible;
+                n.rotation = e.rotation;
+                n.group = e.group.map(|g| {
+                    *groups.entry(g).or_insert_with(|| {
+                        let new = next_group;
+                        next_group = next_group.saturating_add(1);
+                        new
+                    })
+                });
+            }
+            added.push((e.id, id));
+        }
+        // In the order copied, not the order added.
+        items.iter().filter_map(|e| added.iter().find(|a| a.0 == e.id).map(|a| a.1)).collect()
+    }
+
     /// Keeps the page and elements sane after loading or editing (layout files are untrusted):
     /// sizes in range, unique element ids, and no references to missing frames.
     pub fn clamp(&mut self) {
@@ -1275,6 +1597,7 @@ impl Layout {
             e.x = finite_or(e.x, 0.0).clamp(-5000.0, 5000.0);
             e.y = finite_or(e.y, 0.0).clamp(-5000.0, 5000.0);
             e.name = e.name.chars().take(200).collect();
+            e.rotation = if e.kind.turns() { normalize_rotation(e.rotation) } else { 0.0 };
             match &mut e.kind {
                 ElementKind::MapFrame { center, scale, shape, grid, bearing, pitch, extent_width, .. } => {
                     *scale = finite_or(*scale, 50_000_000.0).clamp(MIN_FRAME_SCALE, MAX_FRAME_SCALE);
@@ -1335,6 +1658,16 @@ impl Layout {
                 && extent_of.is_some_and(|o| !frames.contains(&o) || o == e.id)
             {
                 *extent_of = None;
+            }
+        }
+        // A group of one is no group.
+        let mut count: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        for g in self.elements.iter().filter_map(|e| e.group) {
+            *count.entry(g).or_default() += 1;
+        }
+        for e in &mut self.elements {
+            if e.group.is_some_and(|g| count.get(&g).is_none_or(|n| *n < 2)) {
+                e.group = None;
             }
         }
         if let Some(s) = &mut self.series {
