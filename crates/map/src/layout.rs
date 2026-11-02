@@ -5,6 +5,8 @@
 //! of the project at its own centre and scale, independent of the map view.
 
 use rustgis_geom::Coord;
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::raster::{Colorizer, Normalizer, RasterLayer, RasterMask, RasterRenderer, RasterStyle};
@@ -1083,6 +1085,230 @@ impl LabelText {
     }
 }
 
+/// The shape a legend draws a line layer's symbol in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LinePatch {
+    /// Up and down across the patch, as the legend always drew it.
+    #[default]
+    Zigzag,
+    Straight,
+    Curve,
+}
+
+impl LinePatch {
+    pub const ALL: [LinePatch; 3] = [LinePatch::Zigzag, LinePatch::Straight, LinePatch::Curve];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            LinePatch::Zigzag => "zigzag",
+            LinePatch::Straight => "straight",
+            LinePatch::Curve => "curve",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            LinePatch::Zigzag => "Zigzag",
+            LinePatch::Straight => "Straight",
+            LinePatch::Curve => "Curve",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<LinePatch> {
+        LinePatch::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+
+    pub fn codes() -> String {
+        or_list(&LinePatch::ALL.map(LinePatch::code))
+    }
+}
+
+/// The shape a legend draws a polygon layer's symbol in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AreaPatch {
+    #[default]
+    Rectangle,
+    Rounded,
+    Circle,
+    /// A rounded, irregular outline, as a lake or a parcel.
+    Natural,
+}
+
+impl AreaPatch {
+    pub const ALL: [AreaPatch; 4] = [AreaPatch::Rectangle, AreaPatch::Rounded, AreaPatch::Circle, AreaPatch::Natural];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            AreaPatch::Rectangle => "rectangle",
+            AreaPatch::Rounded => "rounded",
+            AreaPatch::Circle => "circle",
+            AreaPatch::Natural => "natural",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            AreaPatch::Rectangle => "Rectangle",
+            AreaPatch::Rounded => "Rounded rectangle",
+            AreaPatch::Circle => "Circle",
+            AreaPatch::Natural => "Natural area",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<AreaPatch> {
+        AreaPatch::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+
+    pub fn codes() -> String {
+        or_list(&AreaPatch::ALL.map(AreaPatch::code))
+    }
+}
+
+/// How a legend looks: the type of its title, its layers' names and its classes' labels; the
+/// size and shape of its symbol patches; the room between its rows; and the text it shows for a
+/// layer or a class in place of its own (the layer and its renderer are left as they are). The
+/// default is the legend as it always looked.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LegendLook {
+    /// Size 0 is 12 points; no colour is dark grey.
+    #[serde(default = "LabelText::arrow", skip_serializing_if = "LabelText::is_arrow")]
+    pub title: LabelText,
+    /// A layer's name over its classes. Size 0 is 9 points.
+    #[serde(default = "LabelText::arrow", skip_serializing_if = "LabelText::is_arrow")]
+    pub layer: LabelText,
+    /// A class's label, and the name of a layer drawn in one symbol beside it. Size 0 is 8.5
+    /// points for a class, 9 for a layer's name.
+    #[serde(default = "LabelText::scale_bar", skip_serializing_if = "LabelText::is_scale_bar")]
+    pub label: LabelText,
+    /// Points; 0 is 16 across and sized to the row down.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub patch_width: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub patch_height: f64,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub line_patch: LinePatch,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub area_patch: AreaPatch,
+    /// Points added under each row.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub spacing: f64,
+    /// A layer's name as the legend shows it, by the layer's name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub names: BTreeMap<String, String>,
+    /// A class's label as the legend shows it, by its layer's name and its own label.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+impl Default for LegendLook {
+    fn default() -> LegendLook {
+        LegendLook {
+            title: LabelText::arrow(),
+            layer: LabelText::arrow(),
+            label: LabelText::scale_bar(),
+            patch_width: 0.0,
+            patch_height: 0.0,
+            line_patch: LinePatch::Zigzag,
+            area_patch: AreaPatch::Rectangle,
+            spacing: 0.0,
+            names: BTreeMap::new(),
+            labels: BTreeMap::new(),
+        }
+    }
+}
+
+/// The largest legend patch, each way (points).
+pub const MAX_PATCH: f64 = 72.0;
+/// The most room under a legend row (points).
+pub const MAX_LEGEND_SPACING: f64 = 36.0;
+/// The most layers' names or classes' labels a legend shows in place of their own.
+pub const MAX_LEGEND_TEXTS: usize = 500;
+
+impl LegendLook {
+    pub fn is_default(&self) -> bool {
+        *self == LegendLook::default()
+    }
+
+    /// The name the legend shows for the layer `layer` (any case), when one is set.
+    pub fn name_of(&self, layer: &str) -> Option<&str> {
+        self.names.iter().find(|(k, _)| k.eq_ignore_ascii_case(layer)).map(|(_, v)| v.as_str())
+    }
+
+    /// The label the legend shows for the class labelled `class` of the layer `layer`.
+    pub fn label_of(&self, layer: &str, class: &str) -> Option<&str> {
+        self.labels.iter().find(|(k, _)| k.eq_ignore_ascii_case(layer)).and_then(|(_, m)| m.get(class)).map(String::as_str)
+    }
+
+    /// Sets the name shown for `layer`; `""` shows its own again.
+    pub fn set_name(&mut self, layer: &str, text: &str) {
+        self.names.retain(|k, _| !k.eq_ignore_ascii_case(layer));
+        let text = legend_text(text);
+        if !text.is_empty() && self.names.len() < MAX_LEGEND_TEXTS {
+            self.names.insert(layer.to_string(), text);
+        }
+    }
+
+    /// Sets the label shown for `layer`'s class `class`; `""` shows its own again.
+    pub fn set_label(&mut self, layer: &str, class: &str, text: &str) {
+        let key = self.labels.keys().find(|k| k.eq_ignore_ascii_case(layer)).cloned().unwrap_or_else(|| layer.to_string());
+        let text = legend_text(text);
+        let count: usize = self.labels.values().map(BTreeMap::len).sum();
+        let m = self.labels.entry(key.clone()).or_default();
+        m.remove(class);
+        if !text.is_empty() && count < MAX_LEGEND_TEXTS {
+            m.insert(class.to_string(), text);
+        }
+        if m.is_empty() {
+            self.labels.remove(&key);
+        }
+    }
+
+    /// Follows the layer `from` renamed to `to`.
+    pub fn rename(&mut self, from: &str, to: &str) {
+        if let Some(k) = self.names.keys().find(|k| k.eq_ignore_ascii_case(from)).cloned()
+            && let Some(v) = self.names.remove(&k)
+        {
+            self.names.insert(to.to_string(), v);
+        }
+        if let Some(k) = self.labels.keys().find(|k| k.eq_ignore_ascii_case(from)).cloned()
+            && let Some(v) = self.labels.remove(&k)
+        {
+            self.labels.insert(to.to_string(), v);
+        }
+    }
+
+    /// Forgets the texts set for the layer `layer`, gone from the map.
+    pub fn forget(&mut self, layer: &str) {
+        self.names.retain(|k, _| !k.eq_ignore_ascii_case(layer));
+        self.labels.retain(|k, _| !k.eq_ignore_ascii_case(layer));
+    }
+
+    fn clamp(&mut self) {
+        self.title.clamp();
+        self.layer.clamp();
+        self.label.clamp();
+        self.patch_width = finite_or(self.patch_width, 0.0).clamp(0.0, MAX_PATCH);
+        self.patch_height = finite_or(self.patch_height, 0.0).clamp(0.0, MAX_PATCH);
+        self.spacing = finite_or(self.spacing, 0.0).clamp(0.0, MAX_LEGEND_SPACING);
+        for v in self.names.values_mut() {
+            *v = legend_text(v);
+        }
+        self.names.retain(|_, v| !v.is_empty());
+        for m in self.labels.values_mut() {
+            for v in m.values_mut() {
+                *v = legend_text(v);
+            }
+            m.retain(|_, v| !v.is_empty());
+        }
+        self.labels.retain(|_, m| !m.is_empty());
+    }
+}
+
+/// A legend text as kept: one line, trimmed, at most [`crate::symbology::MAX_LABEL`] characters.
+pub fn legend_text(s: &str) -> String {
+    crate::symbology::normalize_label(s)
+}
+
 /// The most text a north arrow's letter or a scale bar's unit takes.
 pub const MAX_SURROUND_TEXT: usize = 80;
 
@@ -1270,6 +1496,9 @@ pub enum ElementKind {
         /// highlight, a basemap-like layer. Empty, it lists every layer it would otherwise.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         exclude: Vec<String>,
+        /// Its type, patches, spacing and texts shown in place of the layers' own.
+        #[serde(default, skip_serializing_if = "LegendLook::is_default")]
+        look: Box<LegendLook>,
     },
     /// The colour scale of a raster layer in a frame's map: a gradient bar for a stretch, steps
     /// for classes, a block per value for unique values and colour tables (#326).
@@ -2014,10 +2243,11 @@ impl Layout {
                         g.width = finite_or(g.width, grid_width()).clamp(0.0, MAX_GRID_WIDTH);
                     }
                 }
-                ElementKind::Legend { exclude, .. } => {
+                ElementKind::Legend { exclude, look, .. } => {
                     // Names stay whole: a layer's own name isn't cut, and a cut one would no
                     // longer match it.
                     exclude.truncate(MAX_LEGEND_EXCLUDED);
+                    look.clamp();
                 }
                 ElementKind::Text { text, size, letter_spacing, .. } => {
                     *size = finite_or(*size, 12.0).clamp(*crate::graphics::FONT_SIZE.start(), *crate::graphics::FONT_SIZE.end());
@@ -2550,6 +2780,43 @@ mod tests {
         assert_eq!(grid, Grid { step: 10.0, ..Grid::default() });
         assert_eq!(grid.edges, GridEdges { top: false, bottom: true, left: true, right: false });
         assert_eq!(grid.style, GridStyle::Lines);
+    }
+
+    #[test]
+    fn legends_keep_their_look_and_texts() {
+        // Saved before legends had a look: as it was, and written back without one.
+        let old = r#"{"Legend":{"frame":3,"title":"L","all_classes":false,"hide_other":false}}"#;
+        let kind: ElementKind = serde_json::from_str(old).unwrap();
+        let ElementKind::Legend { look, .. } = &kind else { panic!() };
+        assert!(look.is_default());
+        assert_eq!(serde_json::to_string(&kind).unwrap(), old);
+        let mut look = LegendLook { patch_width: 1e9, spacing: -3.0, ..LegendLook::default() };
+        look.title.size = 20.0;
+        look.set_name("Rivers", "  แม่น้ำ\nสายหลัก ");
+        look.set_label("Rivers", "Major", "สายหลัก");
+        look.set_label("rivers", "Minor", "สายรอง");
+        assert_eq!(look.name_of("RIVERS"), Some("แม่น้ำ สายหลัก"));
+        assert_eq!((look.label_of("rivers", "Major"), look.label_of("Rivers", "Minor")), (Some("สายหลัก"), Some("สายรอง")));
+        assert_eq!(look.labels.len(), 1, "one layer, any case");
+        look.set_label("Rivers", "Major", " ");
+        assert_eq!(look.label_of("Rivers", "Major"), None, "empty shows its own again");
+        look.rename("rivers", "Streams");
+        assert_eq!((look.name_of("Rivers"), look.name_of("Streams")), (None, Some("แม่น้ำ สายหลัก")));
+        assert_eq!(look.label_of("Streams", "Minor"), Some("สายรอง"));
+        look.clamp();
+        assert_eq!((look.patch_width, look.spacing), (MAX_PATCH, 0.0));
+        let kind = ElementKind::Legend {
+            frame: 3,
+            title: "L".into(),
+            all_classes: false,
+            hide_other: false,
+            exclude: Vec::new(),
+            look: Box::new(look.clone()),
+        };
+        let back: ElementKind = serde_json::from_str(&serde_json::to_string(&kind).unwrap()).unwrap();
+        assert_eq!(back, kind);
+        look.forget("streams");
+        assert!(look.names.is_empty() && look.labels.is_empty());
     }
 
     #[test]

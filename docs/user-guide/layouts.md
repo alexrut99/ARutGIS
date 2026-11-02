@@ -167,7 +167,19 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   has a checkbox for each layer of the frame's map (and each WMS or WMTS layer with a legend): untick one to leave it out of the legend
   while the map still draws it (a mask, a highlight, a basemap-like layer). Scripts give the same
   with `"exclude": ["Graticule"]` on `layout.addElement` or `layout.update` (`[]` lists every
-  layer again); a renamed layer stays left out.
+  layer again); a renamed layer stays left out. Its **Legend items** section lists each layer
+  with its classes: type over a layer's name or a class's label to change what the legend shows
+  (in Thai or any language; empty shows the layer's own again), leaving the layer and its
+  symbology as they are, and **Symbology…** opens the layer's Symbology pane to change the
+  symbols themselves (on the map and in every legend). **Patch width** and **Patch height** size
+  the symbols, **Line patch** draws a line layer's as a zigzag, a straight line or a curve,
+  **Area patch** a polygon layer's as a rectangle, a rounded rectangle, a circle or a natural
+  area, and **Row spacing** adds room under each row. **Title type**, **Layer name type** and
+  **Label type** set the size, colour, weight, slant and font of each, as for a text. Scripts give
+  `"titleType"`, `"layerType"` and `"labelType"` (`{"size": 14, "color": "#1F4E8C", "font":
+  "Sarabun"}`), `"patchWidth"`, `"patchHeight"`, `"linePatch"`, `"areaPatch"`, `"rowSpacing"`,
+  `"layerNames": {"Countries": "ประเทศ"}` and `"classLabels": {"Countries": {"Asia": "เอเชีย"}}`;
+  the texts given are merged with those set and follow a renamed layer.
 - **Colorbar**: the colour scale of a raster layer in the frame's map, as the map draws it (its
   stretch, colour ramp and enhancement): a gradient bar for a stretch or a tinted hillshade,
   steps labelled at their breaks for Classify, and a block per value for Unique Values and colour

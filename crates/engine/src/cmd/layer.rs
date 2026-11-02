@@ -3017,9 +3017,16 @@ pub(crate) fn legends_follow_layer(s: &mut Session, old: &str, new: Option<&str>
             .map(|e| e.id)
             .collect();
         for e in &mut layout.elements {
-            if let rustgis_map::layout::ElementKind::Legend { frame, exclude, .. } = &mut e.kind
+            if let rustgis_map::layout::ElementKind::Legend { frame, exclude, look, .. } = &mut e.kind
                 && frames.contains(frame)
             {
+                // The texts it shows for the layer go with it (onto a name another layer bears,
+                // they would stand for that one too, so they stay behind).
+                match new {
+                    Some(n) if !shared => look.rename(old, n),
+                    Some(_) => {}
+                    None => look.forget(old),
+                }
                 match new {
                     // Another layer the legend lists bears the new name: carrying the exclusion
                     // over would take that one out too, so the renamed layer is listed with it.

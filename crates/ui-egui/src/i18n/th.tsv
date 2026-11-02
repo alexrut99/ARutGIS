@@ -4391,3 +4391,20 @@ Hollow bar	แถบโปร่ง
 Line, ticks down	เส้น ขีดลง
 Line, ticks across	เส้น ขีดตัดผ่าน
 Ruler	ไม้บรรทัด
+Patch width	ความกว้างสัญลักษณ์
+Patch height	ความสูงสัญลักษณ์
+Row spacing	ระยะห่างแถว
+Line patch	รูปแบบสัญลักษณ์เส้น
+Area patch	รูปแบบสัญลักษณ์พื้นที่
+Zigzag	เส้นหักมุม
+Straight	เส้นตรง
+Rounded rectangle	สี่เหลี่ยมมุมมน
+Natural area	พื้นที่ธรรมชาติ
+Title type	รูปแบบตัวอักษรหัวเรื่อง
+Layer name type	รูปแบบตัวอักษรชื่อชั้นข้อมูล
+Label type	รูปแบบตัวอักษรคำอธิบาย
+Legend items	รายการในคำอธิบายสัญลักษณ์
+Type the text the legend shows; empty shows the layer's own. Symbology changes the symbols.	พิมพ์ข้อความที่จะแสดงในคำอธิบายสัญลักษณ์ เว้นว่างเพื่อใช้ชื่อเดิมของชั้นข้อมูล กดปุ่มสัญลักษณ์เพื่อเปลี่ยนสัญลักษณ์
+Symbology…	สัญลักษณ์…
+Change this layer's symbols and labels	เปลี่ยนสัญลักษณ์และป้ายกำกับของชั้นข้อมูลนี้
+Shown as	แสดงเป็น

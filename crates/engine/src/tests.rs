@@ -4039,6 +4039,80 @@ fn layout_legends_list_what_the_frame_draws() {
     assert!(matches!(old, rustgis_map::layout::ElementKind::Legend { all_classes: false, hide_other: false, .. }));
 }
 
+/// A legend's type, patches, spacing and texts are set by layout.addElement and layout.update;
+/// the texts follow a layer renamed; a bad value changes nothing; other elements refuse them.
+#[test]
+fn layout_legends_take_their_type_patches_and_texts() {
+    use rustgis_map::layout::{AreaPatch, ElementKind, FontFamily, LegendLook, LinePatch};
+    let mut s = world();
+    s.run("layout.new", &json!({"page": "a4", "template": "map"})).unwrap();
+    let look = |s: &Session, id: u32| match &s.project.layouts[0].element(id).unwrap().kind {
+        ElementKind::Legend { look, .. } => (**look).clone(),
+        k => panic!("{k:?}"),
+    };
+    let id = s.project.layouts[0].elements.iter().find(|e| e.kind.code() == "legend").unwrap().id;
+    assert!(look(&s, id).is_default());
+    s.run(
+        "layout.update",
+        &json!({"element": id, "titleType": {"size": 16, "color": "#1F4E8C", "font": "serif"}, "labelType": {"italic": true, "size": 10},
+            "patchWidth": 24, "patchHeight": 12, "linePatch": "curve", "areaPatch": "natural", "rowSpacing": 3,
+            "layerNames": {"countries": "ประเทศ"}, "classLabels": {"Countries": {"High income": "รายได้สูง"}}}),
+    )
+    .unwrap();
+    let lk = look(&s, id);
+    assert_eq!((lk.title.size, lk.title.font, lk.title.color.map(|c| c.hex())), (16.0, FontFamily::Serif, Some("#1F4E8C".to_string())));
+    assert!(lk.title.bold, "a type given in part keeps the rest");
+    assert!(lk.label.italic && lk.label.size == 10.0 && !lk.label.bold);
+    assert_eq!((lk.patch_width, lk.patch_height, lk.spacing), (24.0, 12.0, 3.0));
+    assert_eq!((lk.line_patch, lk.area_patch), (LinePatch::Curve, AreaPatch::Natural));
+    assert_eq!(lk.name_of("Countries"), Some("ประเทศ"));
+    assert_eq!(lk.label_of("countries", "High income"), Some("รายได้สูง"));
+    // Merged with those set; "" (or null) shows a layer's own again; "" a colour back to grey.
+    s.run("layout.update", &json!({"element": id, "classLabels": {"Countries": {"Low income": "รายได้ต่ำ"}}, "titleType": {"color": ""}}))
+        .unwrap();
+    let lk = look(&s, id);
+    assert_eq!((lk.label_of("Countries", "High income"), lk.label_of("Countries", "Low income")), (Some("รายได้สูง"), Some("รายได้ต่ำ")));
+    assert_eq!(lk.title.color, None);
+    s.run("layout.update", &json!({"element": id, "layerNames": {"Countries": ""}})).unwrap();
+    assert_eq!(look(&s, id).name_of("Countries"), None);
+    // The texts follow the layer renamed, and are forgotten with it.
+    s.run("layout.update", &json!({"element": id, "layerNames": {"Countries": "ประเทศ"}})).unwrap();
+    s.run("layer.rename", &json!({"layer": "Countries", "name": "Nations"})).unwrap();
+    let lk = look(&s, id);
+    assert_eq!((lk.name_of("Nations"), lk.label_of("Nations", "Low income")), (Some("ประเทศ"), Some("รายได้ต่ำ")));
+    // Bad values change nothing.
+    let before = look(&s, id);
+    for bad in [
+        json!({"element": id, "linePatch": "wavy"}),
+        json!({"element": id, "areaPatch": 3}),
+        json!({"element": id, "patchWidth": -1}),
+        json!({"element": id, "rowSpacing": "wide"}),
+        json!({"element": id, "titleType": 12}),
+        json!({"element": id, "labelType": {"size": -2}}),
+        json!({"element": id, "labelType": {"color": "blue"}}),
+        json!({"element": id, "labelType": {"bold": "yes"}}),
+        json!({"element": id, "layerNames": ["Nations"]}),
+        json!({"element": id, "classLabels": {"Nations": "x"}}),
+        json!({"element": id, "layerNames": {"Nations": 5}, "patchWidth": 30}),
+    ] {
+        assert!(s.run("layout.update", &bad).is_err(), "{bad}");
+        assert_eq!(look(&s, id), before, "{bad}");
+    }
+    // Large values are limited.
+    s.run("layout.update", &json!({"element": id, "patchWidth": 1e6, "rowSpacing": 1e6, "labelType": {"size": 500}})).unwrap();
+    let lk = look(&s, id);
+    assert_eq!((lk.patch_width, lk.spacing, lk.label.size), (72.0, 36.0, 72.0));
+    // Added with its look; other elements refuse one.
+    let r = s.run("layout.addElement", &json!({"kind": "legend", "areaPatch": "circle", "layerType": {"bold": false}})).unwrap();
+    let added = r["element"].as_u64().unwrap() as u32;
+    let lk = look(&s, added);
+    assert!(lk.area_patch == AreaPatch::Circle && !lk.layer.bold);
+    assert!(s.run("layout.addElement", &json!({"kind": "rectangle", "areaPatch": "circle"})).is_err());
+    let frame = s.project.layouts[0].elements.iter().find(|e| e.kind.code() == "mapFrame").unwrap().id;
+    assert!(s.run("layout.update", &json!({"element": frame, "rowSpacing": 2})).is_err());
+    let _ = LegendLook::default();
+}
+
 /// A map frame's grid can be a measured grid (#1008): eastings and northings in a projected
 /// system its step apart in metres, with whole or short labels; a system that isn't projected, or
 /// isn't one, is refused; a change of type starts its step afresh.

@@ -7,9 +7,10 @@
 
 use egui::{Align2, Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use rustgis_engine::map::layout::{
-    Arrange, ArrowStyle, CoordFormat, ElementKind, Grid, GridKind, GridStyle, LabelText, Layout, LineHead, MAX_BAR_HEIGHT,
-    MAX_COLORBAR_TICKS, MAX_FRAME_SCALE, MAX_GRID_WIDTH, MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_FRAME_SCALE, NumberPlace, Orientation,
-    PT_PER_MM, ScaleBarStyle, ScaleUnits, TickSide, UnitLabel, UnitPlace, frame_camera, line_angle, line_length,
+    AreaPatch, Arrange, ArrowStyle, CoordFormat, ElementKind, Grid, GridKind, GridStyle, LabelText, Layout, LegendLook, LineHead,
+    LinePatch, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS, MAX_FRAME_SCALE, MAX_GRID_WIDTH, MAX_LEGEND_SPACING, MAX_PATCH, MAX_SCALE_DIVISIONS,
+    MAX_TICK_MM, MIN_FRAME_SCALE, NumberPlace, Orientation, PT_PER_MM, ScaleBarStyle, ScaleUnits, TickSide, UnitLabel, UnitPlace,
+    frame_camera, line_angle, line_length,
 };
 use serde_json::{Value, json};
 
@@ -1430,6 +1431,10 @@ fn swatch(ctx: &egui::Context, code: &str, arrow: bool, (w, h): (f32, f32)) -> e
 
 /// The type of a north arrow's letter or a scale bar's numbers and unit: size (automatic at 0),
 /// colour (the element's `own` unless set), weight, slant and family.
+/// The type of a north arrow's letter or a scale bar's numbers (its options `textSize`,
+/// `textColor`, `bold`…), or, with `wrap`, of a legend's title, layer names or labels (an object
+/// of `size`, `color`, `bold`… under that option).
+#[allow(clippy::too_many_arguments)]
 fn label_type(
     app: &mut RustGisApp,
     ui: &mut Ui,
@@ -1437,8 +1442,26 @@ fn label_type(
     text: &LabelText,
     own: rustgis_engine::map::Rgba,
     title: &str,
+    wrap: Option<&'static str>,
     update: &dyn Fn(&mut RustGisApp, Value),
 ) {
+    let update = |app: &mut RustGisApp, v: Value| match (wrap, v) {
+        (Some(key), Value::Object(m)) => {
+            let inner: serde_json::Map<String, Value> = m
+                .into_iter()
+                .map(|(k, v)| {
+                    let k = match k.as_str() {
+                        "textSize" => "size".to_string(),
+                        "textColor" => "color".to_string(),
+                        _ => k,
+                    };
+                    (k, v)
+                })
+                .collect();
+            update(app, json!({key: inner}));
+        }
+        (_, v) => update(app, v),
+    };
     let mut none = String::new();
     let (mut sz, mut c, mut bb, mut it) = (text.size, crate::theme::c32(text.color.unwrap_or(own)), text.bold, text.italic);
     let (mut fam, mut named) = (text.font, text.font_name.clone());
@@ -1455,11 +1478,18 @@ fn label_type(
         named_fonts: true,
         select: false,
     };
-    let Some(settled) = crate::textform::section(ui, title, |ui| {
-        let settled = crate::textform::show_type(ui, ("layout_label_type", li, id), fields, true);
-        let reset = text.color.is_some() && ui.small_button(tl!("Use the element's color")).clicked();
-        (settled, reset)
-    }) else {
+    // A north arrow's or scale bar's one type open; a legend's three folded until opened.
+    ui.add_space(4.0);
+    let Some(settled) = egui::CollapsingHeader::new(tl!(title))
+        .id_salt(("format_section", title))
+        .default_open(wrap.is_none())
+        .show(ui, |ui| {
+            let settled = crate::textform::show_type(ui, ("layout_label_type", li, id, wrap), fields, true);
+            let reset = text.color.is_some() && ui.small_button(tl!("Use the element's color")).clicked();
+            (settled, reset)
+        })
+        .body_returned
+    else {
         return;
     };
     let (settled, reset) = settled;
@@ -1486,6 +1516,139 @@ fn label_type(
         };
         update(app, font);
     }
+}
+
+/// A legend's items: for each layer it can list, its name and its classes' labels as the legend
+/// shows them, each typed over (empty shows the layer's own again), a small picture of each
+/// class's symbol, and a button that opens the layer's symbology to change the symbols
+/// themselves (the map and every legend show those).
+fn legend_items(
+    app: &mut RustGisApp,
+    ui: &mut Ui,
+    (li, id): (usize, u32),
+    mi: usize,
+    look: &LegendLook,
+    exclude: &[String],
+    update: &dyn Fn(&mut RustGisApp, Value),
+) {
+    use rustgis_engine::data::GeometryType;
+    // The map's layers the legend can list, top first, as it lists them.
+    let layers: Vec<(u32, String, GeometryType, Vec<(String, rustgis_engine::map::Symbol)>)> = {
+        let m = &app.session.project.maps[mi];
+        m.layers
+            .iter()
+            .rev()
+            .filter(|l| !l.graphics && !l.is_raster() && !exclude.iter().any(|x| x.eq_ignore_ascii_case(&l.name)))
+            .map(|l| {
+                // None for a layer in one symbol: its name only.
+                let entries = l.renderer.legend().into_iter().map(|e| (e.label, e.symbol)).collect();
+                (l.id, l.name.clone(), l.geometry_type(), entries)
+            })
+            .collect()
+    };
+    if layers.is_empty() {
+        return;
+    }
+    crate::textform::section(ui, "Legend items", |ui| {
+        ui.label(
+            egui::RichText::new(tl!("Type the text the legend shows; empty shows the layer's own. Symbology changes the symbols."))
+                .small()
+                .weak(),
+        );
+        for (lid, name, gt, entries) in &layers {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(name.as_str()).strong());
+                if ui.small_button(tl!("Symbology…")).on_hover_text(tl!("Change this layer's symbols and labels")).clicked() {
+                    let map_name = app.session.project.maps[mi].name.clone();
+                    if app.session.project.active_map != mi {
+                        let _ = app.run("map.activate", json!({"name": map_name}));
+                    }
+                    app.session.active_layer = Some(*lid);
+                    app.ui.open_right(crate::RightPane::Symbology);
+                }
+            });
+            egui::Grid::new(("legend_items", li, id, *lid)).num_columns(2).spacing(vec2(8.0, 4.0)).show(ui, |ui| {
+                let input_label = ui.label(tl!("Shown as"));
+                if let Some(t) = legend_text_edit(ui, ("legend_name", li, id, *lid), look.name_of(name).unwrap_or(""), name, input_label.id)
+                {
+                    update(app, json!({"layerNames": {name.as_str(): t}}));
+                }
+                ui.end_row();
+                for (label, symbol) in entries {
+                    // The class's symbol and own label, then the label the legend shows.
+                    let own = ui
+                        .horizontal(|ui| {
+                            symbol_swatch(ui, *gt, symbol);
+                            ui.add(egui::Label::new(label.as_str()).truncate())
+                        })
+                        .inner;
+                    let shown = look.label_of(name, label).unwrap_or("");
+                    if let Some(t) = legend_text_edit(ui, ("legend_label", li, id, *lid, label.as_str()), shown, label, own.id) {
+                        update(app, json!({"classLabels": {name.as_str(): {label.as_str(): t}}}));
+                    }
+                    ui.end_row();
+                }
+            });
+        }
+    });
+}
+
+/// A small picture of a symbol, as the legend draws it.
+fn symbol_swatch(ui: &mut Ui, gt: rustgis_engine::data::GeometryType, s: &rustgis_engine::map::Symbol) -> egui::Response {
+    use rustgis_engine::data::GeometryType;
+    let (r, painter) = ui.allocate_painter(vec2(28.0, 16.0), Sense::hover());
+    let rect = r.rect;
+    let fill = crate::theme::c32(s.fill);
+    let stroke = Stroke::new(s.stroke_width.max(0.5), crate::theme::c32(s.stroke));
+    match gt {
+        GeometryType::Point => {
+            painter.circle(rect.center(), 5.0, fill, stroke);
+        }
+        GeometryType::Polyline => {
+            let line = Stroke::new(s.stroke_width.clamp(1.0, 4.0), crate::theme::c32(s.stroke));
+            let (l, c, rt) = (rect.left() + 2.0, rect.center().y, rect.right() - 2.0);
+            painter.line_segment([pos2(l, c + 3.0), pos2(l + 9.0, c - 3.0)], line);
+            painter.line_segment([pos2(l + 9.0, c - 3.0), pos2(rt, c + 1.5)], line);
+        }
+        _ => {
+            let b = Rect::from_center_size(rect.center(), vec2(22.0, 11.0));
+            painter.rect(b, CornerRadius::ZERO, fill, stroke, egui::StrokeKind::Inside);
+        }
+    }
+    r
+}
+
+/// A one-line field for a legend text: `shown` the one set (empty when none), `own` the layer's
+/// or class's own, shown greyed when none is set. The text once it is left changed, `""` to show
+/// the own one again.
+fn legend_text_edit(
+    ui: &mut Ui,
+    key: impl std::hash::Hash + std::fmt::Debug,
+    shown: &str,
+    own: &str,
+    labelled_by: egui::Id,
+) -> Option<String> {
+    let id = egui::Id::unique(("legend_text", key));
+    let typing = id.with("typing");
+    let mut buf = if ui.memory(|m| m.has_focus(id)) {
+        ui.data_mut(|d| d.get_temp::<String>(typing)).unwrap_or_else(|| shown.to_string())
+    } else {
+        ui.data_mut(|d| d.remove::<String>(typing));
+        shown.to_string()
+    };
+    let r = ui
+        .add(egui::TextEdit::singleline(&mut buf).id(id).hint_text(own).desired_width(ui.available_width().max(120.0)))
+        .labelled_by(labelled_by);
+    if r.lost_focus() {
+        ui.data_mut(|d| d.remove::<String>(typing));
+        if buf.trim() != shown.trim() && !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            return Some(buf.trim().to_string());
+        }
+    } else if r.has_focus() {
+        ui.data_mut(|d| d.insert_temp(typing, buf));
+    }
+    None
 }
 
 fn text_field(
@@ -1814,7 +1977,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                 match &e.kind {
                     // Its text, size, colour and boldness: the shared form, below the grid.
                     ElementKind::Text { .. } => {}
-                    ElementKind::Legend { title, all_classes, hide_other, .. } => {
+                    ElementKind::Legend { title, all_classes, hide_other, look, .. } => {
                         let input_label = ui.label(tl!("Title"));
                         if let Some(tt) = text_field(app, ui, (li, id, "title"), title, false, input_label.id) {
                             update(app, json!({"title": tt}));
@@ -1833,6 +1996,64 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             update(app, json!({"hideOther": hide}));
                         }
                         ui.end_row();
+                        // The patches the symbols are drawn in, and the room between the rows.
+                        for (label, key, current, most) in [
+                            ("Patch width", "patchWidth", look.patch_width, MAX_PATCH),
+                            ("Patch height", "patchHeight", look.patch_height, MAX_PATCH),
+                            ("Row spacing", "rowSpacing", look.spacing, MAX_LEGEND_SPACING),
+                        ] {
+                            let input_label = ui.label(tl!(label));
+                            let mut v = current;
+                            let drag = Dragged::lend(ui, drag_key(key), &mut v);
+                            let zero = if key == "rowSpacing" { "0 pt".to_string() } else { tl!("Auto").to_string() };
+                            let r = ui
+                                .add(
+                                    egui::DragValue::new(&mut v)
+                                        .range(0.0..=most)
+                                        .speed(0.2)
+                                        .custom_formatter(
+                                            move |v, _| if v <= 0.0 { zero.clone() } else { format!("{} pt", (v * 10.0).round() / 10.0) },
+                                        )
+                                        .custom_parser(|t| {
+                                            let t: String = t.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+                                            Some(t.parse::<f64>().unwrap_or(0.0))
+                                        }),
+                                )
+                                .labelled_by(input_label.id);
+                            if drag.settled(ui, &r, &mut v) && (v - current).abs() > 1e-9 {
+                                update(app, json!({key: v}));
+                            }
+                            ui.end_row();
+                        }
+                        let shapes = [
+                            (
+                                "Line patch",
+                                "linePatch",
+                                (look.line_patch.code(), look.line_patch.label()),
+                                LinePatch::ALL.iter().map(|v| (v.code(), v.label())).collect::<Vec<_>>(),
+                            ),
+                            (
+                                "Area patch",
+                                "areaPatch",
+                                (look.area_patch.code(), look.area_patch.label()),
+                                AreaPatch::ALL.iter().map(|v| (v.code(), v.label())).collect(),
+                            ),
+                        ];
+                        for (label, key, now, all) in shapes {
+                            let input_label = ui.label(tl!(label));
+                            egui::ComboBox::from_id_salt((key, id))
+                                .selected_text(tl!(now.1))
+                                .show_ui(ui, |ui| {
+                                    for (code, shown) in all {
+                                        if ui.selectable_label(now.0 == code, tl!(shown)).clicked() && now.0 != code {
+                                            update(app, json!({key: code}));
+                                        }
+                                    }
+                                })
+                                .response
+                                .labelled_by(input_label.id);
+                            ui.end_row();
+                        }
                     }
                     ElementKind::Colorbar { frame, layer, title, orientation, ticks, tick_side, reverse } => {
                         let input_label = ui.label(tl!("Title"));
@@ -2236,7 +2457,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
         if let Some(code) = picked {
             update(app, json!({"style": code}));
         }
-        label_type(app, ui, (li, id), &text, own, if arrow { "Letter type" } else { "Number type" }, &update);
+        label_type(app, ui, (li, id), &text, own, if arrow { "Letter type" } else { "Number type" }, None, &update);
     }
     // A layout's text: the form a text graphic has too (#516, #535), with the page's dynamic text.
     if let ElementKind::Text { text, size, color, bold, italic, align, letter_spacing, font, font_name } = &e.kind {
@@ -2339,6 +2560,24 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                     }
                 }
             });
+        }
+    }
+    // A legend's texts for its layers and classes, and its type (folded until opened).
+    if let ElementKind::Legend { frame, look, exclude, .. } = &e.kind {
+        let map = layout.element(*frame).and_then(|f| match &f.kind {
+            ElementKind::MapFrame { map, .. } => app.session.project.maps.iter().position(|m| m.name.eq_ignore_ascii_case(map)),
+            _ => None,
+        });
+        if let Some(mi) = map {
+            legend_items(app, ui, (li, id), mi, look, exclude, &update);
+        }
+        let dark = rustgis_engine::map::Rgba::rgb(0x22, 0x22, 0x22);
+        for (title, key, t) in [
+            ("Title type", "titleType", &look.title),
+            ("Layer name type", "layerType", &look.layer),
+            ("Label type", "labelType", &look.label),
+        ] {
+            label_type(app, ui, (li, id), t, dark, title, Some(key), &update);
         }
     }
     if let ElementKind::MapFrame { grid, .. } = &e.kind {
@@ -3833,6 +4072,68 @@ mod tests {
         h.key_press(egui::Key::Enter);
         h.run_steps(3);
         assert!(matches!(kind(&h, arrow), ElementKind::NorthArrow { ref label, .. } if label == "น"), "{:?}", kind(&h, arrow));
+    }
+
+    /// A legend's type, patches and texts are set in the Format pane: a layer's name and a
+    /// class's label typed over, in Thai, the area patch picked, and its labels' size.
+    #[test]
+    fn a_legends_items_and_type_are_set_in_the_format_pane() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        use rustgis_engine::map::layout::{AreaPatch, ElementKind};
+        let mut app = RustGisApp::with_sample();
+        app.run("layer.symbology", json!({"layer": "Countries", "type": "unique", "field": "continent"})).unwrap();
+        app.run("layout.new", json!({"name": "Legend look"})).unwrap();
+        let li = app.session.active_layout.unwrap();
+        let legend = app.session.project.layouts[li].elements.iter().find(|e| e.kind.code() == "legend").unwrap().id;
+        app.run("ui.pane.format", json!({})).unwrap();
+        app.layout.selected = Some(legend);
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().allow_missing_glyphs().with_size(vec2(1200.0, 4000.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                egui::ScrollArea::vertical().show(ui, |ui| with_format(app, ui));
+            },
+            app,
+        );
+        h.run_steps(3);
+        let look = |h: &egui_kittest::Harness<'_, RustGisApp>| match &h.state().session.project.layouts[li].element(legend).unwrap().kind {
+            ElementKind::Legend { look, .. } => (**look).clone(),
+            k => panic!("{k:?}"),
+        };
+        // The top layer's name, typed over.
+        let field = h.get_all_by_role_and_label(Role::TextInput, "Shown as").next().unwrap();
+        field.focus();
+        h.run_steps(2);
+        h.get_all_by_role_and_label(Role::TextInput, "Shown as").next().unwrap().type_text("ชั้นบน");
+        h.run_steps(2);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        let top = h.state().session.project.maps[0].layers.last().unwrap().name.clone();
+        assert_eq!(look(&h).name_of(&top), Some("ชั้นบน"), "{:?}", look(&h));
+        // A class's label, typed over.
+        h.get_by_role_and_label(Role::TextInput, "Asia").focus();
+        h.run_steps(2);
+        h.get_by_role_and_label(Role::TextInput, "Asia").type_text("เอเชีย");
+        h.run_steps(2);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert_eq!(look(&h).label_of("Countries", "Asia"), Some("เอเชีย"), "{:?}", look(&h));
+        // The area patch, from its list.
+        h.get_by_role_and_label(Role::ComboBox, "Area patch").click();
+        h.run_steps(2);
+        h.get_by_label("Natural area").click();
+        h.run_steps(3);
+        assert_eq!(look(&h).area_patch, AreaPatch::Natural);
+        // The symbology button opens the layer's Symbology pane.
+        h.get_all_by_role_and_label(Role::Button, "Symbology…").next().unwrap().click();
+        h.run_steps(3);
+        assert_eq!(h.state().session.active_layer, h.state().session.project.maps[0].layers.last().map(|l| l.id));
+        assert!(h.state().ui.right_open.contains(&crate::RightPane::Symbology));
     }
 
     /// Selecting an element opens the Format pane, a tab like the others (#516). Closing it keeps
