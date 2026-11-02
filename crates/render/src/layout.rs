@@ -2516,10 +2516,11 @@ mod tests {
         assert!(w > w0 && h > h0 + 5.0, "{w0} × {h0} to {w} × {h}");
         assert!(ink_reach(&legend_with(&map, &big)).1 > ink_reach(&plain_pm).1 + 20);
         // Wider patches push the text right by as much; room between the rows adds to the height.
+        // (Within a ten-thousandth of a mm: the widths are summed in f32.)
         let wide = LegendLook { patch_width: 40.0, spacing: 4.0, ..LegendLook::default() };
         let (w, h) = size(&mut map, &wide);
-        assert!((w - w0 - 24.0 * mm).abs() < 1e-6, "{w0} to {w}");
-        assert!((h - h0 - 5.0 * 4.0 * mm).abs() < 1e-6, "five gaps: {h0} to {h}");
+        assert!((w - w0 - 24.0 * mm).abs() < 1e-4, "{w0} to {w}");
+        assert!((h - h0 - 5.0 * 4.0 * mm).abs() < 1e-4, "five gaps: {h0} to {h}");
         // A taller patch makes its rows taller.
         let tall = LegendLook { patch_height: 20.0, ..LegendLook::default() };
         assert!(size(&mut map, &tall).1 > h0 + 10.0 * 4.0 * mm);
