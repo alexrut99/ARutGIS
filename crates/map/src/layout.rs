@@ -4,6 +4,7 @@
 //! Element positions are in millimetres from the page's top-left corner. A map frame shows a map
 //! of the project at its own centre and scale, independent of the map view.
 
+use rustgis_data::GeometryType;
 use rustgis_geom::Coord;
 use std::collections::BTreeMap;
 
@@ -1198,6 +1199,14 @@ pub struct LegendLook {
     /// A class's label as the legend shows it, by its layer's name and its own label.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, BTreeMap<String, String>>,
+    /// A layer's name in a type of its own, in place of `layer` (or `label`, for a layer drawn in
+    /// one symbol), by the layer's name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub name_types: BTreeMap<String, LabelText>,
+    /// A class's label in a type of its own, in place of `label`, by its layer's name and its
+    /// own label.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub label_types: BTreeMap<String, BTreeMap<String, LabelText>>,
 }
 
 impl Default for LegendLook {
@@ -1213,6 +1222,8 @@ impl Default for LegendLook {
             spacing: 0.0,
             names: BTreeMap::new(),
             labels: BTreeMap::new(),
+            name_types: BTreeMap::new(),
+            label_types: BTreeMap::new(),
         }
     }
 }
@@ -1263,6 +1274,44 @@ impl LegendLook {
         }
     }
 
+    /// The type of its own the legend shows the layer `layer`'s name in, when one is set.
+    pub fn name_type(&self, layer: &str) -> Option<&LabelText> {
+        self.name_types.iter().find(|(k, _)| k.eq_ignore_ascii_case(layer)).map(|(_, v)| v)
+    }
+
+    /// The type of its own the legend shows `layer`'s class `class` in, when one is set.
+    pub fn label_type(&self, layer: &str, class: &str) -> Option<&LabelText> {
+        self.label_types.iter().find(|(k, _)| k.eq_ignore_ascii_case(layer)).and_then(|(_, m)| m.get(class))
+    }
+
+    /// Sets the type `layer`'s name is shown in; `None` shows it in the legend's again.
+    pub fn set_name_type(&mut self, layer: &str, t: Option<LabelText>) {
+        self.name_types.retain(|k, _| !k.eq_ignore_ascii_case(layer));
+        if let Some(mut t) = t
+            && self.name_types.len() < MAX_LEGEND_TEXTS
+        {
+            t.clamp();
+            self.name_types.insert(layer.to_string(), t);
+        }
+    }
+
+    /// Sets the type `layer`'s class `class` is shown in; `None` shows it in the legend's again.
+    pub fn set_label_type(&mut self, layer: &str, class: &str, t: Option<LabelText>) {
+        let key = self.label_types.keys().find(|k| k.eq_ignore_ascii_case(layer)).cloned().unwrap_or_else(|| layer.to_string());
+        let count: usize = self.label_types.values().map(BTreeMap::len).sum();
+        let m = self.label_types.entry(key.clone()).or_default();
+        m.remove(class);
+        if let Some(mut t) = t
+            && count < MAX_LEGEND_TEXTS
+        {
+            t.clamp();
+            m.insert(class.to_string(), t);
+        }
+        if m.is_empty() {
+            self.label_types.remove(&key);
+        }
+    }
+
     /// Follows the layer `from` renamed to `to`.
     pub fn rename(&mut self, from: &str, to: &str) {
         if let Some(k) = self.names.keys().find(|k| k.eq_ignore_ascii_case(from)).cloned()
@@ -1275,12 +1324,24 @@ impl LegendLook {
         {
             self.labels.insert(to.to_string(), v);
         }
+        if let Some(k) = self.name_types.keys().find(|k| k.eq_ignore_ascii_case(from)).cloned()
+            && let Some(v) = self.name_types.remove(&k)
+        {
+            self.name_types.insert(to.to_string(), v);
+        }
+        if let Some(k) = self.label_types.keys().find(|k| k.eq_ignore_ascii_case(from)).cloned()
+            && let Some(v) = self.label_types.remove(&k)
+        {
+            self.label_types.insert(to.to_string(), v);
+        }
     }
 
     /// Forgets the texts set for the layer `layer`, gone from the map.
     pub fn forget(&mut self, layer: &str) {
         self.names.retain(|k, _| !k.eq_ignore_ascii_case(layer));
         self.labels.retain(|k, _| !k.eq_ignore_ascii_case(layer));
+        self.name_types.retain(|k, _| !k.eq_ignore_ascii_case(layer));
+        self.label_types.retain(|k, _| !k.eq_ignore_ascii_case(layer));
     }
 
     fn clamp(&mut self) {
@@ -1301,6 +1362,20 @@ impl LegendLook {
             m.retain(|_, v| !v.is_empty());
         }
         self.labels.retain(|_, m| !m.is_empty());
+        // At most as many as `set_name_type` and `set_label_type` keep.
+        while self.name_types.len() > MAX_LEGEND_TEXTS {
+            self.name_types.pop_last();
+        }
+        self.name_types.values_mut().for_each(LabelText::clamp);
+        let mut left = MAX_LEGEND_TEXTS;
+        for m in self.label_types.values_mut() {
+            while m.len() > left {
+                m.pop_last();
+            }
+            left -= m.len();
+            m.values_mut().for_each(LabelText::clamp);
+        }
+        self.label_types.retain(|_, m| !m.is_empty());
     }
 }
 
@@ -1581,6 +1656,17 @@ pub enum ElementKind {
     },
     /// An ellipse filling the element's box: a circle in a square one.
     Ellipse { fill: Rgba, outline: Rgba, width: f64 },
+    /// A legend's symbol patch on its own, as a legend converted to graphics leaves it: a layer's
+    /// symbol (a copy, which no longer follows the layer) in the shape a legend draws it in,
+    /// filling the element's box.
+    Swatch {
+        geometry: GeometryType,
+        symbol: crate::Symbol,
+        #[serde(default, skip_serializing_if = "is_default")]
+        line_patch: LinePatch,
+        #[serde(default, skip_serializing_if = "is_default")]
+        area_patch: AreaPatch,
+    },
     /// A straight line across the element's box, `width` points wide.
     Line {
         color: Rgba,
@@ -1658,6 +1744,7 @@ impl ElementKind {
             ElementKind::Chart { .. } => "chart",
             ElementKind::Rectangle { .. } => "rectangle",
             ElementKind::Ellipse { .. } => "ellipse",
+            ElementKind::Swatch { .. } => "swatch",
             ElementKind::Line { .. } => "line",
         }
     }
@@ -1674,6 +1761,7 @@ impl ElementKind {
             ElementKind::Chart { .. } => "Chart Frame",
             ElementKind::Rectangle { .. } => "Rectangle",
             ElementKind::Ellipse { .. } => "Ellipse",
+            ElementKind::Swatch { .. } => "Legend Patch",
             ElementKind::Line { .. } => "Line",
         }
     }
@@ -2271,6 +2359,7 @@ impl Layout {
                     *width = finite_or(*width, 1.0).clamp(0.0, 50.0)
                 }
                 ElementKind::Line { width, .. } => *width = finite_or(*width, 1.0).clamp(0.1, 50.0),
+                ElementKind::Swatch { symbol, .. } => symbol.clamp_sizes(),
                 _ => {}
             }
         }

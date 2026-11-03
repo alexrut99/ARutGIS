@@ -152,6 +152,14 @@ impl Symbol {
         self
     }
 
+    /// Its sizes finite and in range, as a symbol read from a file must be: a marker at most
+    /// [`crate::symbol_by::MAX_SIZE`] points, an outline at most [`crate::symbol_by::MAX_WIDTH`].
+    pub fn clamp_sizes(&mut self) {
+        let fit = |v: f32, hi: f32| if v.is_finite() { v.clamp(0.0, hi) } else { 0.0 };
+        self.size = fit(self.size, crate::symbol_by::MAX_SIZE);
+        self.stroke_width = fit(self.stroke_width, crate::symbol_by::MAX_WIDTH);
+    }
+
     /// Ramp colours change hue, not a polygon's existing fill opacity (even below 150).
     fn with_ramp_fill(self, c: Rgba, g: GeometryType) -> Symbol {
         let mut out = self.with_fill(c, g);

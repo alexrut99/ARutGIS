@@ -325,6 +325,9 @@ fn draw_page(
                     None => placeholder(target, r, "Chart", ppp),
                 }
             }
+            ElementKind::Swatch { geometry, symbol, line_patch, area_patch } => {
+                lone_swatch(target, r, *geometry, symbol, (*line_patch, *area_patch), ppp as f32);
+            }
             ElementKind::Rectangle { fill, outline, width, radius } => {
                 // Square corners filled as before, so an existing layout draws to the same pixels.
                 let rounded = rounded_rect(r, (*radius * PT_PER_MM * ppp) as f32);
@@ -1543,12 +1546,24 @@ impl LegendRow<'_> {
     /// [`LEGEND_ROW`].
     fn height(&self, look: &LegendLook) -> f32 {
         let patch = patch_height(look) + 6.0;
+        let (_, pt) = self.typ(look);
         match self {
             LegendRow::Picture(p) => picture_size(p).1,
-            LegendRow::Head(_) => text_row(type_size(&look.layer, LAYER_PT)),
-            LegendRow::Plain(_) => text_row(type_size(&look.label, LAYER_PT)).max(patch),
-            LegendRow::Class(..) => text_row(type_size(&look.label, LABEL_PT)).max(patch),
+            LegendRow::Head(_) => text_row(pt),
+            LegendRow::Plain(_) | LegendRow::Class(..) => text_row(pt).max(patch),
         }
+    }
+
+    /// The type its text is drawn in, and its size in points: the one set for this layer or class,
+    /// else the legend's for its kind of row.
+    fn typ<'b>(&'b self, look: &'b LegendLook) -> (&'b LabelText, f32) {
+        let (t, default) = match self {
+            LegendRow::Plain(l) => (look.name_type(&l.name).unwrap_or(&look.label), LAYER_PT),
+            LegendRow::Head(name) => (look.name_type(name).unwrap_or(&look.layer), LAYER_PT),
+            LegendRow::Class(_, layer, en) => (look.label_type(layer, &en.label).unwrap_or(&look.label), LABEL_PT),
+            LegendRow::Picture(_) => (&look.label, LABEL_PT),
+        };
+        (t, type_size(t, default))
     }
 
     /// The text it shows: a layer's name or a class's label, or the one the legend sets for it.
@@ -1752,30 +1767,45 @@ fn legend_rows<'a>(map: &'a Map, drawn: Option<&[(u32, Vec<LegendEntry>)]>, opts
     rows
 }
 
-/// The legend of a frame's map: its rows ([`legend_rows`]) from the top, as many as fit, in the
-/// type and with the patches its look sets.
-fn legend(pm: &mut Pixmap, r: Rect, map: &Map, title: &str, drawn: Option<&[(u32, Vec<LegendEntry>)]>, opts: LegendOptions, ppp: f64) {
-    let ppp = ppp as f32;
+/// A piece of a legend as [`legend`] lays it out, in pixels: a text (its left and its middle),
+/// a symbol's patch (in the row `y`..`y + h`, at `x`), or a WMS or WMTS layer's legend picture
+/// (at `y`, cut at the legend's bottom).
+enum Piece {
+    Text { s: String, x: f32, cy: f32, pt: f32, t: LabelText },
+    Swatch { x: f32, y: f32, h: f32, gt: GeometryType, symbol: rustgis_map::Symbol },
+    Picture { y: f32, pic: std::sync::Arc<rustgis_tiles::cache::Payload> },
+}
+
+/// The pieces of the legend of a frame's map in `r`: its title, then its rows
+/// ([`legend_rows`]) from the top, as many as fit, in the type its look sets.
+fn legend_pieces(r: Rect, map: &Map, title: &str, drawn: Option<&[(u32, Vec<LegendEntry>)]>, opts: LegendOptions, ppp: f32) -> Vec<Piece> {
     let look = opts.look;
+    let mut out = Vec::new();
     let mut y = r.y();
     let gap = look.spacing as f32 * ppp;
     if !title.is_empty() {
         // Its middle where it always was: half a row down, the rest of its row under it.
         let line = title_row(look) * ppp;
         let cy = y + (line - LEGEND_ROW * 0.3 * ppp) / 2.0;
-        legend_text(pm, title, r.x(), cy, type_size(&look.title, TITLE_PT), &look.title, ppp);
+        out.push(Piece::Text { s: title.to_string(), x: r.x(), cy, pt: type_size(&look.title, TITLE_PT), t: look.title.clone() });
         y += line;
     }
-    let patch = Patch { w: patch_width(look) * ppp, h: patch_height(look) * ppp, set: look.patch_height > 0.0, look };
-    let sw = patch.w;
+    let sw = patch_width(look) * ppp;
     let mut rows = legend_rows(map, drawn, &opts).into_iter().peekable();
     while let Some(row) = rows.next() {
         if let LegendRow::Picture(p) = &row {
             match &**p {
-                rustgis_tiles::cache::Payload::Image(pic) => match legend_picture(pm, r, y, pic, ppp) {
-                    Some((h, true)) => y += h + gap,
-                    // Cut at the bottom, or no room for it.
-                    _ => break,
+                rustgis_tiles::cache::Payload::Image(pic) => match picture_fit(r, y, pic, ppp) {
+                    Some((h, whole)) => {
+                        out.push(Piece::Picture { y, pic: p.clone() });
+                        if !whole {
+                            // Cut at the bottom.
+                            break;
+                        }
+                        y += h + gap;
+                    }
+                    // No room for it.
+                    None => break,
                 },
                 _ => continue,
             }
@@ -1794,29 +1824,137 @@ fn legend(pm: &mut Pixmap, r: Rect, map: &Map, title: &str, drawn: Option<&[(u32
         {
             break;
         }
-        let text = row.text(look);
+        let s = row.text(look).to_string();
+        let (t, pt) = row.typ(look);
+        let t = t.clone();
         match &row {
             LegendRow::Plain(l) => {
-                swatch(pm, r.x(), y, line, l.geometry_type(), &l.renderer.symbol_for(&l.dataset, 0), &patch, ppp);
-                legend_text(pm, text, r.x() + sw + 6.0 * ppp, y + line / 2.0, type_size(&look.label, LAYER_PT), &look.label, ppp);
+                let symbol = l.renderer.symbol_for(&l.dataset, 0);
+                out.push(Piece::Swatch { x: r.x(), y, h: line, gt: l.geometry_type(), symbol });
+                out.push(Piece::Text { s, x: r.x() + sw + 6.0 * ppp, cy: y + line / 2.0, pt, t });
             }
-            LegendRow::Head(_) => {
-                legend_text(pm, text, r.x(), y + line / 2.0, type_size(&look.layer, LAYER_PT), &look.layer, ppp);
-            }
+            LegendRow::Head(_) => out.push(Piece::Text { s, x: r.x(), cy: y + line / 2.0, pt, t }),
             LegendRow::Class(gt, _, en) => {
-                swatch(pm, r.x() + 6.0 * ppp, y, line, *gt, &en.symbol, &patch, ppp);
-                legend_text(pm, text, r.x() + sw + 12.0 * ppp, y + line / 2.0, type_size(&look.label, LABEL_PT), &look.label, ppp);
+                out.push(Piece::Swatch { x: r.x() + 6.0 * ppp, y, h: line, gt: *gt, symbol: en.symbol });
+                out.push(Piece::Text { s, x: r.x() + sw + 12.0 * ppp, cy: y + line / 2.0, pt, t });
             }
             LegendRow::Picture(_) => {}
         }
         y += line + gap;
     }
+    out
+}
+
+/// The legend of a frame's map: its pieces ([`legend_pieces`]), with the patches its look sets.
+fn legend(pm: &mut Pixmap, r: Rect, map: &Map, title: &str, drawn: Option<&[(u32, Vec<LegendEntry>)]>, opts: LegendOptions, ppp: f64) {
+    let ppp = ppp as f32;
+    let look = opts.look;
+    let patch = Patch { w: patch_width(look) * ppp, h: patch_height(look) * ppp, set: look.patch_height > 0.0, look };
+    for piece in legend_pieces(r, map, title, drawn, opts, ppp) {
+        match piece {
+            Piece::Text { s, x, cy, pt, t } => legend_text(pm, &s, x, cy, pt, &t, ppp),
+            Piece::Swatch { x, y, h, gt, symbol } => swatch(pm, x, y, h, gt, &symbol, &patch, ppp),
+            Piece::Picture { y, pic } => {
+                if let rustgis_tiles::cache::Payload::Image(pic) = &*pic {
+                    legend_picture(pm, r, y, pic, ppp);
+                }
+            }
+        }
+    }
+}
+
+/// A piece of a legend turned into graphics, in millimetres from the legend's top left.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LegendPiece {
+    /// A text: its left, its middle, how wide it draws and its size in points, in the type it is
+    /// drawn in.
+    Text { text: String, x: f64, y: f64, w: f64, size: f64, t: LabelText },
+    /// A symbol's patch filling the box `x`, `y`, `w`, `h`.
+    Patch { x: f64, y: f64, w: f64, h: f64, geometry: GeometryType, symbol: rustgis_map::Symbol },
+    /// A WMS or WMTS layer's legend picture (PNG) filling its box.
+    Picture { x: f64, y: f64, w: f64, h: f64, png: Vec<u8> },
+}
+
+/// The pieces of a legend `w_mm` by `h_mm` (as [`legend`] draws it, the rows that fit), for
+/// turning it into graphics: the classes a frame shows at the renderer's scale denominator
+/// `scale` (as [`legend_size_mm`] reads them), or every class with `all_classes`. `None` when a
+/// complete source can't be read.
+#[allow(clippy::too_many_arguments)]
+pub fn legend_pieces_mm(
+    map: &mut Map,
+    scale: f64,
+    title: &str,
+    all_classes: bool,
+    hide_other: bool,
+    exclude: &[String],
+    look: &LegendLook,
+    (w_mm, h_mm): (f64, f64),
+) -> Option<Vec<LegendPiece>> {
+    let drawn = if all_classes { None } else { Some(complete_shown_legends(map, scale)?) };
+    wait_for_tile_legends(map, scale, exclude);
+    let r = Rect::from_xywh(0.0, 0.0, (w_mm * PT_PER_MM) as f32, (h_mm * PT_PER_MM) as f32)?;
+    let opts = LegendOptions { hide_other, exclude, scale, look };
+    let mm = |v: f32| f64::from(v) / PT_PER_MM;
+    let (pw, ph, set) = (patch_width(look), patch_height(look), look.patch_height > 0.0);
+    let mut out = Vec::new();
+    for piece in legend_pieces(r, map, title, drawn.as_deref(), opts, 1.0) {
+        out.push(match piece {
+            Piece::Text { s, x, cy, pt, t } => {
+                let w = mm(legend_text_width(&s, pt, &t));
+                LegendPiece::Text { text: s, x: mm(x), y: mm(cy), w, size: f64::from(pt), t }
+            }
+            Piece::Swatch { x, y, h, gt, symbol } => {
+                // The box `swatch` fills in the row: the patch's height set by hand, else the
+                // share of the row each kind of patch takes.
+                let bh = match gt {
+                    _ if set => ph,
+                    GeometryType::Point => (h - 2.0).max(3.0),
+                    GeometryType::Polyline => h * 0.4,
+                    _ => h * 0.6,
+                };
+                LegendPiece::Patch { x: mm(x), y: mm(y + (h - bh) / 2.0), w: mm(pw), h: mm(bh), geometry: gt, symbol }
+            }
+            Piece::Picture { y, pic } => {
+                let rustgis_tiles::cache::Payload::Image(pic) = &*pic else { continue };
+                let Some((h, _)) = picture_fit(r, y, pic, 1.0) else { continue };
+                let k = picture_scale(r, pic, 1.0);
+                let rows = (h / k.max(f32::MIN_POSITIVE)).round().clamp(1.0, pic.height() as f32) as u32;
+                let shown = tiny_skia::IntRect::from_xywh(0, 0, pic.width(), rows).and_then(|c| pic.clone_rect(c));
+                let Some(png) = shown.and_then(|p| p.encode_png().ok()) else { continue };
+                LegendPiece::Picture { x: mm(r.x() + 6.0), y: mm(y), w: mm(pic.width() as f32 * k), h: mm(h), png }
+            }
+        });
+    }
+    Some(out)
+}
+
+/// Draws a legend's patch on its own (a [`ElementKind::Swatch`]), filling `r`.
+fn lone_swatch(pm: &mut Pixmap, r: Rect, gt: GeometryType, symbol: &rustgis_map::Symbol, shapes: (LinePatch, AreaPatch), ppp: f32) {
+    let look = LegendLook { line_patch: shapes.0, area_patch: shapes.1, ..LegendLook::default() };
+    let patch = Patch { w: r.width(), h: r.height(), set: true, look: &look };
+    swatch(pm, r.x(), r.y(), r.height(), gt, symbol, &patch, ppp);
 }
 
 /// The pixels a legend picture's pixel takes in the legend `r`: a pixel a point, narrowed to fit
 /// across after its indent.
 fn picture_scale(r: Rect, pic: &Pixmap, ppp: f32) -> f32 {
     ppp.min((r.right() - r.x() - 6.0 * ppp).max(0.0) / pic.width().max(1) as f32)
+}
+
+/// The source rows of a legend picture that fit from `y` in the legend `r`, a thousandth of a
+/// row's slack, as the rows have; `None` when not one does.
+fn picture_rows(r: Rect, y: f32, pic: &Pixmap, ppp: f32) -> Option<f32> {
+    let k = picture_scale(r, pic, ppp);
+    let room = r.bottom() - y;
+    let rows = if k > 0.0 { ((room + LEGEND_ROW * ppp * 1e-3) / k).floor().min(pic.height() as f32) } else { 0.0 };
+    (rows >= 1.0).then_some(rows)
+}
+
+/// The height a legend picture takes from `y` in the legend `r` and whether it all fits, as
+/// [`legend_picture`] draws it; `None` when none of it does.
+fn picture_fit(r: Rect, y: f32, pic: &Pixmap, ppp: f32) -> Option<(f32, bool)> {
+    let rows = picture_rows(r, y, pic, ppp)?;
+    Some((rows * picture_scale(r, pic, ppp), (rows as u32) == pic.height()))
 }
 
 /// Draws a WMS or WMTS layer's legend picture at `y` in the legend `r`, indented as a layer's
@@ -1826,12 +1964,7 @@ fn picture_scale(r: Rect, pic: &Pixmap, ppp: f32) -> f32 {
 fn legend_picture(pm: &mut Pixmap, r: Rect, y: f32, pic: &Pixmap, ppp: f32) -> Option<(f32, bool)> {
     let x = r.x() + 6.0 * ppp;
     let k = picture_scale(r, pic, ppp);
-    let room = r.bottom() - y;
-    // The source rows that fit, a thousandth of a row's slack, as the rows have.
-    let rows = if k > 0.0 { ((room + LEGEND_ROW * ppp * 1e-3) / k).floor().min(pic.height() as f32) } else { 0.0 };
-    if rows < 1.0 {
-        return None;
-    }
+    let rows = picture_rows(r, y, pic, ppp)?;
     let shown;
     let src = if (rows as u32) < pic.height() {
         shown = tiny_skia::IntRect::from_xywh(0, 0, pic.width(), rows as u32).and_then(|c| pic.clone_rect(c))?;
@@ -1869,11 +2002,14 @@ pub fn legend_size_mm(
     let sw = patch_width(look);
     let width = rows
         .iter()
-        .map(|row| match row {
-            LegendRow::Plain(_) => sw + 6.0 + legend_text_width(row.text(look), type_size(&look.label, LAYER_PT), &look.label),
-            LegendRow::Head(_) => legend_text_width(row.text(look), type_size(&look.layer, LAYER_PT), &look.layer),
-            LegendRow::Class(..) => sw + 12.0 + legend_text_width(row.text(look), type_size(&look.label, LABEL_PT), &look.label),
-            LegendRow::Picture(p) => 6.0 + picture_size(p).0,
+        .map(|row| {
+            let (t, pt) = row.typ(look);
+            match row {
+                LegendRow::Plain(_) => sw + 6.0 + legend_text_width(row.text(look), pt, t),
+                LegendRow::Head(_) => legend_text_width(row.text(look), pt, t),
+                LegendRow::Class(..) => sw + 12.0 + legend_text_width(row.text(look), pt, t),
+                LegendRow::Picture(p) => 6.0 + picture_size(p).0,
+            }
         })
         .fold(0.0f32, f32::max);
     let mm = 25.4 / 96.0;
@@ -2551,6 +2687,109 @@ mod tests {
         for (i, a) in seen.iter().enumerate() {
             assert!(seen[i + 1..].iter().all(|b| a != b), "patch {i} looks like another");
         }
+    }
+
+    /// A layer's name or a class's label set in a type of its own: that row only takes it, the
+    /// others keep the legend's.
+    #[test]
+    fn each_layer_and_class_takes_a_type_of_its_own() {
+        let mut map = legend_map();
+        let size = |map: &mut Map, look: &LegendLook| legend_size_mm(map, 1e6, true, true, &[], look).unwrap();
+        let (w0, h0) = size(&mut map, plain());
+        let mm = 25.4 / 96.0;
+        // Towns' name at 20 points: its row alone grows, to a 20-point row.
+        let mut big = LegendLook::default();
+        big.set_name_type("towns", Some(LabelText { size: 20.0, ..LabelText::arrow() }));
+        let (w, h) = size(&mut map, &big);
+        assert!((h - h0 - f64::from(text_row(20.0) - LEGEND_ROW) * mm).abs() < 1e-4, "{h0} to {h}");
+        assert!(w > w0, "the larger name is wider: {w0} to {w}");
+        // Class b in red: red ink, and no size change.
+        let mut red = LegendLook::default();
+        red.set_label_type("TOWNS", "b", Some(LabelText { color: Some(Rgba::rgb(0xE0, 0x10, 0x10)), ..LabelText::scale_bar() }));
+        assert_eq!(size(&mut map, &red), (w0, h0));
+        let pm = legend_with(&map, &red);
+        let reds: Vec<u32> = (0..pm.height())
+            .filter(|&y| (0..pm.width()).any(|x| pm.pixel(x, y).is_some_and(|p| p.red() > 200 && p.green() < 60 && p.blue() < 60)))
+            .collect();
+        // Only on class b's row: the title's, then Lakes, Roads, Towns and a (the map's order, top
+        // first; each 15 points).
+        let row_b = (title_row(plain()) + 4.0 * LEGEND_ROW) as u32;
+        assert!(!reds.is_empty() && reds.iter().all(|y| (row_b..row_b + LEGEND_ROW as u32).contains(y)), "{reds:?}");
+        // Cleared, the legend's own type again.
+        red.set_label_type("towns", "b", None);
+        big.set_name_type("Towns", None);
+        assert!(red.is_default() && big.is_default());
+    }
+
+    /// A legend turned into pieces lists what it draws, where it draws it: the title, each name and
+    /// label in its type, and each patch in the box its row draws it in.
+    #[test]
+    fn a_legend_comes_apart_into_what_it_draws() {
+        let mut map = legend_map();
+        let mut look = LegendLook::default();
+        look.set_label_type("Towns", "a", Some(LabelText { size: 11.0, bold: true, ..LabelText::scale_bar() }));
+        let (w, h) = legend_size_mm(&mut map, 1e6, true, true, &[], &look).unwrap();
+        let title_mm = f64::from(title_row(&look)) * 25.4 / 96.0;
+        let pieces = legend_pieces_mm(&mut map, 1e6, "Legend", true, true, &[], &look, (w + 5.0, h + title_mm + 1.0)).unwrap();
+        let texts: Vec<(&str, f64)> = pieces
+            .iter()
+            .filter_map(|p| match p {
+                LegendPiece::Text { text, size, .. } => Some((text.as_str(), *size)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, [("Legend", 12.0), ("Lakes", 9.0), ("Roads", 9.0), ("Towns", 9.0), ("a", 11.0), ("b", 8.5), ("c", 8.5)]);
+        let patches: Vec<GeometryType> = pieces
+            .iter()
+            .filter_map(|p| match p {
+                LegendPiece::Patch { geometry, .. } => Some(*geometry),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(patches, [GeometryType::Polygon, GeometryType::Polyline, GeometryType::Point, GeometryType::Point, GeometryType::Point]);
+        // Top to bottom, inside the legend; a class's label right of its patch.
+        let mut last = 0.0;
+        for p in &pieces {
+            let (x, y) = match p {
+                LegendPiece::Text { x, y, .. } => (*x, *y),
+                LegendPiece::Patch { x, y, w: pw, h: ph, .. } => {
+                    assert!(*pw > 0.0 && *ph > 0.0 && x + pw <= w + 5.0, "{p:?}");
+                    (*x, y + ph / 2.0)
+                }
+                LegendPiece::Picture { .. } => panic!("no pictures here: {p:?}"),
+            };
+            assert!(x >= 0.0 && y >= last - 1e-4, "{p:?} after {last}");
+            last = y;
+        }
+        // Too short for all its rows: only those that fit.
+        let short = legend_pieces_mm(&mut map, 1e6, "Legend", true, true, &[], &look, (w + 5.0, title_mm + 5.0)).unwrap();
+        assert!(short.len() < pieces.len() && !short.is_empty());
+    }
+
+    /// A legend's patch on its own fills its box with the symbol, in the shape it was given.
+    #[test]
+    fn a_lone_patch_draws_its_symbol_in_its_box() {
+        let mut l = Layout::new("Layout", 100.0, 50.0);
+        let red = Rgba::rgb(255, 0, 0);
+        let symbol = rustgis_map::Symbol { fill: red, stroke: red, stroke_width: 1.0, size: 7.0, marker: rustgis_map::Marker::Circle };
+        let area = |area_patch| ElementKind::Swatch { geometry: GeometryType::Polygon, symbol, line_patch: LinePatch::Zigzag, area_patch };
+        l.add("Patch", (10.0, 10.0, 30.0, 20.0), area(AreaPatch::Rectangle));
+        l.add("Round", (60.0, 10.0, 30.0, 20.0), area(AreaPatch::Circle));
+        let pm = render(&l, &mut [], 254.0, &PageInfo::default()).unwrap();
+        let is_red = |x: u32, y: u32| pm.pixel(x, y).is_some_and(|p| p.red() > 200 && p.green() < 60);
+        // Ten pixels a millimetre: the rectangle fills its box to the corner; the circle doesn't.
+        assert!(is_red(250, 200) && is_red(105, 105), "rectangle");
+        assert!(is_red(750, 200) && !is_red(605, 105), "circle");
+        assert!(!is_red(500, 200), "nothing between");
+        // A file's sizes are kept in range.
+        let mut bad = l.clone();
+        if let ElementKind::Swatch { symbol, .. } = &mut bad.elements[0].kind {
+            symbol.size = f32::NAN;
+            symbol.stroke_width = 1e9;
+        }
+        bad.clamp();
+        let ElementKind::Swatch { symbol, .. } = &bad.elements[0].kind else { panic!("{:?}", bad.elements[0].kind) };
+        assert_eq!((symbol.size, symbol.stroke_width), (0.0, rustgis_map::symbol_by::MAX_WIDTH));
     }
 
     #[test]

@@ -4113,6 +4113,111 @@ fn layout_legends_take_their_type_patches_and_texts() {
     let _ = LegendLook::default();
 }
 
+/// A legend's layers and classes each take a type of their own, starting from the one they are
+/// shown in; null shows the legend's again; they follow a layer renamed.
+#[test]
+fn layout_legends_take_a_type_by_layer_and_class() {
+    use rustgis_map::layout::ElementKind;
+    let mut s = world();
+    s.run("layout.new", &json!({"page": "a4", "template": "map"})).unwrap();
+    let look = |s: &Session, id: u32| match &s.project.layouts[0].element(id).unwrap().kind {
+        ElementKind::Legend { look, .. } => (**look).clone(),
+        k => panic!("{k:?}"),
+    };
+    let id = s.project.layouts[0].elements.iter().find(|e| e.kind.code() == "legend").unwrap().id;
+    s.run(
+        "layout.update",
+        &json!({"element": id, "layerTypes": {"Countries": {"size": 14, "color": "#1F4E8C"}},
+            "classTypes": {"countries": {"High income": {"italic": true, "font": "serif"}}}}),
+    )
+    .unwrap();
+    let lk = look(&s, id);
+    let t = lk.name_type("COUNTRIES").unwrap();
+    // Countries is classed: its name starts from the layers' type (bold).
+    assert!(t.bold && t.size == 14.0 && t.color.map(|c| c.hex()) == Some("#1F4E8C".into()));
+    let c = lk.label_type("Countries", "High income").unwrap();
+    assert!(c.italic && !c.bold && c.font == rustgis_map::layout::FontFamily::Serif);
+    assert!(lk.label_type("Countries", "Low income").is_none(), "only the class named");
+    // Merged with those set; null shows the legend's type again.
+    s.run("layout.update", &json!({"element": id, "classTypes": {"Countries": {"Low income": {"size": 12}}}})).unwrap();
+    let lk = look(&s, id);
+    assert!(lk.label_type("Countries", "High income").is_some() && lk.label_type("Countries", "Low income").unwrap().size == 12.0);
+    s.run("layout.update", &json!({"element": id, "classTypes": {"Countries": {"Low income": null}}, "layerTypes": {"Countries": null}}))
+        .unwrap();
+    let lk = look(&s, id);
+    assert!(lk.name_type("Countries").is_none() && lk.label_type("Countries", "Low income").is_none());
+    // Renamed, the types follow.
+    s.run("layer.rename", &json!({"layer": "Countries", "name": "Nations"})).unwrap();
+    assert!(look(&s, id).label_type("Nations", "High income").is_some());
+    // Bad values change nothing; other elements refuse them.
+    let before = look(&s, id);
+    for bad in [
+        json!({"element": id, "layerTypes": ["Nations"]}),
+        json!({"element": id, "layerTypes": {"Nations": 5}}),
+        json!({"element": id, "classTypes": {"Nations": "x"}}),
+        json!({"element": id, "classTypes": {"Nations": {"High income": {"size": -1}}}}),
+    ] {
+        assert!(s.run("layout.update", &bad).is_err(), "{bad}");
+        assert_eq!(look(&s, id), before, "{bad}");
+    }
+    let frame = s.project.layouts[0].elements.iter().find(|e| e.kind.code() == "mapFrame").unwrap().id;
+    assert!(s.run("layout.update", &json!({"element": frame, "layerTypes": {"Nations": {"size": 3}}})).is_err());
+}
+
+/// A legend converted to graphics is replaced, in its place in the drawing order, by a group of
+/// texts and patches: its title and every name and label in the type it was shown in, a patch
+/// for each symbol; one undo brings the legend back.
+#[test]
+fn a_legend_converts_to_graphics() {
+    use rustgis_map::layout::ElementKind;
+    let mut s = world();
+    s.run("layout.new", &json!({"page": "a4", "template": "map"})).unwrap();
+    let l = &s.project.layouts[0];
+    let id = l.elements.iter().find(|e| e.kind.code() == "legend").unwrap().id;
+    let pos = l.elements.iter().position(|e| e.id == id).unwrap();
+    let count = l.elements.len();
+    let class = s.map().layer_by_name("Countries").unwrap().renderer.legend()[0].label.clone();
+    s.run(
+        "layout.update",
+        &json!({"element": id, "allClasses": true, "classTypes": {"Countries": {class.as_str(): {"size": 13, "bold": true}}}}),
+    )
+    .unwrap();
+    let before = s.project.layouts[0].clone();
+    let r = s.run("layout.convertLegend", &json!({"element": id})).unwrap();
+    let made: Vec<u32> = r["elements"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap() as u32).collect();
+    let l = &s.project.layouts[0];
+    assert!(l.element(id).is_none(), "the legend is gone");
+    assert_eq!(l.elements.len(), count - 1 + made.len());
+    // Where the legend was in the drawing order, grouped.
+    let ids: Vec<u32> = l.elements.iter().skip(pos).take(made.len()).map(|e| e.id).collect();
+    assert_eq!(ids, made);
+    let g = r["group"].as_u64().unwrap() as u32;
+    assert!(made.iter().all(|i| l.element(*i).unwrap().group == Some(g)));
+    let texts: Vec<(String, f64, bool)> = made
+        .iter()
+        .filter_map(|i| match &l.element(*i).unwrap().kind {
+            ElementKind::Text { text, size, bold, .. } => Some((text.clone(), *size, *bold)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts.first().map(|t| t.0.as_str()), Some("Legend"));
+    assert!(texts.iter().any(|t| t == &(class.clone(), 13.0, true)), "{texts:?}");
+    assert!(texts.iter().any(|t| t.0 == "Countries"), "{texts:?}");
+    let patches = made.iter().filter(|i| matches!(l.element(**i).unwrap().kind, ElementKind::Swatch { .. })).count();
+    assert!(patches >= 3, "{patches} patches");
+    // The page draws.
+    let path = std::env::temp_dir().join(format!("converted-legend-{}.png", std::process::id()));
+    s.run("layout.export", &json!({"path": path, "dpi": 72})).unwrap();
+    let _ = std::fs::remove_file(&path);
+    // One undo brings the legend back.
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(s.project.layouts[0], before);
+    // Only a legend converts.
+    let frame = s.project.layouts[0].elements.iter().find(|e| e.kind.code() == "mapFrame").unwrap().id;
+    assert!(s.run("layout.convertLegend", &json!({"element": frame})).is_err());
+    assert!(s.run("layout.convertLegend", &json!({"element": 9999})).is_err());
+}
+
 /// A map frame's grid can be a measured grid (#1008): eastings and northings in a projected
 /// system its step apart in metres, with whole or short labels; a system that isn't projected, or
 /// isn't one, is refused; a change of type starts its step afresh.

@@ -1445,23 +1445,49 @@ fn label_type(
     wrap: Option<&'static str>,
     update: &dyn Fn(&mut RustGisApp, Value),
 ) {
-    let update = |app: &mut RustGisApp, v: Value| match (wrap, v) {
-        (Some(key), Value::Object(m)) => {
-            let inner: serde_json::Map<String, Value> = m
+    // A north arrow's or scale bar's one type open; a legend's three folded until opened.
+    ui.add_space(4.0);
+    let Some(changed) = egui::CollapsingHeader::new(tl!(title))
+        .id_salt(("format_section", title))
+        .default_open(wrap.is_none())
+        .show(ui, |ui| type_form(app, ui, ("layout_label_type", li, id, wrap), text, own, "Use the element's color"))
+        .body_returned
+        .flatten()
+    else {
+        return;
+    };
+    match wrap {
+        // The legend's: an object under its option.
+        Some(key) => update(app, json!({key: changed})),
+        // A north arrow's or scale bar's: options of the element's own.
+        None => {
+            let options: serde_json::Map<String, Value> = changed
                 .into_iter()
                 .map(|(k, v)| {
                     let k = match k.as_str() {
-                        "textSize" => "size".to_string(),
-                        "textColor" => "color".to_string(),
+                        "size" => "textSize".to_string(),
+                        "color" => "textColor".to_string(),
                         _ => k,
                     };
                     (k, v)
                 })
                 .collect();
-            update(app, json!({key: inner}));
+            update(app, Value::Object(options));
         }
-        (_, v) => update(app, v),
-    };
+    }
+}
+
+/// The form for a type `text` (size, colour, weight, slant and family) and a button that sets its
+/// colour back to `own` (labelled `reset`): what was changed and let go, as an object of `size`,
+/// `color` (`""` for `own`), `bold`, `italic`, `font` and `fallback`; `None` while nothing was.
+fn type_form(
+    app: &mut RustGisApp,
+    ui: &mut Ui,
+    salt: impl std::hash::Hash + std::fmt::Debug,
+    text: &LabelText,
+    own: rustgis_engine::map::Rgba,
+    reset: &'static str,
+) -> Option<serde_json::Map<String, Value>> {
     let mut none = String::new();
     let (mut sz, mut c, mut bb, mut it) = (text.size, crate::theme::c32(text.color.unwrap_or(own)), text.bold, text.italic);
     let (mut fam, mut named) = (text.font, text.font_name.clone());
@@ -1478,44 +1504,32 @@ fn label_type(
         named_fonts: true,
         select: false,
     };
-    // A north arrow's or scale bar's one type open; a legend's three folded until opened.
-    ui.add_space(4.0);
-    let Some(settled) = egui::CollapsingHeader::new(tl!(title))
-        .id_salt(("format_section", title))
-        .default_open(wrap.is_none())
-        .show(ui, |ui| {
-            let settled = crate::textform::show_type(ui, ("layout_label_type", li, id, wrap), fields, true);
-            let reset = text.color.is_some() && ui.small_button(tl!("Use the element's color")).clicked();
-            (settled, reset)
-        })
-        .body_returned
-    else {
-        return;
-    };
-    let (settled, reset) = settled;
+    let settled = crate::textform::show_type(ui, salt, fields, true);
+    let reset = text.color.is_some() && ui.small_button(tl!(reset)).clicked();
+    let mut out = serde_json::Map::new();
     if settled.size {
-        update(app, json!({"textSize": sz}));
+        out.insert("size".into(), json!(sz));
     }
     if let Some(resp) = &settled.color {
         crate::widgets::one_step_per_press(app, resp);
-        update(app, json!({"textColor": crate::theme::rgba(c).hex()}));
+        out.insert("color".into(), json!(crate::theme::rgba(c).hex()));
     }
     if reset {
-        update(app, json!({"textColor": ""}));
+        out.insert("color".into(), json!(""));
     }
     if settled.bold {
-        update(app, json!({"bold": bb}));
+        out.insert("bold".into(), json!(bb));
     }
     if settled.italic {
-        update(app, json!({"italic": it}));
+        out.insert("italic".into(), json!(it));
     }
     if settled.font {
-        let font = match &named {
-            Some(n) => json!({"font": n, "fallback": fam.code()}),
-            None => json!({"font": fam.code()}),
-        };
-        update(app, font);
+        out.insert("font".into(), json!(named.as_deref().unwrap_or(fam.code())));
+        if named.is_some() {
+            out.insert("fallback".into(), json!(fam.code()));
+        }
     }
+    (!out.is_empty()).then_some(out)
 }
 
 /// A legend's items: for each layer it can list, its name and its classes' labels as the legend
@@ -1568,11 +1582,18 @@ fn legend_items(
                     app.ui.open_right(crate::RightPane::Symbology);
                 }
             });
-            egui::Grid::new(("legend_items", li, id, *lid)).num_columns(2).spacing(vec2(8.0, 4.0)).show(ui, |ui| {
+            egui::Grid::new(("legend_items", li, id, *lid)).num_columns(3).spacing(vec2(8.0, 4.0)).show(ui, |ui| {
                 let input_label = ui.label(tl!("Shown as"));
                 if let Some(t) = legend_text_edit(ui, ("legend_name", li, id, *lid), look.name_of(name).unwrap_or(""), name, input_label.id)
                 {
                     update(app, json!({"layerNames": {name.as_str(): t}}));
+                }
+                // A layer drawn in one symbol is named in the labels' type, the others in the
+                // layers' names'.
+                let base = if entries.is_empty() { &look.label } else { &look.layer };
+                let own = look.name_type(name);
+                if let Some(v) = item_type(app, ui, ("legend_name_type", li, id, *lid), name, own, base) {
+                    update(app, json!({"layerTypes": {name.as_str(): v}}));
                 }
                 ui.end_row();
                 for (label, symbol) in entries {
@@ -1587,11 +1608,75 @@ fn legend_items(
                     if let Some(t) = legend_text_edit(ui, ("legend_label", li, id, *lid, label.as_str()), shown, label, own.id) {
                         update(app, json!({"classLabels": {name.as_str(): {label.as_str(): t}}}));
                     }
+                    let set = look.label_type(name, label);
+                    if let Some(v) = item_type(app, ui, ("legend_label_type", li, id, *lid, label.as_str()), label, set, &look.label) {
+                        update(app, json!({"classTypes": {name.as_str(): {label.as_str(): v}}}));
+                    }
                     ui.end_row();
                 }
             });
         }
+        ui.add_space(8.0);
+        let convert = ui.button(tl!("Convert to Graphics")).on_hover_text(tl!(
+            "Replace the legend with a text for each name and label and a patch for each symbol, grouped: Ungroup to move and restyle them one by one. They no longer follow the layers."
+        ));
+        if convert.clicked() {
+            match app.run("layout.convertLegend", json!({"layout": li, "element": id})) {
+                Ok(r) => {
+                    // The graphics selected in the legend's place.
+                    let first = r["elements"].as_array().and_then(|a| a.first()).and_then(Value::as_u64).map(|v| v as u32);
+                    app.layout.selected = first;
+                }
+                Err(e) => {
+                    let text = crate::i18n::fmt("Couldn't convert the legend: {error}", &[("error", tl_raw!(e.as_str()))]);
+                    app.session.notify(text, true);
+                }
+            }
+        }
     });
+}
+
+/// A small button that gives a layer's name or a class's label a type of its own, and the type
+/// form under it while open: `set` its own type (`None` while it has none), `base` the legend's
+/// it is shown in otherwise. The change to send (an object of `size`, `color`, … or `null` for
+/// the legend's type again), once one is made.
+fn item_type(
+    app: &mut RustGisApp,
+    ui: &mut Ui,
+    key: impl std::hash::Hash + std::fmt::Debug + Clone,
+    item: &str,
+    set: Option<&LabelText>,
+    base: &LabelText,
+) -> Option<Value> {
+    let open_id = egui::Id::unique(("legend_item_type", key.clone()));
+    let mut open = ui.data_mut(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+    let tip = if set.is_some() { tl!("Its own type: change it, or use the legend's again") } else { tl!("Give it a type of its own") };
+    let r = ui.selectable_label(open || set.is_some(), "Aa").on_hover_text(tip);
+    // Named for screen readers by the item it styles.
+    let name = crate::i18n::fmt("Type of {item}", &[("item", item)]);
+    r.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, open || set.is_some(), &name));
+    if r.clicked() {
+        open = !open;
+        ui.data_mut(|d| d.insert_temp(open_id, open));
+    }
+    if !open {
+        return None;
+    }
+    ui.end_row();
+    ui.label("");
+    let dark = rustgis_engine::map::Rgba::rgb(0x22, 0x22, 0x22);
+    let mut out = None;
+    ui.vertical(|ui| {
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            if let Some(changed) = type_form(app, ui, ("legend_item_form", key), set.unwrap_or(base), dark, "Use the legend's color") {
+                out = Some(Value::Object(changed));
+            }
+            if set.is_some() && ui.small_button(tl!("Use the legend's type")).clicked() {
+                out = Some(Value::Null);
+            }
+        });
+    });
+    out
 }
 
 /// A small picture of a symbol, as the legend draws it.
@@ -4134,6 +4219,62 @@ mod tests {
         h.run_steps(3);
         assert_eq!(h.state().session.active_layer, h.state().session.project.maps[0].layers.last().map(|l| l.id));
         assert!(h.state().ui.right_open.contains(&crate::RightPane::Symbology));
+    }
+
+    /// A class's label takes a type of its own in Legend items (its Aa button, then the type
+    /// form), and the legend converts to graphics from the pane: grouped texts and patches,
+    /// selected where it was.
+    #[test]
+    fn a_legends_items_take_their_own_type_and_it_converts_to_graphics() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        use rustgis_engine::map::layout::ElementKind;
+        let mut app = RustGisApp::with_sample();
+        app.run("layer.symbology", json!({"layer": "Countries", "type": "unique", "field": "continent"})).unwrap();
+        app.run("layout.new", json!({"name": "Legend items"})).unwrap();
+        let li = app.session.active_layout.unwrap();
+        let legend = app.session.project.layouts[li].elements.iter().find(|e| e.kind.code() == "legend").unwrap().id;
+        app.run("ui.pane.format", json!({})).unwrap();
+        app.layout.selected = Some(legend);
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().allow_missing_glyphs().with_size(vec2(1200.0, 6000.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                egui::ScrollArea::vertical().show(ui, |ui| with_format(app, ui));
+            },
+            app,
+        );
+        h.run_steps(3);
+        let look = |h: &egui_kittest::Harness<'_, RustGisApp>| match &h.state().session.project.layouts[li].element(legend).unwrap().kind {
+            ElementKind::Legend { look, .. } => (**look).clone(),
+            k => panic!("{k:?}"),
+        };
+        // Asia's Aa opens its type form; Bold there gives it a bold type of its own.
+        assert!(h.query_by_role_and_label(Role::CheckBox, "Bold").is_none(), "folded until asked for");
+        h.get_by_role_and_label(Role::Button, "Type of Asia").click();
+        h.run_steps(3);
+        h.get_by_role_and_label(Role::CheckBox, "Bold").click();
+        h.run_steps(3);
+        let t = look(&h).label_type("Countries", "Asia").cloned().expect("Asia has its own type");
+        assert!(t.bold && !look(&h).label.bold, "{t:?}");
+        assert!(look(&h).label_type("Countries", "Europe").is_none(), "only Asia");
+        // Back to the legend's type.
+        h.get_by_role_and_label(Role::Button, "Use the legend's type").click();
+        h.run_steps(3);
+        assert!(look(&h).label_type("Countries", "Asia").is_none());
+        // Converted: the legend is replaced by grouped graphics, the first selected.
+        h.get_by_role_and_label(Role::Button, "Convert to Graphics").click();
+        h.run_steps(3);
+        let l = &h.state().session.project.layouts[li];
+        assert!(l.element(legend).is_none(), "the legend is gone");
+        let sel = h.state().layout.selected.and_then(|id| l.element(id)).expect("a graphic selected");
+        assert!(sel.group.is_some() && matches!(sel.kind, ElementKind::Text { .. }), "{sel:?}");
+        assert!(l.elements.iter().any(|e| matches!(&e.kind, ElementKind::Text { text, .. } if text == "Asia")));
+        assert!(l.elements.iter().any(|e| matches!(e.kind, ElementKind::Swatch { .. })));
     }
 
     /// Selecting an element opens the Format pane, a tab like the others (#516). Closing it keeps

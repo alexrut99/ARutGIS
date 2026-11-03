@@ -179,7 +179,16 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   `"titleType"`, `"layerType"` and `"labelType"` (`{"size": 14, "color": "#1F4E8C", "font":
   "Sarabun"}`), `"patchWidth"`, `"patchHeight"`, `"linePatch"`, `"areaPatch"`, `"rowSpacing"`,
   `"layerNames": {"Countries": "ประเทศ"}` and `"classLabels": {"Countries": {"Asia": "เอเชีย"}}`;
-  the texts given are merged with those set and follow a renamed layer.
+  the texts given are merged with those set and follow a renamed layer. The **Aa** button beside
+  a layer's name or a class's label gives that one a type of its own (another font, size or
+  colour, bold or italic) while the others keep the legend's; **Use the legend's type** takes it
+  back. Scripts give `"layerTypes": {"Countries": {"size": 14}}` and
+  `"classTypes": {"Countries": {"Asia": {"bold": true, "color": "#C0392B"}}}` (`null` for the
+  legend's type again). **Convert to Graphics**, as ArcGIS's, replaces the legend with what it
+  draws, grouped where it was: a text for its title and each name and label, in the type it was
+  shown in, and a legend patch for each symbol. **Ungroup** then moves and restyles each one on
+  its own; they no longer follow the layers, and **Undo** brings the legend back. Scripts run
+  `layout.convertLegend` with `{"element": id}`.
 - **Colorbar**: the colour scale of a raster layer in the frame's map, as the map draws it (its
   stretch, colour ramp and enhancement): a gradient bar for a stretch or a tinted hillshade,
   steps labelled at their breaks for Classify, and a block per value for Unique Values and colour

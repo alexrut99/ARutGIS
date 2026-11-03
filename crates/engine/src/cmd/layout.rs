@@ -87,10 +87,10 @@ pub fn commands() -> Vec<C> {
             r#"{"layout"?, "shape"?: "rectangle"|"circle"|"ellipse"|"polygon"|"lasso", "points"?: [[u, v], …] (polygon/lasso, 0..1 across the frame), "map"?: name, "x"?, "y"?, "w"?, "h"?: mm}"#,
         ),
         C::new("layout.addElement", "Add Element", "Publish › Map Surrounds", add_element).params(
-            r##"{"layout"?, "kind": "northArrow"|"scaleBar"|"legend"|"colorbar"|"text"|"dynamicText"|"picture"|"table"|"chart"|"rectangle" (a neatline framing the page unless any of x, y, w, h is given)|"ellipse"|"circle"|"line"|"arrow"|"extentIndicator"|"grid", "frame"?: element id (default: the first map frame), "of"?: frame id (extentIndicator, which also takes "color" and "width" in points, default red and 2), "text"?, "size"?, "color"?: "#RRGGBB"|"#RRGGBBAA", "bold"?: bool (text), "italic"?: bool, "align"?: "left"|"center"|"right", "letterSpacing"?: points, -5 to 50 (text, dynamicText), "font"?: "sans"|"serif"|an installed font family's name, as labels.fonts lists them (text, dynamicText, northArrow, scaleBar; a family not installed here is drawn in its fallback, and a serif where none is installed in the sans, with a warning; refused for other kinds), "fallback"?: "sans"|"serif" (a named font's, where it isn't installed; default its own class, else sans), "title"?: legend title (default "Legend"), "allClasses"?: bool (legend: every class, not only those the frame draws), "hideOther"?: bool (legend: leave out <all other values>), "exclude"?: [layer names] (legend: layers it leaves out though the map draws them), "titleType"?, "layerType"?, "labelType"?: {size: points (0 the default), color: "#RRGGBB" ("" dark grey), bold, italic, font, fallback as for a text} (legend: the type of its title, of its layers' names and of its classes' labels), "patchWidth"?, "patchHeight"?: points (0 the default: 16 across, sized to the row down), "linePatch"?: "zigzag"|"straight"|"curve", "areaPatch"?: "rectangle"|"rounded"|"circle"|"natural", "rowSpacing"?: points added under each row, "layerNames"?: {layer name: the name the legend shows ("" its own)}, "classLabels"?: {layer name: {class label: the label the legend shows ("" its own)}} (legend; the layer and its symbology are left as they are), "orientation"?: "horizontal"|"vertical" (colorbar), "ticks"?: 2..21 (colorbar: labelled values, ends included), "tickSide"?: "below"|"above"|"right"|"left" (colorbar), "reverse"?: bool (colorbar: high values first), "fill"?: "#RRGGBBAA" (rectangle, ellipse, circle, northArrow), "width"?: outline width in points (rectangle, ellipse, circle; 0 for none) or line width in points (line, grid), "radius"?: mm, 0 to 50 (rectangle: rounded corners), "dir"?: "horizontal"|"vertical"|"falling"|"rising" (line), "head"?: "none"|"end"|"start"|"both" (line; default "end" for an arrow), "angle"?: degrees anticlockwise from pointing right, centred on the page unless x or y is given (line, arrow; it sets the box and the direction, so w, h and dir are not used with it), "length"?: mm (line, arrow), "image"?: base64, "path"?: picture file, "layer"?: (table, chart; colorbar: a raster layer, default the top visible one), "field"?, "label"?, "rows"?, "step"?: degrees, or a measured grid's units (metres) (0 picks one), "type"?: "graticule" (latitudes and longitudes, default) | "measured" (eastings and northings in a projected system, as ArcGIS Pro's measured grid), "crs"?: a measured grid's coordinate system: EPSG:25832, WKT or a PROJ string ("" or none: the map's when projected, else the UTM zone at the frame's centre), "short"?: bool (a measured grid's labels as their kilometres' last two digits, 43 for 543000), "outside"?: bool (grid: the labels outside the frame, as ArcGIS prints them; default inside it), "labels"?: bool, "style"?: "lines"|"ticks"|"linesAndTicks" (grid) or "classic"|"compass"|"triangle"|"star"|"needle"|"circle"|"simple"|"chevron"|"block"|"rose" (northArrow) or "alternating"|"doubleAlternating"|"hollow"|"stepped"|"line"|"lineDown"|"lineCross"|"ruler" (scaleBar), "tickLength"?: mm, "format"?: "decimal"|"dms", "hemisphere"?: bool (N/S/E/W rather than a sign), "edges"?: ["top","bottom","left","right"] (labelled edges), "labelOrientation"?: "horizontal"|"vertical", "off"?: bool (grid; options not given keep the grid's), "outline"?: "#RRGGBB" (northArrow), "units"?: "auto"|"kilometers"|"meters"|"miles"|"feet"|"nauticalMiles", "divisions"?: 1..10, "subdivisions"?: 0..10 (the first division split), "division"?: each division's length in the units (metres when auto; 0 a round one that fits), "unitLabel"?: "abbreviation" (km) | "name" (Kilometers) | "thaiAbbreviation" (กม.) | "thai" (กิโลเมตร) | "custom" | "none", "unitText"?: the unit as typed (sets unitLabel custom), "unitPlace"?: "afterLabel"|"afterBar"|"above"|"below", "numbers"?: "above"|"below"|"ends"|"none", "altColor"?: the light parts (color the dark ones), "barHeight"?: points (0 sized to the element) (scaleBar), "textSize"?: points (0 sized to the element), "textColor"?: "#RRGGBB" ("" the element's own) (northArrow letter, scaleBar numbers and unit, which take bold, italic, font and fallback as a text does; label is a north arrow's letter, default N, empty for none), "x"?, "y"?, "w"?, "h"?: mm}"##,
+            r##"{"layout"?, "kind": "northArrow"|"scaleBar"|"legend"|"colorbar"|"text"|"dynamicText"|"picture"|"table"|"chart"|"rectangle" (a neatline framing the page unless any of x, y, w, h is given)|"ellipse"|"circle"|"line"|"arrow"|"extentIndicator"|"grid", "frame"?: element id (default: the first map frame), "of"?: frame id (extentIndicator, which also takes "color" and "width" in points, default red and 2), "text"?, "size"?, "color"?: "#RRGGBB"|"#RRGGBBAA", "bold"?: bool (text), "italic"?: bool, "align"?: "left"|"center"|"right", "letterSpacing"?: points, -5 to 50 (text, dynamicText), "font"?: "sans"|"serif"|an installed font family's name, as labels.fonts lists them (text, dynamicText, northArrow, scaleBar; a family not installed here is drawn in its fallback, and a serif where none is installed in the sans, with a warning; refused for other kinds), "fallback"?: "sans"|"serif" (a named font's, where it isn't installed; default its own class, else sans), "title"?: legend title (default "Legend"), "allClasses"?: bool (legend: every class, not only those the frame draws), "hideOther"?: bool (legend: leave out <all other values>), "exclude"?: [layer names] (legend: layers it leaves out though the map draws them), "titleType"?, "layerType"?, "labelType"?: {size: points (0 the default), color: "#RRGGBB" ("" dark grey), bold, italic, font, fallback as for a text} (legend: the type of its title, of its layers' names and of its classes' labels), "patchWidth"?, "patchHeight"?: points (0 the default: 16 across, sized to the row down), "linePatch"?: "zigzag"|"straight"|"curve", "areaPatch"?: "rectangle"|"rounded"|"circle"|"natural", "rowSpacing"?: points added under each row, "layerNames"?: {layer name: the name the legend shows ("" its own)}, "classLabels"?: {layer name: {class label: the label the legend shows ("" its own)}} (legend; the layer and its symbology are left as they are), "layerTypes"?: {layer name: {size, color, bold, italic, font, fallback} (null: the legend's)}, "classTypes"?: {layer name: {class label: {size, color, …} (null: the legend's)}} (legend: one layer's name or one class's label in a type of its own, starting from the one it is shown in), "orientation"?: "horizontal"|"vertical" (colorbar), "ticks"?: 2..21 (colorbar: labelled values, ends included), "tickSide"?: "below"|"above"|"right"|"left" (colorbar), "reverse"?: bool (colorbar: high values first), "fill"?: "#RRGGBBAA" (rectangle, ellipse, circle, northArrow), "width"?: outline width in points (rectangle, ellipse, circle; 0 for none) or line width in points (line, grid), "radius"?: mm, 0 to 50 (rectangle: rounded corners), "dir"?: "horizontal"|"vertical"|"falling"|"rising" (line), "head"?: "none"|"end"|"start"|"both" (line; default "end" for an arrow), "angle"?: degrees anticlockwise from pointing right, centred on the page unless x or y is given (line, arrow; it sets the box and the direction, so w, h and dir are not used with it), "length"?: mm (line, arrow), "image"?: base64, "path"?: picture file, "layer"?: (table, chart; colorbar: a raster layer, default the top visible one), "field"?, "label"?, "rows"?, "step"?: degrees, or a measured grid's units (metres) (0 picks one), "type"?: "graticule" (latitudes and longitudes, default) | "measured" (eastings and northings in a projected system, as ArcGIS Pro's measured grid), "crs"?: a measured grid's coordinate system: EPSG:25832, WKT or a PROJ string ("" or none: the map's when projected, else the UTM zone at the frame's centre), "short"?: bool (a measured grid's labels as their kilometres' last two digits, 43 for 543000), "outside"?: bool (grid: the labels outside the frame, as ArcGIS prints them; default inside it), "labels"?: bool, "style"?: "lines"|"ticks"|"linesAndTicks" (grid) or "classic"|"compass"|"triangle"|"star"|"needle"|"circle"|"simple"|"chevron"|"block"|"rose" (northArrow) or "alternating"|"doubleAlternating"|"hollow"|"stepped"|"line"|"lineDown"|"lineCross"|"ruler" (scaleBar), "tickLength"?: mm, "format"?: "decimal"|"dms", "hemisphere"?: bool (N/S/E/W rather than a sign), "edges"?: ["top","bottom","left","right"] (labelled edges), "labelOrientation"?: "horizontal"|"vertical", "off"?: bool (grid; options not given keep the grid's), "outline"?: "#RRGGBB" (northArrow), "units"?: "auto"|"kilometers"|"meters"|"miles"|"feet"|"nauticalMiles", "divisions"?: 1..10, "subdivisions"?: 0..10 (the first division split), "division"?: each division's length in the units (metres when auto; 0 a round one that fits), "unitLabel"?: "abbreviation" (km) | "name" (Kilometers) | "thaiAbbreviation" (กม.) | "thai" (กิโลเมตร) | "custom" | "none", "unitText"?: the unit as typed (sets unitLabel custom), "unitPlace"?: "afterLabel"|"afterBar"|"above"|"below", "numbers"?: "above"|"below"|"ends"|"none", "altColor"?: the light parts (color the dark ones), "barHeight"?: points (0 sized to the element) (scaleBar), "textSize"?: points (0 sized to the element), "textColor"?: "#RRGGBB" ("" the element's own) (northArrow letter, scaleBar numbers and unit, which take bold, italic, font and fallback as a text does; label is a north arrow's letter, default N, empty for none), "x"?, "y"?, "w"?, "h"?: mm}"##,
         ),
         C::new("layout.update", "Element Properties", "Publish › Element", update).params(
-            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line), "bold"?, "italic"?, "align"?, "letterSpacing"?, "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, northArrow, scaleBar, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "exclude"?: [layer names] (legend; [] lists every layer again), "titleType"?, "layerType"?, "labelType"?, "patchWidth"?, "patchHeight"?, "linePatch"?, "areaPatch"?, "rowSpacing"?, "layerNames"?, "classLabels"? (legend, as in layout.addElement; the types given change only what they name, and the texts given are merged with those set), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse; for a rectangle or ellipse, color sets it when outline is not given), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"?, "subdivisions"?, "division"?, "unitLabel"?, "unitText"?, "unitPlace"?, "numbers"?, "altColor"?, "barHeight"? (scaleBar; color its dark parts), "textSize"?, "textColor"? (northArrow, scaleBar: as in layout.addElement, with bold, italic, font, fallback), "label"?: a north arrow's letter ("" for none), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster), "field"?, "rows"?}"##,
+            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line), "bold"?, "italic"?, "align"?, "letterSpacing"?, "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, northArrow, scaleBar, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "exclude"?: [layer names] (legend; [] lists every layer again), "titleType"?, "layerType"?, "labelType"?, "patchWidth"?, "patchHeight"?, "linePatch"?, "areaPatch"?, "rowSpacing"?, "layerNames"?, "classLabels"?, "layerTypes"?, "classTypes"? (legend, as in layout.addElement; the types given change only what they name, and the texts and types by layer or class given are merged with those set), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse; for a rectangle or ellipse, color sets it when outline is not given), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"?, "subdivisions"?, "division"?, "unitLabel"?, "unitText"?, "unitPlace"?, "numbers"?, "altColor"?, "barHeight"? (scaleBar; color its dark parts), "textSize"?, "textColor"? (northArrow, scaleBar: as in layout.addElement, with bold, italic, font, fallback), "label"?: a north arrow's letter ("" for none), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster), "field"?, "rows"?}"##,
         ),
         C::new("layout.guides", "Guides", "Publish › Page Setup", guides).params(
             r#"{"layout"?, "x"?: [mm] (vertical guides, from the page's left edge), "y"?: [mm] (horizontal guides, from its top edge), "clear"?: bool (remove every guide first)}"#,
@@ -129,6 +129,9 @@ pub fn commands() -> Vec<C> {
             Ok(json!({"ungrouped": n}))
         })
         .params(r#"{"layout"?, "elements": [ids] (their groups are taken apart)}"#),
+        C::new("layout.convertLegend", "Convert Legend to Graphics", "Publish › Element", convert_legend).params(
+            r#"{"layout"?, "element": a legend's id} → {"elements": [ids], "group": id} (the legend replaced by what it draws, grouped where it was: a text for its title and each layer's name and class's label, in the type it was shown in, and a legend patch for each symbol, a copy that no longer follows the layer; layout.ungroup takes them apart to move and restyle one by one)"#,
+        ),
         C::new("layout.copyElements", "Copy Elements", "Publish › Element", copy_elements)
             .view()
             .params(r#"{"layout"?, "elements": [ids] (grouped elements come with them)} → {"text": what layout.paste takes}"#),
@@ -262,6 +265,106 @@ fn element_ids(p: &Value) -> Result<Vec<u32>, String> {
         return Err("elements is a list of element ids".into());
     }
     Ok(ids)
+}
+
+/// The most elements a page keeps (as [`Layout::clamp`] does).
+const MAX_ELEMENTS: usize = 500;
+
+/// `layout.convertLegend`: a legend replaced by what it draws, as graphics grouped where it was,
+/// in its place in the drawing order and turned as it was.
+fn convert_legend(s: &mut Session, p: &Value) -> CmdResult {
+    let id = element_id(p)?;
+    let li = index(s, p)?;
+    let l = s.project.layouts.get(li).ok_or("no layout")?;
+    unlocked(l, id)?;
+    let e = l.element(id).ok_or("no such element")?.clone();
+    let ElementKind::Legend { frame, title, all_classes, hide_other, exclude, look } = &e.kind else {
+        return Err("only a legend converts to graphics".into());
+    };
+    let Some(ElementKind::MapFrame { map, center, scale, bearing, pitch, .. }) = l.element(*frame).map(|f| f.kind.clone()) else {
+        return Err("the legend's frame isn't a map frame".into());
+    };
+    let fw = l.element(*frame).map_or(0.0, |f| f.w);
+    let fh = l.element(*frame).map_or(0.0, |f| f.h);
+    let mi = s.project.maps.iter().position(|m| m.name.eq_ignore_ascii_case(&map)).ok_or_else(|| format!("no map '{map}'"))?;
+    let m = s.project.maps.get_mut(mi).ok_or("no map")?;
+    // What the frame draws, its map synced to the frame's view first, as the page draws it.
+    let cam = rustgis_map::layout::frame_camera(m, center, scale, bearing, pitch);
+    let view = crate::render::View {
+        width: fw * rustgis_map::layout::PT_PER_MM,
+        height: fh * rustgis_map::layout::PT_PER_MM,
+        pixels_per_point: 1.0,
+        camera: cam,
+        sky: false,
+    };
+    let lonlat = crate::render::view_lonlat(m, &view);
+    let render_scale = m.ground_res_at(&cam) / rustgis_geom::PIXEL_M;
+    if !*all_classes && m.sync_sources(&lonlat, render_scale, true) {
+        return Err("a layer is still reading what the frame shows: convert the legend once it has".into());
+    }
+    let pieces = crate::render::layout::legend_pieces_mm(m, render_scale, title, *all_classes, *hide_other, exclude, look, (e.w, e.h))
+        .ok_or("a layer's source couldn't be read through, so the legend can't be converted; exporting says why")?;
+    if pieces.is_empty() {
+        return Err("the legend draws nothing to convert".into());
+    }
+    let l = s.project.layouts.get_mut(li).ok_or("no layout")?;
+    if l.elements.len() - 1 + pieces.len() > MAX_ELEMENTS {
+        return Err(format!("the legend makes {} graphics, more than the page has room for ({MAX_ELEMENTS} elements)", pieces.len()));
+    }
+    let pos = l.elements.iter().position(|x| x.id == id).ok_or("no such element")?;
+    let centre = e.center();
+    let dark = Rgba::rgb(0x22, 0x22, 0x22);
+    let mut made = Vec::new();
+    for piece in pieces {
+        let (name, (x, y, w, h), kind) = match piece {
+            crate::render::layout::LegendPiece::Text { text, x, y, w, size, t } => {
+                // A text element's first line has its middle 0.6 of its size (in pixels, 1.33 a
+                // point) below its top; its box a line and a quarter tall.
+                let px = size * 1.33 / rustgis_map::layout::PT_PER_MM;
+                let kind = ElementKind::Text {
+                    text: text.clone(),
+                    size,
+                    color: t.color.unwrap_or(dark),
+                    bold: t.bold,
+                    italic: t.italic,
+                    align: TextAlign::Left,
+                    letter_spacing: 0.0,
+                    font: t.font,
+                    font_name: t.font_name.clone(),
+                };
+                (text, (x, y - px * 0.6, w + 1.0, px * 1.25), kind)
+            }
+            crate::render::layout::LegendPiece::Patch { x, y, w, h, geometry, symbol } => (
+                "Legend Patch".to_string(),
+                (x, y, w, h),
+                ElementKind::Swatch { geometry, symbol, line_patch: look.line_patch, area_patch: look.area_patch },
+            ),
+            crate::render::layout::LegendPiece::Picture { x, y, w, h, png } => {
+                use base64::Engine;
+                (
+                    "Legend Picture".to_string(),
+                    (x, y, w, h),
+                    ElementKind::Picture { image: base64::engine::general_purpose::STANDARD.encode(png) },
+                )
+            }
+        };
+        let nid = l.add(name.chars().take(60).collect::<String>(), (e.x + x, e.y + y, w, h), kind);
+        // Turned as the legend was, about its centre.
+        if e.rotation != 0.0
+            && let Some(n) = l.element_mut(nid)
+        {
+            let (cx, cy) = rustgis_map::layout::turn(n.center(), centre, e.rotation);
+            n.x = cx - n.w / 2.0;
+            n.y = cy - n.h / 2.0;
+            n.rotation = e.rotation;
+        }
+        made.push(nid);
+    }
+    // In the legend's place in the drawing order.
+    let new: Vec<_> = l.elements.drain(l.elements.len() - made.len()..).collect();
+    l.elements.splice(pos..=pos, new);
+    let group = if made.len() > 1 { l.group(&made) } else { None };
+    Ok(json!({"elements": made, "group": group}))
 }
 
 /// The elements named, with those grouped with them; refused when one is missing or locked.
@@ -2453,7 +2556,9 @@ fn add_element(s: &mut Session, p: &Value) -> CmdResult {
             let all_classes = b(p, "allClasses").unwrap_or(false);
             let hide_other = b(p, "hideOther").unwrap_or(false);
             let exclude = legend_exclude(s, l, frame, p)?.unwrap_or_default();
-            let look = Box::new(legend_look(p, &LegendLook::default())?.unwrap_or_default());
+            let plain = one_symbol_layers(s, l, frame);
+            let one_symbol = |n: &str| plain.iter().any(|p| p.eq_ignore_ascii_case(n));
+            let look = Box::new(legend_look(p, &LegendLook::default(), &one_symbol)?.unwrap_or_default());
             (
                 "Legend",
                 place(p, l, (pw - 70.0, 45.0, 60.0, 80.0))?,
@@ -2975,13 +3080,15 @@ const LEGEND_KEYS: &[&str] = &[
     "rowSpacing",
     "layerNames",
     "classLabels",
+    "layerTypes",
+    "classTypes",
 ];
 
-const ONLY_LEGEND_LOOK: &str = "only legends take titleType, layerType, labelType, patchWidth, patchHeight, linePatch, areaPatch, rowSpacing, layerNames or classLabels";
+const ONLY_LEGEND_LOOK: &str = "only legends take titleType, layerType, labelType, patchWidth, patchHeight, linePatch, areaPatch, rowSpacing, layerNames, classLabels, layerTypes or classTypes";
 
 /// `look` with the options in `p`; `None` when it has none. The texts by layer and class are
 /// merged with those set, `""` showing a layer's or class's own again. A bad value is an error.
-fn legend_look(p: &Value, look: &LegendLook) -> Result<Option<LegendLook>, String> {
+fn legend_look(p: &Value, look: &LegendLook, one_symbol: &dyn Fn(&str) -> bool) -> Result<Option<LegendLook>, String> {
     if !LEGEND_KEYS.iter().any(|k| p.get(*k).is_some_and(|v| !v.is_null())) {
         return Ok(None);
     }
@@ -3044,7 +3151,53 @@ fn legend_look(p: &Value, look: &LegendLook) -> Result<Option<LegendLook>, Strin
         Some(_) => return Err("classLabels is an object: {layer name: {class label: the text shown}}".into()),
         None => {}
     }
+    // A layer's or a class's own type: what it is shown in now, with the options given (a layer
+    // drawn in one symbol is named in the labels' type, the others in the layers' names').
+    match p.get("layerTypes").filter(|v| !v.is_null()) {
+        Some(Value::Object(m)) => {
+            for (layer, v) in m {
+                let t = match v {
+                    Value::Null => None,
+                    v => {
+                        let base = if one_symbol(layer) { &lk.label } else { &lk.layer };
+                        Some(legend_type(v, "a type in layerTypes", lk.name_type(layer).unwrap_or(base))?)
+                    }
+                };
+                lk.set_name_type(layer, t);
+            }
+        }
+        Some(_) => {
+            return Err("layerTypes is an object: {layer name: {size, color, bold, italic, font, fallback} (null the legend's)}".into());
+        }
+        None => {}
+    }
+    match p.get("classTypes").filter(|v| !v.is_null()) {
+        Some(Value::Object(m)) => {
+            for (layer, classes) in m {
+                let Value::Object(classes) = classes else {
+                    return Err("classTypes is an object: {layer name: {class label: {size, color, …} (null the legend's)}}".into());
+                };
+                for (class, v) in classes {
+                    let t = match v {
+                        Value::Null => None,
+                        v => Some(legend_type(v, "a type in classTypes", lk.label_type(layer, class).unwrap_or(&lk.label))?),
+                    };
+                    lk.set_label_type(layer, class, t);
+                }
+            }
+        }
+        Some(_) => return Err("classTypes is an object: {layer name: {class label: {size, color, …} (null the legend's)}}".into()),
+        None => {}
+    }
     Ok(Some(lk))
+}
+
+/// Whether a layer of the map `frame` shows is drawn in one symbol, so a legend names it beside
+/// its patch, in the labels' type, rather than over its classes.
+fn one_symbol_layers(s: &Session, l: &Layout, frame: u32) -> Vec<String> {
+    let Some(ElementKind::MapFrame { map, .. }) = l.element(frame).map(|e| &e.kind) else { return Vec::new() };
+    let Some(m) = s.project.maps.iter().find(|m| m.name.eq_ignore_ascii_case(map)) else { return Vec::new() };
+    m.layers.iter().filter(|l| l.renderer.legend().is_empty()).map(|l| l.name.clone()).collect()
 }
 
 /// `t` with the type in the object `v` (the option `key`): its size (points, 0 the default),
@@ -3462,8 +3615,15 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
         }
     };
     // Its look, checked before anything changes too.
-    let new_look = match s.project.layouts.get(li).and_then(|l| l.element(id)).map(|e| &e.kind) {
-        Some(ElementKind::Legend { look, .. }) => legend_look(p, look)?,
+    let legend = s.project.layouts.get(li).and_then(|l| match l.element(id).map(|e| &e.kind) {
+        Some(ElementKind::Legend { look, frame, .. }) => Some((l, look, *frame)),
+        _ => None,
+    });
+    let new_look = match legend {
+        Some((l, look, frame)) => {
+            let plain = one_symbol_layers(s, l, frame);
+            legend_look(p, look, &|n: &str| plain.iter().any(|p| p.eq_ignore_ascii_case(n)))?
+        }
         _ if LEGEND_KEYS.iter().any(|k| p.get(*k).is_some_and(|v| !v.is_null())) => return Err(ONLY_LEGEND_LOOK.into()),
         _ => None,
     };
