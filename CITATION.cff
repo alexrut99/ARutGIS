@@ -20,7 +20,7 @@ authors:
   - given-names: Dominik
     family-names: Strebel
     orcid: "https://orcid.org/0000-0002-3529-1798"
-version: 0.5.3
+version: 0.5.4
 date-released: 2026-11-03
 doi: "10.5281/zenodo.23633281"
 repository-code: "https://github.com/opengeos/RustGIS"
