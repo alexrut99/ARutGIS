@@ -23256,3 +23256,11 @@ fn a_thai_standard_sheet_is_laid_out_in_sarabun_with_a_utm_grid() {
     assert!(std::fs::metadata(&path).map(|m| m.len() > 10_000).unwrap_or(false));
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn thai_field_names_are_added() {
+    let mut s = world();
+    s.run("edit.addField", &json!({"layer": "Cities", "name": "พื้นที่", "type": "double"})).unwrap();
+    assert!(s.map().layer_by_name("Cities").unwrap().dataset.field_index("พื้นที่").is_some());
+    assert!(s.run("edit.addField", &json!({"layer": "Cities", "name": "two words"})).is_err());
+}

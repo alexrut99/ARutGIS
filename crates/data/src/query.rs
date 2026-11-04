@@ -221,6 +221,19 @@ const MAX_ARGS: usize = 32;
 /// Longest text an expression makes (bytes); longer results are cut.
 pub const MAX_TEXT: usize = 64 * 1024;
 
+/// Whether `c` may go on a name (a field's, a function's) after its first character: letters,
+/// digits and `_`, and the marks written over and under letters, so `พื้นที่` (whose vowel and tone
+/// marks aren't letters to [`char::is_alphanumeric`]) reads as one name.
+pub fn is_name_char(c: char) -> bool {
+    c == '_' || c.is_alphanumeric() || unicode_ident::is_xid_continue(c)
+}
+
+/// Whether `name` can be written in a clause as it is, without double quotes: a letter or `_` (not
+/// a mark, which goes on a letter), then name characters ([`is_name_char`]).
+pub fn is_plain_name(name: &str) -> bool {
+    name.chars().next().is_some_and(|c| c == '_' || unicode_ident::is_xid_start(c)) && name.chars().all(is_name_char)
+}
+
 fn lex(s: &str) -> Result<Vec<Tok>, String> {
     if s.chars().count() > MAX_LEN {
         return Err("the expression is too long".into());
@@ -230,7 +243,7 @@ fn lex(s: &str) -> Result<Vec<Tok>, String> {
     let mut out = Vec::new();
     let word = |i: &mut usize| -> String {
         let st = *i;
-        while cs.get(*i).is_some_and(|c| c.is_alphanumeric() || *c == '_') {
+        while cs.get(*i).is_some_and(|c| is_name_char(*c)) {
             *i += 1;
         }
         cs.get(st..*i).map(|s| s.iter().collect()).unwrap_or_default()

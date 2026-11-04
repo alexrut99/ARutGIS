@@ -668,7 +668,7 @@ fn tokens(s: &str) -> Vec<Token> {
             out.push(Token { text, quoted: true });
         } else if c.is_alphanumeric() || c == '_' || c == '$' {
             let start = i;
-            while cs.get(i).is_some_and(|&d| d.is_alphanumeric() || d == '_' || d == '$') {
+            while cs.get(i).is_some_and(|&d| crate::query::is_name_char(d) || d == '$') {
                 i += 1;
             }
             out.push(Token { text: cs.get(start..i).map(|s| s.iter().collect()).unwrap_or_default(), quoted: false });

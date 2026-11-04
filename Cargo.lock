@@ -4759,6 +4759,7 @@ dependencies = [
  "tokio",
  "tokio-postgres-rustls",
  "tokio-util",
+ "unicode-ident",
  "url",
  "webpki-roots",
  "weezl 0.2.1",

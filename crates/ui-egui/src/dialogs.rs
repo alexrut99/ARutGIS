@@ -1700,7 +1700,8 @@ fn field_chips(app: &mut RustGisApp, ui: &mut egui::Ui) {
                 if !app.dialogs.text.is_empty() && !app.dialogs.text.ends_with(' ') {
                     app.dialogs.text.push(' ');
                 }
-                app.dialogs.text.push_str(f);
+                // As a clause names it: in double quotes when it has spaces or reads as a keyword.
+                app.dialogs.text.push_str(&crate::sqlbox::field_ref(f));
                 app.dialogs.text.push(' ');
             }
         }

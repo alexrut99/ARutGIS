@@ -82,7 +82,7 @@ pub fn run(s: &mut Session, p: &Json) -> CmdResult {
         if existing.is_some() {
             return Err("field already exists".into());
         }
-        if field.chars().count() > 64 || !field.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        if field.chars().count() > 64 || !field.chars().all(rustgis_data::query::is_name_char) {
             return Err("field names use letters, digits and _ (at most 64)".into());
         }
         FieldType::Double

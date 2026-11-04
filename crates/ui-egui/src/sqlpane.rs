@@ -292,7 +292,7 @@ fn run_pressed(events: &[egui::Event]) -> bool {
 /// The word being typed before character `at`: letters, digits, `_` and `.`.
 fn word_before(text: &str, at: usize) -> (usize, String) {
     let chars: Vec<char> = text.chars().take(at).collect();
-    let start = chars.iter().rposition(|c| !(c.is_alphanumeric() || *c == '_' || *c == '.')).map(|i| i + 1).unwrap_or(0);
+    let start = chars.iter().rposition(|c| !(rustgis_engine::data::query::is_name_char(*c) || *c == '.')).map(|i| i + 1).unwrap_or(0);
     (start, chars.get(start..).map(|w| w.iter().collect()).unwrap_or_default())
 }
 

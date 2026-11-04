@@ -199,8 +199,8 @@ fn chips(ui: &mut Ui, text: &mut String, ds: &Dataset) {
 }
 
 /// A field as a clause names it: as it is when it reads as a plain name, else in double quotes.
-fn field_ref(name: &str) -> String {
-    let plain = name.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+pub(crate) fn field_ref(name: &str) -> String {
+    let plain = rustgis_engine::data::query::is_plain_name(name);
     // The words the clause language reads itself (`rustgis_data::query`), values included.
     let keyword = ["AND", "OR", "NOT", "LIKE", "IN", "IS", "NULL", "TRUE", "FALSE"].iter().any(|k| k.eq_ignore_ascii_case(name));
     if plain && !keyword { name.to_string() } else { format!("\"{}\"", name.replace('"', "\"\"")) }
@@ -218,6 +218,8 @@ mod tests {
         assert_eq!(field_ref("in"), "\"in\"");
         assert_eq!(field_ref("True"), "\"True\"");
         assert_eq!(field_ref("año"), "año");
+        // Thai vowel and tone marks are part of a plain name.
+        assert_eq!(field_ref("พื้นที่_ตร_กม"), "พื้นที่_ตร_กม");
         assert_eq!(field_ref("a\"b"), "\"a\"\"b\"");
     }
 }

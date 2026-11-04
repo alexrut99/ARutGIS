@@ -144,7 +144,7 @@ fn set_value(s: &mut Session, p: &Json) -> CmdResult {
 fn add_field(s: &mut Session, p: &Json) -> CmdResult {
     let id = s.layer_id(p)?;
     let name = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or("name is required")?;
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') || name.chars().count() > 64 {
+    if !name.chars().all(rustgis_data::query::is_name_char) || name.chars().count() > 64 {
         return Err("field names use letters, digits and _ (at most 64)".into());
     }
     let ty = match ps(p, "type").unwrap_or("double").to_ascii_lowercase().as_str() {

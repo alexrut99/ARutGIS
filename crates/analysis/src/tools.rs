@@ -3026,7 +3026,7 @@ fn pivot_column_name(field: &str, v: &Value) -> String {
     };
     let mut name = String::new();
     for ch in shown.chars() {
-        if ch.is_alphanumeric() || ch == '_' {
+        if rustgis_data::query::is_name_char(ch) {
             name.push(ch);
         } else if !name.ends_with('_') {
             name.push('_');

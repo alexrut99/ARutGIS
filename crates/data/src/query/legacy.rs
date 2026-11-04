@@ -118,7 +118,7 @@ fn lex(s: &str) -> Result<Vec<Tok>, String> {
             }
             c if c.is_alphanumeric() || c == '_' => {
                 let st = i;
-                while cs.get(i).is_some_and(|c| c.is_alphanumeric() || *c == '_') {
+                while cs.get(i).is_some_and(|c| super::is_name_char(*c)) {
                     i += 1;
                 }
                 out.push(Tok::Ident(cs.get(st..i).map(|s| s.iter().collect()).unwrap_or_default()));

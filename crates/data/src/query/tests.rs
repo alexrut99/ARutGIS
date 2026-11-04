@@ -473,3 +473,21 @@ fn a_computed_in_list_skips_nulls_and_a_long_pattern_matches_nothing() {
     assert_eq!(rows(&costly.replace(" LIKE ", " NOT LIKE ")), Vec::<usize>::new());
     assert!(!like(&"a".repeat(65536), &format!("%{}b", "a".repeat(1000))));
 }
+
+#[test]
+fn names_take_the_marks_over_and_under_their_letters() {
+    // Thai vowel and tone marks aren't letters to char::is_alphanumeric: พื้นที่ was cut at พ.
+    let mut d =
+        Dataset::new("t", GeometryType::None, vec![Field::new("จังหวัด", FieldType::Text), Field::new("พื้นที่_ตร_กม", FieldType::Integer)]);
+    for (n, a) in [("เชียงใหม่", 20_107), ("สมุทรปราการ", 1_004), ("นครราชสีมา", 20_494)]
+    {
+        d.push(None, vec![Value::Text(n.into()), Value::Int(a)]);
+    }
+    assert_eq!(select("พื้นที่_ตร_กม > 10000", &d).unwrap(), vec![0, 2]);
+    assert_eq!(select("\"พื้นที่_ตร_กม\" < 10000 AND จังหวัด LIKE 'สมุทร%'", &d).unwrap(), vec![1]);
+    assert_eq!(select("จังหวัด = 'เชียงใหม่'", &d).unwrap(), vec![0]);
+    assert!(is_name_char('ื') && is_name_char('่') && is_name_char('_') && !is_name_char(' ') && !is_name_char('-'));
+    assert!(
+        is_plain_name("พื้นที่") && is_plain_name("pop_est") && !is_plain_name("ื่อ") && !is_plain_name("two words") && !is_plain_name("1st")
+    );
+}

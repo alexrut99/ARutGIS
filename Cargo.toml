@@ -58,6 +58,8 @@ harfrust = "0.12"
 # A label curved along a line: its text cut into the characters drawn as one (a letter with its
 # accents).
 unicode-segmentation = "1.13"
+# Which characters a name may hold: a letter's vowel and tone marks (Thai, Lao, Devanagari…) as well as letters.
+unicode-ident = "1.0"
 # Rasters: GeoTIFF decoding/encoding, and coordinate systems by EPSG code (pure Rust, except the
 # Zstandard decoder `rustgis-data` turns on, C that clang compiles for the browser build too).
 tiff = "0.11"
