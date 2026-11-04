@@ -862,7 +862,7 @@ impl GridInk {
             }
             return;
         }
-        let raised = |k: f32| cy - (self.px - self.px * k) * 0.3;
+        let raised = |k: f32| cy - (self.px - self.px * k) * 0.45;
         let left = cx - self.runs_width(runs) / 2.0;
         if let Some(h) = self.halo {
             let r = (self.px * 0.09).max(1.0);
