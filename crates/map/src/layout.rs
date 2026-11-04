@@ -3219,7 +3219,7 @@ mod tests {
         // Saved as it always was; with every option, read back as it was.
         let saved = serde_json::to_value(Grid::default()).unwrap();
         let keys: Vec<&String> = saved.as_object().unwrap().keys().collect();
-        assert_eq!(keys.len(), 9, "{keys:?}");
+        assert_eq!(keys.len(), 10, "{keys:?}");
         let all = Grid {
             text: LabelText { size: 10.0, bold: true, ..LabelText::scale_bar() },
             halo: Some(Rgba::rgb(1, 2, 3)),

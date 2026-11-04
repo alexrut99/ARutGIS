@@ -620,7 +620,7 @@ fn labelled(v: f64, step: f64, every: u32) -> bool {
 /// into `parts`): none when `parts` is under 2.
 fn minor_values(first: f64, last: f64, step: f64, parts: u32) -> Vec<f64> {
     let mut out = Vec::new();
-    if parts < 2 || !(step > 0.0) {
+    if parts < 2 || step.is_nan() || step <= 0.0 {
         return out;
     }
     let sub = step / f64::from(parts);
