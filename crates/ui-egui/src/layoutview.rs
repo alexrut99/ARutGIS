@@ -7,7 +7,7 @@
 
 use egui::{Align2, Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use rustgis_engine::map::layout::{
-    AreaPatch, Arrange, ArrowStyle, CoordFormat, ElementKind, Grid, GridKind, GridStyle, LabelText, Layout, LegendLook, LineHead,
+    AreaPatch, Arrange, ArrowStyle, CoordFormat, DmsParts, ElementKind, Grid, GridDash, GridKind, GridStyle, GridSuffix, LabelText, Layout, LegendLook, LineHead,
     LinePatch, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS, MAX_FRAME_SCALE, MAX_GRID_WIDTH, MAX_LEGEND_SPACING, MAX_PATCH, MAX_SCALE_DIVISIONS,
     MAX_TICK_MM, MIN_FRAME_SCALE, NumberPlace, Orientation, PT_PER_MM, ScaleBarStyle, ScaleUnits, TickSide, UnitLabel, UnitPlace,
     frame_camera, line_angle, line_length,
@@ -1760,13 +1760,37 @@ fn text_field(
     None
 }
 
-/// A map frame's grid options; `set` sends the changed ones (`false` removes the grid).
+/// Marks a frame's second grid's widgets' ids apart from its first's.
+const SECOND_GRID: u32 = 1 << 31;
+
+/// A map frame's grid options; `set` sends the changed ones (`false` removes the grid). A first
+/// grid's (not `second`) end with its second grid's.
 fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u32, set: &dyn Fn(&mut RustGisApp, Value)) {
+    let second = id & SECOND_GRID != 0;
     let mut on = grid.is_some();
-    if ui.checkbox(&mut on, tl!("Show grid")).changed() {
+    if ui.checkbox(&mut on, tl!(if second { "Show a second grid" } else { "Show grid" })).changed() {
         set(app, json!(on));
     }
     let Some(g) = grid else { return };
+    grid_rows(app, ui, g, id, set);
+    if g.labels {
+        let own = g.text.color.unwrap_or(rustgis_engine::map::Rgba::rgb(0x20, 0x20, 0x20));
+        egui::CollapsingHeader::new(tl!("Grid label type")).id_salt(("grid_type", id)).show(ui, |ui| {
+            if let Some(v) = type_form(app, ui, ("grid_type_form", id), &g.text, own, "Use the grid's color") {
+                set(app, json!({"labelFont": v}));
+            }
+        });
+    }
+    if !second {
+        egui::CollapsingHeader::new(tl!("Second grid")).id_salt(("grid_second", id)).default_open(g.second.is_some()).show(ui, |ui| {
+            ui.label(egui::RichText::new(tl!("A second grid over the same frame, as topographic maps add degree ticks to a UTM grid.")).small().weak());
+            grid_properties(app, ui, g.second.as_deref(), id | SECOND_GRID, &|app, v| set(app, json!({"second": v})));
+        });
+    }
+}
+
+/// A grid's rows of options: its type, step, lines, ticks and labels.
+fn grid_rows(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(&mut RustGisApp, Value)) {
     // Each number kept across a drag until it is let go (#607).
     let key = |field: &str| egui::Id::unique(("grid_drag", id, field));
     let measured = g.kind == GridKind::Measured;
@@ -1844,7 +1868,22 @@ fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u
             set(app, json!({"width": w}));
         }
         ui.end_row();
-        if g.style.ticks() {
+        if g.style.lines() {
+            let input_label = ui.label(tl!("Line style"));
+            egui::ComboBox::from_id_salt(("grid_dash", id))
+                .selected_text(tl!(g.dash.label()))
+                .show_ui(ui, |ui| {
+                    for v in GridDash::ALL {
+                        if ui.selectable_label(g.dash == v, tl!(v.label())).clicked() && g.dash != v {
+                            set(app, json!({"dash": v.code()}));
+                        }
+                    }
+                })
+                .response
+                .labelled_by(input_label.id);
+            ui.end_row();
+        }
+        if g.style.ticks() || g.minor_ticks > 1 {
             let input_label = ui.label(tl!("Tick length"));
             let mut t = g.tick_length;
             let drag = Dragged::lend(ui, key("tickLength"), &mut t);
@@ -1856,6 +1895,19 @@ fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u
             }
             ui.end_row();
         }
+        let input_label = ui.label(tl!("Minor ticks"));
+        let mut n = g.minor_ticks;
+        let drag = Dragged::lend(ui, key("minorTicks"), &mut n);
+        let r = ui
+            .add(egui::DragValue::new(&mut n).range(0..=rustgis_engine::map::layout::MAX_MINOR_TICKS).speed(0.05).custom_formatter(|v, _| {
+                if v < 2.0 { tl!("None").to_string() } else { crate::i18n::fmt("{n} parts a step", &[("n", &format!("{v}"))]) }
+            }))
+            .on_hover_text(tl!("Short ticks along the edges, splitting each step between the lines."))
+            .labelled_by(input_label.id);
+        if drag.settled(ui, &r, &mut n) && n != g.minor_ticks {
+            set(app, json!({"minorTicks": n}));
+        }
+        ui.end_row();
         let input_label = ui.label(tl!("Labels"));
         let mut labels = g.labels;
         if ui.checkbox(&mut labels, "").labelled_by(input_label.id).changed() {
@@ -1876,6 +1928,55 @@ fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u
             set(app, json!({"outside": outside}));
         }
         ui.end_row();
+        let input_label = ui.label(tl!("Label offset"));
+        let mut off = g.label_offset;
+        let drag = Dragged::lend(ui, key("labelOffset"), &mut off);
+        let r = ui
+            .add(
+                egui::DragValue::new(&mut off)
+                    .range(0.0..=rustgis_engine::map::layout::MAX_LABEL_OFFSET)
+                    .speed(0.1)
+                    .max_decimals(1)
+                    .suffix(" mm"),
+            )
+            .on_hover_text(tl!("How much further from the frame's edge the labels sit."))
+            .labelled_by(input_label.id);
+        if drag.settled(ui, &r, &mut off) && (off - g.label_offset).abs() > 1e-9 {
+            set(app, json!({"labelOffset": off}));
+        }
+        ui.end_row();
+        halo_row(app, ui, g, id, set);
+        let input_label = ui.label(tl!("Label every"));
+        let mut every = g.label_every;
+        let drag = Dragged::lend(ui, key("labelEvery"), &mut every);
+        let r = ui
+            .add(egui::DragValue::new(&mut every).range(1..=rustgis_engine::map::layout::MAX_LABEL_EVERY).speed(0.05).custom_formatter(
+                |v, _| if v <= 1.0 { tl!("Every line").to_string() } else { crate::i18n::fmt("Every {n} lines", &[("n", &format!("{v}"))]) },
+            ))
+            .on_hover_text(tl!("Every line is drawn; only every so many of them is labelled."))
+            .labelled_by(input_label.id);
+        if drag.settled(ui, &r, &mut every) && every != g.label_every {
+            set(app, json!({"labelEvery": every}));
+        }
+        ui.end_row();
+        if measured || g.format == CoordFormat::Decimal {
+            let input_label = ui.label(tl!("Decimals"));
+            let mut d = g.decimals.map_or(-1.0, f64::from);
+            let drag = Dragged::lend(ui, key("decimals"), &mut d);
+            let r = ui
+                .add(
+                    egui::DragValue::new(&mut d)
+                        .range(-1.0..=f64::from(rustgis_engine::map::layout::MAX_GRID_DECIMALS))
+                        .speed(0.05)
+                        .max_decimals(0)
+                        .custom_formatter(|v, _| if v < 0.0 { tl!("Auto").to_string() } else { format!("{v}") }),
+                )
+                .labelled_by(input_label.id);
+            if drag.settled(ui, &r, &mut d) && d.round() != g.decimals.map_or(-1.0, f64::from) {
+                set(app, json!({"decimals": if d < 0.0 { Value::Null } else { json!(d.round()) }}));
+            }
+            ui.end_row();
+        }
         if measured {
             let input_label = ui.label(tl!("Short labels"));
             let mut short = g.short;
@@ -1886,6 +1987,48 @@ fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u
                 .changed()
             {
                 set(app, json!({"short": short}));
+            }
+            ui.end_row();
+            let input_label = ui.label(tl!("Emphasize kilometres"));
+            let mut emphasis = g.emphasis;
+            if ui
+                .checkbox(&mut emphasis, "")
+                .labelled_by(input_label.id)
+                .on_hover_text(tl!("Whole values with the kilometres' two digits large and the rest small, as topographic maps print them."))
+                .changed()
+            {
+                set(app, json!({"emphasis": emphasis}));
+            }
+            ui.end_row();
+            let input_label = ui.label(tl!("Whole at corners"));
+            let mut corners = g.full_corners;
+            if ui
+                .checkbox(&mut corners, "")
+                .labelled_by(input_label.id)
+                .on_hover_text(tl!("The label nearest each corner written whole, with its unit; the others as they are."))
+                .changed()
+            {
+                set(app, json!({"fullCorners": corners}));
+            }
+            ui.end_row();
+            let input_label = ui.label(tl!("Unit"));
+            egui::ComboBox::from_id_salt(("grid_suffix", id))
+                .selected_text(tl!(g.suffix.label()))
+                .show_ui(ui, |ui| {
+                    for v in GridSuffix::ALL {
+                        if ui.selectable_label(g.suffix == v, tl!(v.label())).clicked() && g.suffix != v {
+                            set(app, json!({"suffix": v.code()}));
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(tl!("Written after whole values."))
+                .labelled_by(input_label.id);
+            ui.end_row();
+            let input_label = ui.label(tl!("Thousands separator"));
+            let mut th = g.thousands;
+            if ui.checkbox(&mut th, "").labelled_by(input_label.id).on_hover_text(tl!("543,000 rather than 543000.")).changed() {
+                set(app, json!({"thousands": th}));
             }
             ui.end_row();
         } else {
@@ -1899,6 +2042,21 @@ fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u
                 }
             });
             ui.end_row();
+            if g.format == CoordFormat::Dms {
+                let input_label = ui.label(tl!("Show"));
+                egui::ComboBox::from_id_salt(("grid_dms", id))
+                    .selected_text(tl!(g.dms_parts.label()))
+                    .show_ui(ui, |ui| {
+                        for v in DmsParts::ALL {
+                            if ui.selectable_label(g.dms_parts == v, tl!(v.label())).clicked() && g.dms_parts != v {
+                                set(app, json!({"dmsParts": v.code()}));
+                            }
+                        }
+                    })
+                    .response
+                    .labelled_by(input_label.id);
+                ui.end_row();
+            }
             let input_label = ui.label(tl!("N/S/E/W"));
             let mut hemi = g.hemisphere;
             if ui
@@ -1931,17 +2089,70 @@ fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u
             });
             ui.end_row();
         }
-        ui.label(tl!("Side labels"));
-        ui.horizontal(|ui| {
-            let vertical = g.label_orientation == Orientation::Vertical;
-            for (label, v) in [("Horizontal", false), ("Vertical", true)] {
-                if ui.selectable_label(vertical == v, tl!(label)).clicked() && vertical != v {
-                    set(app, json!({"labelOrientation": if v { "vertical" } else { "horizontal" }}));
-                }
+        // Each labelled edge's labels upright or turned to read upward.
+        let o = g.edge_orientations();
+        let rows = [
+            ("Top labels", "top", e.top, o.top),
+            ("Bottom labels", "bottom", e.bottom, o.bottom),
+            ("Left labels", "left", e.left, o.left),
+            ("Right labels", "right", e.right, o.right),
+        ];
+        for (label, edge, shown, now) in rows {
+            if !shown {
+                continue;
             }
-        });
-        ui.end_row();
+            ui.label(tl!(label));
+            ui.horizontal(|ui| {
+                for (name, v) in [("Horizontal", Orientation::Horizontal), ("Vertical", Orientation::Vertical)] {
+                    if ui.selectable_label(now == v, tl!(name)).clicked() && now != v {
+                        let code = if v == Orientation::Vertical { "vertical" } else { "horizontal" };
+                        set(app, json!({"edgeOrientations": {edge: code}}));
+                    }
+                }
+            });
+            ui.end_row();
+        }
     });
+}
+
+/// A grid's labels' halo: white inside the frame and none outside (auto), none, or a colour.
+fn halo_row(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(&mut RustGisApp, Value)) {
+    let input_label = ui.label(tl!("Halo"));
+    ui.horizontal(|ui| {
+        let none = g.halo.is_some_and(|c| c.a() == 0);
+        let colour = g.halo.filter(|c| c.a() > 0);
+        let chosen = if g.halo.is_none() {
+            tl!("Auto")
+        } else if none {
+            tl!("None")
+        } else {
+            tl!("Color")
+        };
+        egui::ComboBox::from_id_salt(("grid_halo", id))
+            .selected_text(chosen)
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(g.halo.is_none(), tl!("Auto")).on_hover_text(tl!("White inside the frame, none outside it.")).clicked() {
+                    set(app, json!({"halo": "auto"}));
+                }
+                if ui.selectable_label(none, tl!("None")).clicked() && !none {
+                    set(app, json!({"halo": false}));
+                }
+                if ui.selectable_label(colour.is_some(), tl!("Color")).clicked() && colour.is_none() {
+                    set(app, json!({"halo": true}));
+                }
+            })
+            .response
+            .labelled_by(input_label.id);
+        if let Some(c) = colour {
+            let mut c = crate::theme::c32(c);
+            let resp = crate::widgets::color_button(ui, &mut c);
+            if resp.changed() {
+                crate::widgets::one_step_per_press(app, &resp);
+                set(app, json!({"halo": crate::theme::rgba(c).hex()}));
+            }
+        }
+    });
+    ui.end_row();
 }
 
 /// A measured grid's coordinate system, typed (EPSG:25832, WKT or a PROJ string) and set when the
@@ -4097,6 +4308,56 @@ mod tests {
         h.get_by_label("Short labels").click();
         h.run_steps(2);
         assert!(grid(&h).short);
+    }
+
+    /// A measured grid printed as topographic maps print it, from the Format pane: its
+    /// kilometres emphasised, its corners whole, its unit, and a second grid over it.
+    #[test]
+    fn a_grid_is_printed_as_topographic_maps_print_it_from_the_format_pane() {
+        use egui_kittest::kittest::Queryable;
+        use rustgis_engine::map::layout::{ElementKind, GridKind, GridSuffix};
+        let mut app = RustGisApp::with_sample();
+        app.run("layout.new", json!({"name": "Topo"})).unwrap();
+        let li = app.session.active_layout.unwrap();
+        let frame = app.session.project.layouts[li].elements.iter().find(|e| e.kind.code() == "mapFrame").unwrap().id;
+        app.run("layout.addElement", json!({"kind": "grid", "type": "measured"})).unwrap();
+        app.run("ui.pane.format", json!({})).unwrap();
+        app.layout.selected = Some(frame);
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1200.0, 2400.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                with_format(app, ui);
+            },
+            app,
+        );
+        h.run_steps(3);
+        let grid = |h: &egui_kittest::Harness<'_, RustGisApp>| match &h.state().session.project.layouts[li].element(frame).unwrap().kind {
+            ElementKind::MapFrame { grid, .. } => grid.clone().unwrap(),
+            _ => panic!("not a frame"),
+        };
+        for label in ["Emphasize kilometres", "Whole at corners", "Thousands separator"] {
+            h.get_by_label(label).click();
+            h.run_steps(2);
+        }
+        let g = grid(&h);
+        assert!(g.emphasis && g.full_corners && g.thousands, "{g:?}");
+        h.state_mut().run("layout.update", json!({"element": frame, "grid": {"suffix": "metres"}})).unwrap();
+        h.run_steps(2);
+        assert_eq!(grid(&h).suffix, GridSuffix::Metres);
+        assert!(h.query_by_label("Grid label type").is_some() && h.query_by_label("Minor ticks").is_some());
+        // A second grid: a graticule, shown under its own heading.
+        h.get_by_label("Second grid").click();
+        h.run_steps(3);
+        h.get_by_label("Show a second grid").click();
+        h.run_steps(3);
+        let second = grid(&h).second.expect("a second grid");
+        assert_eq!(second.kind, GridKind::Graticule);
+        assert!(h.query_by_label("N/S/E/W").is_some(), "the second's degree rows");
     }
 
     /// A scale bar's and a north arrow's style is picked from pictures in the Format pane, the

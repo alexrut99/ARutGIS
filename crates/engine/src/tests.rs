@@ -4289,6 +4289,98 @@ fn a_frames_grid_can_be_a_measured_grid() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// A grid's labels take a type, halo, offset and direction by edge; a measured grid's values
+/// emphasis, whole corners, a unit and thousands; every grid minor ticks, labels every so many
+/// lines, decimals, dashes and a second grid; refused values change nothing.
+#[test]
+fn layout_grids_take_label_and_line_options() {
+    use rustgis_map::Rgba;
+    use rustgis_map::layout::{DmsParts, ElementKind, GridDash, GridKind, GridSuffix, Orientation};
+    let mut s = world();
+    s.run("layout.new", &json!({"page": "a4", "template": "map"})).unwrap();
+    let frame = s.project.layouts[0].elements.iter().find(|e| e.kind.code() == "mapFrame").unwrap().id;
+    let grid = |s: &Session| match &s.project.layouts[0].element(frame).unwrap().kind {
+        ElementKind::MapFrame { grid, .. } => grid.clone().unwrap(),
+        k => panic!("{k:?}"),
+    };
+    s.run(
+        "layout.addElement",
+        &json!({"kind": "grid", "labelFont": {"size": 11, "color": "#C00000", "bold": true}, "halo": "#FFFF00", "labelOffset": 2,
+                "edgeOrientations": {"top": "vertical"}, "minorTicks": 5, "labelEvery": 2, "decimals": 1, "dash": "dashed"}),
+    )
+    .unwrap();
+    let g = grid(&s);
+    assert_eq!((g.text.size, g.text.color, g.text.bold), (11.0, Some(Rgba::rgb(0xC0, 0, 0)), true));
+    assert_eq!((g.halo, g.label_offset, g.minor_ticks, g.label_every, g.decimals), (Some(Rgba::rgb(0xFF, 0xFF, 0)), 2.0, 5, 2, Some(1)));
+    assert_eq!(g.dash, GridDash::Dashed);
+    let o = g.edge_orientations();
+    assert_eq!((o.top, o.bottom, o.left), (Orientation::Vertical, Orientation::Horizontal, Orientation::Horizontal));
+    // The sides follow labelOrientation still; the halo back to auto, or none.
+    s.run("layout.update", &json!({"element": frame, "grid": {"labelOrientation": "vertical", "halo": false, "dmsParts": "seconds"}}))
+        .unwrap();
+    let g = grid(&s);
+    let o = g.edge_orientations();
+    assert_eq!((o.top, o.left, o.right), (Orientation::Vertical, Orientation::Vertical, Orientation::Vertical));
+    assert_eq!((g.halo.map(|c| c.a()), g.dms_parts), (Some(0), DmsParts::Seconds));
+    s.run("layout.update", &json!({"element": frame, "grid": {"halo": "auto", "decimals": null, "edgeOrientations": null}})).unwrap();
+    let g = grid(&s);
+    assert_eq!((g.halo, g.decimals, g.orientations), (None, None, None));
+    // A measured grid as topographic maps print it.
+    s.run(
+        "layout.update",
+        &json!({"element": frame, "grid": {"type": "measured", "step": 1000, "short": true, "emphasis": true, "fullCorners": true,
+                                           "suffix": "metres", "thousands": true}}),
+    )
+    .unwrap();
+    let g = grid(&s);
+    assert_eq!((g.kind, g.emphasis, g.full_corners, g.suffix, g.thousands), (GridKind::Measured, true, true, GridSuffix::Metres, true));
+    // A second grid: a graticule labelling the top and right, its own options; removed again.
+    s.run("layout.update", &json!({"element": frame, "grid": {"second": {"style": "ticks", "step": 0.5, "second": true}}})).unwrap();
+    let second = grid(&s).second.unwrap();
+    assert_eq!((second.kind, second.step, second.edges.top, second.edges.bottom), (GridKind::Graticule, 0.5, true, false));
+    assert!(second.second.is_none(), "no third grid");
+    s.run("layout.update", &json!({"element": frame, "grid": {"second": {"labelFont": {"italic": true}}}})).unwrap();
+    let kept = grid(&s).second.unwrap();
+    assert!(kept.text.italic && kept.step == 0.5, "a second's options change only what is named");
+    let before = grid(&s);
+    for bad in [
+        json!({"labelFont": 12}),
+        json!({"halo": 3}),
+        json!({"halo": "blue"}),
+        json!({"edgeOrientations": {"middle": "vertical"}}),
+        json!({"edgeOrientations": {"top": "diagonal"}}),
+        json!({"suffix": "km"}),
+        json!({"dmsParts": "hours"}),
+        json!({"dash": "wavy"}),
+        json!({"minorTicks": "many"}),
+        json!({"decimals": "two"}),
+        json!({"second": 5}),
+        json!({"second": {"type": "utm"}}),
+    ] {
+        assert!(s.run("layout.update", &json!({"element": frame, "grid": bad})).is_err(), "{bad}");
+        let mut p = bad.clone();
+        p["kind"] = json!("grid");
+        assert!(s.run("layout.addElement", &p).is_err(), "{bad}");
+    }
+    assert_eq!(grid(&s), before, "a refusal changes nothing");
+    // Held in range, kept with the project, and drawn.
+    s.run("layout.update", &json!({"element": frame, "grid": {"minorTicks": 99, "labelEvery": 0, "decimals": 40, "labelOffset": 1e9}})).unwrap();
+    let g = grid(&s);
+    assert_eq!((g.minor_ticks, g.label_every, g.decimals, g.label_offset), (10, 1, Some(6), rustgis_map::layout::MAX_LABEL_OFFSET));
+    let text = serde_json::to_string(&s.project).unwrap();
+    let reopened = Session::new(serde_json::from_str(&text).unwrap());
+    let again = match &reopened.project.layouts[0].element(frame).unwrap().kind {
+        ElementKind::MapFrame { grid, .. } => grid.clone(),
+        _ => None,
+    };
+    assert_eq!(again, Some(g));
+    s.run("layout.update", &json!({"element": frame, "grid": {"outside": true, "edges": ["top", "bottom", "left", "right"]}})).unwrap();
+    let path = std::env::temp_dir().join(format!("rustgis-grid-labels-{}.png", std::process::id()));
+    s.run("layout.export", &json!({"path": path, "dpi": 72})).unwrap();
+    assert!(std::fs::metadata(&path).is_ok_and(|m| m.len() > 1000));
+    let _ = std::fs::remove_file(&path);
+}
+
 /// Grids, north arrows and scale bars take their cartographic options through commands (#327):
 /// checked before anything changes, kept when other options change, and saved with the layout.
 #[test]

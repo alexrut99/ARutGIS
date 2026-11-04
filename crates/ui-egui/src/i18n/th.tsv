@@ -4433,3 +4433,35 @@ Replace the legend with a text for each name and label and a patch for each symb
 Couldn't convert the legend: {error}	แปลง legend ไม่สำเร็จ: {error}
 Legend Patch	สัญลักษณ์ legend
 Type of {item}	รูปแบบตัวอักษรของ {item}
+Show a second grid	แสดงกริดที่สอง
+Grid label type	รูปแบบตัวเลขพิกัด
+Use the grid's color	ใช้สีเดิมของกริด
+Second grid	กริดที่สอง
+A second grid over the same frame, as topographic maps add degree ticks to a UTM grid.	กริดอีกชุดบนกรอบแผนที่เดียวกัน เช่น แผนที่ภูมิประเทศที่มีขีดองศาละติจูด/ลองจิจูดซ้อนบนกริด UTM
+Line style	รูปแบบเส้น
+Minor ticks	ขีดย่อย
+{n} parts a step	แบ่ง {n} ช่วงต่อระยะ
+Short ticks along the edges, splitting each step between the lines.	ขีดสั้นตามขอบกรอบ แบ่งระยะระหว่างเส้นกริดเป็นช่วงย่อย
+Label offset	ระยะห่างตัวเลขจากกรอบ
+How much further from the frame's edge the labels sit.	ขยับตัวเลขให้ห่างจากขอบกรอบมากขึ้นเท่าใด
+White inside the frame, none outside it.	สีขาวเมื่ออยู่ในกรอบ ไม่มีเมื่ออยู่นอกกรอบ
+Label every	แสดงตัวเลขทุก
+Every line	ทุกเส้น
+Every {n} lines	ทุก {n} เส้น
+Every line is drawn; only every so many of them is labelled.	วาดเส้นครบทุกเส้น แต่ใส่ตัวเลขเฉพาะทุก ๆ กี่เส้นตามที่ตั้ง
+Decimals	ทศนิยม
+Emphasize kilometres	เน้นหลักกิโลเมตร
+Whole values with the kilometres' two digits large and the rest small, as topographic maps print them.	ค่าเต็มที่ตัวเลขสองหลักของกิโลเมตรตัวใหญ่ ส่วนที่เหลือตัวเล็ก แบบแผนที่ภูมิประเทศ
+Whole at corners	ค่าเต็มที่มุมกรอบ
+The label nearest each corner written whole, with its unit; the others as they are.	ตัวเลขที่ใกล้มุมกรอบแต่ละมุมแสดงค่าเต็มพร้อมหน่วย ส่วนตัวอื่นแสดงตามเดิม
+Written after whole values.	ต่อท้ายค่าเต็ม
+Thousands separator	ตัวคั่นหลักพัน
+543,000 rather than 543000.	543,000 แทน 543000
+As the step needs	ตามระยะห่างของเส้น
+Degrees	องศา
+Degrees and minutes	องศาและลิปดา
+Degrees, minutes and seconds	องศา ลิปดา และฟิลิปดา
+Top labels	ตัวเลขขอบบน
+Bottom labels	ตัวเลขขอบล่าง
+Left labels	ตัวเลขขอบซ้าย
+Right labels	ตัวเลขขอบขวา

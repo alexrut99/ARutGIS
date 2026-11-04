@@ -131,6 +131,28 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   projected (a latitude/longitude one) is refused: that is a graticule's job. From a command:
   `layout.update={"element":1,"grid":{"type":"measured","crs":"EPSG:25832","step":1000,"short":true}}`;
   a change of type without a step picks one, as degrees and metres don't carry over.
+- **Grid labels and lines**: **Grid label type** sets the labels' font, size, colour, bold and
+  italic (`"labelFont": {"size": 9, "color": "#1F2937", "font": "Tahoma"}`); **Halo** is
+  **Auto** (white inside the frame, none outside it, as before), **None** or a colour
+  (`"halo": "#FFFFFFCC"`, `false`, `"auto"`); **Label offset** moves them further off the
+  frame's edge, in mm; and each labelled edge's labels are **Horizontal** or **Vertical**
+  (turned to read upward) on their own (`"edgeOrientations": {"top": "vertical"}`; null
+  follows `labelOrientation` again). **Line style** is solid, dashed or dotted (the edge
+  ticks stay solid); **Minor ticks** split each step into 2 to 10 parts with short ticks along
+  the edges (`"minorTicks": 5`); **Label every** labels only every 2nd to 10th line while all
+  are drawn (`"labelEvery": 2`, counted from 0, so the same lines stay labelled however the
+  frame moves); and **Decimals** fixes the labels' decimals (`"decimals": 1`, null as the step
+  needs). A graticule in degrees, minutes and seconds **Shows** degrees, minutes or seconds
+  whatever its step (`"dmsParts": "seconds"`, the seconds with `decimals`).
+- **Topographic grid labels**: a measured grid's **Emphasize kilometres** prints its whole values
+  as topographic maps do, the kilometres' two figures large and the rest small (⁵43⁰⁰⁰,
+  `"emphasis": true`); **Whole at corners** writes the labels nearest each corner whole while
+  **Short labels** shortens the others (`"fullCorners": true`); **Unit** adds `E`/`N` or
+  `mE`/`mN` after whole values (`"suffix": "metres"`); and **Thousands separator** writes
+  `543,000` (`"thousands": true`). **Second grid** adds a grid of its own options over the same
+  frame, a graticule labelling the top and right to start with: degree ticks over a UTM grid,
+  as topographic sheets have them
+  (`"grid": {"second": {"style": "ticks", "step": 0.25, "format": "dms"}}`; `false` removes it).
 - **Map surrounds**: north arrow, scale bar, legend, colorbar, table frame (a layer's attribute table) and
   chart frame (a bar chart of a numeric field), plus a neatline or backdrop. A north arrow's
   properties pick its **Style** from pictures of the ten (classic arrow, compass rose, triangle,

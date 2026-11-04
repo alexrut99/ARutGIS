@@ -9,7 +9,8 @@ use rustgis_map::layout::{
 };
 use rustgis_map::symbology::LegendEntry;
 use rustgis_map::{Map, Rgba};
-use tiny_skia::{FillRule, Mask, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
+use rustgis_map::layout::GridEdge as Edge;
+use tiny_skia::{FillRule, LineCap, Mask, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 use crate::{View, paint, text};
 
@@ -73,7 +74,7 @@ pub(crate) fn render_element(layout: &Layout, id: u32, maps: &mut [Map], dpi: f6
     let (w, h, k) = page_geometry(layout, dpi);
     // A frame's grid labelled outside it reaches past its edges.
     let m = match &e.kind {
-        ElementKind::MapFrame { grid: Some(g), .. } if g.outside && g.labels => OUTSIDE_LABEL_MM,
+        ElementKind::MapFrame { grid: Some(g), .. } => g.outside_reach(),
         _ => 0.0,
     };
     // A turned element covers its turned box (its labels outside it turn too, further out).
@@ -144,7 +145,9 @@ fn draw_page(
         let turned = e.rotation != 0.0 && e.kind.turns();
         let pad = if turned {
             match &e.kind {
-                ElementKind::MapFrame { .. } => (OUTSIDE_LABEL_MM * k).ceil() as f32 + 2.0,
+                ElementKind::MapFrame { grid, .. } => {
+                    (grid.as_ref().map_or(0.0, Grid::outside_reach).max(OUTSIDE_LABEL_MM) * k).ceil() as f32 + 2.0
+                }
                 _ => (30.0 * ppp).ceil() as f32 + 2.0,
             }
         } else {
@@ -231,8 +234,7 @@ fn draw_page(
                     );
                 }
                 if !outside.is_empty() {
-                    let vertical = grid.as_ref().is_some_and(|g| g.label_orientation == Orientation::Vertical);
-                    outside_labels(target, outside, (x0, y0, ew.max(1.0), eh.max(1.0)), up, ppp as f32, vertical);
+                    outside_labels(target, outside, (x0, y0, ew.max(1.0), eh.max(1.0)), up, ppp as f32);
                 }
             }
             ElementKind::NorthArrow { frame: f, style, fill, outline, label, text } => {
@@ -590,8 +592,50 @@ fn grid_label(g: &Grid, v: f64, lon: bool, step: f64) -> String {
     if text::covers(&s, false) { s } else { s.replace('′', "'").replace('″', "\"") }
 }
 
+/// One of a grid's lines: its points in longitude/latitude, its label and its label written
+/// whole (as the grid writes them, before a decimal comma), whether it runs north–south
+/// (labelled along the top and bottom first), whether it is labelled (every
+/// [`label_every`](Grid::label_every)th), and whether it is a minor line, drawn as a short
+/// tick at the edges only.
+#[derive(Clone, Debug)]
+struct GridLine {
+    pts: Vec<Coord>,
+    label: String,
+    full: String,
+    lon: bool,
+    labelled: bool,
+    minor: bool,
+}
+
+/// The most minor lines a grid draws each way.
+const MAX_MINOR_LINES: usize = 2000;
+
+/// Whether the line `v` (on lines `step` apart) is one of every `every` labelled.
+fn labelled(v: f64, step: f64, every: u32) -> bool {
+    let k = (v / step).round();
+    every <= 1 || !k.is_finite() || (k as i64).rem_euclid(i64::from(every)) == 0
+}
+
+/// The values of the minor lines between `first` and `last` (lines `step` apart, each step split
+/// into `parts`): none when `parts` is under 2.
+fn minor_values(first: f64, last: f64, step: f64, parts: u32) -> Vec<f64> {
+    let mut out = Vec::new();
+    if parts < 2 || !(step > 0.0) {
+        return out;
+    }
+    let sub = step / f64::from(parts);
+    let mut v = first - step;
+    while v <= last + step * 1e-9 && out.len() < MAX_MINOR_LINES {
+        for j in 1..parts {
+            out.push(v + sub * f64::from(j));
+        }
+        v += step;
+    }
+    out
+}
+
 /// A graticule's lines over `ext` (longitude/latitude), each with its label.
-fn graticule_lines(g: &Grid, ext: Extent, comma: bool, lines: &mut Vec<(Vec<Coord>, String, bool)>) {
+fn graticule_lines(g: &Grid, ext: Extent, lines: &mut Vec<GridLine>) {
     if ext.is_empty() {
         return;
     }
@@ -605,22 +649,37 @@ fn graticule_lines(g: &Grid, ext: Extent, comma: bool, lines: &mut Vec<(Vec<Coor
     let pad = span * 0.02;
     let (lat0, lat1) = ((ext.min_y - pad).max(-89.9), (ext.max_y + pad).min(89.9));
     let (lon0, lon1) = (ext.min_x - pad, ext.max_x + pad);
+    let meridian = |lon: f64| (0..=48).map(|i| Coord::new(lon, lat0 + (lat1 - lat0) * f64::from(i) / 48.0)).collect();
+    let parallel = |lat: f64| (0..=48).map(|i| Coord::new(lon0 + (lon1 - lon0) * f64::from(i) / 48.0, lat)).collect();
     let mut n = 0;
-    let mut lon = (ext.min_x / step).floor() * step;
+    let first_lon = (ext.min_x / step).floor() * step;
+    let mut lon = first_lon;
     while lon <= ext.max_x + step * 1e-9 && n < 200 {
-        let pts = (0..=48).map(|i| Coord::new(lon, lat0 + (lat1 - lat0) * i as f64 / 48.0)).collect();
-        lines.push((pts, decimal(grid_label(g, lon, true, step), comma), true));
+        let label = grid_label(g, lon, true, step);
+        let labelled = labelled(lon, step, g.label_every);
+        lines.push(GridLine { pts: meridian(lon), full: label.clone(), label, lon: true, labelled, minor: false });
         lon += step;
         n += 1;
     }
-    let mut lat = (ext.min_y / step).floor() * step;
+    let last_lon = lon - step;
+    let first_lat = (ext.min_y / step).floor() * step;
+    let mut lat = first_lat;
     while lat <= ext.max_y + step * 1e-9 && n < 400 {
         if lat.abs() <= 90.0 {
-            let pts = (0..=48).map(|i| Coord::new(lon0 + (lon1 - lon0) * i as f64 / 48.0, lat)).collect();
-            lines.push((pts, decimal(grid_label(g, lat, false, step), comma), false));
+            let label = grid_label(g, lat, false, step);
+            let labelled = labelled(lat, step, g.label_every);
+            lines.push(GridLine { pts: parallel(lat), full: label.clone(), label, lon: false, labelled, minor: false });
         }
         lat += step;
         n += 1;
+    }
+    let last_lat = lat - step;
+    let minor = |pts: Vec<Coord>, lon: bool| GridLine { pts, label: String::new(), full: String::new(), lon, labelled: false, minor: true };
+    for v in minor_values(first_lon, last_lon, step, g.minor_ticks) {
+        lines.push(minor(meridian(v), true));
+    }
+    for v in minor_values(first_lat, last_lat, step, g.minor_ticks).into_iter().filter(|v| v.abs() <= 90.0) {
+        lines.push(minor(parallel(v), false));
     }
 }
 
@@ -632,13 +691,7 @@ const WIDENED_LINES: f64 = 50.0;
 
 /// A measured grid's lines over the frame whose edges are `lonlats`, in the coordinate system of
 /// `tr`: eastings (north–south) and northings, each back in longitude/latitude, with its label.
-fn measured_lines(
-    g: &Grid,
-    tr: &rustgis_data::raster::Transformer,
-    lonlats: &[Coord],
-    comma: bool,
-    lines: &mut Vec<(Vec<Coord>, String, bool)>,
-) {
+fn measured_lines(g: &Grid, tr: &rustgis_data::raster::Transformer, lonlats: &[Coord], lines: &mut Vec<GridLine>) {
     let mut ext = Extent::EMPTY;
     for c in lonlats.iter().filter_map(|c| tr.from_lonlat(*c)) {
         ext.expand(c);
@@ -658,27 +711,37 @@ fn measured_lines(
     let pad = span * 0.02;
     let (x0, x1, y0, y1) = (ext.min_x - pad, ext.max_x + pad, ext.min_y - pad, ext.max_y + pad);
     let back = |x: f64, y: f64| tr.to_lonlat(Coord::new(x, y));
+    // (A point that doesn't convert is left out.)
+    let easting = |x: f64| -> Vec<Coord> { (0..=48).filter_map(|i| back(x, y0 + (y1 - y0) * f64::from(i) / 48.0)).collect() };
+    let northing = |y: f64| -> Vec<Coord> { (0..=48).filter_map(|i| back(x0 + (x1 - x0) * f64::from(i) / 48.0, y)).collect() };
     // Counted too: at coordinates far larger than the step, adding it may not move a line on.
     let most = 2 * MAX_MEASURED_LINES as usize;
     let first = |min: f64| (min / step).floor() * step;
-    for (i, x) in
-        std::iter::successors(Some(first(ext.min_x)), |x| Some(x + step)).take_while(|x| *x <= ext.max_x + step * 1e-9).enumerate()
-    {
-        if i >= most {
-            break;
-        }
-        // (A point that doesn't convert is left out.)
-        let pts: Vec<Coord> = (0..=48).filter_map(|i| back(x, y0 + (y1 - y0) * f64::from(i) / 48.0)).collect();
-        lines.push((pts, decimal(g.measured_label(x, step), comma), true));
+    let values = |min: f64, max: f64| -> Vec<f64> {
+        std::iter::successors(Some(first(min)), |v| Some(v + step)).take_while(|v| *v <= max + step * 1e-9).take(most).collect()
+    };
+    let (xs, ys) = (values(ext.min_x, ext.max_x), values(ext.min_y, ext.max_y));
+    let all: Vec<(f64, bool)> = xs.iter().map(|x| (*x, true)).chain(ys.iter().map(|y| (*y, false))).collect();
+    for (v, east) in all {
+        lines.push(GridLine {
+            pts: if east { easting(v) } else { northing(v) },
+            label: g.measured_text(v, step, east, false),
+            full: g.measured_text(v, step, east, true),
+            lon: east,
+            labelled: labelled(v, step, g.label_every),
+            minor: false,
+        });
     }
-    for (i, y) in
-        std::iter::successors(Some(first(ext.min_y)), |y| Some(y + step)).take_while(|y| *y <= ext.max_y + step * 1e-9).enumerate()
-    {
-        if i >= most {
-            break;
+    let minor = |pts: Vec<Coord>, lon: bool| GridLine { pts, label: String::new(), full: String::new(), lon, labelled: false, minor: true };
+    if let (Some(a), Some(z)) = (xs.first(), xs.last()) {
+        for v in minor_values(*a, *z, step, g.minor_ticks) {
+            lines.push(minor(easting(v), true));
         }
-        let pts: Vec<Coord> = (0..=48).filter_map(|i| back(x0 + (x1 - x0) * f64::from(i) / 48.0, y)).collect();
-        lines.push((pts, decimal(g.measured_label(y, step), comma), false));
+    }
+    if let (Some(a), Some(z)) = (ys.first(), ys.last()) {
+        for v in minor_values(*a, *z, step, g.minor_ticks) {
+            lines.push(minor(northing(v), false));
+        }
     }
 }
 
@@ -707,13 +770,6 @@ fn edge_crossings(pts: &[(f32, f32)], w: f32, h: f32) -> Vec<(Edge, f32)> {
     out
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Edge {
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
 
 /// The coordinate system of a measured grid on `map`: the grid's own, else the map's when it is
 /// projected, else the WGS 84 UTM zone at `center` (longitude/latitude). `None` for one that
@@ -746,13 +802,182 @@ fn nice_step(span: f64, smallest: f64) -> f64 {
     [1.0, 2.0, 5.0, 10.0].iter().map(|k| k * p).find(|s| *s >= rough).unwrap_or(10.0 * p)
 }
 
+/// The dark grey grid labels are in until a colour is set.
+const GRID_LABEL: Rgba = Rgba::rgb(0x20, 0x20, 0x20);
+/// How large an emphasised label's small figures are, of its large ones.
+const SMALL_FIGURES: f32 = 0.7;
+
+/// How a grid's labels are drawn: their type, size (pixels), colour and halo.
+#[derive(Clone, Debug, PartialEq)]
+struct GridInk {
+    t: LabelText,
+    px: f32,
+    color: Rgba,
+    halo: Option<Rgba>,
+}
+
+impl GridInk {
+    /// `g`'s labels at `ppp` pixels a point, inside the frame (`inside`) or past it, upright or
+    /// turned (`turned`).
+    fn of(g: &Grid, ppp: f32, inside: bool, turned: bool) -> GridInk {
+        GridInk {
+            t: g.text.clone(),
+            px: g.label_size() as f32 * 1.33 * ppp,
+            color: g.text.color.unwrap_or(GRID_LABEL),
+            halo: g.halo_color(inside, turned),
+        }
+    }
+
+    /// Drawn as grid labels always were: the sans, one piece, a white halo or none.
+    fn plain(&self, runs: &[(String, f32)]) -> bool {
+        plain_type(&self.t) && runs.len() == 1 && self.halo.is_none_or(|h| h == rustgis_map::layout::DEFAULT_GRID_HALO)
+    }
+
+    /// How wide `s` is at `k` times the size.
+    fn width(&self, s: &str, k: f32) -> f32 {
+        let px = self.px * k;
+        if plain_type(&self.t) { text::measure(s, px / 1.33, self.t.bold) } else { label_width(s, px, label_face(&self.t)) }
+    }
+
+    /// How wide the pieces `runs` are, side by side.
+    fn runs_width(&self, runs: &[(String, f32)]) -> f32 {
+        runs.iter().map(|(s, k)| self.width(s, *k)).sum()
+    }
+
+    /// `s` at `k` times the size in `color`, starting at `left`, its middle at `cy`.
+    fn ink(&self, pm: &mut Pixmap, s: &str, k: f32, left: f32, cy: f32, color: Rgba) {
+        let px = self.px * k;
+        if plain_type(&self.t) {
+            text::text_at(pm, s, left, cy, px, color, self.t.bold, text::Align::Left, false);
+        } else {
+            label_at(pm, s, left, cy, px, color, label_face(&self.t), false);
+        }
+    }
+
+    /// The pieces `runs` side by side, centred on (`cx`, `cy`): the small ones raised to the
+    /// large ones' tops, every halo under every piece.
+    fn draw(&self, pm: &mut Pixmap, runs: &[(String, f32)], cx: f32, cy: f32) {
+        if self.plain(runs) {
+            if let Some((s, _)) = runs.first() {
+                text::text_at(pm, s, cx, cy, self.px, self.color, self.t.bold, text::Align::Center, self.halo.is_some());
+            }
+            return;
+        }
+        let raised = |k: f32| cy - (self.px - self.px * k) * 0.3;
+        let left = cx - self.runs_width(runs) / 2.0;
+        if let Some(h) = self.halo {
+            let r = (self.px * 0.09).max(1.0);
+            let mut x = left;
+            for (s, k) in runs {
+                for (dx, dy) in [(-r, 0.0), (r, 0.0), (0.0, -r), (0.0, r)] {
+                    self.ink(pm, s, *k, x + dx, raised(*k) + dy, h);
+                }
+                x += self.width(s, *k);
+            }
+        }
+        let mut x = left;
+        for (s, k) in runs {
+            self.ink(pm, s, *k, x, raised(*k), self.color);
+            x += self.width(s, *k);
+        }
+    }
+
+    /// The pieces `runs` centred on (`cx`, `cy`), turned to read from bottom to top.
+    fn draw_turned(&self, pm: &mut Pixmap, runs: &[(String, f32)], cx: f32, cy: f32) {
+        // Whole pixels throughout, so the quarter turn moves pixels without resampling them.
+        let tw = (self.runs_width(runs) + self.px * 0.4).ceil().max(1.0);
+        let th = (self.px * 1.6).ceil().max(1.0);
+        let Some(mut tmp) = Pixmap::new(tw as u32, th as u32) else { return };
+        self.draw(&mut tmp, runs, tw / 2.0, th / 2.0);
+        let (x, y) = ((cx - th / 2.0).round(), (cy + tw / 2.0).round());
+        let t = Transform::from_row(0.0, -1.0, 1.0, 0.0, x, y);
+        pm.draw_pixmap(0, 0, tmp.as_ref(), &PixmapPaint { quality: tiny_skia::FilterQuality::Nearest, ..PixmapPaint::default() }, t, None);
+    }
+
+    /// The pieces `runs` across an `edge`'s line (turned when `turned`): how far they reach
+    /// from it, and how long they are along it.
+    fn extent(&self, edge: Edge, runs: &[(String, f32)], turned: bool) -> (f32, f32) {
+        let w = self.runs_width(runs);
+        let side = matches!(edge, Edge::Left | Edge::Right);
+        // Along a side upright, or along the top or bottom turned: a line high along the edge.
+        if side != turned { (w, self.px) } else { (self.px, w) }
+    }
+
+    /// The pieces `runs` beside `edge`, `gap` pixels from its line at `line` (inside the frame
+    /// when `inward`), centred on `at` along it, turned when `turned`.
+    fn draw_at(&self, pm: &mut Pixmap, runs: &[(String, f32)], edge: Edge, (line, at): (f32, f32), gap: f32, inward: bool, turned: bool) {
+        let (depth, _) = self.extent(edge, runs, turned);
+        // A line high out from the edge: its middle 0.4 of a line in (0.45 outside), as the
+        // labels always sat; a label's length out: its middle half of it in.
+        let side = matches!(edge, Edge::Left | Edge::Right);
+        let half = if side != turned { depth / 2.0 } else if inward { self.px * 0.4 } else { self.px * 0.45 };
+        let out = gap + half;
+        // Away from the frame's middle: outward from the top and left edges is up and left.
+        let sign = match (edge, inward) {
+            (Edge::Top | Edge::Left, true) | (Edge::Bottom | Edge::Right, false) => 1.0,
+            _ => -1.0,
+        };
+        let (cx, cy) = if side { (line + sign * out, at) } else { (at, line + sign * out) };
+        if turned { self.draw_turned(pm, runs, cx, cy) } else { self.draw(pm, runs, cx, cy) }
+    }
+}
+
+/// A label's pieces as drawn, each with its size (of the label's): the decimal comma applied, and
+/// an emphasised measured value split into its small leading figures, its large kilometres and
+/// its small rest.
+fn label_runs(g: &Grid, s: &str, comma: bool) -> Vec<(String, f32)> {
+    let pieces = if g.kind == GridKind::Measured && g.emphasis { emphasis(s) } else { vec![(s.to_string(), 1.0)] };
+    pieces.into_iter().filter(|(t, _)| !t.is_empty()).map(|(t, k)| (decimal(t, comma), k)).collect()
+}
+
+/// `s` (a measured value: a sign, figures perhaps with thousands apart, decimals and a unit) as
+/// topographic maps print it: the two figures before the last three of its whole part large,
+/// the rest small. A value of fewer than four whole figures is large throughout.
+fn emphasis(s: &str) -> Vec<(String, f32)> {
+    let chars: Vec<char> = s.chars().collect();
+    let start = usize::from(chars.first() == Some(&'-'));
+    let end = chars.iter().skip(start).position(|c| !(c.is_ascii_digit() || *c == ',')).map_or(chars.len(), |i| i + start);
+    let figures: Vec<usize> = (start..end).filter(|&i| chars.get(i).is_some_and(char::is_ascii_digit)).collect();
+    let n = figures.len();
+    if n < 4 {
+        return vec![(s.to_string(), 1.0)];
+    }
+    // The two figures before the last three (the one, of four).
+    let (Some(&from), Some(&to)) = (figures.get(n.saturating_sub(5)), figures.get(n - 4)) else {
+        return vec![(s.to_string(), 1.0)];
+    };
+    let part = |a: usize, z: usize| chars.get(a..z).map(|c| c.iter().collect::<String>()).unwrap_or_default();
+    vec![(part(0, from), SMALL_FIGURES), (part(from, to + 1), 1.0), (part(to + 1, chars.len()), SMALL_FIGURES)]
+}
+
+/// A label kept, to draw past the frame's edges: its edge, place along it (pixels of the frame's
+/// picture), pieces, look, whether it is turned, and how far it is moved off the edge (mm).
+#[derive(Clone, Debug)]
+struct OutsideLabel {
+    edge: Edge,
+    at: f32,
+    runs: Vec<(String, f32)>,
+    /// Its look at one pixel a point.
+    ink: GridInk,
+    turned: bool,
+    offset: f64,
+}
+
 /// A grid over a frame: lines across it, ticks along its edges or both, labelled at the edges the
 /// grid names. A graticule's lines are latitudes and longitudes; a measured grid's are eastings and
 /// northings in its coordinate system, bent through it onto the map.
-/// Draws `g` over a frame's picture `pm`; its labels too, unless they go outside the frame
-/// (`Grid::outside`): those are returned, by edge, place along it (pixels of `pm`) and text, for
-/// the page to draw past the frame's edges ([`outside_labels`]).
-fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) -> Vec<(Edge, f32, String)> {
+/// Draws `g` (and its second) over a frame's picture `pm`; their labels too, unless they go
+/// outside the frame (`Grid::outside`): those are returned for the page to draw past the
+/// frame's edges ([`outside_labels`]).
+fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) -> Vec<OutsideLabel> {
+    let mut out = draw_one_grid(pm, map, view, g, comma);
+    if let Some(second) = &g.second {
+        out.extend(draw_one_grid(pm, map, view, second, comma));
+    }
+    out
+}
+
+fn draw_one_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) -> Vec<OutsideLabel> {
     let ppp = view.pixels_per_point as f32;
     let (w, h) = (view.width, view.height);
     // The frame's edges in longitude/latitude: its corners and points along each side.
@@ -769,9 +994,7 @@ fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) -> 
     if ext.is_empty() {
         return Vec::new();
     }
-    // Each line: its points in longitude/latitude, its label, and whether it runs north–south
-    // (labelled along the top and bottom first).
-    let mut lines: Vec<(Vec<Coord>, String, bool)> = Vec::new();
+    let mut lines: Vec<GridLine> = Vec::new();
     match g.kind {
         GridKind::Graticule => {
             // Over the extent of the frame's corners and midpoints, as it always was (its step and
@@ -782,12 +1005,12 @@ fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) -> 
                     corners.expand(c);
                 }
             }
-            graticule_lines(g, corners, comma, &mut lines);
+            graticule_lines(g, corners, &mut lines);
         }
         GridKind::Measured => {
             let center = map.to_lonlat(view.camera.to_map(w / 2.0, h / 2.0, w, h)).unwrap_or_else(|| ext.center());
             let Some(tr) = measured_crs(g, map, center).and_then(|c| c.transformer().ok()) else { return Vec::new() };
-            measured_lines(g, &tr, &lonlats, comma, &mut lines);
+            measured_lines(g, &tr, &lonlats, &mut lines);
         }
     }
     // A tilted frame's lines break where they pass behind the eye.
@@ -798,35 +1021,35 @@ fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) -> 
             .filter(|(x, y)| x.is_finite() && y.is_finite())
     };
     let (pw, ph) = (pm.width() as f32, pm.height() as f32);
-    let paint_line = paint(g.color, 1.0);
-    let stroke = Stroke { width: g.width.max(0.0) as f32 * ppp, ..Stroke::default() };
+    let width = g.width.max(0.0) as f32 * ppp;
     let tick = if g.style.ticks() { (g.tick_length * PT_PER_MM) as f32 * ppp } else { 0.0 };
-    let label_px = 8.0 * 1.33 * ppp;
-    let label_color = Rgba::rgb(0x20, 0x20, 0x20);
-    let vertical = g.label_orientation == Orientation::Vertical;
-    let mut pb = PathBuilder::new();
-    // Each label's edge, place along it, text, and whether it is a meridian's.
+    // Minor ticks half a tick long (half the length set when the grid draws lines only).
+    let minor_tick = (g.tick_length * PT_PER_MM) as f32 * ppp * 0.5;
+    let mut lines_pb = PathBuilder::new();
+    let mut ticks: Vec<((f32, f32), (f32, f32))> = Vec::new();
+    // Each label's edge, place along it, text (and whole), and whether it is a meridian's.
     let mut labels: Vec<(Edge, f32, String, bool)> = Vec::new();
-    let mut draw_line = |pb: &mut PathBuilder, pts: Vec<Coord>, label: String, lon: bool| {
-        let px: Vec<Option<(f32, f32)>> = pts.into_iter().map(to_px).collect();
+    let mut whole: Vec<(Edge, f32, String)> = Vec::new();
+    for line in lines {
+        let px: Vec<Option<(f32, f32)>> = line.pts.into_iter().map(to_px).collect();
         // Runs of points that projected, so a line breaks where its projection does.
         for run in px.split(|p| p.is_none()) {
             let run: Vec<(f32, f32)> = run.iter().flatten().copied().collect();
-            if g.style.lines() {
+            if g.style.lines() && !line.minor {
                 for (i, (x, y)) in run.iter().enumerate() {
-                    if i == 0 { pb.move_to(*x, *y) } else { pb.line_to(*x, *y) }
+                    if i == 0 { lines_pb.move_to(*x, *y) } else { lines_pb.line_to(*x, *y) }
                 }
             }
             for (edge, at) in edge_crossings(&run, pw, ph) {
-                if tick > 0.0 {
+                let len = if line.minor { minor_tick } else { tick };
+                if len > 0.0 {
                     let (a, b) = match edge {
-                        Edge::Top => ((at, 0.0), (at, tick)),
-                        Edge::Bottom => ((at, ph), (at, ph - tick)),
-                        Edge::Left => ((0.0, at), (tick, at)),
-                        Edge::Right => ((pw, at), (pw - tick, at)),
+                        Edge::Top => ((at, 0.0), (at, len)),
+                        Edge::Bottom => ((at, ph), (at, ph - len)),
+                        Edge::Left => ((0.0, at), (len, at)),
+                        Edge::Right => ((pw, at), (pw - len, at)),
                     };
-                    pb.move_to(a.0, a.1);
-                    pb.line_to(b.0, b.1);
+                    ticks.push((a, b));
                 }
                 let shown = match edge {
                     Edge::Top => g.edges.top,
@@ -834,74 +1057,105 @@ fn draw_grid(pm: &mut Pixmap, map: &Map, view: &View, g: &Grid, comma: bool) -> 
                     Edge::Left => g.edges.left,
                     Edge::Right => g.edges.right,
                 };
-                if g.labels && shown {
-                    labels.push((edge, at, label.clone(), lon));
+                if g.labels && shown && line.labelled && !line.minor {
+                    labels.push((edge, at, line.label.clone(), line.lon));
+                    whole.push((edge, at, line.full.clone()));
                 }
             }
         }
-    };
-    for (pts, label, lon) in lines {
-        draw_line(&mut pb, pts, label, lon);
     }
-    if let Some(p) = pb.finish() {
-        pm.stroke_path(&p, &paint_line, &stroke, Transform::identity(), None);
+    let paint_line = paint(g.color, 1.0);
+    // Solid lines and their ticks are one path, so a see-through colour isn't darker where they
+    // meet; dashed or dotted lines leave the ticks solid.
+    let solid = g.dash == rustgis_map::layout::GridDash::Solid;
+    let mut ticks_pb = PathBuilder::new();
+    for (a, b) in ticks {
+        let pb = if solid { &mut lines_pb } else { &mut ticks_pb };
+        pb.move_to(a.0, a.1);
+        pb.line_to(b.0, b.1);
+    }
+    if let Some(p) = lines_pb.finish() {
+        let dash = match g.dash {
+            rustgis_map::layout::GridDash::Solid => None,
+            rustgis_map::layout::GridDash::Dashed => tiny_skia::StrokeDash::new(vec![width.max(ppp) * 6.0, width.max(ppp) * 4.0], 0.0),
+            rustgis_map::layout::GridDash::Dotted => tiny_skia::StrokeDash::new(vec![width.max(ppp) * 0.01, width.max(ppp) * 2.5], 0.0),
+        };
+        let cap = if g.dash == rustgis_map::layout::GridDash::Dotted { LineCap::Round } else { LineCap::Butt };
+        pm.stroke_path(&p, &paint_line, &Stroke { width, dash, line_cap: cap, ..Stroke::default() }, Transform::identity(), None);
+    }
+    if let Some(p) = ticks_pb.finish() {
+        pm.stroke_path(&p, &paint_line, &Stroke { width, ..Stroke::default() }, Transform::identity(), None);
+    }
+    let inside = !g.outside;
+    let runs = |s: &str| label_runs(g, s, comma);
+    let ink = |edge: Edge| GridInk::of(g, ppp, inside, g.vertical(edge));
+    let along = |edge: Edge, s: &str| ink(edge).extent(edge, &runs(s), g.vertical(edge)).1;
+    let label_px = g.label_size() as f32 * 1.33 * ppp;
+    let mut kept = kept_labels(labels.clone(), (pw, ph), along, label_px, ppp);
+    // The labels nearest each corner written whole, where they still fit.
+    if g.kind == GridKind::Measured && g.full_corners && !kept.is_empty() {
+        let mut ends: Vec<(Edge, f32)> = Vec::new();
+        for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
+            let on: Vec<f32> = kept.iter().filter(|(e, ..)| *e == edge).map(|(_, at, _)| *at).collect();
+            if let (Some(a), Some(z)) = (on.iter().copied().reduce(f32::min), on.iter().copied().reduce(f32::max)) {
+                ends.push((edge, a));
+                ends.push((edge, z));
+            }
+        }
+        let is_end = |edge: Edge, at: f32| ends.iter().any(|(e, a)| *e == edge && *a == at);
+        let relabelled: Vec<(Edge, f32, String, bool)> = labels
+            .iter()
+            .zip(&whole)
+            .filter(|((e, at, ..), _)| kept.iter().any(|(ke, ka, _)| ke == e && ka == at))
+            .map(|((e, at, s, lon), (_, _, full))| (*e, *at, if is_end(*e, *at) { full.clone() } else { s.clone() }, *lon))
+            .collect();
+        kept = kept_labels(relabelled, (pw, ph), along, label_px, ppp);
+    }
+    if g.outside {
+        // Their look at one pixel a point: the page draws them at its own.
+        return kept
+            .into_iter()
+            .map(|(edge, at, s)| OutsideLabel {
+                edge,
+                at,
+                runs: runs(&s),
+                ink: GridInk::of(g, 1.0, false, g.vertical(edge)),
+                turned: g.vertical(edge),
+                offset: g.label_offset,
+            })
+            .collect();
     }
     // Labels sit just inside the frame, past the ticks.
-    let inset = tick + 3.0 * ppp;
-    let along = |edge: Edge, s: &str| match edge {
-        Edge::Left | Edge::Right if !vertical => label_px,
-        _ => text::measure(s, label_px / 1.33, false),
-    };
-    let kept = kept_labels(labels, (pw, ph), along, label_px, ppp);
-    if g.outside {
-        return kept;
-    }
+    let inset = tick + 3.0 * ppp + (g.label_offset * PT_PER_MM) as f32 * ppp;
     for (edge, at, s) in kept {
-        let tw = text::measure(&s, label_px / 1.33, false);
-        match edge {
-            Edge::Top => text::text_at(pm, &s, at, inset + label_px * 0.4, label_px, label_color, false, text::Align::Center, true),
-            Edge::Bottom => text::text_at(pm, &s, at, ph - inset - label_px * 0.4, label_px, label_color, false, text::Align::Center, true),
-            Edge::Left if vertical => rotated_text(pm, &s, inset + label_px * 0.4, at, label_px, label_color),
-            Edge::Right if vertical => rotated_text(pm, &s, pw - inset - label_px * 0.4, at, label_px, label_color),
-            Edge::Left => text::text_at(pm, &s, inset, at, label_px, label_color, false, text::Align::Left, true),
-            Edge::Right => text::text_at(pm, &s, pw - inset - tw, at, label_px, label_color, false, text::Align::Left, true),
-        }
+        let line = match edge {
+            Edge::Top | Edge::Left => 0.0,
+            Edge::Bottom => ph,
+            Edge::Right => pw,
+        };
+        ink(edge).draw_at(pm, &runs(&s), edge, (line, at), inset, true, g.vertical(edge));
     }
     Vec::new()
 }
 
-/// How far (mm) a grid's outside labels reach past its frame's edges.
-pub const OUTSIDE_LABEL_MM: f64 = 6.0;
+/// How far (mm) a grid's outside labels reach past its frame's edges, at least (see
+/// [`Grid::outside_reach`]).
+pub const OUTSIDE_LABEL_MM: f64 = rustgis_map::layout::MIN_OUTSIDE_REACH;
 
 /// A grid's labels past its frame's edges (`Grid::outside`), on the page `pm`: `labels` from
 /// [`draw_grid`] in pixels of the frame's picture, which is `up` page pixels each and placed at
-/// (`x0`, `y0`), `w` × `h` page pixels. The left and right ones read upward when the grid's
-/// labels run along their edge.
-#[allow(clippy::too_many_arguments)]
-fn outside_labels(
-    pm: &mut Pixmap,
-    labels: Vec<(Edge, f32, String)>,
-    (x0, y0, w, h): (f32, f32, f32, f32),
-    up: f32,
-    ppp: f32,
-    vertical: bool,
-) {
-    let px = 8.0 * 1.33 * ppp;
-    let gap = 1.5 * PT_PER_MM as f32 * ppp;
-    let color = Rgba::rgb(0x20, 0x20, 0x20);
-    for (edge, at, s) in labels {
-        let at = at * up;
-        match edge {
-            Edge::Top => text::text_at(pm, &s, x0 + at, y0 - gap - px * 0.45, px, color, false, text::Align::Center, false),
-            Edge::Bottom => text::text_at(pm, &s, x0 + at, y0 + h + gap + px * 0.45, px, color, false, text::Align::Center, false),
-            Edge::Left if vertical => rotated_text(pm, &s, x0 - gap - px * 0.45, y0 + at, px, color),
-            Edge::Right if vertical => rotated_text(pm, &s, x0 + w + gap + px * 0.45, y0 + at, px, color),
-            Edge::Left => {
-                let tw = text::measure(&s, px / 1.33, false);
-                text::text_at(pm, &s, x0 - gap - tw, y0 + at, px, color, false, text::Align::Left, false)
-            }
-            Edge::Right => text::text_at(pm, &s, x0 + w + gap, y0 + at, px, color, false, text::Align::Left, false),
-        }
+/// (`x0`, `y0`), `w` × `h` page pixels.
+fn outside_labels(pm: &mut Pixmap, labels: Vec<OutsideLabel>, (x0, y0, w, h): (f32, f32, f32, f32), up: f32, ppp: f32) {
+    for l in labels {
+        let ink = GridInk { px: l.ink.px * ppp, ..l.ink };
+        let gap = (1.5 + l.offset) as f32 * PT_PER_MM as f32 * ppp;
+        let (line, at) = match l.edge {
+            Edge::Top => (y0, x0 + l.at * up),
+            Edge::Bottom => (y0 + h, x0 + l.at * up),
+            Edge::Left => (x0, y0 + l.at * up),
+            Edge::Right => (x0 + w, y0 + l.at * up),
+        };
+        ink.draw_at(pm, &l.runs, l.edge, (line, at), gap, false, l.turned);
     }
 }
 
@@ -944,18 +1198,6 @@ fn kept_labels(
         kept.push((edge, at, s));
     }
     kept
-}
-
-/// One line of haloed text centred on (`cx`, `cy`), turned to read from bottom to top.
-fn rotated_text(pm: &mut Pixmap, s: &str, cx: f32, cy: f32, px: f32, color: Rgba) {
-    // Whole pixels throughout, so the quarter turn moves pixels without resampling them.
-    let tw = (text::measure(s, px / 1.33, false) + px * 0.4).ceil().max(1.0);
-    let th = (px * 1.6).ceil().max(1.0);
-    let Some(mut tmp) = Pixmap::new(tw as u32, th as u32) else { return };
-    text::text_at(&mut tmp, s, tw / 2.0, th / 2.0, px, color, false, text::Align::Center, true);
-    let (x, y) = ((cx - th / 2.0).round(), (cy + tw / 2.0).round());
-    let t = Transform::from_row(0.0, -1.0, 1.0, 0.0, x, y);
-    pm.draw_pixmap(0, 0, tmp.as_ref(), &PixmapPaint { quality: tiny_skia::FilterQuality::Nearest, ..PixmapPaint::default() }, t, None);
 }
 
 fn placeholder(pm: &mut Pixmap, r: Rect, label: &str, ppp: f64) {
@@ -3402,16 +3644,18 @@ mod tests {
         let frame: Vec<Coord> =
             [(8.71, 47.49), (8.75, 47.49), (8.75, 47.51), (8.71, 47.51)].iter().map(|&(x, y)| Coord::new(x, y)).collect();
         let mut lines = Vec::new();
-        measured_lines(&utm, &tr, &frame, false, &mut lines);
-        let eastings: Vec<&str> = lines.iter().filter(|l| l.2).map(|l| l.1.as_str()).collect();
+        measured_lines(&utm, &tr, &frame, &mut lines);
+        let eastings: Vec<&str> = lines.iter().filter(|l| l.lon).map(|l| l.label.as_str()).collect();
         assert!(eastings.contains(&"479000") && eastings.contains(&"480000"), "{eastings:?}");
-        assert!(lines.iter().filter(|l| !l.2).any(|l| l.1 == "5261000"), "{lines:?}");
+        assert!(lines.iter().filter(|l| !l.lon).any(|l| l.label == "5261000"), "{lines:?}");
         let mut short = Vec::new();
-        measured_lines(&Grid { short: true, ..utm.clone() }, &tr, &frame, false, &mut short);
-        assert!(short.iter().any(|l| l.2 && l.1 == "79") && short.iter().any(|l| !l.2 && l.1 == "61"));
+        measured_lines(&Grid { short: true, ..utm.clone() }, &tr, &frame, &mut short);
+        assert!(short.iter().any(|l| l.lon && l.label == "79") && short.iter().any(|l| !l.lon && l.label == "61"));
+        // Written whole too, for the corners.
+        assert!(short.iter().any(|l| l.lon && l.label == "79" && l.full == "479000"));
         // A frame of no extent draws none.
         let mut none = Vec::new();
-        measured_lines(&utm, &tr, &[], false, &mut none);
+        measured_lines(&utm, &tr, &[], &mut none);
         assert!(none.is_empty());
         assert_eq!((nice_step(2000.0, 1.0), nice_step(7000.0, 1.0), nice_step(1.0, 1.0)), (500.0, 1000.0, 1.0));
     }
@@ -3469,6 +3713,120 @@ mod tests {
         let vertical = grid_page(g(GridEdges { top: false, bottom: false, left: true, right: false }, Orientation::Vertical));
         assert!(count(&vertical, left, ink) > 0);
         assert!(across(&vertical) < across(&horizontal), "{} columns, against {}", across(&vertical), across(&horizontal));
+    }
+
+    /// A grid's labels take a type, halo, offset and direction of their own, and a measured
+    /// grid's whole values a unit, emphasis and corners written whole (#grid-labels).
+    #[test]
+    fn grid_labels_take_their_own_type_halo_offset_and_direction() {
+        use rustgis_map::layout::{EdgeOrientations, Grid, GridEdges};
+        let g = |f: &dyn Fn(&mut Grid)| {
+            let mut g = Grid {
+                step: 30.0,
+                color: Rgba::new(0, 0, 0, 0),
+                edges: GridEdges { top: false, bottom: true, left: false, right: false },
+                ..Grid::default()
+            };
+            f(&mut g);
+            g
+        };
+        let bottom = (12.0, 76.0, 88.0, 90.0);
+        let reds = |pm: &Pixmap| count(pm, bottom, red);
+        let plain = grid_page(g(&|_| {}));
+        // In red, and larger: more red.
+        let small = grid_page(g(&|g| g.text.color = Some(Rgba::rgb(0xFF, 0, 0))));
+        let large = grid_page(g(&|g| (g.text.color, g.text.size) = (Some(Rgba::rgb(0xFF, 0, 0)), 14.0)));
+        assert_eq!(reds(&plain), 0, "dark grey until a colour is set");
+        assert!(reds(&small) > 0 && reds(&large) > reds(&small) * 2, "{} {}", reds(&small), reds(&large));
+        // A blue halo, and none.
+        let blue = |p: tiny_skia::PremultipliedColorU8| p.blue() > 180 && p.red() < 90 && p.green() < 90;
+        let haloed = grid_page(g(&|g| g.halo = Some(Rgba::rgb(0, 0, 0xFF))));
+        assert!(count(&haloed, bottom, blue) > 20, "a blue halo");
+        assert_eq!(count(&plain, bottom, blue), 0);
+        let bare = grid_page(g(&|g| g.halo = Some(Rgba::new(0, 0, 0, 0))));
+        assert_ne!(bare.data(), plain.data(), "no white halo");
+        // Moved off the edge: the labels sit higher in the frame.
+        let lowest = |pm: &Pixmap| {
+            let px = |mm: f64| (mm * PT_PER_MM) as u32;
+            (px(70.0)..px(90.0)).filter(|&y| (px(12.0)..px(88.0)).any(|x| pm.pixel(x, y).is_some_and(ink))).max().unwrap_or(0)
+        };
+        let moved = grid_page(g(&|g| g.label_offset = 5.0));
+        assert!(lowest(&moved) + 10 < lowest(&plain), "{} {}", lowest(&moved), lowest(&plain));
+        // The bottom's labels turned: taller than they are wide.
+        let rows = |pm: &Pixmap| {
+            let px = |mm: f64| (mm * PT_PER_MM) as u32;
+            (px(60.0)..px(90.0)).filter(|&y| (px(12.0)..px(88.0)).any(|x| pm.pixel(x, y).is_some_and(ink))).count()
+        };
+        let turned = grid_page(g(&|g| g.orientations = Some(EdgeOrientations { bottom: Orientation::Vertical, ..EdgeOrientations::default() })));
+        assert!(rows(&turned) > rows(&plain) * 2, "{} rows against {}", rows(&turned), rows(&plain));
+    }
+
+    /// An emphasised value: the two figures before the last three large, the rest small; a short
+    /// one large throughout. The labels' pieces take the decimal comma.
+    #[test]
+    fn emphasis_splits_a_value_as_topographic_maps_print_it() {
+        let parts = |s: &str| emphasis(s).into_iter().map(|(t, k)| (t, k < 1.0)).collect::<Vec<_>>();
+        let small = |t: &str| (t.to_string(), true);
+        let large = |t: &str| (t.to_string(), false);
+        assert_eq!(parts("543000"), [small("5"), large("43"), small("000")]);
+        assert_eq!(parts("1520000mN"), [small("15"), large("20"), small("000mN")]);
+        assert_eq!(parts("543,000"), [small("5"), large("43"), small(",000")]);
+        assert_eq!(parts("4000"), [small(""), large("4"), small("000")]);
+        assert_eq!(parts("-12500.5"), [small("-"), large("12"), small("500.5")]);
+        assert_eq!(parts("43"), [large("43")]);
+        let g = rustgis_map::layout::Grid { kind: GridKind::Measured, emphasis: true, ..rustgis_map::layout::Grid::default() };
+        let runs = label_runs(&g, "543,000.5", true);
+        assert_eq!(runs.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), ["5", "43", ".000,5"], "empty pieces left out");
+        // A graticule's labels aren't split.
+        let deg = rustgis_map::layout::Grid { emphasis: true, ..rustgis_map::layout::Grid::default() };
+        assert_eq!(label_runs(&deg, "12000", false).len(), 1);
+    }
+
+    /// Minor lines (ticks only) split each step; every so many lines labelled; a measured
+    /// grid's corners whole, its dashed lines drawn in part, and a second grid drawn too.
+    #[test]
+    fn grids_take_minor_ticks_label_every_dashes_and_a_second() {
+        use rustgis_map::layout::{Grid, GridDash, GridStyle};
+        let tr = rustgis_data::raster::Crs::parse("EPSG:25832").unwrap().transformer().unwrap();
+        let frame: Vec<Coord> =
+            [(8.71, 47.49), (8.75, 47.49), (8.75, 47.51), (8.71, 47.51)].iter().map(|&(x, y)| Coord::new(x, y)).collect();
+        let utm = Grid { kind: GridKind::Measured, crs: Some("EPSG:25832".into()), step: 1000.0, ..Grid::default() };
+        let mut lines = Vec::new();
+        measured_lines(&Grid { minor_ticks: 4, label_every: 2, ..utm.clone() }, &tr, &frame, &mut lines);
+        let major = lines.iter().filter(|l| !l.minor).count();
+        let minor = lines.iter().filter(|l| l.minor).count();
+        assert!(minor >= major * 3, "{minor} minor lines for {major}");
+        assert!(lines.iter().filter(|l| l.minor).all(|l| !l.labelled && l.label.is_empty()));
+        for l in lines.iter().filter(|l| !l.minor) {
+            let v: f64 = l.full.parse().unwrap();
+            assert_eq!(l.labelled, ((v / 1000.0).round() as i64).rem_euclid(2) == 0, "{}", l.full);
+        }
+        // Whole with their unit, the others short.
+        let mut topo = Vec::new();
+        let g = Grid { short: true, suffix: rustgis_map::layout::GridSuffix::Metres, ..utm.clone() };
+        measured_lines(&g, &tr, &frame, &mut topo);
+        assert!(topo.iter().any(|l| l.lon && l.label == "79" && l.full == "479000mE"));
+        assert!(topo.iter().any(|l| !l.lon && l.full == "5261000mN"));
+        // A dashed or dotted line draws less of the frame than a solid one; ticks stay solid.
+        let lined = |dash| {
+            winterthur_page(
+                Grid { color: Rgba::rgb(0xFF, 0, 0), labels: false, style: GridStyle::Lines, dash, width: 1.0, ..utm.clone() },
+                rustgis_map::Projection::WebMercator,
+            )
+        };
+        let inner = (20.0, 20.0, 80.0, 80.0);
+        let (solid, dashed, dotted) =
+            (count(&lined(GridDash::Solid), inner, red), count(&lined(GridDash::Dashed), inner, red), count(&lined(GridDash::Dotted), inner, red));
+        assert!(dashed > 0 && dashed < solid * 9 / 10, "{dashed} of {solid}");
+        assert!(dotted > 0 && dotted < dashed, "{dotted} of {dashed}");
+        // A second grid in blue over the first.
+        let blue = |p: tiny_skia::PremultipliedColorU8| p.blue() > 180 && p.red() < 90 && p.green() < 90;
+        let second = Grid { color: Rgba::rgb(0, 0, 0xFF), labels: false, style: GridStyle::Lines, step: 0.01, width: 1.0, ..Grid::default() };
+        let both = winterthur_page(
+            Grid { second: Some(Box::new(second)), ..Grid { color: Rgba::rgb(0xFF, 0, 0), labels: false, width: 1.0, ..utm.clone() } },
+            rustgis_map::Projection::WebMercator,
+        );
+        assert!(count(&both, inner, blue) > 100 && count(&both, inner, red) > 100, "both grids drawn");
     }
 
     #[test]

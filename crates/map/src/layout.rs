@@ -124,6 +124,209 @@ pub struct Grid {
     /// off, just inside it.
     #[serde(default, skip_serializing_if = "is_false")]
     pub outside: bool,
+    /// The labels' type: size (points, 0 for 8), colour (none: dark grey), weight, slant and
+    /// family, as a scale bar's numbers.
+    #[serde(default = "LabelText::scale_bar", skip_serializing_if = "LabelText::is_scale_bar")]
+    pub text: LabelText,
+    /// The halo round each label: none set, white inside the frame and none outside it (as the
+    /// labels always were); a colour, that one everywhere, see-through for none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub halo: Option<Rgba>,
+    /// Millimetres more between the frame's edge (past its ticks) and the labels.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub label_offset: f64,
+    /// Each edge's labels upright or turned to read upward; none set, the top and bottom upright
+    /// and the sides as [`label_orientation`](Grid::label_orientation).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientations: Option<EdgeOrientations>,
+    /// A measured grid's whole values printed as topographic maps print them: the kilometres'
+    /// last two digits large, the digits before and after them small (⁵43⁰⁰⁰).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub emphasis: bool,
+    /// A measured grid's labels nearest each corner written whole, with their unit, the others as
+    /// they are (shortened, as topographic maps print them).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub full_corners: bool,
+    /// The unit written after a measured grid's whole values.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub suffix: GridSuffix,
+    /// A second grid over the same frame (a graticule's ticks over a UTM grid, say), its own
+    /// options; it has no second of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second: Option<Box<Grid>>,
+    /// Short ticks along the edges dividing each step into this many parts (0 or 1: none), up to
+    /// [`MAX_MINOR_TICKS`].
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub minor_ticks: u32,
+    /// Every line drawn, and every this many of them labelled (1 to [`MAX_LABEL_EVERY`]).
+    #[serde(default = "one_u32", skip_serializing_if = "is_one_u32")]
+    pub label_every: u32,
+    /// Decimals in the labels (up to [`MAX_GRID_DECIMALS`]); none: as many as the step needs.
+    /// Degrees, minutes and seconds take [`dms_parts`](Grid::dms_parts) instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u8>,
+    /// What of degrees, minutes and seconds a label writes.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub dms_parts: DmsParts,
+    /// A measured grid's whole values with thousands apart (`543,000`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub thousands: bool,
+    /// The lines solid, dashed or dotted (the edge ticks always solid).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub dash: GridDash,
+}
+
+/// Each edge's grid labels, upright or turned to read upward.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EdgeOrientations {
+    #[serde(default)]
+    pub top: Orientation,
+    #[serde(default)]
+    pub bottom: Orientation,
+    #[serde(default)]
+    pub left: Orientation,
+    #[serde(default)]
+    pub right: Orientation,
+}
+
+/// The unit after a measured grid's whole values.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GridSuffix {
+    #[default]
+    None,
+    /// `E` and `N`.
+    Letter,
+    /// `mE` and `mN`, as UTM grids are printed.
+    Metres,
+}
+
+impl GridSuffix {
+    pub const ALL: [GridSuffix; 3] = [GridSuffix::None, GridSuffix::Letter, GridSuffix::Metres];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            GridSuffix::None => "none",
+            GridSuffix::Letter => "letter",
+            GridSuffix::Metres => "metres",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            GridSuffix::None => "None",
+            GridSuffix::Letter => "E / N",
+            GridSuffix::Metres => "mE / mN",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<GridSuffix> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "meters" | "m" => Some(GridSuffix::Metres),
+            o => GridSuffix::ALL.into_iter().find(|v| v.code() == o),
+        }
+    }
+
+    /// The unit after an easting (`easting`) or a northing.
+    pub fn text(self, easting: bool) -> &'static str {
+        match (self, easting) {
+            (GridSuffix::None, _) => "",
+            (GridSuffix::Letter, true) => "E",
+            (GridSuffix::Letter, false) => "N",
+            (GridSuffix::Metres, true) => "mE",
+            (GridSuffix::Metres, false) => "mN",
+        }
+    }
+}
+
+/// What of degrees, minutes and seconds a graticule's labels write.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DmsParts {
+    /// As much as the step needs.
+    #[default]
+    Auto,
+    Degrees,
+    Minutes,
+    Seconds,
+}
+
+impl DmsParts {
+    pub const ALL: [DmsParts; 4] = [DmsParts::Auto, DmsParts::Degrees, DmsParts::Minutes, DmsParts::Seconds];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            DmsParts::Auto => "auto",
+            DmsParts::Degrees => "degrees",
+            DmsParts::Minutes => "minutes",
+            DmsParts::Seconds => "seconds",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DmsParts::Auto => "As the step needs",
+            DmsParts::Degrees => "Degrees",
+            DmsParts::Minutes => "Degrees and minutes",
+            DmsParts::Seconds => "Degrees, minutes and seconds",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<DmsParts> {
+        DmsParts::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+}
+
+/// How a grid's lines are stroked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GridDash {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+}
+
+impl GridDash {
+    pub const ALL: [GridDash; 3] = [GridDash::Solid, GridDash::Dashed, GridDash::Dotted];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            GridDash::Solid => "solid",
+            GridDash::Dashed => "dashed",
+            GridDash::Dotted => "dotted",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            GridDash::Solid => "Solid",
+            GridDash::Dashed => "Dashed",
+            GridDash::Dotted => "Dotted",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<GridDash> {
+        GridDash::ALL.into_iter().find(|v| v.code().eq_ignore_ascii_case(s.trim()))
+    }
+}
+
+/// The most parts minor ticks divide a grid's step into.
+pub const MAX_MINOR_TICKS: u32 = 10;
+/// The most lines between a grid's labelled ones.
+pub const MAX_LABEL_EVERY: u32 = 10;
+/// The most decimals a grid's labels write.
+pub const MAX_GRID_DECIMALS: u8 = 6;
+/// The most millimetres a grid's labels are moved off its frame.
+pub const MAX_LABEL_OFFSET: f64 = 20.0;
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
+}
+
+fn one_u32() -> u32 {
+    1
+}
+
+fn is_one_u32(v: &u32) -> bool {
+    *v == 1
 }
 
 /// What a grid's lines are.
@@ -197,6 +400,20 @@ impl Default for Grid {
             crs: None,
             short: false,
             outside: false,
+            text: LabelText::scale_bar(),
+            halo: None,
+            label_offset: 0.0,
+            orientations: None,
+            emphasis: false,
+            full_corners: false,
+            suffix: GridSuffix::None,
+            second: None,
+            minor_ticks: 0,
+            label_every: 1,
+            decimals: None,
+            dms_parts: DmsParts::Auto,
+            thousands: false,
+            dash: GridDash::Solid,
         }
     }
 }
@@ -225,8 +442,8 @@ impl Grid {
         let eps = step.abs().max(1e-9) * 1e-6;
         let a = v.abs();
         let d = match self.format {
-            CoordFormat::Decimal => format!("{}°", decimal(a, step)),
-            CoordFormat::Dms => dms(a, step),
+            CoordFormat::Decimal => format!("{}°", self.places(a, step)),
+            CoordFormat::Dms => dms(a, step, self.dms_parts, self.decimals),
         };
         let unsigned = a < eps || (a - 180.0).abs() < eps;
         if unsigned {
@@ -251,18 +468,155 @@ impl Grid {
     /// A measured grid's label: easting or northing `v` on lines `step` apart, whole (`543000`),
     /// or [`short`](Grid::short) its kilometres' last two digits (`43`, `43.5` for a 500 m step).
     pub fn measured_label(&self, v: f64, step: f64) -> String {
+        self.measured_text(v, step, true, false)
+    }
+
+    /// A measured grid's label of easting (`easting`) or northing `v`: shortened as
+    /// [`measured_label`](Grid::measured_label) unless `whole`; a whole value with thousands
+    /// apart when [`thousands`](Grid::thousands), and its unit ([`suffix`](Grid::suffix)) after it.
+    pub fn measured_text(&self, v: f64, step: f64, easting: bool, whole: bool) -> String {
         // Off by rounding error from the stepped loop: put back on the step.
         let v = if step > 0.0 { (v / step).round() * step } else { v };
         // (Short labels of a step of 100 km or more would all read 0: whole ones.)
-        if self.short && step < 100_000.0 {
+        if self.short && !whole && step < 100_000.0 {
             let km = (v / 1000.0).rem_euclid(100.0);
             // (99.9999… after rounding error is 0 again.)
             let km = if (km - 100.0).abs() < 1e-6 { 0.0 } else { km };
-            return decimal(km, step / 1000.0);
+            return match self.decimals {
+                Some(n) => format!("{km:.prec$}", prec = usize::from(n.min(MAX_GRID_DECIMALS))),
+                None => decimal(km, step / 1000.0),
+            };
         }
-        let s = decimal(v.abs(), step);
-        if v < 0.0 && s.chars().any(|c| c.is_ascii_digit() && c != '0') { format!("-{s}") } else { s }
+        let s = self.places(v.abs(), step);
+        let s = if self.thousands { thousands(&s) } else { s };
+        let s = if v < 0.0 && s.chars().any(|c| c.is_ascii_digit() && c != '0') { format!("-{s}") } else { s };
+        format!("{s}{}", self.suffix.text(easting))
     }
+
+    /// `a` with the decimals set, else with as many as `step` needs.
+    fn places(&self, a: f64, step: f64) -> String {
+        match self.decimals {
+            Some(n) => format!("{a:.prec$}", prec = usize::from(n.min(MAX_GRID_DECIMALS))),
+            None => decimal(a, step),
+        }
+    }
+
+    /// Whether an edge's labels are turned to read upward.
+    pub fn vertical(&self, edge: GridEdge) -> bool {
+        let o = match (self.orientations, edge) {
+            (Some(o), GridEdge::Top) => o.top,
+            (Some(o), GridEdge::Bottom) => o.bottom,
+            (Some(o), GridEdge::Left) => o.left,
+            (Some(o), GridEdge::Right) => o.right,
+            (None, GridEdge::Top | GridEdge::Bottom) => Orientation::Horizontal,
+            (None, GridEdge::Left | GridEdge::Right) => self.label_orientation,
+        };
+        o == Orientation::Vertical
+    }
+
+    /// Each edge's labels' orientation, as set or as they follow from
+    /// [`label_orientation`](Grid::label_orientation).
+    pub fn edge_orientations(&self) -> EdgeOrientations {
+        self.orientations.unwrap_or(EdgeOrientations {
+            top: Orientation::Horizontal,
+            bottom: Orientation::Horizontal,
+            left: self.label_orientation,
+            right: self.label_orientation,
+        })
+    }
+
+    /// The labels' halo: inside the frame (`inside`) or turned (`turned`), white unless set; else
+    /// none unless set. `None` for none.
+    pub fn halo_color(&self, inside: bool, turned: bool) -> Option<Rgba> {
+        match self.halo {
+            Some(c) if c.a() == 0 => None,
+            Some(c) => Some(c),
+            None if inside || turned => Some(DEFAULT_GRID_HALO),
+            None => None,
+        }
+    }
+
+    /// The labels' size in points.
+    pub fn label_size(&self) -> f64 {
+        if self.text.size > 0.0 { self.text.size } else { 8.0 }
+    }
+
+    /// How far (mm) the labels of this grid and its second reach past the frame's edges when
+    /// drawn outside it: at least [`MIN_OUTSIDE_REACH`], further for large type, an offset, or
+    /// long labels standing out from an edge.
+    pub fn outside_reach(&self) -> f64 {
+        let own = if self.outside && self.labels {
+            let pt = self.label_size();
+            let across = |edge: GridEdge| {
+                // Upright on the top or bottom, or turned on a side: a line's height; else a
+                // label's length (about ten figures).
+                let along = matches!(edge, GridEdge::Top | GridEdge::Bottom) != self.vertical(edge);
+                if along { pt * 1.4 } else { pt * 6.5 }
+            };
+            let edges = [
+                (self.edges.top, GridEdge::Top),
+                (self.edges.bottom, GridEdge::Bottom),
+                (self.edges.left, GridEdge::Left),
+                (self.edges.right, GridEdge::Right),
+            ];
+            let most = edges.iter().filter(|(on, _)| *on).map(|(_, e)| across(*e)).fold(0.0, f64::max);
+            (1.5 + self.label_offset.clamp(0.0, MAX_LABEL_OFFSET) + most / PT_PER_MM).max(MIN_OUTSIDE_REACH)
+        } else {
+            0.0
+        };
+        own.max(self.second.as_ref().map_or(0.0, |g| g.outside_reach()))
+    }
+
+    /// Its values held to what the commands set: steps, ticks and widths in range, its second's
+    /// too, and that one with no second of its own.
+    pub fn clamp(&mut self) {
+        // A graticule's step in degrees, a measured grid's in its system's units.
+        let step = finite_or(self.step, 0.0);
+        self.step = match self.kind {
+            GridKind::Graticule => step.clamp(0.0, MAX_GRATICULE_STEP),
+            GridKind::Measured if step <= 0.0 => 0.0,
+            GridKind::Measured => step.clamp(MIN_MEASURED_STEP, MAX_MEASURED_STEP),
+        };
+        self.tick_length = finite_or(self.tick_length, tick_length()).clamp(0.0, MAX_TICK_MM);
+        self.width = finite_or(self.width, grid_width()).clamp(0.0, MAX_GRID_WIDTH);
+        self.text.clamp();
+        self.label_offset = finite_or(self.label_offset, 0.0).clamp(0.0, MAX_LABEL_OFFSET);
+        self.minor_ticks = self.minor_ticks.min(MAX_MINOR_TICKS);
+        self.label_every = self.label_every.clamp(1, MAX_LABEL_EVERY);
+        self.decimals = self.decimals.map(|d| d.min(MAX_GRID_DECIMALS));
+        if let Some(g) = &mut self.second {
+            g.second = None;
+            g.clamp();
+        }
+    }
+}
+
+/// A frame's edge, as grids label them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GridEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// The halo grid labels have inside the frame until one is set.
+pub const DEFAULT_GRID_HALO: Rgba = Rgba::new(255, 255, 255, 230);
+/// The least a grid's outside labels are given past its frame's edges (mm).
+pub const MIN_OUTSIDE_REACH: f64 = 6.0;
+
+/// `s` (digits, perhaps a point and decimals) with its whole part's thousands apart.
+fn thousands(s: &str) -> String {
+    let (whole, rest) = s.split_at(s.find('.').unwrap_or(s.len()));
+    let n = whole.chars().count();
+    let mut out = String::new();
+    for (i, c) in whole.chars().enumerate() {
+        if i > 0 && (n - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out + rest
 }
 
 /// `a` with the fewest decimals (up to 4) that show a multiple of `step` exactly.
@@ -274,21 +628,42 @@ fn decimal(a: f64, step: f64) -> String {
     format!("{a:.prec$}", prec = places.unwrap_or(4))
 }
 
-/// `a` degrees as `12°30′15″`, leaving out the minutes and seconds `step` doesn't need.
-fn dms(a: f64, step: f64) -> String {
-    let secs = (a * 3600.0).round();
-    if !secs.is_finite() {
+/// `a` degrees as `12°30′15″`, leaving out the minutes and seconds `step` doesn't need, or
+/// writing those `parts` asks for (seconds with `decimals`).
+fn dms(a: f64, step: f64, parts: DmsParts, decimals: Option<u8>) -> String {
+    let places = match parts {
+        DmsParts::Seconds => usize::from(decimals.unwrap_or(0).min(MAX_GRID_DECIMALS)),
+        _ => 0,
+    };
+    let unit = 10f64.powi(places as i32);
+    // Rounded to what is written: whole degrees, minutes, or seconds to their decimals.
+    let ticks = match parts {
+        DmsParts::Degrees => (a.round() * 3600.0 * unit).round(),
+        DmsParts::Minutes => ((a * 60.0).round() * 60.0 * unit).round(),
+        _ => (a * 3600.0 * unit).round(),
+    };
+    if !ticks.is_finite() || ticks < 0.0 {
         return "0°".into();
     }
-    let secs = secs as u64;
-    let (d, m, s) = (secs / 3600, secs % 3600 / 60, secs % 60);
+    let ticks = ticks as u64;
+    let per_deg = (3600.0 * unit) as u64;
+    let per_min = (60.0 * unit) as u64;
+    let (d, m, rest) = (ticks / per_deg, ticks % per_deg / per_min, ticks % per_min);
+    let s = rest as f64 / unit;
     let step_secs = (step.abs() * 3600.0).round() as u64;
-    if step_secs.is_multiple_of(3600) && m == 0 && s == 0 {
-        format!("{d}°")
-    } else if step_secs.is_multiple_of(60) && s == 0 {
-        format!("{d}°{m:02}′")
-    } else {
-        format!("{d}°{m:02}′{s:02}″")
+    let show = match parts {
+        DmsParts::Degrees => 0,
+        DmsParts::Minutes => 1,
+        DmsParts::Seconds => 2,
+        DmsParts::Auto if step_secs.is_multiple_of(3600) && m == 0 && rest == 0 => 0,
+        DmsParts::Auto if step_secs.is_multiple_of(60) && rest == 0 => 1,
+        DmsParts::Auto => 2,
+    };
+    match show {
+        0 => format!("{d}°"),
+        1 => format!("{d}°{m:02}′"),
+        _ if places > 0 => format!("{d}°{m:02}′{s:0w$.places$}″", w = places + 3),
+        _ => format!("{d}°{m:02}′{s:02}″"),
     }
 }
 
@@ -2320,15 +2695,7 @@ impl Layout {
                         }
                     }
                     if let Some(g) = grid {
-                        // A graticule's step in degrees, a measured grid's in its system's units.
-                        let step = finite_or(g.step, 0.0);
-                        g.step = match g.kind {
-                            GridKind::Graticule => step.clamp(0.0, MAX_GRATICULE_STEP),
-                            GridKind::Measured if step <= 0.0 => 0.0,
-                            GridKind::Measured => step.clamp(MIN_MEASURED_STEP, MAX_MEASURED_STEP),
-                        };
-                        g.tick_length = finite_or(g.tick_length, tick_length()).clamp(0.0, MAX_TICK_MM);
-                        g.width = finite_or(g.width, grid_width()).clamp(0.0, MAX_GRID_WIDTH);
+                        g.clamp();
                     }
                 }
                 ElementKind::Legend { exclude, look, .. } => {
@@ -2812,6 +3179,91 @@ mod tests {
         assert_eq!(serde_json::from_value::<Grid>(v).unwrap(), m);
         assert_eq!(GridKind::from_name(" Measured "), Some(GridKind::Measured));
         assert_eq!(GridKind::from_name("utm"), None);
+    }
+
+    /// Labels with decimals, degrees' parts, thousands and a unit as set; a grid saved without
+    /// them as it always was, and one with them read back as it was.
+    #[test]
+    fn grid_labels_take_decimals_parts_thousands_and_a_unit() {
+        let g = Grid::default();
+        assert_eq!(Grid { decimals: Some(2), ..g.clone() }.label(12.5, true, 0.5), "12.50°E");
+        assert_eq!(Grid { decimals: Some(0), ..g.clone() }.label(12.6, false, 0.5), "13°N");
+        let dms = Grid { format: CoordFormat::Dms, ..g.clone() };
+        assert_eq!(dms.label(12.5, true, 0.5), "12°30′E", "as the step needs");
+        assert_eq!(Grid { dms_parts: DmsParts::Seconds, ..dms.clone() }.label(12.5, true, 0.5), "12°30′00″E");
+        assert_eq!(Grid { dms_parts: DmsParts::Degrees, ..dms.clone() }.label(12.4, true, 0.5), "12°E");
+        assert_eq!(Grid { dms_parts: DmsParts::Minutes, ..dms.clone() }.label(12.9999, true, 1.0), "13°00′E", "rounded up whole");
+        assert_eq!(
+            Grid { dms_parts: DmsParts::Seconds, decimals: Some(1), ..dms.clone() }.label(12.0 + 1.25 / 3600.0, true, 0.1),
+            "12°00′01.2″E"
+        );
+        let m = Grid { kind: GridKind::Measured, ..g.clone() };
+        assert_eq!(Grid { thousands: true, ..m.clone() }.measured_label(1_520_000.0, 1000.0), "1,520,000");
+        assert_eq!(Grid { thousands: true, ..m.clone() }.measured_label(543_000.0, 1000.0), "543,000");
+        assert_eq!(Grid { decimals: Some(1), ..m.clone() }.measured_label(543_000.0, 1000.0), "543000.0");
+        let topo = Grid { short: true, suffix: GridSuffix::Metres, ..m.clone() };
+        assert_eq!(topo.measured_text(543_000.0, 1000.0, true, false), "43", "short: no unit");
+        assert_eq!(topo.measured_text(543_000.0, 1000.0, true, true), "543000mE");
+        assert_eq!(topo.measured_text(1_520_000.0, 1000.0, false, true), "1520000mN");
+        assert_eq!(Grid { suffix: GridSuffix::Letter, ..m.clone() }.measured_text(-2000.0, 1000.0, true, false), "-2000E");
+        assert_eq!(GridSuffix::from_name("meters"), Some(GridSuffix::Metres));
+        // Edges: the sides follow label_orientation until each is set.
+        let sides = Grid { label_orientation: Orientation::Vertical, ..g.clone() };
+        assert!(sides.vertical(GridEdge::Left) && !sides.vertical(GridEdge::Top));
+        let top = Grid { orientations: Some(EdgeOrientations { top: Orientation::Vertical, ..EdgeOrientations::default() }), ..sides };
+        assert!(top.vertical(GridEdge::Top) && !top.vertical(GridEdge::Left));
+        // The halo: white inside and none outside until set; see-through for none.
+        assert_eq!((g.halo_color(true, false), g.halo_color(false, false)), (Some(DEFAULT_GRID_HALO), None));
+        let none = Grid { halo: Some(Rgba::new(0, 0, 0, 0)), ..g.clone() };
+        assert_eq!(none.halo_color(true, true), None);
+        // Saved as it always was; with every option, read back as it was.
+        let saved = serde_json::to_value(Grid::default()).unwrap();
+        let keys: Vec<&String> = saved.as_object().unwrap().keys().collect();
+        assert_eq!(keys.len(), 9, "{keys:?}");
+        let all = Grid {
+            text: LabelText { size: 10.0, bold: true, ..LabelText::scale_bar() },
+            halo: Some(Rgba::rgb(1, 2, 3)),
+            label_offset: 2.0,
+            orientations: Some(EdgeOrientations { left: Orientation::Vertical, ..EdgeOrientations::default() }),
+            emphasis: true,
+            full_corners: true,
+            suffix: GridSuffix::Letter,
+            second: Some(Box::new(Grid { step: 0.5, ..Grid::default() })),
+            minor_ticks: 5,
+            label_every: 2,
+            decimals: Some(3),
+            dms_parts: DmsParts::Minutes,
+            thousands: true,
+            dash: GridDash::Dotted,
+            ..m
+        };
+        let v = serde_json::to_value(&all).unwrap();
+        assert_eq!(serde_json::from_value::<Grid>(v).unwrap(), all);
+    }
+
+    /// A loaded grid's options are held in range, and its second has no second of its own.
+    #[test]
+    fn loaded_grids_label_options_are_limited() {
+        let mut g = Grid {
+            label_offset: f64::NAN,
+            minor_ticks: 99,
+            label_every: 0,
+            decimals: Some(40),
+            text: LabelText { size: 1e9, ..LabelText::scale_bar() },
+            second: Some(Box::new(Grid { label_every: 50, second: Some(Box::new(Grid::default())), ..Grid::default() })),
+            ..Grid::default()
+        };
+        g.clamp();
+        assert_eq!((g.label_offset, g.minor_ticks, g.label_every, g.decimals), (0.0, MAX_MINOR_TICKS, 1, Some(MAX_GRID_DECIMALS)));
+        assert!(g.text.size <= MAX_LABEL_SIZE);
+        let second = g.second.as_deref().unwrap();
+        assert_eq!((second.label_every, second.second.is_none()), (MAX_LABEL_EVERY, true));
+        // The labels outside reach further for large type, an offset, or labels standing out.
+        let out = Grid { outside: true, edges: GridEdges { top: true, bottom: false, left: false, right: false }, ..Grid::default() };
+        assert_eq!(out.outside_reach(), MIN_OUTSIDE_REACH);
+        assert!(Grid { label_offset: 5.0, ..out.clone() }.outside_reach() > MIN_OUTSIDE_REACH + 3.0);
+        assert!(Grid { text: LabelText { size: 30.0, ..LabelText::scale_bar() }, ..out.clone() }.outside_reach() > 10.0);
+        assert_eq!(Grid { outside: false, ..out }.outside_reach(), 0.0);
     }
 
     #[test]
