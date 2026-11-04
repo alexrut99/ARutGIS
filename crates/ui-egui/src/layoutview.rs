@@ -7,10 +7,10 @@
 
 use egui::{Align2, Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use rustgis_engine::map::layout::{
-    AreaPatch, Arrange, ArrowStyle, CoordFormat, DmsParts, ElementKind, Grid, GridDash, GridKind, GridStyle, GridSuffix, LabelText, Layout, LegendLook, LineHead,
-    LinePatch, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS, MAX_FRAME_SCALE, MAX_GRID_WIDTH, MAX_LEGEND_SPACING, MAX_PATCH, MAX_SCALE_DIVISIONS,
-    MAX_TICK_MM, MIN_FRAME_SCALE, NumberPlace, Orientation, PT_PER_MM, ScaleBarStyle, ScaleUnits, TickSide, UnitLabel, UnitPlace,
-    frame_camera, line_angle, line_length,
+    AreaPatch, Arrange, ArrowStyle, CoordFormat, DmsParts, ElementKind, Grid, GridDash, GridKind, GridStyle, GridSuffix, LabelText, Layout,
+    LegendLook, LineHead, LinePatch, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS, MAX_FRAME_SCALE, MAX_GRID_WIDTH, MAX_LEGEND_SPACING, MAX_PATCH,
+    MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_FRAME_SCALE, NumberPlace, Orientation, PT_PER_MM, ScaleBarStyle, ScaleUnits, TickSide, UnitLabel,
+    UnitPlace, frame_camera, line_angle, line_length,
 };
 use serde_json::{Value, json};
 
@@ -1783,7 +1783,11 @@ fn grid_properties(app: &mut RustGisApp, ui: &mut Ui, grid: Option<&Grid>, id: u
     }
     if !second {
         egui::CollapsingHeader::new(tl!("Second grid")).id_salt(("grid_second", id)).default_open(g.second.is_some()).show(ui, |ui| {
-            ui.label(egui::RichText::new(tl!("A second grid over the same frame, as topographic maps add degree ticks to a UTM grid.")).small().weak());
+            ui.label(
+                egui::RichText::new(tl!("A second grid over the same frame, as topographic maps add degree ticks to a UTM grid."))
+                    .small()
+                    .weak(),
+            );
             grid_properties(app, ui, g.second.as_deref(), id | SECOND_GRID, &|app, v| set(app, json!({"second": v})));
         });
     }
@@ -1899,9 +1903,11 @@ fn grid_rows(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(
         let mut n = g.minor_ticks;
         let drag = Dragged::lend(ui, key("minorTicks"), &mut n);
         let r = ui
-            .add(egui::DragValue::new(&mut n).range(0..=rustgis_engine::map::layout::MAX_MINOR_TICKS).speed(0.05).custom_formatter(|v, _| {
-                if v < 2.0 { tl!("None").to_string() } else { crate::i18n::fmt("{n} parts a step", &[("n", &format!("{v}"))]) }
-            }))
+            .add(egui::DragValue::new(&mut n).range(0..=rustgis_engine::map::layout::MAX_MINOR_TICKS).speed(0.05).custom_formatter(
+                |v, _| {
+                    if v < 2.0 { tl!("None").to_string() } else { crate::i18n::fmt("{n} parts a step", &[("n", &format!("{v}"))]) }
+                },
+            ))
             .on_hover_text(tl!("Short ticks along the edges, splitting each step between the lines."))
             .labelled_by(input_label.id);
         if drag.settled(ui, &r, &mut n) && n != g.minor_ticks {
@@ -1951,7 +1957,9 @@ fn grid_rows(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(
         let drag = Dragged::lend(ui, key("labelEvery"), &mut every);
         let r = ui
             .add(egui::DragValue::new(&mut every).range(1..=rustgis_engine::map::layout::MAX_LABEL_EVERY).speed(0.05).custom_formatter(
-                |v, _| if v <= 1.0 { tl!("Every line").to_string() } else { crate::i18n::fmt("Every {n} lines", &[("n", &format!("{v}"))]) },
+                |v, _| {
+                    if v <= 1.0 { tl!("Every line").to_string() } else { crate::i18n::fmt("Every {n} lines", &[("n", &format!("{v}"))]) }
+                },
             ))
             .on_hover_text(tl!("Every line is drawn; only every so many of them is labelled."))
             .labelled_by(input_label.id);
@@ -1994,7 +2002,9 @@ fn grid_rows(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(
             if ui
                 .checkbox(&mut emphasis, "")
                 .labelled_by(input_label.id)
-                .on_hover_text(tl!("Whole values with the kilometres' two digits large and the rest small, as topographic maps print them."))
+                .on_hover_text(tl!(
+                    "Whole values with the kilometres' two digits large and the rest small, as topographic maps print them."
+                ))
                 .changed()
             {
                 set(app, json!({"emphasis": emphasis}));
@@ -2131,7 +2141,11 @@ fn halo_row(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(&
         egui::ComboBox::from_id_salt(("grid_halo", id))
             .selected_text(chosen)
             .show_ui(ui, |ui| {
-                if ui.selectable_label(g.halo.is_none(), tl!("Auto")).on_hover_text(tl!("White inside the frame, none outside it.")).clicked() {
+                if ui
+                    .selectable_label(g.halo.is_none(), tl!("Auto"))
+                    .on_hover_text(tl!("White inside the frame, none outside it."))
+                    .clicked()
+                {
                     set(app, json!({"halo": "auto"}));
                 }
                 if ui.selectable_label(none, tl!("None")).clicked() && !none {

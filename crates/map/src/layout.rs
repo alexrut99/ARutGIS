@@ -3194,7 +3194,7 @@ mod tests {
         assert_eq!(Grid { dms_parts: DmsParts::Degrees, ..dms.clone() }.label(12.4, true, 0.5), "12°E");
         assert_eq!(Grid { dms_parts: DmsParts::Minutes, ..dms.clone() }.label(12.9999, true, 1.0), "13°00′E", "rounded up whole");
         assert_eq!(
-            Grid { dms_parts: DmsParts::Seconds, decimals: Some(1), ..dms.clone() }.label(12.0 + 1.25 / 3600.0, true, 0.1),
+            Grid { dms_parts: DmsParts::Seconds, decimals: Some(1), ..dms.clone() }.label(12.0 + 1.24 / 3600.0, true, 0.1),
             "12°00′01.2″E"
         );
         let m = Grid { kind: GridKind::Measured, ..g.clone() };

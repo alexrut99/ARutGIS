@@ -7,11 +7,10 @@ use rustgis_geom::{Coord, Extent};
 use rustgis_map::Rgba;
 use rustgis_map::layout::{
     Align, AreaPatch, Arrange, ArrowStyle, CoordFormat, DmsParts, ElementKind, FontFamily, FrameShape, Grid, GridDash, GridEdges, GridKind,
-    GridStyle, GridSuffix, Guides,
-    LabelText, Layout, LegendLook, LineDir, LineHead, LinePatch, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS, MAX_GRID_WIDTH, MAX_GUIDES,
-    MAX_LABEL_SIZE, MAX_SCALE_DIVISIONS, MAX_SURROUND_TEXT, MAX_TICK_MM, MIN_ELEMENT_MM, MapSeries, NumberPlace, Orientation, PAGES,
-    ScaleBarStyle, ScaleUnits, TextAlign, TickSide, UnitLabel, UnitPlace, fit_scale, line_angle, line_at_angle, line_length,
-    normalize_rotation,
+    GridStyle, GridSuffix, Guides, LabelText, Layout, LegendLook, LineDir, LineHead, LinePatch, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS,
+    MAX_GRID_WIDTH, MAX_GUIDES, MAX_LABEL_SIZE, MAX_SCALE_DIVISIONS, MAX_SURROUND_TEXT, MAX_TICK_MM, MIN_ELEMENT_MM, MapSeries,
+    NumberPlace, Orientation, PAGES, ScaleBarStyle, ScaleUnits, TextAlign, TickSide, UnitLabel, UnitPlace, fit_scale, line_angle,
+    line_at_angle, line_length, normalize_rotation,
 };
 use serde_json::{Value, json};
 
@@ -2970,10 +2969,11 @@ fn grid_label_params(p: &Value, g: &mut Grid) -> Result<(), String> {
         Some(Value::Bool(false)) => g.second = None,
         Some(v @ (Value::Bool(true) | Value::Object(_))) => {
             // A new second grid labels the edges the first leaves (the top and right).
-            let base = g.second.as_deref().cloned().unwrap_or_else(|| Grid {
-                edges: GridEdges { top: true, bottom: false, left: false, right: true },
-                ..Grid::default()
-            });
+            let base = g
+                .second
+                .as_deref()
+                .cloned()
+                .unwrap_or_else(|| Grid { edges: GridEdges { top: true, bottom: false, left: false, right: true }, ..Grid::default() });
             let mut second = if v.is_object() { grid_params(v, base)? } else { base };
             second.second = None;
             g.second = Some(Box::new(second));

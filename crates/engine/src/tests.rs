@@ -4364,7 +4364,8 @@ fn layout_grids_take_label_and_line_options() {
     }
     assert_eq!(grid(&s), before, "a refusal changes nothing");
     // Held in range, kept with the project, and drawn.
-    s.run("layout.update", &json!({"element": frame, "grid": {"minorTicks": 99, "labelEvery": 0, "decimals": 40, "labelOffset": 1e9}})).unwrap();
+    s.run("layout.update", &json!({"element": frame, "grid": {"minorTicks": 99, "labelEvery": 0, "decimals": 40, "labelOffset": 1e9}}))
+        .unwrap();
     let g = grid(&s);
     assert_eq!((g.minor_ticks, g.label_every, g.decimals, g.label_offset), (10, 1, Some(6), rustgis_map::layout::MAX_LABEL_OFFSET));
     let text = serde_json::to_string(&s.project).unwrap();

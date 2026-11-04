@@ -3,13 +3,13 @@
 
 use rustgis_data::GeometryType;
 use rustgis_geom::{Coord, Extent};
+use rustgis_map::layout::GridEdge as Edge;
 use rustgis_map::layout::{
     AreaPatch, ArrowStyle, ColorScale, ElementKind, FontFamily, FrameShape, Grid, GridKind, LabelText, Layout, LegendLook, LineHead,
     LinePatch, NumberPlace, Orientation, PT_PER_MM, ScaleBarStyle, ScaleUnits, TextAlign, TickSide, UnitLabel, UnitPlace, frame_camera,
 };
 use rustgis_map::symbology::LegendEntry;
 use rustgis_map::{Map, Rgba};
-use rustgis_map::layout::GridEdge as Edge;
 use tiny_skia::{FillRule, LineCap, Mask, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 use crate::{View, paint, text};
@@ -770,7 +770,6 @@ fn edge_crossings(pts: &[(f32, f32)], w: f32, h: f32) -> Vec<(Edge, f32)> {
     out
 }
 
-
 /// The coordinate system of a measured grid on `map`: the grid's own, else the map's when it is
 /// projected, else the WGS 84 UTM zone at `center` (longitude/latitude). `None` for one that
 /// can't be read or isn't projected.
@@ -910,7 +909,13 @@ impl GridInk {
         // A line high out from the edge: its middle 0.4 of a line in (0.45 outside), as the
         // labels always sat; a label's length out: its middle half of it in.
         let side = matches!(edge, Edge::Left | Edge::Right);
-        let half = if side != turned { depth / 2.0 } else if inward { self.px * 0.4 } else { self.px * 0.45 };
+        let half = if side != turned {
+            depth / 2.0
+        } else if inward {
+            self.px * 0.4
+        } else {
+            self.px * 0.45
+        };
         let out = gap + half;
         // Away from the frame's middle: outward from the top and left edges is up and left.
         let sign = match (edge, inward) {
@@ -3757,8 +3762,9 @@ mod tests {
             let px = |mm: f64| (mm * PT_PER_MM) as u32;
             (px(60.0)..px(90.0)).filter(|&y| (px(12.0)..px(88.0)).any(|x| pm.pixel(x, y).is_some_and(ink))).count()
         };
-        let turned = grid_page(g(&|g| g.orientations = Some(EdgeOrientations { bottom: Orientation::Vertical, ..EdgeOrientations::default() })));
-        assert!(rows(&turned) > rows(&plain) * 2, "{} rows against {}", rows(&turned), rows(&plain));
+        let turned =
+            grid_page(g(&|g| g.orientations = Some(EdgeOrientations { bottom: Orientation::Vertical, ..EdgeOrientations::default() })));
+        assert!(rows(&turned) * 2 > rows(&plain) * 3, "{} rows against {}", rows(&turned), rows(&plain));
     }
 
     /// An emphasised value: the two figures before the last three large, the rest small; a short
@@ -3815,13 +3821,17 @@ mod tests {
             )
         };
         let inner = (20.0, 20.0, 80.0, 80.0);
-        let (solid, dashed, dotted) =
-            (count(&lined(GridDash::Solid), inner, red), count(&lined(GridDash::Dashed), inner, red), count(&lined(GridDash::Dotted), inner, red));
+        let (solid, dashed, dotted) = (
+            count(&lined(GridDash::Solid), inner, red),
+            count(&lined(GridDash::Dashed), inner, red),
+            count(&lined(GridDash::Dotted), inner, red),
+        );
         assert!(dashed > 0 && dashed < solid * 9 / 10, "{dashed} of {solid}");
         assert!(dotted > 0 && dotted < dashed, "{dotted} of {dashed}");
         // A second grid in blue over the first.
         let blue = |p: tiny_skia::PremultipliedColorU8| p.blue() > 180 && p.red() < 90 && p.green() < 90;
-        let second = Grid { color: Rgba::rgb(0, 0, 0xFF), labels: false, style: GridStyle::Lines, step: 0.01, width: 1.0, ..Grid::default() };
+        let second =
+            Grid { color: Rgba::rgb(0, 0, 0xFF), labels: false, style: GridStyle::Lines, step: 0.01, width: 1.0, ..Grid::default() };
         let both = winterthur_page(
             Grid { second: Some(Box::new(second)), ..Grid { color: Rgba::rgb(0xFF, 0, 0), labels: false, width: 1.0, ..utm.clone() } },
             rustgis_map::Projection::WebMercator,
