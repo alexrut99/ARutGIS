@@ -2859,7 +2859,14 @@ fn overlays(app: &mut RustGisApp, ui: &mut Ui, p: &egui::Painter, rect: Rect, t:
                 crate::i18n::fmt(
                     "Area {area}   ·   Perimeter {perimeter}",
                     &[
-                        ("area", &crate::measure_units::area(geodesic_ring_area_m2(&ring), app.ui.measurement_imperial)),
+                        ("area", &{
+                            let m2 = geodesic_ring_area_m2(&ring);
+                            if app.ui.measurement_rai && !app.ui.measurement_imperial {
+                                crate::measure_units::rai(m2)
+                            } else {
+                                crate::measure_units::area(m2, app.ui.measurement_imperial)
+                            }
+                        }),
                         ("perimeter", &crate::measure_units::distance(geodesic_length_m(&ring), app.ui.measurement_imperial)),
                     ],
                 )

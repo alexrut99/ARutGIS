@@ -39,6 +39,35 @@ pub const SQUARE_METRES_PER_SQUARE_FOOT: f64 = 0.09290304;
 pub const SQUARE_METRES_PER_SQUARE_MILE: f64 = 2_589_988.110336;
 /// Square metres per international acre.
 pub const SQUARE_METRES_PER_ACRE: f64 = 4046.8564224;
+/// Square metres per Thai rai (ไร่): 4 ngan, 400 square wa, 1,600 m².
+pub const SQUARE_METRES_PER_RAI: f64 = 1600.0;
+/// Square metres per Thai square wa (ตารางวา); a wa is 2 m.
+pub const SQUARE_METRES_PER_SQUARE_WA: f64 = 4.0;
+
+/// Splits an area in square metres into Thai rai, ngan (งาน) and square wa, the way a land
+/// title deed gives it, with square wa to one decimal; `None` for a negative or non-finite area
+/// or one too large to count in rai.
+pub fn rai_ngan_wa(m2: f64) -> Option<(u64, u8, f64)> {
+    let tenths = (m2 / SQUARE_METRES_PER_SQUARE_WA * 10.0).round();
+    if !tenths.is_finite() || !(0.0..9.0e15).contains(&tenths) {
+        return None;
+    }
+    // Rounded once, in tenths of a square wa, so 399.96 square wa reads 1-0-0.0, not 0-3-100.0.
+    let tenths = tenths as u64;
+    let rai = tenths / 4000;
+    let ngan = (tenths % 4000 / 1000) as u8;
+    let wa = (tenths % 1000) as f64 / 10.0;
+    Some((rai, ngan, wa))
+}
+
+/// Formats an area in square metres as a deed's rai-ngan-square wa, such as `2-1-54.3`;
+/// `—` when [`rai_ngan_wa`] has no answer.
+pub fn format_rai_ngan_wa(m2: f64) -> String {
+    match rai_ngan_wa(m2) {
+        Some((rai, ngan, wa)) => format!("{rai}-{ngan}-{wa:.1}"),
+        None => "—".to_string(),
+    }
+}
 
 /// Metres per unit for a lowercase distance unit name. Callers choose defaults and normalize input.
 /// Feet are international feet, not US survey feet.
@@ -547,6 +576,23 @@ mod tests {
         assert_eq!(format_area(999_999.4), "999999 m²");
         assert_eq!(format_area(999_999.6), "1.0 km²");
         assert_eq!(format_area(1.0e6), "1.0 km²");
+    }
+
+    #[test]
+    fn thai_deed_areas_split_into_rai_ngan_and_square_wa() {
+        assert_eq!(format_rai_ngan_wa(0.0), "0-0-0.0");
+        assert_eq!(format_rai_ngan_wa(1600.0), "1-0-0.0");
+        assert_eq!(format_rai_ngan_wa(400.0), "0-1-0.0");
+        // 2 rai 1 ngan 54.3 square wa = 3,200 + 400 + 217.2 m².
+        assert_eq!(format_rai_ngan_wa(3817.2), "2-1-54.3");
+        // Just under a rai rounds up to it rather than to 100 square wa.
+        assert_eq!(format_rai_ngan_wa(1599.9), "1-0-0.0");
+        assert_eq!(format_rai_ngan_wa(1599.7), "0-3-99.9");
+        assert_eq!(rai_ngan_wa(6_190.0e6), Some((3_868_750, 0, 0.0)));
+        for bad in [-1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(rai_ngan_wa(bad), None);
+            assert_eq!(format_rai_ngan_wa(bad), "—");
+        }
     }
 
     #[test]

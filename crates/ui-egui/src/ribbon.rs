@@ -591,8 +591,15 @@ fn home_tab(app: &mut RustGisApp, ui: &mut Ui) {
             }
             ui.separator();
             ui.label(tl!("Measurement units"));
-            for (imperial, units, label) in [(false, "metric", "Metric"), (true, "imperial", "Imperial")] {
-                if ui.radio(app.ui.measurement_imperial == imperial, tl!(label)).clicked() {
+            let current = if app.ui.measurement_imperial {
+                "imperial"
+            } else if app.ui.measurement_rai {
+                "rai"
+            } else {
+                "metric"
+            };
+            for (units, label) in [("metric", "Metric"), ("rai", "Metric, areas in rai"), ("imperial", "Imperial")] {
+                if ui.radio(current == units, tl!(label)).clicked() {
                     let _ = app.run("ui.measurementUnits", json!({"units": units}));
                     ui.close();
                 }

@@ -553,6 +553,8 @@ pub struct UiState {
     pub dark: bool,
     /// Live measurement and map scale-bar units, chosen in Home › Measure.
     pub measurement_imperial: bool,
+    /// Metric, with measured areas in Thai rai, ngan and square wa (Home › Measure).
+    pub measurement_rai: bool,
     /// The theme follows the system's light or dark setting until the user picks one.
     pub dark_follows_system: bool,
     /// Interface language preference: a language code or `auto`.
@@ -788,6 +790,7 @@ impl Default for UiState {
             web_data: "opendata",
             dark: false,
             measurement_imperial: false,
+            measurement_rai: false,
             dark_follows_system: true,
             language: i18n::AUTO.into(),
             worldview: i18n::AUTO.into(),
@@ -1168,8 +1171,9 @@ impl RustGisApp {
                 editpanes::DISTANCE_UNITS.iter().find(|unit| unit.eq_ignore_ascii_case(value.trim())).map(|unit| (*unit).to_owned())
             })
             .unwrap_or_else(|| "Meters".into());
-        self.ui.measurement_imperial =
-            self.services.load_pref.as_ref().and_then(|load| load("measurement_units")).as_deref() == Some("imperial");
+        let units = self.services.load_pref.as_ref().and_then(|load| load("measurement_units"));
+        self.ui.measurement_imperial = units.as_deref() == Some("imperial");
+        self.ui.measurement_rai = units.as_deref() == Some("rai");
         // The GPU map backend: RUSTGIS_GPU forces it on, else the saved preference.
         self.map.gpu_enabled = std::env::var_os("RUSTGIS_GPU").is_some()
             || self.services.load_pref.as_ref().and_then(|load| load("ui.map.gpu")).as_deref() == Some("1");
@@ -2275,15 +2279,18 @@ impl RustGisApp {
                 self.ui.dark_follows_system = false;
             }
             "ui.measurementUnits" => {
-                let imperial = match p.get("units") {
-                    None => !self.ui.measurement_imperial,
-                    Some(Value::String(v)) if v.eq_ignore_ascii_case("metric") => false,
-                    Some(Value::String(v)) if v.eq_ignore_ascii_case("imperial") => true,
-                    _ => return Err(tl!("Measurement units must be metric or imperial").into()),
+                let units = match p.get("units") {
+                    None if self.ui.measurement_imperial => "metric",
+                    None => "imperial",
+                    Some(Value::String(v)) if v.eq_ignore_ascii_case("metric") => "metric",
+                    Some(Value::String(v)) if v.eq_ignore_ascii_case("imperial") => "imperial",
+                    Some(Value::String(v)) if v.eq_ignore_ascii_case("rai") => "rai",
+                    _ => return Err(tl!("Measurement units must be metric, rai or imperial").into()),
                 };
-                self.ui.measurement_imperial = imperial;
+                self.ui.measurement_imperial = units == "imperial";
+                self.ui.measurement_rai = units == "rai";
                 if let Some(save) = &self.services.save_pref {
-                    save("measurement_units", if imperial { "imperial" } else { "metric" });
+                    save("measurement_units", units);
                 }
             }
             "ui.moveSharedVertices" => {

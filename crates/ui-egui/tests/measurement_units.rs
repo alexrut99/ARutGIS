@@ -323,6 +323,53 @@ fn measure_menu_switches_live_distance_and_area_readouts_to_imperial() {
 }
 
 #[test]
+fn measure_menu_shows_areas_in_rai_and_remembers_it() {
+    use std::sync::{Arc, Mutex};
+    let saved = Arc::new(Mutex::new(Vec::new()));
+    let writes = saved.clone();
+    let mut h = harness_with_services(Services {
+        save_pref: Some(Box::new(move |key, value| writes.lock().unwrap().push((key.to_owned(), value.to_owned())))),
+        ..Services::default()
+    });
+    h.state_mut().run("map.goToXY", json!({"lon": 100.5, "lat": 13.75, "scale": 10_000})).unwrap();
+    h.state_mut().run("tool.set", json!({"tool": "measureArea"})).unwrap();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Measure").click();
+    for _ in 0..3 {
+        h.step();
+    }
+    h.get_by_role_and_label(egui::accesskit::Role::RadioButton, "Metric, areas in rai").click();
+    h.step();
+    assert!(h.state().ui.measurement_rai && !h.state().ui.measurement_imperial);
+    assert!(saved.lock().unwrap().contains(&("measurement_units".into(), "rai".into())));
+    h.state_mut().run("tool.set", json!({"tool": "measureArea"})).unwrap();
+    h.state_mut().map.cancel_sketch();
+    h.step();
+    let center = h.state().map.view_rect.unwrap().0.center();
+    click_map(&mut h, center - egui::vec2(50.0, 50.0));
+    click_map(&mut h, center + egui::vec2(50.0, -50.0));
+    click_map(&mut h, center + egui::vec2(50.0, 50.0));
+    let text = painted_text(&h);
+    // Areas in rai, lengths still metric.
+    let readout = text.iter().find(|s| s.starts_with("Area ")).unwrap_or_else(|| panic!("{text:?}"));
+    assert!(readout.contains(" rai ") && readout.contains(" ngan ") && readout.contains(" sq wa") && !readout.contains("ft"), "{readout}");
+    drop(h);
+
+    let reads = saved.clone();
+    let mut restored = harness_with_services(Services {
+        load_pref: Some(Box::new(move |key| reads.lock().unwrap().iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.clone()))),
+        ..Services::default()
+    });
+    restored.step();
+    assert!(restored.state().ui.measurement_rai);
+    restored.state_mut().run("ui.measurementUnits", json!({"units": "metric"})).unwrap();
+    assert!(!restored.state().ui.measurement_rai);
+    assert!(restored.state_mut().run("ui.measurementUnits", json!({"units": "cubits"})).is_err());
+}
+
+#[test]
 fn imperial_measurements_preserve_small_positive_distances_and_areas() {
     let mut h = harness();
     h.state_mut().run("map.goToXY", json!({"lon": 0, "lat": 80, "scale": 1})).unwrap();

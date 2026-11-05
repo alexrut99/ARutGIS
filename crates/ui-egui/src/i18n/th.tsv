@@ -4465,3 +4465,22 @@ Top labels	ตัวเลขขอบบน
 Bottom labels	ตัวเลขขอบล่าง
 Left labels	ตัวเลขขอบซ้าย
 Right labels	ตัวเลขขอบขวา
+Perimeter	เส้นรอบรูป
+X coordinate	พิกัด X
+Y coordinate	พิกัด Y
+Square metres	ตารางเมตร
+Square kilometres	ตารางกิโลเมตร
+Hectares	เฮกตาร์
+Acres	เอเคอร์
+Square feet	ตารางฟุต
+Square miles	ตารางไมล์
+Metres	เมตร
+Kilometres	กิโลเมตร
+Degrees (WGS84)	องศา (WGS84)
+Projected CRS units	หน่วยของระบบพิกัดฉาย
+Rai	ไร่
+Rai-ngan-square wa (title deed)	ไร่-งาน-ตารางวา (แบบโฉนด)
+Metric, areas in rai	เมตริก พื้นที่เป็นไร่
+Measurement units must be metric, rai or imperial	หน่วยการวัดต้องเป็นเมตริก ไร่ หรืออิมพีเรียล
+{rai} rai	{rai} ไร่
+{rai} rai {ngan} ngan {wa} sq wa	{rai} ไร่ {ngan} งาน {wa} ตร.วา

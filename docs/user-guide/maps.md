@@ -20,14 +20,17 @@ world in past 2:1, close enough for site plans at 1:20 and finds drawings at 1:1
 life size). Beside it are the zoom level, bearing and pitch; click them to face north and look
 straight down again. More navigation tools are under [View effects](#view-effects) below.
 
-**Measurement units.** In **Home › Inspect › Measure**, choose **Metric** or **Imperial**.
+**Measurement units.** In **Home › Inspect › Measure**, choose **Metric**, **Metric, areas in
+rai** or **Imperial**.
 The choice is remembered and updates existing distance and area measurements, the live
 map scale bar, elevation profiles, and distance labels and presets for label visibility
 and view clipping. Imperial readouts use feet or miles for length, and square feet, acres
 or square miles for area, according to size. Profile elevations and gain/loss use feet.
-Feet are international feet (0.3048 m).
-Scripts can set `ui.measurementUnits={"units":"imperial"}` or `{"units":"metric"}`;
-calling it without `units` toggles the choice. Distance presets still send metre values
+Feet are international feet (0.3048 m). **Metric, areas in rai** keeps lengths metric and shows
+measured areas in Thai rai, ngan and square wa, such as `2 rai 1 ngan 54.3 sq wa` (over 10,000
+rai, the rai alone).
+Scripts can set `ui.measurementUnits={"units":"imperial"}`, `{"units":"rai"}` or
+`{"units":"metric"}`; calling it without `units` switches between metric and imperial. Distance presets still send metre values
 to commands. Editing tools, geoprocessing tools, directions and layout scale bars have
 their own explicit unit controls.
 

@@ -10,7 +10,10 @@ to change it. **Data › Data Design** (and **Data › Fields**) adds and delete
 field from an expression; **Calculate Geometry** (in the attribute table's toolbar) fills a new or
 existing numeric field with each feature's area, perimeter, length or X/Y coordinate, in the units
 you choose, for all features or the selected ones. Length and perimeter include feet and miles;
-area includes square feet (`ft2`), acres (`ac`) and square miles (`mi2`). Every edit is one undo step.
+area includes square feet (`ft2`), acres (`ac`), square miles (`mi2`) and Thai rai (`rai`, 1,600 m²).
+**Rai-ngan-square wa (title deed)** (`rai_ngan_wa`) writes a land title deed's area as text, such
+as `2-1-54.3` (2 rai, 1 ngan, 54.3 square wa), into a new or existing text field. Every edit is
+one undo step.
 
 Undo (++ctrl+z++) and Redo (++ctrl+y++ or ++ctrl+shift+z++) restore project changes, not just
 feature edits; use ++cmd++ instead of ++ctrl++ on macOS. While typing in a text field, those
