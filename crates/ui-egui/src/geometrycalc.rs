@@ -49,6 +49,10 @@ impl Form {
     }
 }
 
+/// The engine's [`rounding_notice`](rustgis_engine::geometry_calc::rounding_notice) as a
+/// translatable template.
+const ROUNDED: &str = "Rounded {n} areas in {field} to 0.1 square wa (0.4 m²), as a title deed gives them";
+
 /// A combo box over `choices` (`(key, label)` pairs) editing the key `value`; true when changed.
 fn choice(ui: &mut egui::Ui, id: &str, value: &mut String, choices: &[(&str, &str)], width: f32, label_id: egui::Id) -> bool {
     let mut changed = false;
@@ -242,6 +246,14 @@ pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
             "property": f.property, "unit": f.unit, "epsg": epsg, "scope": if f.selected { "selected" } else { "all" }});
         match app.run("edit.calculateGeometry", p) {
             Ok(result) => {
+                let rounded = result["rounded"].as_u64().unwrap_or(0);
+                if rounded > 0 {
+                    // The engine's notice, in the interface language.
+                    let said = rustgis_engine::geometry_calc::rounding_notice(rounded as usize, f.field.trim());
+                    if let Some(n) = app.session.notices.iter_mut().rev().find(|n| n.text == said) {
+                        n.text = crate::i18n::fmt(ROUNDED, &[("n", &rounded.to_string()), ("field", f.field.trim())]);
+                    }
+                }
                 app.session.notify(crate::i18n::fmt("Calculated {rows} features", &[("rows", &result["rows"].to_string())]), false);
                 close = true;
             }
@@ -252,5 +264,20 @@ pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
         app.dialogs.open = None;
     } else {
         app.dialogs.geometry = Some(f);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ROUNDED;
+    use crate::i18n::{Lang, fmt, tr};
+
+    #[test]
+    fn rounding_notice_template_matches_the_engine_and_is_translated() {
+        let english = fmt(ROUNDED, &[("n", "12"), ("field", "โฉนด")]);
+        assert_eq!(english, rustgis_engine::geometry_calc::rounding_notice(12, "โฉนด"));
+        let th = Lang::from_code("th").expect("Thai");
+        let thai = fmt(tr(th, ROUNDED), &[("n", "12"), ("field", "โฉนด")]);
+        assert!(thai.starts_with("ปัดพื้นที่ 12 รายการในฟิลด์ โฉนด"), "{thai}");
     }
 }

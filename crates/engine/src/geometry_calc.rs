@@ -133,6 +133,8 @@ pub fn run(s: &mut Session, p: &Json) -> CmdResult {
     };
     let mut values = Vec::with_capacity(rows.len());
     let mut nulls = 0;
+    // Deed areas rounded to a tenth of a square wa, told in a notice (never silent).
+    let mut rounded = 0;
     for row in &rows {
         let f = l.dataset.features.get(*row).ok_or("selection contains a missing feature")?;
         let value = if let Some(g) = &f.geometry {
@@ -172,7 +174,10 @@ pub fn run(s: &mut Session, p: &Json) -> CmdResult {
             Some(v) if !v.is_finite() || (matches!(property, "area" | "length" | "perimeter") && v < 0.0) => {
                 return Err("invalid geometry measurement".into());
             }
-            Some(v) if ty == FieldType::Text => Value::Text(rustgis_geom::format_rai_ngan_wa(v)),
+            Some(v) if ty == FieldType::Text => {
+                rounded += usize::from(rustgis_geom::rai_ngan_wa_rounds(v));
+                Value::Text(rustgis_geom::format_rai_ngan_wa(v))
+            }
             Some(v) if ty == FieldType::Integer => {
                 let n = v.round();
                 if !(-9223372036854775808.0..9223372036854775808.0).contains(&n) {
@@ -198,5 +203,13 @@ pub fn run(s: &mut Session, p: &Json) -> CmdResult {
         changes.push(crate::cmd::design::Change { before: Some(before), row: Some(row) });
     }
     crate::cmd::design::apply(s, id, changes)?;
-    Ok(json!({"rows": rows.len(), "nulls": nulls, "field": field}))
+    if rounded > 0 {
+        s.notify(rounding_notice(rounded, field), false);
+    }
+    Ok(json!({"rows": rows.len(), "nulls": nulls, "field": field, "rounded": rounded}))
+}
+
+/// The notice for `n` deed areas in `field` rounded to the deed's tenth of a square wa.
+pub fn rounding_notice(n: usize, field: &str) -> String {
+    format!("Rounded {n} areas in {field} to 0.1 square wa (0.4 m²), as a title deed gives them")
 }

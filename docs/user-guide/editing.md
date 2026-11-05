@@ -12,7 +12,8 @@ existing numeric field with each feature's area, perimeter, length or X/Y coordi
 you choose, for all features or the selected ones. Length and perimeter include feet and miles;
 area includes square feet (`ft2`), acres (`ac`), square miles (`mi2`) and Thai rai (`rai`, 1,600 m²).
 **Rai-ngan-square wa (title deed)** (`rai_ngan_wa`) writes a land title deed's area as text, such
-as `2-1-54.3` (2 rai, 1 ngan, 54.3 square wa), into a new or existing text field. Every edit is
+as `2-1-54.3` (2 rai, 1 ngan, 54.3 square wa), into a new or existing text field; a notice
+says how many areas were rounded to the deed's 0.1 square wa (0.4 m²). Every edit is
 one undo step.
 
 Undo (++ctrl+z++) and Redo (++ctrl+y++ or ++ctrl+shift+z++) restore project changes, not just

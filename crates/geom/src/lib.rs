@@ -60,6 +60,13 @@ pub fn rai_ngan_wa(m2: f64) -> Option<(u64, u8, f64)> {
     Some((rai, ngan, wa))
 }
 
+/// True when [`rai_ngan_wa`] rounds `m2`: it isn't a whole number of tenths of a square wa
+/// (0.4 m²).
+pub fn rai_ngan_wa_rounds(m2: f64) -> bool {
+    let tenths = m2 / SQUARE_METRES_PER_SQUARE_WA * 10.0;
+    tenths.is_finite() && (tenths - tenths.round()).abs() > 1e-9 * tenths.abs().max(1.0)
+}
+
 /// Formats an area in square metres as a deed's rai-ngan-square wa, such as `2-1-54.3`;
 /// `—` when [`rai_ngan_wa`] has no answer.
 pub fn format_rai_ngan_wa(m2: f64) -> String {
@@ -589,6 +596,12 @@ mod tests {
         assert_eq!(format_rai_ngan_wa(1599.9), "1-0-0.0");
         assert_eq!(format_rai_ngan_wa(1599.7), "0-3-99.9");
         assert_eq!(rai_ngan_wa(6_190.0e6), Some((3_868_750, 0, 0.0)));
+        for exact in [0.0, 1600.0, 3817.2, 0.4] {
+            assert!(!rai_ngan_wa_rounds(exact), "{exact}");
+        }
+        for rounded in [1599.9, 0.1, 3817.25] {
+            assert!(rai_ngan_wa_rounds(rounded), "{rounded}");
+        }
         for bad in [-1.0, f64::NAN, f64::INFINITY] {
             assert_eq!(rai_ngan_wa(bad), None);
             assert_eq!(format_rai_ngan_wa(bad), "—");
