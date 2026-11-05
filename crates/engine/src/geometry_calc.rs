@@ -15,6 +15,11 @@ pub fn properties(kind: GeometryType) -> &'static [(&'static str, &'static str)]
     }
 }
 
+/// True when `unit` writes text rather than a number: a deed's rai-ngan-square wa, `2-1-54.3`.
+pub fn is_text_unit(unit: &str) -> bool {
+    unit == "rai_ngan_wa"
+}
+
 /// The units `property` can be calculated in, as `(key, label)` pairs.
 pub fn units(property: &str) -> &'static [(&'static str, &'static str)] {
     match property {
@@ -22,6 +27,8 @@ pub fn units(property: &str) -> &'static [(&'static str, &'static str)] {
             ("m2", "Square metres"),
             ("km2", "Square kilometres"),
             ("ha", "Hectares"),
+            ("rai", "Rai"),
+            ("rai_ngan_wa", "Rai-ngan-square wa (title deed)"),
             ("ac", "Acres"),
             ("ft2", "Square feet"),
             ("mi2", "Square miles"),
@@ -55,8 +62,9 @@ fn measure(g: &Geometry, property: &str) -> Option<f64> {
     }
 }
 
-/// Runs `edit.calculateGeometry`: fills `field` (new or existing numeric) of the chosen features
-/// with `property` in `unit`, as one undo step; on any error nothing changes.
+/// Runs `edit.calculateGeometry`: fills `field` (new or existing numeric; text for
+/// `rai_ngan_wa`) of the chosen features with `property` in `unit`, as one undo step; on any
+/// error nothing changes.
 pub fn run(s: &mut Session, p: &Json) -> CmdResult {
     let id = s.layer_id(p)?;
     let l = s.map().layer(id).ok_or("no layer")?;
@@ -85,7 +93,14 @@ pub fn run(s: &mut Session, p: &Json) -> CmdResult {
         if field.chars().count() > 64 || !field.chars().all(rustgis_data::query::is_name_char) {
             return Err("field names use letters, digits and _ (at most 64)".into());
         }
-        FieldType::Double
+        if is_text_unit(unit) { FieldType::Text } else { FieldType::Double }
+    } else if is_text_unit(unit) {
+        let ty =
+            existing.and_then(|i| l.dataset.fields.get(i)).map(|f| f.ty).filter(|t| *t == FieldType::Text).ok_or("choose a text field")?;
+        if p.get("overwrite").and_then(Json::as_bool) != Some(true) {
+            return Err("confirm overwriting the existing field".into());
+        }
+        ty
     } else {
         let ty = existing.and_then(|i| l.dataset.fields.get(i)).map(|f| f.ty).filter(|t| t.is_numeric()).ok_or("choose a numeric field")?;
         if p.get("overwrite").and_then(Json::as_bool) != Some(true) {
@@ -113,6 +128,7 @@ pub fn run(s: &mut Session, p: &Json) -> CmdResult {
         "mi2" => rustgis_geom::SQUARE_METRES_PER_SQUARE_MILE,
         "ha" => 1e4,
         "ac" => rustgis_geom::SQUARE_METRES_PER_ACRE,
+        "rai" => rustgis_geom::SQUARE_METRES_PER_RAI,
         _ => 1.0,
     };
     let mut values = Vec::with_capacity(rows.len());
@@ -156,6 +172,7 @@ pub fn run(s: &mut Session, p: &Json) -> CmdResult {
             Some(v) if !v.is_finite() || (matches!(property, "area" | "length" | "perimeter") && v < 0.0) => {
                 return Err("invalid geometry measurement".into());
             }
+            Some(v) if ty == FieldType::Text => Value::Text(rustgis_geom::format_rai_ngan_wa(v)),
             Some(v) if ty == FieldType::Integer => {
                 let n = v.round();
                 if !(-9223372036854775808.0..9223372036854775808.0).contains(&n) {
@@ -172,7 +189,7 @@ pub fn run(s: &mut Session, p: &Json) -> CmdResult {
         values.push((*row, value));
     }
     let l = s.map_mut().layer_mut(id).ok_or("no layer")?;
-    let fi = if create { l.dataset.ensure_field(field, FieldType::Double) } else { existing.ok_or("no field")? };
+    let fi = if create { l.dataset.ensure_field(field, ty) } else { existing.ok_or("no field")? };
     let mut changes = Vec::with_capacity(values.len());
     for (row, value) in values {
         let f = l.dataset.features.get_mut(row).ok_or("no feature")?;

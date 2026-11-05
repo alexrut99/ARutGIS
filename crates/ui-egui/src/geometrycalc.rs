@@ -3,7 +3,7 @@ use crate::{RustGisApp, theme::Tokens};
 use rustgis_engine::{
     Session,
     data::FieldType,
-    geometry_calc::{properties, units},
+    geometry_calc::{is_text_unit, properties, units},
 };
 use serde_json::json;
 
@@ -75,7 +75,17 @@ pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
     };
     let name = l.name.clone();
     let props = properties(l.geometry_type());
-    let fields: Vec<_> = l.dataset.fields.iter().filter(|f| f.ty.is_numeric()).map(|f| (f.name.clone(), f.ty)).collect();
+    // The fields that can take the unit: text for a deed's rai-ngan-square wa, else numbers.
+    let fields_for = |unit: &str| -> Vec<(String, FieldType)> {
+        let text = is_text_unit(unit);
+        l.dataset
+            .fields
+            .iter()
+            .filter(|f| if text { f.ty == FieldType::Text } else { f.ty.is_numeric() })
+            .map(|f| (f.name.clone(), f.ty))
+            .collect()
+    };
+    let mut fields = fields_for(&f.unit);
     let selected_count = l.selection.len();
     let total = l.dataset.features.len();
     let mut open = true;
@@ -112,6 +122,19 @@ pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
                         f.overwrite = false;
                     }
                     ui.end_row();
+                    if is_text_unit(&previous.1) != is_text_unit(&f.unit) {
+                        fields = fields_for(&f.unit);
+                        if !f.create && !fields.iter().any(|(n, _)| *n == f.field) {
+                            // The chosen field can't hold the new unit: pick one that can, or a new field.
+                            match fields.first() {
+                                Some((name, _)) => f.field = name.clone(),
+                                None => {
+                                    f.create = true;
+                                    f.field_edited = false;
+                                }
+                            }
+                        }
+                    }
                     if f.create && !f.field_edited && previous != (f.property.clone(), f.unit.clone()) {
                         let base = format!("{}_{}", f.property, f.unit);
                         f.field = base.clone();

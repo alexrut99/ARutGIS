@@ -55,6 +55,33 @@ pub fn area(m2: f64, imperial: bool) -> String {
     }
 }
 
+/// Format square metres as Thai rai, ngan and square wa, such as `2 rai 1 ngan 54.3 sq wa`;
+/// past 10,000 rai only the rounded rai, such as `3,868,750 rai`.
+pub fn rai(m2: f64) -> String {
+    let Some((rai, ngan, wa)) = geom::rai_ngan_wa(m2) else { return geom::format_area(m2) };
+    if rai >= 10_000 {
+        let whole = (m2 / geom::SQUARE_METRES_PER_RAI).round() as u64;
+        return crate::i18n::fmt("{rai} rai", &[("rai", &grouped(whole))]);
+    }
+    crate::i18n::fmt(
+        "{rai} rai {ngan} ngan {wa} sq wa",
+        &[("rai", &grouped(rai)), ("ngan", &ngan.to_string()), ("wa", &format!("{wa:.1}"))],
+    )
+}
+
+/// `n` with commas between thousands.
+fn grouped(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, d) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(d);
+    }
+    out
+}
+
 /// Choose a readable scale-bar length in the display units and return its length in metres.
 pub fn scale_distance(max_m: f64, imperial: bool) -> f64 {
     let unit = if !imperial {

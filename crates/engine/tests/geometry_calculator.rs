@@ -60,7 +60,7 @@ fn polygon_holes_multipart_and_area_units() {
     let expected = rustgis_engine::geom::geodesic_ring_area_m2(&outer) - rustgis_engine::geom::geodesic_ring_area_m2(&hole)
         + rustgis_engine::geom::geodesic_ring_area_m2(&part);
     let (mut s, id) = session(GeometryType::Polygon, vec![Some(Geometry::Polygon(vec![vec![outer, hole], vec![part]]))]);
-    for (unit, divisor) in [("m2", 1.0), ("km2", 1e6), ("ha", 1e4), ("ac", 4046.8564224)] {
+    for (unit, divisor) in [("m2", 1.0), ("km2", 1e6), ("ha", 1e4), ("ac", 4046.8564224), ("rai", 1600.0)] {
         s.run("edit.calculateGeometry", &json!({"layer":id,"field":"result","overwrite":true,"property":"area","unit":unit,"scope":"all"}))
             .unwrap();
         let actual = s.map().layer(id).unwrap().dataset.value(0, 0).as_f64().unwrap();
@@ -71,6 +71,32 @@ fn polygon_holes_multipart_and_area_units() {
             .is_err()
     );
     assert!(s.map().layer(id).unwrap().dataset.field_index("bad").is_none());
+}
+
+#[test]
+fn thai_deed_area_writes_text() {
+    // About 2.8 rai: a square 0.0006° on a side at the equator.
+    let side = 0.0006;
+    let ring = vec![Coord::new(0.0, 0.0), Coord::new(side, 0.0), Coord::new(side, side), Coord::new(0.0, side), Coord::new(0.0, 0.0)];
+    let m2 = rustgis_engine::geom::geodesic_ring_area_m2(&ring);
+    let (mut s, id) = session(GeometryType::Polygon, vec![Some(Geometry::Polygon(vec![vec![ring]]))]);
+    let p = json!({"layer":id,"field":"โฉนด","create":true,"property":"area","unit":"rai_ngan_wa","scope":"all"});
+    s.run("edit.calculateGeometry", &p).unwrap();
+    let ds = &s.map().layer(id).unwrap().dataset;
+    let fi = ds.field_index("โฉนด").unwrap();
+    assert_eq!(ds.fields[fi].ty, FieldType::Text);
+    assert_eq!(ds.value(0, fi), &Value::Text(rustgis_engine::geom::format_rai_ngan_wa(m2)));
+    assert!(matches!(ds.value(0, fi), Value::Text(t) if t.starts_with("2-3-")));
+    // A number field can't hold it, and the text field can't take a number unit.
+    let numeric = json!({"layer":id,"field":"result","overwrite":true,"property":"area","unit":"rai_ngan_wa","scope":"all"});
+    assert!(s.run("edit.calculateGeometry", &numeric).is_err());
+    let text = json!({"layer":id,"field":"โฉนด","overwrite":true,"property":"area","unit":"rai","scope":"all"});
+    assert!(s.run("edit.calculateGeometry", &text).is_err());
+    let again = json!({"layer":id,"field":"โฉนด","overwrite":true,"property":"area","unit":"rai_ngan_wa","scope":"all"});
+    s.run("edit.calculateGeometry", &again).unwrap();
+    // Not for lengths.
+    let length = json!({"layer":id,"field":"x","create":true,"property":"perimeter","unit":"rai_ngan_wa","scope":"all"});
+    assert!(s.run("edit.calculateGeometry", &length).is_err());
 }
 
 #[test]

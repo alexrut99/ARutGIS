@@ -91,7 +91,8 @@ and **Definition Query** (the full grammar is in [Expressions](expressions.md)).
 For an editable feature layer, double-click a cell to change it. The table's toolbar also adds
 fields, calculates field [expressions](expressions.md) and opens **Calculate Geometry** (`edit.calculateGeometry`).
 The geometry calculator fills a new double field or an existing numeric field with area,
-perimeter, length or point X/Y, for all or selected features. Point coordinates can be WGS 84
+perimeter, length or point X/Y, for all or selected features; areas can also be Thai rai, or a
+title deed's rai-ngan-square wa as text. Point coordinates can be WGS 84
 degrees or a supported projected EPSG system's units. See [Editing](editing.md) for field
 calculations and data-design rules. Streamed layers must first be loaded with **Load All
 Features**.
