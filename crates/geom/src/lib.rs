@@ -60,11 +60,15 @@ pub fn rai_ngan_wa(m2: f64) -> Option<(u64, u8, f64)> {
     Some((rai, ngan, wa))
 }
 
-/// True when [`rai_ngan_wa`] rounds `m2`: it isn't a whole number of tenths of a square wa
-/// (0.4 m²).
+/// True when [`rai_ngan_wa`] rounds `m2`: the area it gives back, a whole number of tenths of
+/// a square wa (0.4 m²), isn't `m2`.
 pub fn rai_ngan_wa_rounds(m2: f64) -> bool {
-    let tenths = m2 / SQUARE_METRES_PER_SQUARE_WA * 10.0;
-    tenths.is_finite() && (tenths - tenths.round()).abs() > 1e-9 * tenths.abs().max(1.0)
+    let Some((rai, ngan, wa)) = rai_ngan_wa(m2) else { return false };
+    let tenths = rai * 4000 + u64::from(ngan) * 1000 + (wa * 10.0).round() as u64;
+    // Exact, not within a tolerance, which would grow with the area and hide real rounding
+    // on large polygons. `tenths * 4` is exact below 2^53 and one division by 10 rounds
+    // correctly, so this is `m2` exactly when `m2` is the f64 nearest a whole tenth.
+    (tenths as f64 * 4.0) / 10.0 != m2
 }
 
 /// Formats an area in square metres as a deed's rai-ngan-square wa, such as `2-1-54.3`;
@@ -599,7 +603,10 @@ mod tests {
         for exact in [0.0, 1600.0, 3817.2, 0.4] {
             assert!(!rai_ngan_wa_rounds(exact), "{exact}");
         }
-        for rounded in [1599.9, 0.1, 3817.25] {
+        // Large areas too: a tolerance relative to the area would swallow these.
+        assert!(!rai_ngan_wa_rounds(200_000_000.0));
+        assert!(!rai_ngan_wa_rounds(6_190.0e6));
+        for rounded in [1599.9, 0.1, 3817.25, 200_000_000.1, 6_190.0e6 + 0.1, 1.0e14 + 0.25] {
             assert!(rai_ngan_wa_rounds(rounded), "{rounded}");
         }
         for bad in [-1.0, f64::NAN, f64::INFINITY] {
