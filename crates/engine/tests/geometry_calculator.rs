@@ -81,7 +81,12 @@ fn thai_deed_area_writes_text() {
     let m2 = rustgis_engine::geom::geodesic_ring_area_m2(&ring);
     let (mut s, id) = session(GeometryType::Polygon, vec![Some(Geometry::Polygon(vec![vec![ring]]))]);
     let p = json!({"layer":id,"field":"โฉนด","create":true,"property":"area","unit":"rai_ngan_wa","scope":"all"});
-    s.run("edit.calculateGeometry", &p).unwrap();
+    let told = s.notices.len();
+    assert_eq!(s.run("edit.calculateGeometry", &p).unwrap()["rounded"], 1);
+    // The rounding is told, once, with its count and field.
+    let notices: Vec<_> = s.notices[told..].iter().map(|n| n.text.clone()).collect();
+    assert_eq!(notices, vec![rustgis_engine::geometry_calc::rounding_notice(1, "โฉนด")]);
+    assert!(notices[0].contains("Rounded 1 areas in โฉนด to 0.1 square wa"));
     let ds = &s.map().layer(id).unwrap().dataset;
     let fi = ds.field_index("โฉนด").unwrap();
     assert_eq!(ds.fields[fi].ty, FieldType::Text);
@@ -97,6 +102,35 @@ fn thai_deed_area_writes_text() {
     // Not for lengths.
     let length = json!({"layer":id,"field":"x","create":true,"property":"perimeter","unit":"rai_ngan_wa","scope":"all"});
     assert!(s.run("edit.calculateGeometry", &length).is_err());
+}
+
+#[test]
+fn thai_deed_area_without_rounding_tells_nothing() {
+    let (mut s, id) = session(GeometryType::Polygon, vec![None]);
+    let told = s.notices.len();
+    let p = json!({"layer":id,"field":"deed","create":true,"property":"area","unit":"rai_ngan_wa","scope":"all"});
+    let result = s.run("edit.calculateGeometry", &p).unwrap();
+    assert_eq!((result["rounded"].as_u64(), result["nulls"].as_u64()), (Some(0), Some(1)));
+    assert!(
+        s.notices[told..].iter().all(|n| !n.text.starts_with("Rounded")),
+        "{:?}",
+        s.notices[told..].iter().map(|n| &n.text).collect::<Vec<_>>()
+    );
+    // A number unit never rounds to the deed's precision.
+    let (mut s, id) = session(
+        GeometryType::Polygon,
+        vec![Some(Geometry::Polygon(vec![vec![vec![
+            Coord::new(0.0, 0.0),
+            Coord::new(0.0006, 0.0),
+            Coord::new(0.0006, 0.0006),
+            Coord::new(0.0, 0.0006),
+            Coord::new(0.0, 0.0),
+        ]]]))],
+    );
+    let told = s.notices.len();
+    let p = json!({"layer":id,"field":"rai","create":true,"property":"area","unit":"rai","scope":"all"});
+    assert_eq!(s.run("edit.calculateGeometry", &p).unwrap()["rounded"], 0);
+    assert!(s.notices[told..].iter().all(|n| !n.text.starts_with("Rounded")));
 }
 
 #[test]

@@ -4484,3 +4484,4 @@ Metric, areas in rai	เมตริก พื้นที่เป็นไร�
 Measurement units must be metric, rai or imperial	หน่วยการวัดต้องเป็นเมตริก ไร่ หรืออิมพีเรียล
 {rai} rai	{rai} ไร่
 {rai} rai {ngan} ngan {wa} sq wa	{rai} ไร่ {ngan} งาน {wa} ตร.วา
+Rounded {n} areas in {field} to 0.1 square wa (0.4 m²), as a title deed gives them	ปัดพื้นที่ {n} รายการในฟิลด์ {field} เป็นทศนิยม 1 ตำแหน่งของตารางวา (0.4 ตร.ม.) ตามรูปแบบโฉนด
