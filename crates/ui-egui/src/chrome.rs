@@ -1164,19 +1164,20 @@ pub(crate) fn project_links(ui: &mut egui::Ui) {
     });
 }
 
-/// Links to the licence notices of the software and data RustGIS is built with. The web app
+/// Links to the licence notices of the software and data ARutGIS is built with. The web app
 /// serves its own copy of `THIRD-PARTY-LICENSES.txt`; the desktop packages ship one next to
-/// LICENSE, and link to the current one on GitHub.
+/// LICENSE, and link to ARutGIS's current one on GitHub (not RustGIS's, which lacks what
+/// ARutGIS adds, such as its Thai font and NOTICE).
 pub(crate) fn licence_links(ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         let notices = if cfg!(target_arch = "wasm32") {
             "THIRD-PARTY-LICENSES.txt"
         } else {
-            "https://github.com/opengeos/RustGIS/blob/main/THIRD-PARTY-LICENSES.txt"
+            "https://github.com/alexrut99/ARutGIS/blob/main/THIRD-PARTY-LICENSES.txt"
         };
         ui.add(egui::Hyperlink::from_label_and_url(tl!("Third-party licences"), notices).open_in_new_tab(true));
         ui.label("·");
-        let attribution = "https://github.com/opengeos/RustGIS/blob/main/ATTRIBUTION.md";
+        let attribution = "https://github.com/alexrut99/ARutGIS/blob/main/ATTRIBUTION.md";
         ui.add(egui::Hyperlink::from_label_and_url(tl!("Attribution"), attribution).open_in_new_tab(true));
     });
 }

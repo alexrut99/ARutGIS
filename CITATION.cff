@@ -1,35 +1,58 @@
 cff-version: 1.2.0
-title: "RustGIS: A fast, free and open-source GIS in pure Rust for mapping, analyzing and sharing geospatial data"
-message: "If you use this software, please cite it using the metadata from this file."
+title: "ARutGIS: a free and open-source GIS with full Thai support, developed from RustGIS"
+message: >-
+  If you use ARutGIS, please cite it and also RustGIS, the project it is
+  developed from (listed under references below).
 type: software
-abstract: "RustGIS is a fast, free and open-source GIS in pure Rust for mapping, analyzing and sharing geospatial data, native on Windows, macOS and Linux, and in the web browser."
+abstract: >-
+  ARutGIS is a free and open-source GIS with full Thai support (Thai interface,
+  Thai text on maps, Thai coordinate systems and Thai land units), developed by
+  Anirut Ladawadee from RustGIS by Qiusheng Wu and the RustGIS contributors,
+  under the same Apache-2.0 licence. It is not affiliated with or endorsed by
+  the RustGIS project.
 authors:
-  - given-names: Qiusheng
-    family-names: Wu
-    email: giswqs@gmail.com
-    affiliation: "University of Tennessee, Knoxville, USA"
-    orcid: "https://orcid.org/0000-0001-5437-4073"
-  - given-names: José Gregorio
-    family-names: Rincón Albarracín
-  - given-names: Elpidio
-    family-names: Filho
-  - given-names: Daniel
-    family-names: Hofbauer
-  - given-names: Mavrick
-    family-names: Fitzgerald
-  - given-names: Dominik
-    family-names: Strebel
-    orcid: "https://orcid.org/0000-0002-3529-1798"
+  - given-names: Anirut
+    family-names: Ladawadee
 version: 0.5.6
-date-released: 2026-11-03
-doi: "10.5281/zenodo.23633281"
-repository-code: "https://github.com/opengeos/RustGIS"
-url: "https://rustgis.app"
+date-released: 2026-11-05
+repository-code: "https://github.com/alexrut99/ARutGIS"
+url: "https://alexrut99.github.io/ARutGIS/"
 license: Apache-2.0
 keywords:
   - GIS
   - geospatial
+  - Thai
   - Rust
   - WebAssembly
   - mapping
   - spatial analysis
+references:
+  - type: software
+    title: "RustGIS: A fast, free and open-source GIS in pure Rust for mapping, analyzing and sharing geospatial data"
+    abstract: >-
+      The project ARutGIS is developed from: ARutGIS forked RustGIS's main branch
+      on 2026-10-29 (commit 90576c52, after the 0.4.0 release). The DOI is the
+      concept DOI of all RustGIS releases.
+    authors:
+      - given-names: Qiusheng
+        family-names: Wu
+        email: giswqs@gmail.com
+        affiliation: "University of Tennessee, Knoxville, USA"
+        orcid: "https://orcid.org/0000-0001-5437-4073"
+      - given-names: José Gregorio
+        family-names: Rincón Albarracín
+      - given-names: Elpidio
+        family-names: Filho
+      - given-names: Daniel
+        family-names: Hofbauer
+      - given-names: Mavrick
+        family-names: Fitzgerald
+      - given-names: Dominik
+        family-names: Strebel
+        orcid: "https://orcid.org/0000-0002-3529-1798"
+    version: 0.4.0
+    date-released: 2026-10-25
+    doi: "10.5281/zenodo.23633281"
+    repository-code: "https://github.com/opengeos/RustGIS"
+    url: "https://rustgis.app"
+    license: Apache-2.0

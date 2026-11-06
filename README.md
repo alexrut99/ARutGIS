@@ -27,14 +27,16 @@
 
 ARutGIS พัฒนาต่อจาก [RustGIS](https://github.com/opengeos/RustGIS) ของ Qiusheng Wu
 ภายใต้สัญญาอนุญาต [Apache-2.0](LICENSE) ซึ่งเป็นสัญญาเดียวกับต้นฉบับ ARutGIS ไม่ได้มีส่วนเกี่ยวข้องและไม่ได้รับการรับรองจากโครงการ RustGIS
-แจกจ่ายให้ใช้ฟรี
+แจกจ่ายให้ใช้ฟรี สิ่งที่แก้ไขจาก RustGIS สรุปไว้ใน [NOTICE](NOTICE) ถ้านำไปใช้ในงานวิจัย โปรดอ้างอิงทั้ง ARutGIS
+และ RustGIS ([CITATION.cff](CITATION.cff) มีข้อมูลของทั้งสองโครงการ)
 
 ARutGIS is developed by Anirut Ladawadee from [RustGIS](https://github.com/opengeos/RustGIS) by Qiusheng Wu, under
 the same [Apache-2.0](LICENSE) licence. It is not affiliated with or endorsed by the RustGIS
 project. The copyright notices, licences and attributions of RustGIS and the libraries it uses
 are kept in [LICENSE](LICENSE), [ATTRIBUTION.md](ATTRIBUTION.md) and
-[THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt). If you use it in research, please also
-cite RustGIS ([CITATION.cff](CITATION.cff)).
+[THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt), and what ARutGIS changed is summed up in
+[NOTICE](NOTICE), which heads the THIRD-PARTY-LICENSES.txt every package ships. If you use it in
+research, please cite both ARutGIS and RustGIS ([CITATION.cff](CITATION.cff) lists both).
 
 ### สิ่งที่เพิ่มจาก RustGIS
 

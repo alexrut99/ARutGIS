@@ -29,7 +29,7 @@ pub const STALE: u8 = 2;
 
 /// (output file, package manifest or "" for the whole workspace, what it covers).
 const FILES: &[(&str, &str, &str)] = &[
-    ("THIRD-PARTY-LICENSES.txt", "", "RustGIS (the desktop app, the command line and the web app)"),
+    ("THIRD-PARTY-LICENSES.txt", "", "ARutGIS (the desktop app, the command line and the web app)"),
     ("apps/rustgis-python/THIRD-PARTY-LICENSES.txt", "apps/rustgis-python/Cargo.toml", "the rustgis Python package"),
 ];
 
@@ -118,6 +118,14 @@ const INCLUDED: &[Included] = &[
         paths: &["crates/data/src/raster/epsg_gap.rs", "crates/data/src/raster/epsg_axes.rs"],
         notices: &[],
     },
+    Included {
+        what: "The Sarabun font (Regular and Bold) by Cadson Demak, from Google Fonts \
+               (https://github.com/google/fonts/tree/main/ofl/sarabun), built into the app for Thai map \
+               layouts and exports, unmodified.",
+        krate: "rustgis-render",
+        paths: &["crates/render/fonts/Sarabun-Regular.ttf", "crates/render/fonts/Sarabun-Bold.ttf"],
+        notices: &["Sarabun-OFL.txt"],
+    },
 ];
 
 /// Text of `v[key]`, or "".
@@ -198,6 +206,7 @@ fn included(root: &Path) -> Result<Vec<(String, String, Vec<String>)>, String> {
 pub fn render(
     about: &Value,
     what: &str,
+    preamble: &str,
     notice: &dyn Fn(&str) -> Vec<(String, String)>,
     included: &[(String, String, Vec<String>)],
 ) -> String {
@@ -241,12 +250,12 @@ pub fn render(
 
     let rule = "=".repeat(100);
     let mut out = format!(
-        "Third-party software notices for {what}\n\n\
-         RustGIS is licensed under the Apache License 2.0 (see LICENSE). It is built with the\n\
-         open-source Rust crates below, each under its own licence, whose copyright notices and terms\n\
-         are reproduced here, followed by the NOTICE files the crates ship, then by the code and data\n\
-         from other projects in RustGIS's own crates. Generated from Cargo.lock and\n\
-         xtask/src/notices.rs by `cargo xtask notices`.\n"
+        "Third-party software notices for {what}\n\n{}\n\n\
+         It is built with the open-source Rust crates below, each under its own licence, whose\n\
+         copyright notices and terms are reproduced here, followed by the NOTICE files the crates\n\
+         ship, then by the code and data from other projects in its own crates. Generated from\n\
+         Cargo.lock, NOTICE and xtask/src/notices.rs by `cargo xtask notices`.\n",
+        tidy(preamble)
     );
     for (name, body, names) in &texts {
         out.push_str(&format!("\n{rule}\n{name}\nUsed by: {}\n{rule}\n\n{body}\n", wrap(names)));
@@ -308,9 +317,12 @@ fn about(root: &Path, manifest: &str) -> Result<Value, String> {
 /// `Err((1, …))` for any other failure.
 pub fn notices(root: &Path, check: bool) -> Result<(), (u8, String)> {
     let included = included(root).map_err(|e| (1, e))?;
+    // ARutGIS's own NOTICE (the modifications to RustGIS) heads every file, so every package,
+    // which ships the file next to LICENSE, carries it.
+    let preamble = std::fs::read_to_string(root.join("NOTICE")).map_err(|e| (1, format!("NOTICE: {e}")))?;
     let mut stale = Vec::new();
     for (file, manifest, what) in FILES {
-        let wanted = render(&about(root, manifest).map_err(|e| (1, e))?, what, &notice_files, &included);
+        let wanted = render(&about(root, manifest).map_err(|e| (1, e))?, what, &preamble, &notice_files, &included);
         let path = root.join(file);
         if std::fs::read_to_string(&path).ok().as_deref() == Some(wanted.as_str()) {
             println!("notices: {file} is up to date");
@@ -349,8 +361,8 @@ mod tests {
             ],
         });
         let notice = |m: &str| if m == "/a/Cargo.toml" { vec![("NOTICE".to_string(), "Notice of a\n".to_string())] } else { Vec::new() };
-        let out = render(&about, "RustGIS", &notice, &[]);
-        assert!(out.starts_with("Third-party software notices for RustGIS\n\nRustGIS is licensed"));
+        let out = render(&about, "ARutGIS", "ARutGIS is RustGIS, modified.  \r\n", &notice, &[]);
+        assert!(out.starts_with("Third-party software notices for ARutGIS\n\nARutGIS is RustGIS, modified.\n\nIt is built"));
         assert_eq!(out.matches("MIT License\nUsed by: a, b, c\n").count(), 1);
         assert!(out.contains("Copyright A\n\nPermission is granted.\n"));
         // Only RustGIS's own crates use that Apache text, so it is left out.
@@ -373,7 +385,7 @@ mod tests {
             inc("rustgis-map", "Colour maps\nIn rustgis-map: a.rs", &["MIT text  \r\n", "BSD text"]),
             inc("rustgis-tiles", "Labels", &["ISC text"]),
         ];
-        let out = render(&about, "RustGIS", &|_| Vec::new(), &included);
+        let out = render(&about, "ARutGIS", "", &|_| Vec::new(), &included);
         let rule = "=".repeat(100);
         let dashes = "-".repeat(100);
         assert!(out.ends_with(&format!("{rule}\nColour maps\nIn rustgis-map: a.rs\n{rule}\n\nMIT text\n\n{dashes}\n\nBSD text\n")));

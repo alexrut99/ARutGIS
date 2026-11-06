@@ -1,0 +1,18 @@
+ARutGIS
+Modifications copyright 2026 Anirut Ladawadee
+
+ARutGIS is a modified version of RustGIS (https://github.com/opengeos/RustGIS) by Qiusheng Wu
+and the RustGIS contributors. Both are licensed under the Apache License 2.0 (see LICENSE).
+ARutGIS is not affiliated with or endorsed by the RustGIS project.
+
+Anirut Ladawadee changed RustGIS from its main branch of 2026-10-29 (commit 90576c52, after the
+0.4.0 release): a Thai interface, Thai text in data, tables, labels and map layouts, Thai
+coordinate systems, Thai dates and land units, and the ARutGIS name, logo, packages and
+updates. Every change, with its author and date, is in the history of
+https://github.com/alexrut99/ARutGIS after commit 90576c52; the rest is RustGIS as its authors
+wrote it.
+
+ARutGIS เป็นฉบับแก้ไขของ RustGIS ของ Qiusheng Wu และผู้ร่วมพัฒนา RustGIS ทั้งสองโครงการใช้
+สัญญาอนุญาต Apache License 2.0 (ดู LICENSE) ARutGIS ไม่ได้มีส่วนเกี่ยวข้องและไม่ได้รับการรับรองจาก
+โครงการ RustGIS อนิรุทธ์ ลดาวดี แก้ไขจาก RustGIS ฉบับวันที่ 29 ตุลาคม 2026 (commit 90576c52)
+รายการแก้ไขทั้งหมดดูได้ในประวัติของ https://github.com/alexrut99/ARutGIS
