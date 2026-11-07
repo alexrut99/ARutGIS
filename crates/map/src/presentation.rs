@@ -53,8 +53,10 @@ impl Presentation {
             cut(&mut p.notes, MAX_TEXT);
             p.seconds = if p.seconds.is_finite() { p.seconds.clamp(0.5, 3600.0) } else { 5.0 };
             match &mut p.kind {
-                PageKind::Map { map, center, width_m } => {
+                PageKind::Map { map, center, width_m, bearing, pitch } => {
                     cut(map, MAX_TITLE);
+                    *bearing = crate::camera::normalize_bearing(*bearing);
+                    *pitch = crate::camera::normalize_pitch(*pitch);
                     if !(center.x.is_finite() && center.y.is_finite()) {
                         *center = Coord::new(0.0, 0.0);
                     }
@@ -104,9 +106,19 @@ fn five() -> f64 {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PageKind {
-    /// A map at a place: its centre (longitude/latitude) and the ground width shown, in metres.
+    /// A map at a place: its centre (longitude/latitude), the ground width shown, in metres, and
+    /// the view's bearing and pitch in degrees, so a turned, tilted view (with its terrain) is
+    /// shown as it was; pages saved before these are north up and flat.
     #[serde(rename_all = "camelCase")]
-    Map { map: String, center: Coord, width_m: f64 },
+    Map {
+        map: String,
+        center: Coord,
+        width_m: f64,
+        #[serde(default)]
+        bearing: f64,
+        #[serde(default)]
+        pitch: f64,
+    },
     /// Text on a coloured page.
     Blank {
         #[serde(default)]
@@ -150,7 +162,13 @@ mod tests {
             width: f64::NAN,
             pages: vec![Page {
                 title: "Rome".into(),
-                kind: PageKind::Map { map: "World".into(), center: Coord::new(f64::NAN, 95.0), width_m: -1.0 },
+                kind: PageKind::Map {
+                    map: "World".into(),
+                    center: Coord::new(f64::NAN, 95.0),
+                    width_m: -1.0,
+                    bearing: 540.0,
+                    pitch: f64::NAN,
+                },
                 notes: String::new(),
                 seconds: f64::INFINITY,
             }],
@@ -170,6 +188,7 @@ mod tests {
         assert_eq!(p.width, WIDTH);
         assert_eq!(p.pages[0].seconds, 5.0);
         assert!(matches!(p.pages[0].kind, PageKind::Map { center, width_m, .. } if center.y == 0.0 && width_m == 10.0));
+        assert!(matches!(p.pages[0].kind, PageKind::Map { bearing, pitch, .. } if bearing == 180.0 && pitch == 0.0));
         let json = serde_json::to_string(&p).unwrap();
         assert_eq!(serde_json::from_str::<Presentation>(&json).unwrap(), p);
     }
