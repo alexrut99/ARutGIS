@@ -47,7 +47,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create tutorial-terrain-tiles --draft --target "$GITHUB_SHA" \
+          gh release create tutorial-terrain-tiles --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
             --title "Tutorial terrain tiles (temporary)" \
             --notes "Temporary cache of AWS Terrain Tiles (Terrarium) for recording a tutorial; deleted after use. Terrain Tiles: Mapzen, AWS Open Data; SRTM, GMTED2010 (USGS), ETOPO1 (NOAA) and others." \
             terrarium-doi-inthanon.zip
