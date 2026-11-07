@@ -1,0 +1,53 @@
+# Temporary: caches the AWS Terrain Tiles (Terrarium) around Doi Inthanon for recording a
+# tutorial video, as a draft release asset. Lives only on this branch; deleted afterwards.
+name: Tutorial terrain tiles
+on:
+  push:
+    branches: [tutorial-terrain-tiles]
+permissions:
+  contents: write
+jobs:
+  tiles:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List tiles
+        shell: python
+        run: |
+          import math
+          def tx(lon, z): return int((lon + 180) / 360 * 2**z)
+          def ty(lat, z):
+              r = math.radians(lat)
+              return int((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * 2**z)
+          boxes = {
+              # All of Thailand, coarse.
+              **{z: (97.0, 106.0, 5.0, 21.0) for z in (4, 5, 6, 7)},
+              # The north.
+              **{z: (96.5, 102.0, 15.0, 21.0) for z in (8, 9)},
+              # Around Doi Inthanon, to the horizon of a tilted view.
+              10: (97.6, 100.8, 16.8, 20.0),
+              11: (97.9, 99.6, 17.9, 19.4),
+              12: (98.2, 98.8, 18.3, 18.9),
+          }
+          out = []
+          for z, (w, e, s, n) in boxes.items():
+              for x in range(tx(w, z), tx(e, z) + 1):
+                  for y in range(ty(n, z), ty(s, z) + 1):
+                      out.append(f"{z}/{x}/{y}")
+          open("tiles.txt", "w").write("\n".join(out) + "\n")
+          print(len(out), "tiles")
+      - name: Download
+        run: |
+          mkdir -p terrarium
+          xargs -P 16 -I{} sh -c 'mkdir -p "terrarium/$(dirname {})" && curl -fsS --retry 3 -o "terrarium/{}.png" "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{}.png" || echo "missing {}"' < tiles.txt
+          find terrarium -name '*.png' | wc -l
+          du -sh terrarium
+          (cd terrarium && zip -q -r ../terrarium-doi-inthanon.zip .)
+          ls -la terrarium-doi-inthanon.zip
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create tutorial-terrain-tiles --draft --target "$GITHUB_SHA" \
+            --title "Tutorial terrain tiles (temporary)" \
+            --notes "Temporary cache of AWS Terrain Tiles (Terrarium) for recording a tutorial; deleted after use. Terrain Tiles: Mapzen, AWS Open Data; SRTM, GMTED2010 (USGS), ETOPO1 (NOAA) and others." \
+            terrarium-doi-inthanon.zip
