@@ -85,11 +85,14 @@ pub fn commands() -> Vec<C> {
             let c = map.center_lonlat();
             let center = Coord::new(f(p, "lon").unwrap_or(c.x).clamp(-180.0, 180.0), f(p, "lat").unwrap_or(c.y).clamp(-85.0, 85.0));
             let width_m = f(p, "widthM").unwrap_or(s.view_size.0 * map.ground_res()).clamp(10.0, 4e7);
+            // Turned and tilted as the view is (a tilted view shows its terrain), unless given.
+            let bearing = rustgis_map::camera::normalize_bearing(f(p, "bearing").unwrap_or(map.camera.bearing));
+            let pitch = rustgis_map::camera::normalize_pitch(f(p, "pitch").unwrap_or(map.camera.pitch));
             let title = ps(p, "title").unwrap_or(&name).to_string();
-            add_page(s, p, title, PageKind::Map { map: name, center, width_m })
+            add_page(s, p, title, PageKind::Map { map: name, center, width_m, bearing, pitch })
         })
         .when(need_presentation)
-        .params(r#"{"presentation"?, "map"?: name (default: the active map, at its current view), "lon"?, "lat"?, "widthM"?: ground width shown (m), "title"?, "at"?: page index}"#),
+        .params(r#"{"presentation"?, "map"?: name (default: the active map, at its current view), "lon"?, "lat"?, "widthM"?: ground width shown (m), "bearing"?: degrees clockwise from north, "pitch"?: tilt in degrees (0 to 85; both default to the view's), "title"?, "at"?: page index}"#),
         C::new("presentation.blankPage", "Blank Page", "Publish › Page", |s, p| {
             let background = super::layout::color(p, "background", Rgba::rgb(0xFF, 0xFF, 0xFF))?;
             let text: String = ps(p, "text").unwrap_or("").chars().take(MAX_TEXT).collect();
@@ -302,7 +305,7 @@ pub fn page_layout(s: &Session, pres: &Presentation, page: &Page) -> Layout {
             }
             l.add("Text", (m, top, w - 2.0 * m, h - top - m), text(body, 20.0, fg, false));
         }
-        PageKind::Map { map, center, width_m } => {
+        PageKind::Map { map, center, width_m, bearing, pitch } => {
             if has_title {
                 l.add("Title", (m, m, w - 2.0 * m, h * 0.12), text(&page.title, 30.0, dark, true));
             }
@@ -322,8 +325,8 @@ pub fn page_layout(s: &Session, pres: &Presentation, page: &Page) -> Layout {
                     extent_of: None,
                     extent_color: rustgis_map::layout::INDICATOR_COLOR,
                     extent_width: rustgis_map::layout::INDICATOR_WIDTH,
-                    bearing: 0.0,
-                    pitch: 0.0,
+                    bearing: *bearing,
+                    pitch: *pitch,
                 },
             );
         }

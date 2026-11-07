@@ -7802,6 +7802,38 @@ fn reports_group_summarise_relate_export_and_reopen() {
 }
 
 #[test]
+fn presentation_map_pages_keep_a_turned_tilted_view() {
+    use rustgis_map::layout::ElementKind;
+    use rustgis_map::presentation::PageKind;
+    let mut s = world();
+    s.run("presentation.new", &json!({"name": "Tour"})).unwrap();
+    s.run("map.goToXY", &json!({"lon": 98.49, "lat": 18.59, "scale": 2_000_000, "bearing": 35, "pitch": 60})).unwrap();
+    s.run("presentation.mapPage", &json!({"title": "Tilted"})).unwrap();
+    s.run("presentation.mapPage", &json!({"title": "Flat", "bearing": 0, "pitch": 0})).unwrap();
+    s.run("presentation.mapPage", &json!({"title": "Odd", "bearing": 400, "pitch": 120})).unwrap();
+    let pres = s.project.presentations[0].clone();
+    let view = |k: usize| match pres.pages[k].kind {
+        PageKind::Map { bearing, pitch, .. } => (bearing, pitch),
+        _ => panic!("page {k} isn't a map"),
+    };
+    assert_eq!(view(1), (35.0, 60.0), "the view as it is");
+    assert_eq!(view(2), (0.0, 0.0), "given");
+    assert_eq!(view(3), (40.0, 85.0), "kept within range");
+    // The page's map frame is drawn turned and tilted.
+    let layout = crate::cmd::presentation::page_layout(&s, &pres, &pres.pages[1]);
+    assert!(
+        layout.elements.iter().any(|e| matches!(e.kind, ElementKind::MapFrame { bearing, pitch, .. } if bearing == 35.0 && pitch == 60.0))
+    );
+    let tilted = crate::cmd::presentation::draw_page(&mut s, 0, 1, 40.0).unwrap();
+    let flat = crate::cmd::presentation::draw_page(&mut s, 0, 2, 40.0).unwrap();
+    assert_ne!(tilted.pixels(), flat.pixels());
+    // A page saved before pages kept the view reads as north up and flat.
+    let old: PageKind =
+        serde_json::from_value(json!({"type": "map", "map": "World", "center": {"x": 0.0, "y": 0.0}, "widthM": 1000.0})).unwrap();
+    assert!(matches!(old, PageKind::Map { bearing, pitch, .. } if bearing == 0.0 && pitch == 0.0));
+}
+
+#[test]
 fn presentations_and_notebooks() {
     let dir = std::env::temp_dir().join(format!("rustgis-pres-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

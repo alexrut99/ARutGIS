@@ -353,7 +353,8 @@ previews it and sets it up.
 **Publish › New Presentation** starts a presentation with a title page; the **Presentation** pane
 previews, edits and plays it.
 
-- **Page**: a **Map** page shows the map view as it is now, a **Blank** page shows text on a
+- **Page**: a **Map** page shows the map view as it is now (turned and tilted as it is, so a
+  tilted view keeps its 3D terrain), a **Blank** page shows text on a
   coloured page, an **Image** page a picture with a caption, and a **Video** page a video file or
   URL with an optional poster picture.
 - Each page has a title, speaker notes and a duration (for **Play**), and can move up or down.
