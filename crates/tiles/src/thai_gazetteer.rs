@@ -332,10 +332,32 @@ impl Gazetteer {
         let latin = query.chars().any(|c| c.is_ascii_alphabetic()) && !query.chars().any(|c| c.is_alphabetic() && !c.is_ascii());
         let mut found = self.find(&words(query, true), limit);
         if found.is_empty() && latin {
-            // English names word by word: `Chiang Mai Suthep`.
-            found = self.find(&words(query, false), limit);
+            // English names without commas between them: `Suthep Chiang Mai`, the words of a
+            // name of several (`Chiang Mai`) joined.
+            found = self.find(&self.join_names(words(query, false)), limit);
         }
         found.into_iter().map(|f| self.place(&f, latin)).collect()
+    }
+
+    /// Words joined with the ones after them while together they are a name in the file (the
+    /// longest such run), so a name of several words is one term.
+    fn join_names(&self, words: Vec<Word>) -> Vec<Word> {
+        let names: std::collections::HashSet<&str> = self.tambons.iter().flat_map(|t| t.keys.iter().map(String::as_str)).collect();
+        let mut out = Vec::with_capacity(words.len());
+        let mut i = 0;
+        while let Some(first) = words.get(i) {
+            let (mut end, mut joined, mut acc) = (i, first.key.clone(), first.key.clone());
+            // A word a marker sets apart starts a name of its own.
+            for (j, w) in words.iter().enumerate().skip(i + 1).take_while(|(_, w)| w.want.is_none()) {
+                acc.push_str(&w.key);
+                if names.contains(acc.as_str()) {
+                    (end, joined) = (j, acc.clone());
+                }
+            }
+            out.push(Word { key: joined, want: first.want });
+            i = end + 1;
+        }
+        out
     }
 
     fn find(&self, words: &[Word], limit: usize) -> Vec<Found> {
@@ -511,6 +533,11 @@ mod tests {
         assert_eq!(names(&g, "chiang mai"), ["Chiang Mai"]);
         assert_eq!(names(&g, "Tambon Suthep"), ["Suthep, Mueang Chiang Mai, Chiang Mai 50200"]);
         assert_eq!(names(&g, "Bangkok"), ["Bangkok"]);
+        // Names of several words without commas between them, in either order.
+        assert_eq!(names(&g, "Suthep Chiang Mai"), ["Suthep, Mueang Chiang Mai, Chiang Mai 50200"]);
+        assert_eq!(names(&g, "Chiang Mai Suthep"), ["Suthep, Mueang Chiang Mai, Chiang Mai 50200"]);
+        assert_eq!(names(&g, "Ban Luang Nan"), ["Ban Luang, Mueang Nan, Nan 55000"]);
+        assert_eq!(names(&g, "Mueang Chiang Mai"), ["Mueang Chiang Mai, Chiang Mai"]);
         assert!(names(&g, "London").is_empty());
     }
 
