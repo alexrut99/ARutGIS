@@ -51,6 +51,7 @@ fn find_place(s: &mut Session, p: &Value) -> CmdResult {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let places = crate::render::rustgis_tiles::geocode::search_blocking(&g, query, limit)?;
+        thai_notice(s);
         if super::b(p, "go").unwrap_or(true)
             && let Some(first) = places.first()
         {
@@ -126,6 +127,14 @@ pub fn addresses(s: &Session, p: &Value) -> Result<(Vec<String>, Vec<String>), S
     Ok((rows, distinct))
 }
 
+/// What Thailand's subdistricts lack (features left out, postcodes missing), said once when the
+/// file is read.
+pub fn thai_notice(s: &mut Session) {
+    if let Some(n) = crate::render::rustgis_tiles::thai_gazetteer::take_notice() {
+        s.notify(n, false);
+    }
+}
+
 /// The addresses past what a run may send.
 pub fn check_batch(g: &Geocoder, distinct: usize) -> Result<(), String> {
     if distinct > g.batch_limit() {
@@ -178,7 +187,9 @@ fn geocode(s: &mut Session, p: &Value) -> CmdResult {
         Some(v) => given_places(v)?,
         None => {
             check_batch(&g, distinct.len())?;
-            let l = lookup(&g, &distinct)?;
+            let l = lookup(&g, &distinct);
+            thai_notice(s);
+            let l = l?;
             if l.failed > 0 {
                 s.notify(
                     format!(

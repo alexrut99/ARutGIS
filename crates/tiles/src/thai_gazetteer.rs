@@ -46,6 +46,24 @@ pub struct Tambon {
 #[derive(Debug, Default)]
 pub struct Gazetteer {
     pub tambons: Vec<Tambon>,
+    /// Features left out, having no Thai names or no outline: they can't be found.
+    pub skipped: usize,
+    /// Subdistricts with no postcode: a postcode search can't find them.
+    pub without_postcode: usize,
+}
+
+impl Gazetteer {
+    /// What the file lacks, said once when it is read: `None` when it is whole.
+    pub fn notice(&self) -> Option<String> {
+        let mut parts = Vec::new();
+        if self.skipped > 0 {
+            parts.push(format!("{} subdistricts in the file have no Thai name or no outline and can't be found", self.skipped));
+        }
+        if self.without_postcode > 0 {
+            parts.push(format!("{} have no postcode, so a postcode search doesn't find them", self.without_postcode));
+        }
+        (!parts.is_empty()).then(|| format!("Thai place search: {}", parts.join("; ")))
+    }
 }
 
 /// The names as compared: lower case, without spaces, dots or the abbreviation mark ฯ.
@@ -77,13 +95,18 @@ impl Gazetteer {
         let v: Value = serde_json::from_slice(bytes).map_err(|_| "the subdistricts aren't GeoJSON".to_string())?;
         let features = v.get("features").and_then(Value::as_array).ok_or("the subdistricts aren't a GeoJSON feature collection")?;
         let mut tambons = Vec::with_capacity(features.len());
+        let mut skipped = 0;
         for f in features {
-            let Some(p) = f.get("properties") else { continue };
+            let Some(p) = f.get("properties") else {
+                skipped += 1;
+                continue;
+            };
             let mut bbox = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
             if let Some(c) = f.get("geometry").and_then(|g| g.get("coordinates")) {
                 extent(c, &mut bbox);
             }
             if !bbox.iter().all(|x| x.is_finite()) {
+                skipped += 1;
                 continue;
             }
             let num = |k: &str| p.get(k).and_then(Value::as_f64).filter(|x| x.is_finite());
@@ -102,6 +125,7 @@ impl Gazetteer {
             let (tam_th, tam_en, amp_th, amp_en, pro_th, pro_en) =
                 (text(p, "tam_th"), text(p, "tam_en"), text(p, "amp_th"), text(p, "amp_en"), text(p, "pro_th"), text(p, "pro_en"));
             if tam_th.is_empty() || amp_th.is_empty() || pro_th.is_empty() {
+                skipped += 1;
                 continue;
             }
             let keys = [key(&tam_th), key(&tam_en), key(&amp_th), key(&amp_en), key(&pro_th), key(&pro_en)];
@@ -123,7 +147,8 @@ impl Gazetteer {
         if tambons.is_empty() {
             return Err("the subdistricts file has no subdistricts".into());
         }
-        Ok(Gazetteer { tambons })
+        let without_postcode = tambons.iter().filter(|t| t.postcodes.is_empty()).count();
+        Ok(Gazetteer { tambons, skipped, without_postcode })
     }
 }
 
@@ -135,11 +160,22 @@ pub fn loaded(url: &str) -> Option<Arc<Gazetteer>> {
     LOADED.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|(u, _)| u == url).map(|(_, g)| g.clone())
 }
 
-/// Reads and keeps the subdistricts downloaded from `url`.
+/// What the file just read lacks, until it is taken to be shown (once).
+static NOTICE: Mutex<Option<String>> = Mutex::new(None);
+
+/// Reads and keeps the subdistricts downloaded from `url`; what they lack waits in
+/// [`take_notice`].
 pub fn load(url: &str, bytes: &[u8]) -> Result<Arc<Gazetteer>, String> {
     let g = Arc::new(Gazetteer::parse(bytes)?);
+    *NOTICE.lock().unwrap_or_else(|e| e.into_inner()) = g.notice();
     *LOADED.lock().unwrap_or_else(|e| e.into_inner()) = Some((url.to_string(), g.clone()));
     Ok(g)
+}
+
+/// What the subdistricts read last lack (features left out, postcodes missing), once: the app
+/// and the command line show it as a notice.
+pub fn take_notice() -> Option<String> {
+    NOTICE.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
 /// The level a word asks for.
@@ -476,6 +512,29 @@ mod tests {
         assert_eq!(names(&g, "Tambon Suthep"), ["Suthep, Mueang Chiang Mai, Chiang Mai 50200"]);
         assert_eq!(names(&g, "Bangkok"), ["Bangkok"]);
         assert!(names(&g, "London").is_empty());
+    }
+
+    #[test]
+    fn what_the_file_lacks_is_counted() {
+        // The sample is whole: nothing to say.
+        let g = sample();
+        assert_eq!((g.skipped, g.without_postcode), (0, 0));
+        assert_eq!(g.notice(), None);
+        // A feature without names, one without an outline, one without a postcode.
+        let json = r#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"tam_th":"ก","amp_th":"ข","pro_th":"ค","postcode":[]},"geometry":{"type":"Point","coordinates":[100,14]}},
+            {"type":"Feature","properties":{"tam_th":"","amp_th":"ข","pro_th":"ค"},"geometry":{"type":"Point","coordinates":[100,14]}},
+            {"type":"Feature","properties":{"tam_th":"ง","amp_th":"ข","pro_th":"ค","postcode":["10000"]},"geometry":null},
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[100,14]}}
+        ]}"#;
+        let g = Gazetteer::parse(json.as_bytes()).unwrap();
+        assert_eq!((g.tambons.len(), g.skipped, g.without_postcode), (1, 3, 1));
+        let n = g.notice().unwrap();
+        assert!(n.contains("3 subdistricts") && n.contains("1 have no postcode"), "{n}");
+        // Read through `load`, the notice waits to be shown once.
+        load("test://lacking", json.as_bytes()).unwrap();
+        assert!(take_notice().is_some_and(|t| t.contains("3 subdistricts")));
+        assert_eq!(take_notice(), None);
     }
 
     #[test]

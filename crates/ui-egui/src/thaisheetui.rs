@@ -2,7 +2,6 @@
 //! sheet by its number, and a grid of sheets where the map is.
 
 use egui::vec2;
-use rustgis_engine::geom::Coord;
 use rustgis_engine::map::thai_sheets::{self as ts, Datum, Scale};
 use serde_json::json;
 
@@ -65,8 +64,7 @@ pub fn thai_sheets(app: &mut RustGisApp, ui: &mut egui::Ui) -> bool {
 
     ui.add_space(6.0);
     ui.strong(tl!("At the map's centre"));
-    let e = rustgis_engine::cmd::workspace::view_extent(&app.session);
-    let centre = (!e.is_empty()).then(|| Coord::new((e.min_x + e.max_x) / 2.0, (e.min_y + e.max_y) / 2.0));
+    let centre = rustgis_engine::cmd::thai_sheets::centre(&app.session).ok();
     match centre.and_then(|c| Some((c, ts::to_datum(c, d)?))) {
         Some((c, on)) => {
             let fifty = ts::sheet_50k(on);

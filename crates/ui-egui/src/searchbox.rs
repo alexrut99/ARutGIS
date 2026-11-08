@@ -69,7 +69,8 @@ fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
     let Some((g, slot)) = &st.pending else { return };
     match take(slot) {
         Some(r) => {
-            st.places = match r.and_then(|b| g.answer(&st.searched, PLACES, &b)) {
+            let answered = r.and_then(|b| g.answer(&st.searched, PLACES, &b));
+            st.places = match answered {
                 Ok(p) => {
                     // The first place is the one Enter picks now.
                     if !p.is_empty() {
@@ -82,6 +83,7 @@ fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
             };
             st.pending = None;
             st.open = true;
+            rustgis_engine::cmd::geocode::thai_notice(&mut app.session);
         }
         None => ctx.request_repaint_after(std::time::Duration::from_millis(100)),
     }

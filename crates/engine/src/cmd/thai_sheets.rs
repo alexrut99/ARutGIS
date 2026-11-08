@@ -40,13 +40,11 @@ fn zone(p: &Value) -> Result<Option<u8>, String> {
     }
 }
 
-/// The map's centre in WGS 84.
-fn centre(s: &Session) -> Result<Coord, String> {
-    let e = super::workspace::view_extent(s);
-    if e.is_empty() {
-        return Err("the map's extent isn't known; give lon and lat".into());
-    }
-    Ok(Coord::new((e.min_x + e.max_x) / 2.0, (e.min_y + e.max_y) / 2.0))
+/// The map's centre in WGS 84: the camera's, which the middle of the view's longitude/latitude
+/// extent isn't on a Web Mercator map (latitudes stretch towards the poles).
+pub fn centre(s: &Session) -> Result<Coord, String> {
+    let m = s.map();
+    m.to_lonlat(m.camera.center).filter(|c| c.is_finite()).ok_or_else(|| "the map's centre isn't known; give lon and lat".to_string())
 }
 
 fn sheet50k_json(sh: &Sheet50k, d: Datum) -> Value {
@@ -326,6 +324,19 @@ fn sheet_grid(s: &mut Session, p: &Value) -> CmdResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_centre_is_the_cameras() {
+        // A view from 9.9°N to 22°N: the middle of its latitudes (15.95°N) is on another sheet
+        // than the camera's centre (about 16.04°N) on Web Mercator.
+        let mut s = Session::new(crate::Project::default());
+        s.view_size = (800.0, 800.0);
+        s.run("map.goToXY", &serde_json::json!({"lon": 102.6, "lat": 16.04, "scale": 1000000})).unwrap();
+        let c = centre(&s).unwrap();
+        assert!((c.y - 16.04).abs() < 1e-6 && (c.x - 102.6).abs() < 1e-6, "{c:?}");
+        let v = s.run("map.thaiSheet", &serde_json::json!({})).unwrap();
+        assert_eq!(v["sheet50k"]["sheet"], "5541 III");
+    }
 
     #[test]
     fn sheet_numbers_read() {

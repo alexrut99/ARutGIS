@@ -69,6 +69,7 @@ pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
         match take(slot) {
             Some(r) => {
                 let r = r.and_then(|b| g.answer(query, 8, &b));
+                rustgis_engine::cmd::geocode::thai_notice(&mut app.session);
                 st.search = None;
                 st.searching = false;
                 match r {
@@ -89,7 +90,9 @@ pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
             return;
         };
-        match r.and_then(|b| job.g.answer(q, 1, &b)) {
+        let answered = r.and_then(|b| job.g.answer(q, 1, &b));
+        rustgis_engine::cmd::geocode::thai_notice(&mut app.session);
+        match answered {
             Ok(places) => {
                 let place = places.into_iter().next();
                 job.found.insert(q.clone(), place.map(|p| json!({"lon": p.lon, "lat": p.lat, "name": p.name})).unwrap_or(Value::Null));
