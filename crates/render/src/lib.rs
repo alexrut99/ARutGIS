@@ -2002,8 +2002,8 @@ fn drape_terrain(pm: &mut Pixmap, view: &View, map: &Map, bands: &[(View, (f64, 
     let n = terrain::CELLS;
     for (bi, (v, (d0, d1), pic)) in bands.iter().enumerate() {
         let kb = f64::from(pic.width()) / v.width.max(1e-9);
-        // A band's grid: screen point, picture point and depth of each vertex, and where the
-        // vertex's ground would be at sea level (what a skirt hangs down to).
+        // A band's grid: screen point, picture point and depth of each vertex, and where a point
+        // a little below it lies (the way a skirt hangs down from it, whatever its height).
         type Vtx = ((f64, f64), (f64, f64), f64, (f64, f64));
         let grid: Vec<Option<Vtx>> = (0..=n)
             .flat_map(|j| (0..=n).map(move |i| (i, j)))
@@ -2012,8 +2012,9 @@ fn drape_terrain(pm: &mut Pixmap, view: &View, map: &Map, bands: &[(View, (f64, 
                 let m = v.camera.to_map(lx, ly, v.width, v.height);
                 let depth = 1.0 / cam.depth_scale(m, h)?;
                 let (u, gv) = cam.ground_px(m);
-                let (sx, sy) = cam.project_raised(u, gv, ground.up_px(m, &cam), w, h)?;
-                let low = cam.project_raised(u, gv, 0.0, w, h).filter(|(x, y)| x.is_finite() && y.is_finite()).unwrap_or((sx, sy));
+                let up = ground.up_px(m, &cam);
+                let (sx, sy) = cam.project_raised(u, gv, up, w, h)?;
+                let low = cam.project_raised(u, gv, up - 100.0, w, h).filter(|(x, y)| x.is_finite() && y.is_finite()).unwrap_or((sx, sy));
                 (sx.is_finite() && sy.is_finite()).then_some(((sx * k, sy * k), (lx * kb, ly * kb), depth, (low.0 * k, low.1 * k)))
             })
             .collect();
@@ -2061,14 +2062,14 @@ fn drape_terrain(pm: &mut Pixmap, view: &View, map: &Map, bands: &[(View, (f64, 
             continue;
         }
         // A skirt down from the edge p–q: two triangles, screen and picture corners, the picture's
-        // strip along the edge stretched down it. It reaches down toward sea level, no farther
-        // than a gap between the bands' grids could be (a few times the edge's length).
+        // strip along the edge stretched down it, as far down as a gap between the bands' grids
+        // could reach (a few times the edge's length).
         let skirt = |p: Vtx, q: Vtx| -> Option<([(f64, f64); 3], [(f64, f64); 3], [(f64, f64); 3], [(f64, f64); 3])> {
             let reach = 2.0 * (q.0.0 - p.0.0).hypot(q.0.1 - p.0.1) + 8.0 * k;
             let down = |v: Vtx| {
                 let (dx, dy) = (v.3.0 - v.0.0, v.3.1 - v.0.1);
                 let len = dx.hypot(dy);
-                let s = if len > reach { reach / len } else { 1.0 };
+                let s = if len > 1e-9 { reach / len } else { 0.0 };
                 (v.0.0 + dx * s, v.0.1 + dy * s)
             };
             let (pl, ql) = (down(p), down(q));
