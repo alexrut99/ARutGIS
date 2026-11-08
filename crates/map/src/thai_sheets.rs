@@ -87,24 +87,25 @@ impl Datum {
 
 /// Converts between two proj4 systems; geographic ones in degrees.
 struct Convert {
-    from: proj4rs::Proj,
-    to: proj4rs::Proj,
+    /// The two systems; the definitions are this module's own, so they always parse (a failure
+    /// would convert nothing).
+    systems: Option<(proj4rs::Proj, proj4rs::Proj)>,
 }
 
 impl Convert {
     fn new(from: &str, to: &str) -> Convert {
-        // The definitions are this module's own: they always parse.
-        let p = |d: &str| proj4rs::Proj::from_proj_string(d).expect("a valid proj4 definition");
-        Convert { from: p(from), to: p(to) }
+        let p = |d: &str| proj4rs::Proj::from_proj_string(d).ok();
+        Convert { systems: p(from).zip(p(to)) }
     }
 
     fn run(&self, c: Coord) -> Option<Coord> {
+        let (from, to) = self.systems.as_ref()?;
         if !c.is_finite() {
             return None;
         }
-        let mut p = if self.from.is_latlong() { (c.x.to_radians(), c.y.to_radians(), 0.0) } else { (c.x, c.y, 0.0) };
-        proj4rs::transform::transform(&self.from, &self.to, &mut p).ok()?;
-        let out = if self.to.is_latlong() { Coord::new(p.0.to_degrees(), p.1.to_degrees()) } else { Coord::new(p.0, p.1) };
+        let mut p = if from.is_latlong() { (c.x.to_radians(), c.y.to_radians(), 0.0) } else { (c.x, c.y, 0.0) };
+        proj4rs::transform::transform(from, to, &mut p).ok()?;
+        let out = if to.is_latlong() { Coord::new(p.0.to_degrees(), p.1.to_degrees()) } else { Coord::new(p.0, p.1) };
         out.is_finite().then_some(out)
     }
 }

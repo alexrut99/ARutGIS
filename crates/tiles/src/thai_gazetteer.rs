@@ -234,7 +234,7 @@ fn words(query: &str, latin_whole: bool) -> Vec<Word> {
                 pending = Some(l);
                 continue;
             }
-            let is_latin = w.chars().all(|c| c.is_ascii());
+            let is_latin = w.is_ascii();
             if is_latin && latin_whole && !w.chars().all(|c| c.is_ascii_digit()) {
                 latin.push(w);
                 continue;
@@ -316,7 +316,7 @@ impl Gazetteer {
                 // The best field the word names, the more local one on a tie.
                 let mut best: Option<(u32, Want)> = None;
                 if postcode {
-                    if w.want.is_none() && t.postcodes.iter().any(|p| *p == w.key) {
+                    if w.want.is_none() && t.postcodes.contains(&w.key) {
                         best = Some((3, Want::Tambon));
                     }
                 } else {
