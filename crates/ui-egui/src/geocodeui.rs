@@ -17,7 +17,7 @@ type Answer = Slot<Result<Vec<u8>, String>>;
 #[derive(Default)]
 pub struct State {
     /// A Find Place search waiting for its answer.
-    search: Option<(Geocoder, Answer)>,
+    search: Option<(Geocoder, String, Answer)>,
     /// The places the last search found.
     pub places: Vec<Place>,
     /// Whether a search is under way.
@@ -48,6 +48,16 @@ fn fetch(url: &str) -> Answer {
     slot
 }
 
+/// A search's answer: downloaded, or (Thailand's names, once read) answered at once.
+fn ask(g: &Geocoder, query: &str, limit: usize) -> Answer {
+    if g.needs_download() {
+        return fetch(&g.url(query, limit));
+    }
+    let slot: Answer = Slot::default();
+    *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(Ok(Vec::new()));
+    slot
+}
+
 fn take(slot: &Answer) -> Option<Result<Vec<u8>, String>> {
     slot.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
@@ -55,10 +65,11 @@ fn take(slot: &Answer) -> Option<Result<Vec<u8>, String>> {
 /// Lands searches and moves geocoding runs along.
 pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
     let st = &mut app.ui.geocode;
-    if let Some((g, slot)) = &st.search {
+    if let Some((g, query, slot)) = &st.search {
         match take(slot) {
             Some(r) => {
-                let r = r.and_then(|b| g.parse(&b));
+                let r = r.and_then(|b| g.answer(query, 8, &b));
+                rustgis_engine::cmd::geocode::thai_notice(&mut app.session);
                 st.search = None;
                 st.searching = false;
                 match r {
@@ -79,7 +90,9 @@ pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
             return;
         };
-        match r.and_then(|b| job.g.parse(&b)) {
+        let answered = r.and_then(|b| job.g.answer(q, 1, &b));
+        rustgis_engine::cmd::geocode::thai_notice(&mut app.session);
+        match answered {
             Ok(places) => {
                 let place = places.into_iter().next();
                 job.found.insert(q.clone(), place.map(|p| json!({"lon": p.lon, "lat": p.lat, "name": p.name})).unwrap_or(Value::Null));
@@ -103,7 +116,7 @@ pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
     if let Some(q) = job.queue.get(job.next) {
         let due = job.sent.is_none_or(|t| t.elapsed().as_millis() as u64 >= job.g.spacing_ms());
         if due {
-            job.waiting = Some((q.clone(), fetch(&job.g.url(q, 1))));
+            job.waiting = Some((q.clone(), ask(&job.g, q, 1)));
             job.sent = Some(Instant::now());
             job.next += 1;
         }
@@ -150,8 +163,8 @@ pub fn find_place(app: &mut RustGisApp, ui: &mut egui::Ui) -> bool {
     if go && !app.dialogs.a.trim().is_empty() {
         match Geocoder::new(Some(app.dialogs.mode), Some(app.dialogs.b.as_str())) {
             Ok(g) => {
-                let slot = fetch(&g.url(&app.dialogs.a, 8));
-                app.ui.geocode.search = Some((g, slot));
+                let slot = ask(&g, &app.dialogs.a, 8);
+                app.ui.geocode.search = Some((g, app.dialogs.a.clone(), slot));
                 app.ui.geocode.searching = true;
                 app.ui.geocode.places.clear();
                 app.dialogs.error = None;
@@ -173,7 +186,12 @@ pub fn find_place(app: &mut RustGisApp, ui: &mut egui::Ui) -> bool {
             }
         }
     });
-    let attribution = egui::RichText::new(tl!("Search results © OpenStreetMap contributors")).small().weak();
+    let credit = if app.dialogs.mode == "thai" {
+        tl!("Names and postcodes: Department of Provincial Administration, via OpenGISData-Thailand (CC BY 4.0)")
+    } else {
+        tl!("Search results © OpenStreetMap contributors")
+    };
+    let attribution = egui::RichText::new(credit).small().weak();
     ui.label(attribution);
     if let Some(p) = picked.and_then(|i| app.ui.geocode.places.get(i)).cloned() {
         rustgis_engine::cmd::geocode::go_to_place(&mut app.session, &p);
@@ -186,26 +204,43 @@ pub fn find_place(app: &mut RustGisApp, ui: &mut egui::Ui) -> bool {
 /// The geocoder choice shared by both dialogs: OpenStreetMap's Nominatim, Photon, or a server of
 /// one's own.
 fn provider(app: &mut RustGisApp, ui: &mut egui::Ui) {
-    if !matches!(app.dialogs.mode, "nominatim" | "photon") {
+    if !matches!(app.dialogs.mode, "nominatim" | "photon" | "thai") {
         app.dialogs.mode = "nominatim";
     }
     egui::Grid::new("geocoder").num_columns(2).spacing(vec2(10.0, 8.0)).show(ui, |ui| {
         let input_label = ui.label(tl!("Geocoder"));
         egui::ComboBox::from_id_salt("geocoder_kind")
-            .selected_text(if app.dialogs.mode == "photon" { "Photon" } else { "Nominatim" })
+            .selected_text(match app.dialogs.mode {
+                "photon" => "Photon",
+                "thai" => i18n::t("Thai subdistricts, districts and provinces"),
+                _ => "Nominatim",
+            })
             .width(200.0)
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut app.dialogs.mode, "nominatim", "Nominatim");
                 ui.selectable_value(&mut app.dialogs.mode, "photon", "Photon");
+                ui.selectable_value(&mut app.dialogs.mode, "thai", i18n::t("Thai subdistricts, districts and provinces"));
             })
             .response
             .labelled_by(input_label.id);
         ui.end_row();
-        let input_label = ui.label(tl!("Server"));
-        ui.add(egui::TextEdit::singleline(&mut app.dialogs.b).hint_text(tl!("OpenStreetMap's public server")).desired_width(280.0))
-            .labelled_by(input_label.id);
-        ui.end_row();
+        if app.dialogs.mode != "thai" {
+            let input_label = ui.label(tl!("Server"));
+            ui.add(egui::TextEdit::singleline(&mut app.dialogs.b).hint_text(tl!("OpenStreetMap's public server")).desired_width(280.0))
+                .labelled_by(input_label.id);
+            ui.end_row();
+        }
     });
+    if app.dialogs.mode == "thai" {
+        // Its own names, not a server: none is typed.
+        app.dialogs.b.clear();
+        ui.label(
+            egui::RichText::new(tl!(
+                "Finds a subdistrict, district or province by its name (ต.สุเทพ อ.เมือง จ.เชียงใหม่) or a postcode (50200), from the Department of Provincial Administration's boundaries (CC BY 4.0), downloaded the first time (about 11 MB)."
+            ))
+            .weak(),
+        );
+    }
 }
 
 /// Geocode Addresses: a table or layer, its address fields and the geocoder; the run goes on

@@ -11,10 +11,10 @@ use crate::{CmdResult, CommandSpec as C, Session};
 pub fn commands() -> Vec<C> {
     vec![
         C::new("map.findPlace", "By Place or Address…", "Home › Navigate › Locate", find_place).params(
-            r#"{"query": "a place or an address", "provider"?: "nominatim" (OpenStreetMap, default) | "photon", "url"?: "a geocoding server of your own", "limit"?: 1–20, "go"?: bool (zooms to the first, default true)}"#,
+            r#"{"query": "a place or an address", "provider"?: "nominatim" (OpenStreetMap, default) | "photon" | "thai" (Thailand's subdistricts, districts and provinces by name or postcode: ต.สุเทพ อ.เมือง จ.เชียงใหม่, 50200), "url"?: "a geocoding server of your own", "limit"?: 1–20, "go"?: bool (zooms to the first, default true)}"#,
         ),
         C::new("layer.geocode", "Geocode Addresses", "Home › Add › Add Data", geocode).params(
-            r#"{"table"?: name|id (a standalone table, such as a CSV of addresses), "layer"?: name|id (or the active layer), "address": field | [fields] (joined with commas, such as street, city, country), "provider"?: "nominatim" | "photon", "url"?: "a geocoding server of your own (more than 100 addresses)", "name"?: text, "places"?: "answers already looked up, {address: {lon, lat, name} | null} (the app's background run; nothing is fetched)"}"#,
+            r#"{"table"?: name|id (a standalone table, such as a CSV of addresses), "layer"?: name|id (or the active layer), "address": field | [fields] (joined with commas, such as street, city, country), "provider"?: "nominatim" | "photon" | "thai", "url"?: "a geocoding server of your own (more than 100 addresses)", "name"?: text, "places"?: "answers already looked up, {address: {lon, lat, name} | null} (the app's background run; nothing is fetched)"}"#,
         ),
     ]
 }
@@ -51,6 +51,7 @@ fn find_place(s: &mut Session, p: &Value) -> CmdResult {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let places = crate::render::rustgis_tiles::geocode::search_blocking(&g, query, limit)?;
+        thai_notice(s);
         if super::b(p, "go").unwrap_or(true)
             && let Some(first) = places.first()
         {
@@ -126,6 +127,14 @@ pub fn addresses(s: &Session, p: &Value) -> Result<(Vec<String>, Vec<String>), S
     Ok((rows, distinct))
 }
 
+/// What Thailand's subdistricts lack (features left out, postcodes missing), said once when the
+/// file is read.
+pub fn thai_notice(s: &mut Session) {
+    if let Some(n) = crate::render::rustgis_tiles::thai_gazetteer::take_notice() {
+        s.notify(n, false);
+    }
+}
+
 /// The addresses past what a run may send.
 pub fn check_batch(g: &Geocoder, distinct: usize) -> Result<(), String> {
     if distinct > g.batch_limit() {
@@ -178,7 +187,9 @@ fn geocode(s: &mut Session, p: &Value) -> CmdResult {
         Some(v) => given_places(v)?,
         None => {
             check_batch(&g, distinct.len())?;
-            let l = lookup(&g, &distinct)?;
+            let l = lookup(&g, &distinct);
+            thai_notice(s);
+            let l = l?;
             if l.failed > 0 {
                 s.notify(
                     format!(

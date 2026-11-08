@@ -434,6 +434,7 @@ fn home_tab(app: &mut RustGisApp, ui: &mut Ui) {
             small_menu(ui, app, "search", "Locate", "Find a place by coordinates, name, or address.", |ui, app| {
                 menu_item(ui, app, "goto_xy", "By Coordinates…", "ui.dialog", json!({"name": "goToXY"}));
                 menu_item(ui, app, "search", "By Place or Address…", "ui.dialog", json!({"name": "findPlace"}));
+                menu_item(ui, app, "graticule", "Thai Map Sheets…", "ui.dialog", json!({"name": "thaiSheets"}));
             });
         });
         let on = app.ui.right == Some(crate::RightPane::Directions);

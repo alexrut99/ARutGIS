@@ -24,6 +24,7 @@ pub mod report;
 pub mod source;
 pub mod symbol_by;
 pub mod symbology;
+pub mod thai_sheets;
 pub mod tiles;
 pub mod time;
 pub mod view;
