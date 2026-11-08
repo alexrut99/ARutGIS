@@ -785,6 +785,7 @@ fn search_action(id: &str) -> Option<SearchAction> {
         "map.rename" => Dialog("renameMap"),
         "map.goToXY" => Dialog("goToXY"),
         "map.findPlace" => Dialog("findPlace"),
+        "map.thaiSheet" | "map.goToThaiSheet" | "layer.thaiSheetGrid" => Dialog("thaiSheets"),
         "map.camera" | "map.setScale" => Dialog("camera"),
         "map.basemap" => Dialog("basemap"),
         "map.body" => Dialog("body"),

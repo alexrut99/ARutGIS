@@ -69,7 +69,7 @@ fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
     let Some((g, slot)) = &st.pending else { return };
     match take(slot) {
         Some(r) => {
-            st.places = match r.and_then(|b| g.parse(&b)) {
+            st.places = match r.and_then(|b| g.answer(&st.searched, PLACES, &b)) {
                 Ok(p) => {
                     // The first place is the one Enter picks now.
                     if !p.is_empty() {
@@ -308,7 +308,13 @@ fn list_area(app: &mut RustGisApp, ui: &Ui, frame_r: Rect, list: &[Row], t: &Tok
                 if matches!(st.places, Places::Found(_)) {
                     ui.horizontal(|ui| {
                         ui.add_space(10.0);
-                        ui.label(egui::RichText::new(tl!("Search results © OpenStreetMap contributors")).small().weak());
+                        // Thai names answer what reads as one (the same test the search made).
+                        let credit = if rustgis_engine::render::rustgis_tiles::thai_gazetteer::looks_administrative(&st.searched) {
+                            tl!("Names and postcodes: Department of Provincial Administration, via OpenGISData-Thailand (CC BY 4.0)")
+                        } else {
+                            tl!("Search results © OpenStreetMap contributors")
+                        };
+                        ui.label(egui::RichText::new(credit).small().weak());
                     });
                 }
             });
@@ -397,15 +403,22 @@ fn pick(app: &mut RustGisApp, row: Row) {
     let st = &mut app.ui.search;
     match row {
         Row::SearchPlaces => {
-            match Geocoder::new(None, None) {
+            // A Thai subdistrict, district or province (ต. อ. จ.) or a postcode is looked up in
+            // Thailand's names; anything else on OpenStreetMap.
+            let thai = rustgis_engine::render::rustgis_tiles::thai_gazetteer::looks_administrative(&st.searched);
+            match Geocoder::new(thai.then_some("thai"), None) {
                 Ok(g) => {
                     let slot: Answer = crate::Slot::default();
                     let land = slot.clone();
-                    let url = g.url(&st.searched, PLACES);
-                    rustgis_engine::render::rustgis_tiles::cache::download(
-                        &url,
-                        Box::new(move |r| *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(r)),
-                    );
+                    if g.needs_download() {
+                        let url = g.url(&st.searched, PLACES);
+                        rustgis_engine::render::rustgis_tiles::cache::download(
+                            &url,
+                            Box::new(move |r| *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(r)),
+                        );
+                    } else {
+                        *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(Ok(Vec::new()));
+                    }
                     st.pending = Some((g, slot));
                     st.places = Places::Searching;
                     st.open = true;

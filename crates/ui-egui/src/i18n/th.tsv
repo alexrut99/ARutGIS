@@ -4485,3 +4485,32 @@ Measurement units must be metric, rai or imperial	หน่วยการวั
 {rai} rai	{rai} ไร่
 {rai} rai {ngan} ngan {wa} sq wa	{rai} ไร่ {ngan} งาน {wa} ตร.วา
 Rounded {n} areas in {field} to 0.1 square wa (0.4 m²), as a title deed gives them	ปัดพื้นที่ {n} รายการในฟิลด์ {field} เป็นทศนิยม 1 ตำแหน่งของตารางวา (0.4 ตร.ม.) ตามรูปแบบโฉนด
+Thai Map Sheets	ระวางแผนที่
+Thai Map Sheets…	ระวางแผนที่…
+Thai Map Sheet Number	เลขระวางแผนที่
+Go To Thai Map Sheet	ไปที่ระวางแผนที่
+Thai Map Sheet Grid	กริดระวางแผนที่
+Sheet numbers of the Royal Thai Survey Department's 1:50,000 maps and the Department of Lands' UTM cadastral maps, worked out from where a point is.	เลขระวางแผนที่ 1:50,000 ของกรมแผนที่ทหาร และระวาง UTM ของกรมที่ดิน คำนวณจากตำแหน่งบนแผนที่ ไม่ต้องดาวน์โหลดข้อมูล
+WGS 84 (series L7018, today's cadastral sheets)	WGS 84 (ชุด L7018 และระวางกรมที่ดินปัจจุบัน)
+Indian 1975 (series L7017, older cadastral sheets)	Indian 1975 (ชุด L7017 และระวางกรมที่ดินรุ่นเก่า)
+At the map's centre	ที่กึ่งกลางแผนที่
+no printed sheet here	บริเวณนี้ไม่มีระวางที่พิมพ์
+Zone	โซน
+The map's extent isn't known yet.	ยังไม่ทราบขอบเขตของแผนที่
+Go to a sheet	ไปที่ระวาง
+Parts at 1:2,000	แผ่นย่อย 1:2,000
+Parts at 1:1,000	แผ่นย่อย 1:1,000
+Parts at 1:500	แผ่นย่อย 1:500
+Sheet grid	กริดระวาง
+1:50,000 (RTSD topographic)	1:50,000 (แผนที่ภูมิประเทศ กรมแผนที่ทหาร)
+1:4,000 (Department of Lands)	1:4,000 (กรมที่ดิน)
+1:2,000 (Department of Lands)	1:2,000 (กรมที่ดิน)
+1:1,000 (Department of Lands)	1:1,000 (กรมที่ดิน)
+1:500 (Department of Lands)	1:500 (กรมที่ดิน)
+Add Where the Map Is	เพิ่มในบริเวณที่เห็น
+Added {n} sheets	เพิ่ม {n} ระวางแล้ว
+The grid is a layer of outlines labelled with their numbers: style it, or add it to a layout like any layer.	กริดเป็นชั้นข้อมูลกรอบระวางพร้อมป้ายเลขระวาง ปรับสัญลักษณ์หรือใส่ลงในเลย์เอาต์ได้เหมือนชั้นข้อมูลอื่น
+Datum	พื้นหลักฐาน
+Thai subdistricts, districts and provinces	ตำบล อำเภอ จังหวัด (กรมการปกครอง)
+Finds a subdistrict, district or province by its name (ต.สุเทพ อ.เมือง จ.เชียงใหม่) or a postcode (50200), from the Department of Provincial Administration's boundaries (CC BY 4.0), downloaded the first time (about 11 MB).	ค้นหาตำบล อำเภอ หรือจังหวัดจากชื่อ (ต.สุเทพ อ.เมือง จ.เชียงใหม่) หรือรหัสไปรษณีย์ (50200) จากแนวเขตของกรมการปกครอง (CC BY 4.0) ครั้งแรกจะดาวน์โหลดข้อมูลประมาณ 11 MB
+Names and postcodes: Department of Provincial Administration, via OpenGISData-Thailand (CC BY 4.0)	ชื่อและรหัสไปรษณีย์: กรมการปกครอง ผ่าน OpenGISData-Thailand (CC BY 4.0)

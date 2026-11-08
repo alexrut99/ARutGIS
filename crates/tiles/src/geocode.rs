@@ -1,6 +1,7 @@
 //! Geocoding: places and addresses found by name through a Nominatim or Photon server (OSM's
-//! public ones, or the user's own). Requests are built and answers read here; the fetching is the
-//! caller's (blocking on the command line, off the frame in the app).
+//! public ones, or the user's own), or Thailand's subdistricts, districts and provinces by name or
+//! postcode ([`crate::thai_gazetteer`]). Requests are built and answers read here; the fetching is
+//! the caller's (blocking on the command line, off the frame in the app).
 
 use serde_json::Value;
 
@@ -11,6 +12,9 @@ pub enum Kind {
     Nominatim,
     /// Photon's `/api` (GeoJSON).
     Photon,
+    /// Thailand's subdistricts, districts and provinces (ตำบล อำเภอ จังหวัด), searched here in
+    /// the Department of Provincial Administration's subdistricts, downloaded once a session.
+    Thai,
 }
 
 /// A geocoding server.
@@ -54,8 +58,13 @@ impl Geocoder {
         let kind = match provider.map(|p| p.trim().to_ascii_lowercase()).as_deref() {
             None | Some("") | Some("nominatim") => Kind::Nominatim,
             Some("photon") => Kind::Photon,
-            Some(other) => return Err(format!("unknown geocoder '{other}' (nominatim or photon)")),
+            Some("thai") => Kind::Thai,
+            Some(other) => return Err(format!("unknown geocoder '{other}' (nominatim, photon or thai)")),
         };
+        if kind == Kind::Thai {
+            // Its own file, not a server.
+            return Ok(Geocoder { kind, base: crate::thai_gazetteer::source_url() });
+        }
         let base = match url.map(str::trim).filter(|u| !u.is_empty()) {
             Some(u) => {
                 crate::address::check(u, None)?;
@@ -90,6 +99,11 @@ impl Geocoder {
         if self.is_public() { PUBLIC_BATCH } else { MAX_BATCH }
     }
 
+    /// Whether a search downloads first: always from a server; Thailand's names once a session.
+    pub fn needs_download(&self) -> bool {
+        self.kind != Kind::Thai || crate::thai_gazetteer::loaded(&self.base).is_none()
+    }
+
     /// The request for `query`, returning up to `limit` places.
     pub fn url(&self, query: &str, limit: usize) -> String {
         let q: String = query.trim().chars().take(MAX_QUERY).collect();
@@ -97,10 +111,27 @@ impl Geocoder {
         match self.kind {
             Kind::Nominatim => format!("{}/search?format=jsonv2&limit={limit}&q={}", self.base, encode(&q)),
             Kind::Photon => format!("{}/api/?limit={limit}&q={}", self.base, encode(&q)),
+            // The names' file, whatever is asked: searched here.
+            Kind::Thai => self.base.clone(),
         }
     }
 
-    /// The places in an answer.
+    /// The places for `query` in an answer: the server's for `query`, or Thailand's names searched
+    /// for it (`bytes` their file, or empty once it is read: see [`Geocoder::needs_download`]).
+    pub fn answer(&self, query: &str, limit: usize, bytes: &[u8]) -> Result<Vec<Place>, String> {
+        if self.kind != Kind::Thai {
+            return self.parse(bytes);
+        }
+        let g = match crate::thai_gazetteer::loaded(&self.base) {
+            Some(g) if bytes.is_empty() => g,
+            _ if bytes.is_empty() => return Err("Thailand's subdistricts haven't been downloaded".into()),
+            _ => crate::thai_gazetteer::load(&self.base, bytes)?,
+        };
+        let q: String = query.trim().chars().take(MAX_QUERY).collect();
+        Ok(g.search(&q, limit.clamp(1, MAX_RESULTS)))
+    }
+
+    /// The places in a server's answer (a Thai search reads its answer with [`Geocoder::answer`]).
     pub fn parse(&self, bytes: &[u8]) -> Result<Vec<Place>, String> {
         let v: Value = serde_json::from_slice(bytes).map_err(|_| "the geocoder's answer isn't JSON".to_string())?;
         let places = match self.kind {
@@ -114,6 +145,7 @@ impl Geocoder {
                 .iter()
                 .filter_map(photon_place)
                 .collect::<Vec<_>>(),
+            Kind::Thai => return Err("a search of Thailand's names needs its query (Geocoder::answer)".into()),
         };
         Ok(places.into_iter().take(MAX_RESULTS).collect())
     }
@@ -199,7 +231,8 @@ pub fn search_blocking(g: &Geocoder, query: &str, limit: usize) -> Result<Vec<Pl
     if query.trim().is_empty() {
         return Err("give a place or an address to find".into());
     }
-    g.parse(&crate::cache::download_blocking(&g.url(query, limit))?)
+    let bytes = if g.needs_download() { crate::cache::download_blocking(&g.url(query, limit))? } else { Vec::new() };
+    g.answer(query, limit, &bytes)
 }
 
 #[cfg(test)]
