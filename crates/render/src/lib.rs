@@ -2002,8 +2002,10 @@ fn drape_terrain(pm: &mut Pixmap, view: &View, map: &Map, bands: &[(View, (f64, 
     let n = terrain::CELLS;
     for (bi, (v, (d0, d1), pic)) in bands.iter().enumerate() {
         let kb = f64::from(pic.width()) / v.width.max(1e-9);
-        // A band's grid: screen point, picture point and depth of each vertex.
-        let grid: Vec<Option<((f64, f64), (f64, f64), f64)>> = (0..=n)
+        // A band's grid: screen point, picture point and depth of each vertex, and where the
+        // vertex's ground would be at sea level (what a skirt hangs down to).
+        type Vtx = ((f64, f64), (f64, f64), f64, (f64, f64));
+        let grid: Vec<Option<Vtx>> = (0..=n)
             .flat_map(|j| (0..=n).map(move |i| (i, j)))
             .map(|(i, j)| {
                 let (lx, ly) = (v.width * i as f64 / n as f64, v.height * j as f64 / n as f64);
@@ -2011,32 +2013,104 @@ fn drape_terrain(pm: &mut Pixmap, view: &View, map: &Map, bands: &[(View, (f64, 
                 let depth = 1.0 / cam.depth_scale(m, h)?;
                 let (u, gv) = cam.ground_px(m);
                 let (sx, sy) = cam.project_raised(u, gv, ground.up_px(m, &cam), w, h)?;
-                (sx.is_finite() && sy.is_finite()).then_some(((sx * k, sy * k), (lx * kb, ly * kb), depth))
+                let low = cam.project_raised(u, gv, 0.0, w, h).filter(|(x, y)| x.is_finite() && y.is_finite()).unwrap_or((sx, sy));
+                (sx.is_finite() && sy.is_finite()).then_some(((sx * k, sy * k), (lx * kb, ly * kb), depth, (low.0 * k, low.1 * k)))
             })
             .collect();
         // Its own stretch of ground, a little over at the seams.
         let margin = ((d1.min(far) - d0) * 0.02).max(0.0);
-        for j in 0..n {
-            for i in 0..n {
-                let at = |i: usize, j: usize| grid.get(j * (n + 1) + i).copied().flatten();
-                let (Some(a), Some(b), Some(c), Some(d)) = (at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)) else { continue };
-                for [p, q, r] in [[a, b, d], [a, d, c]] {
+        let at = |i: usize, j: usize| grid.get(j * (n + 1) + i).copied().flatten();
+        // Each cell's two triangles, [a, b, d] and [a, d, c], as drawn: their depth, or `None`
+        // (`None` for the cell where there's no ground).
+        let (pw, ph) = (f64::from(pm.width()), f64::from(pm.height()));
+        let kept: Vec<Option<[Option<f64>; 2]>> = (0..n * n)
+            .map(|cell| {
+                let (i, j) = (cell % n, cell / n);
+                let (a, b, c, d) = (at(i, j)?, at(i + 1, j)?, at(i, j + 1)?, at(i + 1, j + 1)?);
+                Some([[a, b, d], [a, d, c]].map(|[p, q, r]| {
                     let depth = (p.2 + q.2 + r.2) / 3.0;
                     if depth < d0 - margin || depth > d1 + margin || p.2.min(q.2).min(r.2) > far {
-                        continue;
+                        return None;
                     }
                     // Wholly off one side of the picture: nothing to draw.
-                    let (pw, ph) = (f64::from(pm.width()), f64::from(pm.height()));
                     let xs = [p.0.0, q.0.0, r.0.0];
                     let ys = [p.0.1, q.0.1, r.0.1];
-                    if xs.iter().all(|x| *x < 0.0)
+                    let off = xs.iter().all(|x| *x < 0.0)
                         || xs.iter().all(|x| *x > pw)
                         || ys.iter().all(|y| *y < 0.0)
-                        || ys.iter().all(|y| *y > ph)
-                    {
+                        || ys.iter().all(|y| *y > ph);
+                    (!off).then_some(depth)
+                }))
+            })
+            .collect();
+        for (cell, ts) in kept.iter().enumerate() {
+            let (i, j) = (cell % n, cell / n);
+            let Some(ts) = ts else { continue };
+            let (Some(a), Some(b), Some(c), Some(d)) = (at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)) else { continue };
+            for (t, [p, q, r]) in [[a, b, d], [a, d, c]].into_iter().enumerate() {
+                if let Some(depth) = ts[t] {
+                    tris.push((depth, bi, [p.0, q.0, r.0], [p.1, q.1, r.1]));
+                }
+            }
+        }
+        // A band behind another meets it where their grids, laid out differently, place the
+        // relief a little differently: a ridge one draws higher than the other leaves a gap. So
+        // the near edge of a farther band's ground hangs a skirt down from it, drawn behind all
+        // the nearer ground, which hides it except in such a gap.
+        if bi == 0 {
+            continue;
+        }
+        // A skirt down from the edge p–q: two triangles, screen and picture corners, the picture's
+        // strip along the edge stretched down it. It reaches down toward sea level, no farther
+        // than a gap between the bands' grids could be (a few times the edge's length).
+        let skirt = |p: Vtx, q: Vtx| -> Option<([(f64, f64); 3], [(f64, f64); 3], [(f64, f64); 3], [(f64, f64); 3])> {
+            let reach = 2.0 * (q.0.0 - p.0.0).hypot(q.0.1 - p.0.1) + 8.0 * k;
+            let down = |v: Vtx| {
+                let (dx, dy) = (v.3.0 - v.0.0, v.3.1 - v.0.1);
+                let len = dx.hypot(dy);
+                let s = if len > reach { reach / len } else { 1.0 };
+                (v.0.0 + dx * s, v.0.1 + dy * s)
+            };
+            let (pl, ql) = (down(p), down(q));
+            if (pl.1 - p.0.1).abs() + (ql.1 - q.0.1).abs() < 0.5 {
+                return None;
+            }
+            let (ex, ey) = (q.1.0 - p.1.0, q.1.1 - p.1.1);
+            let len = ex.hypot(ey);
+            if len < 1e-9 {
+                return None;
+            }
+            let (nx, ny) = (-ey / len, ex / len);
+            let (ps, qs) = ((p.1.0 + nx, p.1.1 + ny), (q.1.0 + nx, q.1.1 + ny));
+            Some(([p.0, q.0, ql], [p.1, q.1, qs], [p.0, ql, pl], [p.1, qs, ps]))
+        };
+        let behind = bands.get(bi - 1).map_or(*d0, |(_, (p0, p1), _)| *p1 + ((p1.min(far) - *p0) * 0.02).max(0.0)).max(*d0 + margin);
+        // The triangle across a side: drawn (its depth), not drawn, or no ground there (`None`).
+        let tri = |cell: usize, t: usize| kept.get(cell).copied().flatten().map(|ts| ts[t]);
+        for (cell, ts) in kept.iter().enumerate() {
+            let (i, j) = (cell % n, cell / n);
+            let Some(ts) = ts else { continue };
+            let (Some(a), Some(b), Some(c), Some(d)) = (at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1)) else { continue };
+            // Each triangle's outer sides, and the triangle across each (not drawn past the grid).
+            let sides: [[(Vtx, Vtx, Option<Option<f64>>); 2]; 2] = [
+                [(a, b, if j > 0 { tri(cell - n, 1) } else { Some(None) }), (b, d, if i + 1 < n { tri(cell + 1, 1) } else { Some(None) })],
+                [(d, c, if j + 1 < n { tri(cell + n, 0) } else { Some(None) }), (c, a, if i > 0 { tri(cell - 1, 0) } else { Some(None) })],
+            ];
+            for (t, pair) in sides.iter().enumerate() {
+                let Some(depth) = ts[t] else { continue };
+                for &(p, q, across) in pair {
+                    // Only a side facing the viewer with ground across it that this band leaves
+                    // to a nearer one (not the edge of the ground itself).
+                    if across != Some(None) {
                         continue;
                     }
-                    tris.push((depth, bi, [p.0, q.0, r.0], [p.1, q.1, r.1]));
+                    if p.2.max(q.2) >= depth {
+                        continue;
+                    }
+                    if let Some(skirt) = skirt(p, q) {
+                        tris.push((behind.max(depth), bi, skirt.0, skirt.1));
+                        tris.push((behind.max(depth), bi, skirt.2, skirt.3));
+                    }
                 }
             }
         }
@@ -2047,12 +2121,9 @@ fn drape_terrain(pm: &mut Pixmap, view: &View, map: &Map, bands: &[(View, (f64, 
         let Some((_, _, pic)) = bands.get(bi) else { continue };
         let Some(t) = affine(src, dst) else { continue };
         // A hair larger all round, so neighbours leave no seam.
-        let (cx, cy) = ((dst[0].0 + dst[1].0 + dst[2].0) / 3.0, (dst[0].1 + dst[1].1 + dst[2].1) / 3.0);
         let mut pb = PathBuilder::new();
-        for (i, (x, y)) in dst.iter().enumerate() {
-            let (dx, dy) = (x - cx, y - cy);
-            let len = dx.hypot(dy).max(1e-9);
-            let (x, y) = ((x + dx / len * 0.6) as f32, (y + dy / len * 0.6) as f32);
+        for (i, (x, y)) in grown(dst, 0.6).iter().enumerate() {
+            let (x, y) = (*x as f32, *y as f32);
             if i == 0 { pb.move_to(x, y) } else { pb.line_to(x, y) }
         }
         pb.close();
@@ -2066,6 +2137,42 @@ fn drape_terrain(pm: &mut Pixmap, view: &View, map: &Map, bands: &[(View, (f64, 
             pm.fill_path(&path, &fog_paint(f), FillRule::Winding, Transform::identity(), None);
         }
     }
+}
+
+/// The triangle `t` with each side moved `by` pixels outward, so that triangles meeting along a
+/// side, each drawn anti-aliased, overlap there and leave no faint seam. Moving the corners away
+/// from the middle instead hardly widens a long thin triangle, as the ground far off is drawn.
+/// At a sharp corner the point reaches no more than ten times `by` out.
+fn grown(t: [(f64, f64); 3], by: f64) -> [(f64, f64); 3] {
+    // Each side's outward normal: away from the corner across it.
+    let normal = |i: usize| {
+        let (a, b, o) = (t[i], t[(i + 1) % 3], t[(i + 2) % 3]);
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let len = dx.hypot(dy);
+        if len < 1e-9 {
+            return None;
+        }
+        let (nx, ny) = (dy / len, -dx / len);
+        Some(if nx * (o.0 - a.0) + ny * (o.1 - a.1) > 0.0 { (-nx, -ny) } else { (nx, ny) })
+    };
+    let (Some(n0), Some(n1), Some(n2)) = (normal(0), normal(1), normal(2)) else { return t };
+    let ns = [n0, n1, n2];
+    let mut out = t;
+    for (i, p) in out.iter_mut().enumerate() {
+        // Corner i joins side i-1 (into it) and side i (out of it).
+        let (a, b) = (ns[(i + 2) % 3], ns[i]);
+        let cos = 1.0 + a.0 * b.0 + a.1 * b.1;
+        if cos < 1e-6 {
+            continue;
+        }
+        let (mut ox, mut oy) = ((a.0 + b.0) * by / cos, (a.1 + b.1) * by / cos);
+        let len = ox.hypot(oy);
+        if len > 10.0 * by {
+            (ox, oy) = (ox * 10.0 * by / len, oy * 10.0 * by / len);
+        }
+        *p = (p.0 + ox, p.1 + oy);
+    }
+    out
 }
 
 /// The affine map taking the triangle `src` onto `dst` (physical pixels); `None` for a
@@ -6202,6 +6309,39 @@ mod tests {
         // Turned, not tilted, the map is drawn flat, where the layer is a CPU picture.
         let turned = View { camera: Camera { bearing: 30.0, pitch: 0.0, ..camera }, ..view };
         assert!(gpu_may_turn(&map, &turned));
+    }
+
+    #[test]
+    fn terrain_triangles_grow_outward_on_every_side() {
+        // The distance of `p` outside the line through a–b, away from `o`.
+        let out = |a: (f64, f64), b: (f64, f64), o: (f64, f64), p: (f64, f64)| {
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let len = dx.hypot(dy);
+            let side = |q: (f64, f64)| (dx * (q.1 - a.1) - dy * (q.0 - a.0)) / len;
+            if side(o) > 0.0 { -side(p) } else { side(p) }
+        };
+        // Either way round, each side moves out by the same amount all along it.
+        for t in [[(0.0, 0.0), (10.0, 0.0), (3.0, 8.0)], [(3.0, 8.0), (10.0, 0.0), (0.0, 0.0)]] {
+            let g = grown(t, 0.6);
+            for i in 0..3 {
+                let (a, b, o) = (t[i], t[(i + 1) % 3], t[(i + 2) % 3]);
+                for p in [g[i], g[(i + 1) % 3]] {
+                    assert!((out(a, b, o, p) - 0.6).abs() < 1e-9, "{t:?} side {i}: {}", out(a, b, o, p));
+                }
+            }
+        }
+        // A long thin triangle, as the ground far off is drawn, widens across its length (the
+        // corners moved away from its middle hardly widened it), its sharp ends reaching only so far.
+        let t = [(0.0, 0.0), (200.0, 0.0), (200.0, 2.0)];
+        let g = grown(t, 0.6);
+        assert!((out(t[0], t[1], t[2], g[1]) - 0.6).abs() < 1e-9);
+        assert!(out(t[1], t[2], t[0], g[1]) > 0.59 && out(t[1], t[2], t[0], g[2]) > 0.59);
+        for (p, q) in t.iter().zip(g) {
+            assert!((q.0 - p.0).hypot(q.1 - p.1) <= 6.0 + 1e-9);
+        }
+        // A triangle with no area is left as it is.
+        let flat = [(0.0, 0.0), (1.0, 1.0), (1.0, 1.0)];
+        assert_eq!(grown(flat, 0.6), flat);
     }
 
     #[test]
