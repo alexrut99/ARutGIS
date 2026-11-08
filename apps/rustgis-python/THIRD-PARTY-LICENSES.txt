@@ -9,8 +9,8 @@ ARutGIS is not affiliated with or endorsed by the RustGIS project.
 
 Anirut Ladawadee changed RustGIS from its main branch of 2026-10-29 (commit 90576c52, after the
 0.4.0 release): a Thai interface, Thai text in data, tables, labels and map layouts, Thai
-coordinate systems, Thai dates and land units, and the ARutGIS name, logo, packages and
-updates. Every change, with its author and date, is in the history of
+coordinate systems, Thai map sheet numbers, a search of Thai subdistricts, districts and
+provinces, Thai dates and land units, and the ARutGIS name, logo, packages and updates. Every change, with its author and date, is in the history of
 https://github.com/alexrut99/ARutGIS after commit 90576c52; the rest is RustGIS as its authors
 wrote it.
 
