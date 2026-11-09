@@ -16,13 +16,13 @@ pub const MAX_SHEETS: usize = 5000;
 
 pub fn commands() -> Vec<C> {
     vec![
-        C::new("map.thaiSheet", "Thai Map Sheet Number", "Home › Navigate › Locate", sheet_at).view().params(
+        C::new("map.thaiSheet", "Thai Map Sheet Number", "Home › Navigate › Locate", sheet_at).roles(&[]).effects(crate::policy::Effects::NONE).view().params(
             r#"{"lon"?: number, "lat"?: number (WGS 84; default the map's centre), "datum"?: "wgs84" (default: series L7018 and today's cadastral sheets) | "indian1975" (series L7017 and older cadastral sheets), "zone"?: 47 | 48 (the cadastral sheets' UTM zone; default 47 west of 102°E, 48 east of it)}"#,
         ),
-        C::new("map.goToThaiSheet", "Go To Thai Map Sheet", "Home › Navigate › Locate", go_to_sheet).params(
+        C::new("map.goToThaiSheet", "Go To Thai Map Sheet", "Home › Navigate › Locate", go_to_sheet).roles(&[]).effects(crate::policy::Effects::NONE).params(
             r#"{"sheet": "a 1:50,000 sheet (5541 I) or a Department of Lands sheet (5137 IV 6888, 5137 IV 6888-5)", "scale"?: 2000 | 1000 | 500 (a numbered part's scale; default 1000, 500 for parts past 16), "datum"?: "wgs84" | "indian1975", "zone"?: 47 | 48}"#,
         ),
-        C::new("layer.thaiSheetGrid", "Thai Map Sheet Grid", "Home › Navigate › Locate", sheet_grid).params(
+        C::new("layer.thaiSheetGrid", "Thai Map Sheet Grid", "Home › Navigate › Locate", sheet_grid).roles(&[]).effects(crate::policy::Effects::NONE).params(
             r#"{"series": "50000" (the 1:50,000 topographic sheets) | "4000" | "2000" | "1000" | "500" (the Department of Lands' cadastral sheets), "bbox"?: [west, south, east, north] (WGS 84; default the map's extent), "datum"?: "wgs84" | "indian1975", "zone"?: 47 | 48, "name"?: text}"#,
         ),
     ]

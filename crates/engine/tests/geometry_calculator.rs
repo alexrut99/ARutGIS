@@ -95,7 +95,8 @@ fn thai_deed_area_writes_text() {
     // About 2.8 rai: a square 0.0006° on a side at the equator.
     let side = 0.0006;
     let ring = vec![Coord::new(0.0, 0.0), Coord::new(side, 0.0), Coord::new(side, side), Coord::new(0.0, side), Coord::new(0.0, 0.0)];
-    let m2 = rustgis_engine::geom::geodesic_ring_area_m2(&ring);
+    // Measured on the WGS 84 ellipsoid, as Calculate Geometry measures.
+    let m2 = Geometry::Polygon(vec![vec![ring.clone()]]).wgs84_measure(rustgis_engine::data::Measure::Area).unwrap();
     let (mut s, id) = session(GeometryType::Polygon, vec![Some(Geometry::Polygon(vec![vec![ring]]))]);
     let p = json!({"layer":id,"field":"โฉนด","create":true,"property":"area","unit":"rai_ngan_wa","scope":"all"});
     let told = s.notices.len();
