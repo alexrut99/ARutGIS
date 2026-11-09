@@ -784,7 +784,7 @@ impl Durable for rustgis_map::presentation::Presentation {
         for (i, Page { title: _, kind, notes: _, seconds: _ }) in pages.iter().enumerate() {
             match kind {
                 PageKind::Video { source, poster: _, caption: _ } => p.string(Leaf::Video(i), source, true, false),
-                PageKind::Map { map: _, center: _, width_m: _ }
+                PageKind::Map { map: _, center: _, width_m: _, bearing: _, pitch: _ }
                 | PageKind::Blank { text: _, background: _ }
                 | PageKind::Image { image: _, caption: _ } => {}
             }

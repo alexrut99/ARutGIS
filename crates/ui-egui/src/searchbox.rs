@@ -71,7 +71,7 @@ fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
     let Some((g, slot)) = &st.pending else { return };
     match take(slot) {
         Some(r) => {
-            let answered = r.and_then(|b| g.answer(&st.searched, PLACES, &b));
+            let answered = r.and_then(|b| g.answer(&st.searched, PLACES, &b)).map(|f| f.places);
             st.places = match answered {
                 Ok(p) => {
                     // The first place is the one Enter picks now.

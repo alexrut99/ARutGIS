@@ -400,7 +400,7 @@ mod tests {
         let mut app = RustGisApp::with_sample();
         let slot: Answer = Slot::default();
         *slot.lock().unwrap() = Some(Ok(br#"[{"display_name":"Damrak, Amsterdam","lat":"52.37","lon":"4.89"}]"#.to_vec()));
-        app.ui.geocode.search = Some((Geocoder::new(Some("nominatim"), None).unwrap(), slot));
+        app.ui.geocode.search = Some((Geocoder::new(Some("nominatim"), None).unwrap(), String::from("Damrak"), slot));
         app.dialogs.mode = "locatieserver";
         poll(&mut app, &egui::Context::default());
         assert_eq!(app.ui.geocode.places.len(), 1);

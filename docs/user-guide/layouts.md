@@ -174,7 +174,6 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   (`"grid": {"second": {"style": "ticks", "step": 0.25, "format": "dms"}}`; `false` removes it).
 - **Map surrounds**: north arrow, scale bar, legend, colorbar, table frame (a layer's attribute table) and
   chart frame (a bar chart of a numeric field), plus a neatline or backdrop. A north arrow's
-<<<<<<< HEAD
   properties pick its **Style** from pictures of the ten (classic arrow, compass rose, triangle,
   star, compass needle, arrow in a ring, line arrow, chevron, block arrow, star in a ring), its
   **Fill** and **Outline** colours, the **Letter** over it as typed (`N`, `น`, `North`; empty for
@@ -183,63 +182,16 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   bar's pick its **Style** from pictures of the eight (alternating, double alternating, hollow,
   stepped line, line with ticks up, down or across, ruler), its **Units** (metres or kilometres
   to suit the scale, or kilometres, metres, miles, feet or nautical miles), its **Divisions** (1
-  to 10) and **Subdivisions** of the first, and a **Division length** (`1` km a division; Auto
-  picks a round one that fits). The unit is named as its **Unit name** says: `km`, `Kilometers`,
-  in Thai `กม.` or `กิโลเมตร`, none, or as typed in **Unit text**; **Unit place** puts it after
-  the last number, after the bar, above or below it, and **Numbers** go above or below the bar, at
-  its ends only, or nowhere. **Bar height**, **Bar color**, **Light color** and the **Number type**
-  (size, colour, bold, italic, font) finish it
-  (`"style":"doubleAlternating","units":"km","division":1,"unitLabel":"thai","numbers":"below"`). A legend shows what
-  its frame draws: only layers with a feature at the frame's scale (through their definition
-  query, display filters and scale range) and, for Unique Values, only the classes those features
-  have, with `<all other values>` only when some feature falls in it and its symbol is not fully
-  transparent. Graduated Colors and
-  Proportional Symbols list their classes as they are (they are taken from the kept features when
-  the symbology is applied). A layer that draws
-  nothing there, such as an empty one, is left out, in layouts saved before this too. Tick **All
-  classes** in its properties (`"allClasses": true`) to list every class of every visible layer
-  instead, and **Hide other values** (`"hideOther": true`) to leave `<all other values>` out of
-  the legend in either mode (the features it stands for are still drawn). A visible WMS or WMTS
-  layer with a legend is listed by its name over its service's legend picture, the one for the
-  frame's scale (as the Layers pane shows it), a pixel a point and narrowed to fit the legend's
-  width, in the order the map draws its layers (as the Layers pane lists them); one whose picture
-  can't be loaded (or is wider or taller than 2048 pixels) is left out. Exporting waits up to
-  half a minute for the pictures, as it waits for the map's tiles; in the browser the page is
-  drawn with those that have arrived, and again as the others arrive. Its **Layers** section
-  has a checkbox for each layer of the frame's map (and each WMS or WMTS layer with a legend): untick one to leave it out of the legend
-  while the map still draws it (a mask, a highlight, a basemap-like layer). Scripts give the same
-  with `"exclude": ["Graticule"]` on `layout.addElement` or `layout.update` (`[]` lists every
-  layer again); a renamed layer stays left out. Its **Legend items** section lists each layer
-  with its classes: type over a layer's name or a class's label to change what the legend shows
-  (in Thai or any language; empty shows the layer's own again), leaving the layer and its
-  symbology as they are, and **Symbology…** opens the layer's Symbology pane to change the
-  symbols themselves (on the map and in every legend). **Patch width** and **Patch height** size
-  the symbols, **Line patch** draws a line layer's as a zigzag, a straight line or a curve,
-  **Area patch** a polygon layer's as a rectangle, a rounded rectangle, a circle or a natural
-  area, and **Row spacing** adds room under each row. **Title type**, **Layer name type** and
-  **Label type** set the size, colour, weight, slant and font of each, as for a text. Scripts give
-  `"titleType"`, `"layerType"` and `"labelType"` (`{"size": 14, "color": "#1F4E8C", "font":
-  "Sarabun"}`), `"patchWidth"`, `"patchHeight"`, `"linePatch"`, `"areaPatch"`, `"rowSpacing"`,
-  `"layerNames": {"Countries": "ประเทศ"}` and `"classLabels": {"Countries": {"Asia": "เอเชีย"}}`;
-  the texts given are merged with those set and follow a renamed layer. The **Aa** button beside
-  a layer's name or a class's label gives that one a type of its own (another font, size or
-  colour, bold or italic) while the others keep the legend's; **Use the legend's type** takes it
-  back. Scripts give `"layerTypes": {"Countries": {"size": 14}}` and
-  `"classTypes": {"Countries": {"Asia": {"bold": true, "color": "#C0392B"}}}` (`null` for the
-  legend's type again). **Convert to Graphics**, as ArcGIS's, replaces the legend with what it
-  draws, grouped where it was: a text for its title and each name and label, in the type it was
-  shown in, and a legend patch for each symbol. **Ungroup** then moves and restyles each one on
-  its own; they no longer follow the layers, and **Undo** brings the legend back. Scripts run
-  `layout.convertLegend` with `{"element": id}`.
-=======
-  properties pick its **Style** (classic arrow, compass rose, triangle or star) and its **Fill**
-  and **Outline** colours (`"style":"compass","fill":"#B91C1C"`). A scale bar's pick its
-  **Style** (alternating bar, stepped line or single line), its **Units** (metres or kilometres
-  to suit the scale, or kilometres, metres, miles or feet), its **Divisions** (1 to 10), each
-  labelled where there is room, its **Color** (the lines, the dark divisions and the labels) and
-  its **Fill** (the alternating bar's light divisions)
-  (`"style":"line","units":"miles","divisions":2,"color":"#1F4E79"`). A legend's
-  parts:
+  to 10), each labelled where there is room, and **Subdivisions** of the first, and a **Division
+  length** (`1` km a division; Auto picks a round one that fits). The unit is named as its **Unit
+  name** says: `km`, `Kilometers`, in Thai `กม.` or `กิโลเมตร`, none, or as typed in **Unit
+  text**; **Unit place** puts it after the last number, after the bar, above or below it, and
+  **Numbers** go above or below the bar, at its ends only, or nowhere. **Bar height**, **Bar
+  color** (`"color"`: the lines, the dark parts and the labels), **Light color** (`"fill"`: the
+  light parts, such as the alternating bar's light divisions; `"altColor"`, as ARutGIS 0.5 named
+  it, is read too) and the **Number type** (size, colour, bold, italic, font) finish it
+  (`"style":"doubleAlternating","units":"km","division":1,"unitLabel":"thai","numbers":"below"`).
+  A legend's parts:
   - **What a legend lists**: what its frame draws: only layers with a feature at the frame's
     scale (through their definition query, display filters and scale range) and, for Unique
     Values, only the classes those features have, with `<all other values>` only when some
@@ -254,10 +206,10 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     each column as wide as its widest row, with its own column of symbols, and a layer's name
     staying with the row under it. The box keeps its size, so widen it for the columns: in a box
     too narrow they close up and long labels run into the next or past the box, and a box too
-    short fills each column in turn and leaves out the last rows.
-    Giving `"columns"`, or changing the box or what a legend in columns lists, says when its box
-    loses rows or closes the columns up. A legend in one column is told so only when given
-    `"columns"`.
+    short fills each column in turn and leaves out the last rows. The legend's type, patch width
+    and row spacing (below) count in each column's size. Giving `"columns"`, or changing the box,
+    the legend's look or what a legend in columns lists, says when its box loses rows or closes
+    the columns up. A legend in one column is told so only when given `"columns"`.
   - **Point symbols**: a point layer's symbol is drawn as the map draws it: its marker or the
     stacked marks of its class or layer, its size and outline, the transparency of the layer and
     its groups, and its reference scale at the frame's scale, unturned. A row has one symbol, so
@@ -278,7 +230,30 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     (a mask, a highlight, a basemap-like layer). Scripts give the same with
     `"exclude": ["Graticule"]` on `layout.addElement` or `layout.update` (`[]` lists every layer
     again); a renamed layer stays left out.
->>>>>>> v0.6.0
+  - **Its Legend items section**: each layer with its classes: type over a layer's name or a
+    class's label to change what the legend shows (in Thai or any language; empty shows the
+    layer's own again), leaving the layer and its symbology as they are, and **Symbology…** opens
+    the layer's Symbology pane to change the symbols themselves (on the map and in every legend).
+    The **Aa** button beside a layer's name or a class's label gives that one a type of its own
+    (another font, size or colour, bold or italic) while the others keep the legend's; **Use the
+    legend's type** takes it back. Scripts give `"layerNames": {"Countries": "ประเทศ"}` and
+    `"classLabels": {"Countries": {"Asia": "เอเชีย"}}`, `"layerTypes": {"Countries": {"size":
+    14}}` and `"classTypes": {"Countries": {"Asia": {"bold": true, "color": "#C0392B"}}}` (`null`
+    for the legend's type again); the texts and types given are merged with those set and follow
+    a renamed layer.
+  - **Its look**: **Patch width** and **Patch height** size the symbols' patches (a large point
+    symbol still grows its row), **Line patch** draws a line layer's as a zigzag, a straight line
+    or a curve, **Area patch** a polygon layer's as a rectangle, a rounded rectangle, a circle or
+    a natural area, and **Row spacing** adds room under each row. **Title type**, **Layer name
+    type** and **Label type** set the size, colour, weight, slant and font of each, as for a
+    text. Scripts give `"titleType"`, `"layerType"` and `"labelType"` (`{"size": 14, "color":
+    "#1F4E8C", "font": "Sarabun"}`), `"patchWidth"`, `"patchHeight"`, `"linePatch"`,
+    `"areaPatch"` and `"rowSpacing"`.
+  - **Convert to Graphics**, as ArcGIS's, replaces the legend with what it draws, in its columns,
+    grouped where it was: a text for its title and each name and label, in the type it was shown
+    in, and a legend patch for each symbol (a point's drawn as its marker). **Ungroup** then
+    moves and restyles each one on its own; they no longer follow the layers, and **Undo** brings
+    the legend back. Scripts run `layout.convertLegend` with `{"element": id}`.
 - **Colorbar**: the colour scale of a raster layer in the frame's map, as the map draws it (its
   stretch, colour ramp and enhancement): a gradient bar for a stretch or a tinted hillshade,
   steps labelled at their breaks for Classify, and a block per value for Unique Values and colour

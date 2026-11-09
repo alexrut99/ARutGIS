@@ -7,16 +7,10 @@
 
 use egui::{Align2, Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use rustgis_engine::map::layout::{
-<<<<<<< HEAD
     AreaPatch, Arrange, ArrowStyle, CoordFormat, DmsParts, ElementKind, Grid, GridDash, GridKind, GridStyle, GridSuffix, LabelText, Layout,
-    LegendLook, LineHead, LinePatch, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS, MAX_FRAME_SCALE, MAX_GRID_WIDTH, MAX_LEGEND_SPACING, MAX_PATCH,
-    MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_FRAME_SCALE, NumberPlace, Orientation, PT_PER_MM, ScaleBarStyle, ScaleUnits, TickSide, UnitLabel,
-    UnitPlace, frame_camera, line_angle, line_length,
-=======
-    Arrange, ArrowStyle, CoordFormat, ElementKind, Grid, GridKind, GridStyle, Layout, LineHead, MAX_COLORBAR_TICKS, MAX_FRAME_SCALE,
-    MAX_GRID_WIDTH, MAX_LEGEND_COLUMNS, MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_FRAME_SCALE, Orientation, PT_PER_MM, ScaleBarStyle,
-    ScaleUnits, TickSide, frame_camera, line_angle, line_length,
->>>>>>> v0.6.0
+    LegendLook, LineHead, LinePatch, MAX_BAR_HEIGHT, MAX_COLORBAR_TICKS, MAX_FRAME_SCALE, MAX_GRID_WIDTH, MAX_LEGEND_COLUMNS,
+    MAX_LEGEND_SPACING, MAX_PATCH, MAX_SCALE_DIVISIONS, MAX_TICK_MM, MIN_FRAME_SCALE, NumberPlace, Orientation, PT_PER_MM, ScaleBarStyle,
+    ScaleUnits, TickSide, UnitLabel, UnitPlace, frame_camera, line_angle, line_length,
 };
 use serde_json::{Value, json};
 
@@ -2005,11 +1999,15 @@ fn grid_rows(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(
         let mut n = g.minor_ticks;
         let drag = Dragged::lend(ui, key("minorTicks"), &mut n);
         let r = ui
-            .add(egui::DragValue::new(&mut n).range(0..=rustgis_engine::map::layout::MAX_MINOR_TICKS).speed(0.05).custom_formatter(
-                |v, _| {
-                    if v < 2.0 { tl!("None").to_string() } else { crate::i18n::fmt("{n} parts a step", &[("n", &format!("{v}"))]) }
-                },
-            ))
+            .add(
+                egui::DragValue::new(&mut n)
+                    .update_while_editing(false)
+                    .range(0..=rustgis_engine::map::layout::MAX_MINOR_TICKS)
+                    .speed(0.05)
+                    .custom_formatter(|v, _| {
+                        if v < 2.0 { tl!("None").to_string() } else { crate::i18n::fmt("{n} parts a step", &[("n", &format!("{v}"))]) }
+                    }),
+            )
             .on_hover_text(tl!("Short ticks along the edges, splitting each step between the lines."))
             .labelled_by(input_label.id);
         if drag.settled(ui, &r, &mut n) && n != g.minor_ticks {
@@ -2042,6 +2040,7 @@ fn grid_rows(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(
         let r = ui
             .add(
                 egui::DragValue::new(&mut off)
+                    .update_while_editing(false)
                     .range(0.0..=rustgis_engine::map::layout::MAX_LABEL_OFFSET)
                     .speed(0.1)
                     .max_decimals(1)
@@ -2058,11 +2057,19 @@ fn grid_rows(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(
         let mut every = g.label_every;
         let drag = Dragged::lend(ui, key("labelEvery"), &mut every);
         let r = ui
-            .add(egui::DragValue::new(&mut every).range(1..=rustgis_engine::map::layout::MAX_LABEL_EVERY).speed(0.05).custom_formatter(
-                |v, _| {
-                    if v <= 1.0 { tl!("Every line").to_string() } else { crate::i18n::fmt("Every {n} lines", &[("n", &format!("{v}"))]) }
-                },
-            ))
+            .add(
+                egui::DragValue::new(&mut every)
+                    .update_while_editing(false)
+                    .range(1..=rustgis_engine::map::layout::MAX_LABEL_EVERY)
+                    .speed(0.05)
+                    .custom_formatter(|v, _| {
+                        if v <= 1.0 {
+                            tl!("Every line").to_string()
+                        } else {
+                            crate::i18n::fmt("Every {n} lines", &[("n", &format!("{v}"))])
+                        }
+                    }),
+            )
             .on_hover_text(tl!("Every line is drawn; only every so many of them is labelled."))
             .labelled_by(input_label.id);
         if drag.settled(ui, &r, &mut every) && every != g.label_every {
@@ -2076,6 +2083,7 @@ fn grid_rows(app: &mut RustGisApp, ui: &mut Ui, g: &Grid, id: u32, set: &dyn Fn(
             let r = ui
                 .add(
                     egui::DragValue::new(&mut d)
+                        .update_while_editing(false)
                         .range(-1.0..=f64::from(rustgis_engine::map::layout::MAX_GRID_DECIMALS))
                         .speed(0.05)
                         .max_decimals(0)
@@ -2374,7 +2382,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                     let mut val = v;
                     let drag = Dragged::lend(ui, drag_key("rotation"), &mut val);
                     let r = ui
-                        .add(egui::DragValue::new(&mut val).speed(1.0).range(-180.0..=180.0).max_decimals(1))
+                        .add(egui::DragValue::new(&mut val).update_while_editing(false).speed(1.0).range(-180.0..=180.0).max_decimals(1))
                         .labelled_by(input_label.id)
                         .on_hover_text(tl!("Degrees anticlockwise about its centre; or drag its round handle"));
                     if drag.settled(ui, &r, &mut val) && (val - v).abs() > 1e-6 {
@@ -2391,11 +2399,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                 match &e.kind {
                     // Its text, size, colour and boldness: the shared form, below the grid.
                     ElementKind::Text { .. } => {}
-<<<<<<< HEAD
-                    ElementKind::Legend { title, all_classes, hide_other, look, .. } => {
-=======
-                    ElementKind::Legend { title, all_classes, hide_other, columns, .. } => {
->>>>>>> v0.6.0
+                    ElementKind::Legend { title, all_classes, hide_other, look, columns, .. } => {
                         let input_label = ui.label(tl!("Title"));
                         if let Some(tt) = text_field(app, ui, (li, id, "title"), title, false, input_label.id) {
                             update(app, json!({"title": tt}));
@@ -2414,7 +2418,16 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             update(app, json!({"hideOther": hide}));
                         }
                         ui.end_row();
-<<<<<<< HEAD
+                        let input_label = ui.label(tl!("Columns"));
+                        let mut n = *columns as u64;
+                        let drag = Dragged::lend(ui, drag_key("columns"), &mut n);
+                        let r = ui
+                            .add(egui::DragValue::new(&mut n).update_while_editing(false).range(1..=MAX_LEGEND_COLUMNS as u64))
+                            .labelled_by(input_label.id);
+                        if drag.settled(ui, &r, &mut n) && n as usize != *columns {
+                            update(app, json!({"columns": n}));
+                        }
+                        ui.end_row();
                         // The patches the symbols are drawn in, and the room between the rows.
                         for (label, key, current, most) in [
                             ("Patch width", "patchWidth", look.patch_width, MAX_PATCH),
@@ -2428,6 +2441,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             let r = ui
                                 .add(
                                     egui::DragValue::new(&mut v)
+                                        .update_while_editing(false)
                                         .range(0.0..=most)
                                         .speed(0.2)
                                         .custom_formatter(
@@ -2473,18 +2487,6 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                                 .labelled_by(input_label.id);
                             ui.end_row();
                         }
-=======
-                        let input_label = ui.label(tl!("Columns"));
-                        let mut n = *columns as u64;
-                        let drag = Dragged::lend(ui, drag_key("columns"), &mut n);
-                        let r = ui
-                            .add(egui::DragValue::new(&mut n).update_while_editing(false).range(1..=MAX_LEGEND_COLUMNS as u64))
-                            .labelled_by(input_label.id);
-                        if drag.settled(ui, &r, &mut n) && n as usize != *columns {
-                            update(app, json!({"columns": n}));
-                        }
-                        ui.end_row();
->>>>>>> v0.6.0
                     }
                     ElementKind::Colorbar { frame, layer, title, orientation, ticks, tick_side, reverse } => {
                         let input_label = ui.label(tl!("Title"));
@@ -2627,41 +2629,11 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             }
                             ui.end_row();
                         }
-<<<<<<< HEAD
                         // The letter over the arrow, typed as wanted: N, น, North, ทิศเหนือ; none.
                         let input_label = ui.label(tl!("Letter"));
                         if let Some(t) = text_field(app, ui, (li, id, "label"), label, false, input_label.id) {
                             update(app, json!({"label": t}));
                         }
-=======
-                    }
-                    ElementKind::ScaleBar { units, divisions, style, color, fill, .. } => {
-                        let input_label = ui.label(tl!("Style"));
-                        egui::ComboBox::from_id_salt(("scale_style", id))
-                            .selected_text(tl!(style.label()))
-                            .show_ui(ui, |ui| {
-                                for v in ScaleBarStyle::ALL {
-                                    if ui.selectable_label(*style == v, tl!(v.label())).clicked() && *style != v {
-                                        update(app, json!({"style": v.code()}));
-                                    }
-                                }
-                            })
-                            .response
-                            .labelled_by(input_label.id);
-                        ui.end_row();
-                        let input_label = ui.label(tl!("Units"));
-                        egui::ComboBox::from_id_salt(("scale_units", id))
-                            .selected_text(tl!(units.label()))
-                            .show_ui(ui, |ui| {
-                                for v in ScaleUnits::ALL {
-                                    if ui.selectable_label(*units == v, tl!(v.label())).clicked() && *units != v {
-                                        update(app, json!({"units": v.code()}));
-                                    }
-                                }
-                            })
-                            .response
-                            .labelled_by(input_label.id);
->>>>>>> v0.6.0
                         ui.end_row();
                     }
                     ElementKind::ScaleBar {
@@ -2674,7 +2646,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                         unit_place,
                         numbers,
                         color,
-                        alt_color,
+                        fill,
                         bar_height,
                         ..
                     } => {
@@ -2713,7 +2685,6 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             update(app, json!({"divisions": n}));
                         }
                         ui.end_row();
-<<<<<<< HEAD
                         // The first division split again, as ArcGIS's subdivisions.
                         let input_label = ui.label(tl!("Subdivisions"));
                         let mut n = *subdivisions as u64;
@@ -2722,6 +2693,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                         let r = ui
                             .add(
                                 egui::DragValue::new(&mut n)
+                                    .update_while_editing(false)
                                     .range(0..=MAX_SCALE_DIVISIONS as u64)
                                     .custom_formatter(move |v, _| if v < 2.0 { none.to_string() } else { format!("{v}") }),
                             )
@@ -2741,6 +2713,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                         let r = ui
                             .add(
                                 egui::DragValue::new(&mut v)
+                                    .update_while_editing(false)
                                     .range(0.0..=1.0e7)
                                     .speed(speed)
                                     .custom_formatter(move |v, _| if v <= 0.0 { auto.to_string() } else { format!("{v} {unit}") })
@@ -2809,6 +2782,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                         let r = ui
                             .add(
                                 egui::DragValue::new(&mut v)
+                                    .update_while_editing(false)
                                     .range(0.0..=MAX_BAR_HEIGHT)
                                     .speed(0.1)
                                     .custom_formatter(
@@ -2824,13 +2798,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             update(app, json!({"barHeight": v}));
                         }
                         ui.end_row();
-                        for (label, key, current) in [("Bar color", "color", *color), ("Light color", "altColor", *alt_color)] {
-=======
-                        // The fill is the alternating bar's light divisions: the other styles draw none.
-                        let colors = [("Color", "color", *color), ("Fill", "fill", *fill)];
-                        let shown = if *style == ScaleBarStyle::Alternating { 2 } else { 1 };
-                        for (label, key, current) in colors.into_iter().take(shown) {
->>>>>>> v0.6.0
+                        for (label, key, current) in [("Bar color", "color", *color), ("Light color", "fill", *fill)] {
                             ui.label(tl!(label));
                             let mut c = crate::theme::c32(current);
                             let resp = crate::widgets::color_button(ui, &mut c);

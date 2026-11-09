@@ -1180,7 +1180,7 @@ fn flood(s: &mut Session, p: &Value) -> CmdResult {
         "Float32",
     )
     .map_err(|e| e.to_string())?;
-    let v = add_raster(s, r)?;
+    let v = add_computed_raster(s, r)?;
     let layer = s.map().layer(v["layer"].as_u64().unwrap_or_default() as u32).map(|l| l.name.clone()).unwrap_or(name);
     // Deeper water darker, the ground showing through.
     s.run("raster.symbology", &json!({"layer": layer, "type": "stretch", "ramp": "Blues"}))?;
@@ -1588,4 +1588,13 @@ fn suitability_inputs(input: &super::InputContext<'_>, p: &Value) -> Result<supe
         .map(criterion_layer)
         .collect::<Result<Vec<_>, _>>()?;
     super::Inputs::named(s.map(), names)
+}
+
+/// Adds a computed raster as a layer (embedded as a GeoTIFF, so it saves with the project): the
+/// flood's depths.
+fn add_computed_raster(s: &mut Session, r: Raster) -> CmdResult {
+    let name = r.name.clone();
+    let bytes = rustgis_data::raster::geotiff::write(&r, 0).map_err(|e| e.to_string())?;
+    let layer = rustgis_map::RasterLayer::from_bytes(r, format!("{name}.tif"), bytes);
+    super::raster::add_raster(s, &name, layer)
 }
