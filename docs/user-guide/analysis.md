@@ -8,8 +8,9 @@ Lasso** (drag a freehand outline), or **Select by Radius** (drag from the centre
 selection; Ctrl/Cmd removes; Esc cancels an unfinished outline. Area tools use even-odd fill, so a
 self-crossing outline selects its alternating filled regions. Radius uses the Neighborhood Explorer's
 local Mercator distance and retained geographic prefilter; its outline and readout are approximate
-and some features near the outline may be excluded. The main Select button remains click/rectangle
-selection.
+and some features near the outline may be excluded. A feature reaching beyond 85.05°, where Web
+Mercator stops, is measured on the ground instead, so it may be selected outside the outline, which
+stops at 85.05°, or left out inside it. The main Select button remains click/rectangle selection.
 All selection tools take only features that are drawn, in selectable layers: a definition query or
 a display filter hiding a feature keeps it out, and a click picks the feature drawn on top among the
 selectable layers. **Select By Attributes** takes a SQL clause and checks it as you type; **Select By
@@ -27,6 +28,14 @@ Click a column header to sort by it (a second click reverses the order, a third 
 keeps to the selected rows and **Filter rows…** keeps rows where any value contains the text typed,
 ignoring letter case. The toolbar opens Select By Attributes and zooms to, switches, clears or
 deletes the selection, adds or calculates a field, and calculates geometry attributes.
+The first column, **Feature ID**, shows each feature's identifier, not its current row position
+after sorting or filtering. It is not a dataset field: do not use it as a geoprocessing field name.
+
+Right-click a column header for **Hide Column**, **Move Left**, **Move Right** and **Show All
+Columns**. A hidden column is only left out of the table: export, selection, expressions and the
+map are unchanged. The toolbar says how many columns are hidden, and clicking it shows them all.
+Hiding the column the rows are sorted by clears the sort. The order and hidden columns are kept
+per table until another project is opened, and are not saved in the project.
 
 <figure markdown="span">
   ![The attribute table docked under the map: the 14 African countries of more than 30 million people, selected by attributes, highlighted on the map and in the table](https://assets.rustgis.app/images/attribute-table.webp)
@@ -55,6 +64,49 @@ Open a tool from **Analyze › Portal › Feature Analysis** or **Raster Analysi
 which searches every tool) or Command Search. Fill in its parameters and click **Run**: new
 layers or tables are added to the project; selection tools select existing rows and Calculate
 Geometry Attributes updates the input layer. Each run is listed under **Analyze › History**.
+
+In the desktop app a tool runs in the background, so the map and the rest of the window stay in
+use. While it runs, the Tools pane shows its name, a **Cancel** button and, for the tools that
+count their work (Viewshed, IDW Interpolation, Kriging, Kernel Density, Buffer, Select Layer By
+Location and others), a progress bar. One tool runs at a time. A cancelled run adds nothing, and
+for a tool that counts its work, its message says how far through its current step it got. Edits
+made to its input layers while it runs are kept: a selection it makes selects the same features
+where they now are (and says how many are gone), and a result that would replace an edited
+layer, or one loaded whole meanwhile, is refused. Renaming the map while it runs is fine; after
+switching to another map, a result that adds to or changes the map is refused (one made only of
+tables or a file is still made). Opening another project drops the run. The Analysis pane's
+**Zonal Statistics**, **Viewshed**, **Interpolate (IDW)**, **Suitability Modeler**, **Raster
+Functions** and the **Function Editor**'s chains, **Change Detection**, **Classification Wizard**
+(k-means), **Classification Tools** (from training polygons), **Indices**, **Process** (clip and resample), an ortho or
+reality workspace's **Build** (its mosaic) and **Deep Learning** (training and classifying) run in
+the background the same way, with their progress and **Cancel** under the pane's inputs, one at a
+time; so does the map's right-click
+**Viewshed … Here**, which opens the pane to show it. A model trained there is kept once its classes
+are added: a cancelled run keeps none. Scripts, models, the AI
+Assistant, the command line and the web app wait for each tool to finish.
+
+**Viewshed**, **IDW Interpolation** and **Kriging** have no work limit when you run them from their
+pane in the desktop app (the Tools or Analysis pane), nor does **Kernel Density** or **Deep
+Learning**: a large run shows its progress, and **Cancel** stops it within a moment, however wide
+its rows. Neither does `rustgis-cli run` typed at a terminal, which Ctrl-C stops. Where a run can't
+be stopped while it goes (a script, a model, the AI Assistant, Python, the web app, and `rustgis-cli
+run` called from another program, such as an agent or a CI job, which may wait with a timeout),
+Viewshed, IDW Interpolation and Kriging refuse a run that would take more than a second or two of
+work on one thread (a ray step, a cell-point pair), Kernel Density one whose points' search windows
+(the square around each point's radius) cover more than 50 million cells, and Deep Learning a model
+too large for its raster; its training fits a share of the sampled pixels, or fewer epochs, instead
+(`dl.train` reports the epochs it ran). A task or model recorded from a pane run keeps these limits
+when it runs again in the app, so a step the pane took on can be refused there, and a model trained
+again can differ. On the desktop these limits grow with the cores the run takes (up to 16), as many
+times more work as the threads it runs on. Threads share cores and memory, so a run at that limit
+can take up to about twice as long as a one-thread run at its own (measured on one machine, a Xeon
+Silver 4114; it can be longer on others); in the web app, on one thread, the limits stay as they
+are. The error names the limit on this computer and the threads it counted. The limits on memory
+(the cells a grid may have, and those on the following pages) hold everywhere, as does Viewshed's on
+its window: a radius covering more than 25 million cells, or 100,000 cells across, is refused. A
+tool's own default cell size still follows the one-thread limit, so it makes the same grid on any
+computer and from any caller; a finer cell size given is what a larger limit, or none, lets through.
+
 From the command line or a script (`gp.run`), a built-in tool's parameter with a list of choices, such as Buffer's
 units, takes one of them in any letter case (`"meters"` for `Meters`); any other value is an error
 that names the choices (Buffer's units no longer take the abbreviations `m`, `mi` or `metres`).
@@ -79,6 +131,92 @@ written some other way (a token typed into a SQL query, say) can still be there:
 before sharing it. A point buffered where the
 map was clicked is copied as the command that buffered it, with the point.
 
+**Near the poles.** The geometry tools and the topology checks work on Web Mercator's coordinates,
+carried on beyond 85.05°, where Web Mercator stops, to the poles instead of clamped there, so polar
+features keep their shape. An edge wholly beyond 85.05° is straight in longitude and latitude. One
+that crosses 85.05° is straight in the tools, but the Web Mercator map clamps its far end onto
+85.05° and draws it straight to there, so a cut along such an edge can fall well east or west of
+where that map shows it: about 48 km at 84.5°N for an edge from (0°, 80°N) to (10°E, 89°N). A
+pole is a line in these coordinates, not a point, so Minimum Bounding Geometry of points spread
+around a pole spans their longitudes (a flat polygon with no area, for points on one parallel,
+and the tool says how many hulls have no area), not the cap they
+enclose on the ground. The globe draws a long edge along the great circle between its ends, so near
+a pole it shows a little poleward of where the tools take it: about 850 m at the middle of a 10°
+edge along 88°N (as everywhere, the tools take an edge as straight on the map, not on the globe).
+Beyond 85.05°, the dangle check measures line ends about their pole (on WGS 84's curvature there,
+within 0.13% out to 85°), right up to the pole and across ±180°; an edge winding round a pole so
+many times that it can't be measured closely is measured coarsely, and the check says it's
+incomplete. Features that both reach a pole
+(to within 1e-7°, about a centimeter) meet there, one place on the ground, in Select By Location
+and Spatial Join (Intersects), whatever their longitudes; in Clip, the overlays, Erase, Split,
+Summarize Within and Spatial Join ("Have their center in") a point at a pole falls in a polygon
+reaching it (a line or polygon meeting another only at a pole has no part in it, as at a corner
+anywhere); and a point at a pole is covered (Must Be Covered By) by polygons that together surround
+the pole (elsewhere, a point on the boundary between two polygons is still reported, as before),
+not by ones that only touch it at a corner or leave a gap reaching it (a hole no other polygon
+fills included). The check looks at circles around the pole from 1.1 cm to 8.7 km from it on the
+ground, out to the first the polygons don't reach at all: a gap more than 9e-6° of longitude wide
+where it crosses one counts, and narrower ones are taken for the seams the overlays' rounding
+leaves. It leans to reporting: such a gap counts even if it doesn't reach the pole, and so do
+polygons reaching less far from the pole on one side than on another, within 8.7 km.
+Spatial Join's Within, Contains and Largest overlap still see a pole as a line. Radius selections
+and the Neighborhood Explorer measure a feature reaching beyond 85.05°, or any feature from a center
+beyond it, on the ground, following each edge as the tools take it (straight on the map) to within
+about 125 m out to 5,000 km (farther, more, but only ever nearer); the
+Neighborhood Explorer also takes a center beyond 85.05°, while radius selections take centers within
+±85.05°. A feature within ±85.05° searched from a center within it is still measured in local
+Mercator, which doesn't go over the pole, so from a high latitude a feature just within 85.05° on
+the far side of the pole can be left out while one just beyond it, nearer on the ground, is found.
+A search measures at most 250,000 points and steps along edges in each layer, in steps of at most
+half a degree; past them, or along an edge over 512° long (as only a hostile file has), a feature is
+counted at the least distance it could be, so it may lie beyond the radius, and the tool warns how
+many were, layer by layer. Shapes with a finite latitude past ±90° are left out of radius searches,
+with a count; missing or infinite coordinates and their incident edges are omitted from the
+measurement, also with a count. An incomplete polygon is measured along its remaining finite
+edges, without assuming it contains the center. The overlay tools, Select By Location, Spatial Join, Summarize
+Within and topology validation refuse latitudes past ±90° before doing their work.
+
+### Batch geoprocessing (`gp.batch`)
+
+Run one tool over many layers in the project or a folder of vector files:
+
+```json
+gp.batch={"tool":"buffer","inputs":["Cities","Rivers"],"outputPattern":"{input}_buf","params":{"distance":50,"units":"Kilometers"}}
+```
+
+- `"tool"`: the tool's id (such as `"buffer"`, `"simplify"` or `"convexHull"`).
+- `"inputs"`: layer names or, on desktop and the command line, file paths; or `"*"` for every
+  vector layer on the active map, hidden ones included (raster and graphics layers are left out,
+  with a notice). In the browser, add a file as a layer first and use its layer name.
+- `"folder"`: on desktop and the command line, a folder whose `.shp`, `.geojson`, `.json`,
+  `.gpkg`, `.fgb`, `.parquet`, `.geoparquet`, `.kml`, `.kmz`, `.gpx` and `.csv` files are run over
+  in file-name order (byte order, so ASCII capitals come before lowercase letters). Subfolders and symbolic links are skipped, with a count.
+- `"outputPattern"` (or `"output_pattern"`): the name of each output layer, `"{input}_{tool}"` by
+  default, where `{input}` is the layer's name or the file's name without its extension and
+  `{tool}` the tool's id. It must include `{input}`. A name already taken gets a number (`_2`).
+  Tools that change a layer in place or select features keep their own names.
+- `"params"`: the parameters every run shares. The batch input replaces a value given there for
+  the input parameter, with a notice.
+- `"param"` (or `"batch_param"`): the parameter each input goes to; by default the tool's first
+  layer parameter, else `"input"`.
+
+One input failing doesn't stop the others. The result counts what `"succeeded"` and `"failed"`,
+names the `"outputs"` (layers or tables) and lists each failure in `"errors"`, with one notice
+for the failures. If every input fails, the batch is an error naming each input and why. What a
+reader drops or assumes for a file input (Z values, a coordinate system) is one notice per kind,
+naming the inputs, and is kept in the history and the result's `"warnings"`. Tools that write a
+file are refused. A batch is yours to run: the AI Assistant asks each time, and plugins and
+imported tasks can't run one.
+
+On the desktop, a batch in the Script pane runs in the background, as the script's tools do: the
+status bar shows **Run Script** and **Cancel**. Cancel stops the batch after the item under way,
+before the next one starts, and the run adds nothing. A batch run under a run that can be
+cancelled stops with it, and says how many items it ran (`"cancelled"` and `"attempted"` in its
+result, and a notice such as `Batch 'buffer' cancelled after 2 of 10`). On the command line,
+Ctrl-C stops a batch as it stops any command.
+
+### Built-in tools
+
 These are the built-in tools; GeoLibre and plugin tools join them when available.
 Use these ids in `gp.run`'s `tool` parameter (`gp.tools` lists the available tools and their parameters):
 
@@ -101,6 +239,13 @@ Use these ids in `gp.run`'s `tool` parameter (`gp.tools` lists the available too
 | Feature To Point | `featureToPoint` | Data Management › Features |
 | Merge | `merge` | Data Management › General |
 | Feature Vertices To Points | `featureVerticesToPoints` | Data Management › Features |
+| Points Along Lines | `pointsAlongLines` | Data Management › Features |
+| Polygon To Line | `polygonToLine` | Data Management › Features |
+| Split Line At Vertices | `splitLineAtVertices` | Data Management › Features |
+| Feature Envelope To Polygon | `featureEnvelopeToPolygon` | Data Management › Features |
+| Unsplit Line | `unsplitLine` | Data Management › Features |
+| Check Geometry | `checkGeometry` | Data Management › Features |
+| Repair Geometry | `repairGeometry` | Data Management › Features |
 | XY Table To Point | `xyTableToPoint` | Data Management › Features |
 | Calculate Geometry Attributes | `calculateGeometry` | Data Management › Features |
 | Simplify | `simplify` | Cartography › Generalization |
@@ -112,6 +257,7 @@ Use these ids in `gp.run`'s `tool` parameter (`gp.tools` lists the available too
 | Summarize Within | `countPoints` | Analysis › Summarize |
 | Summary Statistics | `summaryStatistics` | Analysis › Statistics |
 | Pivot Table | `pivotTable` | Analysis › Statistics |
+| Tabulate Intersection | `tabulateIntersection` | Analysis › Statistics |
 | Export Features | `exportFeatures` | Conversion |
 | Vector to PMTiles | `vectorToPmtiles` | Analyze › Tools |
 | Raster to PMTiles | `rasterToPmtiles` | Analyze › Tools |
@@ -126,7 +272,11 @@ bands, colors, mask and resampling. Set the minimum and maximum zoom from 0 to 1
 transparency are included. The raster must be georeferenced and fit
 within one world. Turn off dynamic range adjustment and display rotation first. The in-memory
 export is limited to 512 tiles and 64 MiB of compressed tile data; reduce the extent or zoom range
-if it exceeds a limit. Areas beyond the Web Mercator latitude limit are clipped.
+if it exceeds a limit. Areas beyond the Web Mercator latitude limit are clipped. A cloud-optimised
+GeoTIFF read in place is exported from its full-resolution tiles: the desktop waits for them (two
+minutes at most); the web app can't wait, so an export whose tiles aren't all in says so and asks
+for the rest: export again once they are in (a large export may take a few tries). Without them
+nothing is written.
 
 **Vector to PMTiles** (`vectorToPmtiles`) writes a single-layer MVT archive in standard Web
 Mercator. Choose `minZoom` and `maxZoom` from 0 to 16; `sourceLayer` defaults to the input
@@ -154,10 +304,9 @@ integer attributes outside ±2^53 are rejected to avoid precision loss.
 This is an in-memory export, limited to 10,000 distinct output tiles and a conservative
 256 MiB working-memory budget, including the input, clipping/encoding temporaries and final
 archive. This budget is checked after streamed-source materialization, not during provider
-loading: the existing full-read limits (2,000,000 features on desktop, 500,000 in the browser)
-apply first, and loading may use more than 256 MiB before export refuses the input. Reduce a
-large source before loading it for export. Geometry allocation estimates are linear in the
-number of vertices and rings.
+loading: the whole-read limits ([Large files](data.md#large-files)) apply first, and loading may
+use more than 256 MiB before export refuses the input. Reduce a large source before loading it
+for export. Geometry allocation estimates are linear in the number of vertices and rings.
 Each geometry component's buffered candidate rectangle is limited to 40,000 tiles per zoom,
 including candidates where clipping produces no output. A separate **100,000,000-unit
 geometry-work budget** accumulates across all exported features, components and zooms:
@@ -178,8 +327,14 @@ gp.run={"tool":"vectorToPmtiles","params":{"input":"Roads","minZoom":0,"maxZoom"
 least three different, non-collinear corners (plus the closing vertex), so a tolerance larger
 than a polygon produces a small ring instead of restoring its original vertices. Holes and
 multipart rings are retained. This is not a topology-preserving simplifier: check the result
-where holes or neighbouring polygons must stay aligned. The default tolerance remains 25 km;
-use a smaller value for local boundaries.
+where holes or neighboring polygons must stay aligned. The default tolerance remains 25 km;
+use a smaller value for local boundaries. A line or polygon has its tolerance taken east–west at
+the scale of its middle (its label point's latitude), at most 85°'s, so beyond 85.05°, where the
+ground is far narrower, less is simplified away than asked (a 3 km tolerance at 89.9°N takes out
+only what lies within about 60 m east–west). Parts farther equatorward than the label point can be
+simplified more than asked: the tolerance is applied at that one scale, so a polar cap from 60°N to
+the pole, at 3 km, can move its 60°N vertices about 17 km on the ground. The tool says how many
+features reach beyond 85.05° and so are affected.
 
 **Kernel Density** (`kernelDensity`) calculates a continuous magnitude-per-unit-area raster
 surface from point features using a Quartic (biweight, default) or Gaussian kernel (truncated at 3σ and
@@ -193,7 +348,8 @@ e.g. `EPSG:32618`).
 Because bandwidth and cell size are measured in coordinate-space linear units, global cylindrical
 projections such as Web Mercator (EPSG:3857) introduce scale distortion that increases with latitude;
 use a local projected coordinate system (such as UTM or State Plane) when accurate ground distances
-are required. Leaving `radius` empty or setting it to `0` automatically estimates the bandwidth
+are required. A point the system can't hold, such as one beyond 85.05° in Web Mercator, is left
+out, and the tool says how many were. Leaving `radius` empty or setting it to `0` automatically estimates the bandwidth
 using Silverman's rule of thumb based on the points' spatial distribution (falling back to extent span / 30,
 or 1000 coordinate-space linear units for a single point or coincident points). When `pixelSize` is
 omitted, an adaptive cell size is calculated to span approximately 250 cells along the longer side
@@ -214,11 +370,31 @@ projection. Each feature is buffered in an azimuthal equidistant projection on t
 centred on it, so distances from a point are true; long lines and large polygon outlines are
 buffered in stretches of a few hundred kilometres to limit projection error. Up to 85° of
 latitude, a buffer's sides are within 0.012 % of the distance (or 1 cm), and within 0.05 % along
-a winding line or outline buffered in stretches. Its curves are drawn with straight edges (32 to
-a point's circle, 15 to a half circle at a line's end or a polygon's corner, close to GEOS and
-PostGIS's 8 to a quarter circle), whose corners are at the distance and whose middles run up to
-about 0.5 % of it inside the true curve. Negative Buffer
+a winding line or outline buffered in stretches. An outline's edges are split to keep to that,
+by at most 16,000 points a ring; a ring of thousands of long edges can use them up and keep some
+edges coarser, and the tool says how many features' buffers did. Its curves are drawn with
+straight edges (128 to a point's circle, 64 to a semicircular line end). Between vertices, those
+edges cut up
+to 0.031 % of the distance inside the true curve in the projection plane, and up to 0.125 % at
+polygon corners and line joins, in addition to the projection error. Negative Buffer
 distances shrink polygons. Buffer and Select Layer By Location limit distances to 5,000 km.
+Ordinary Buffer limits each feature to 2,000,000 outline vertices. Its retained output has a
+separate memory budget: on the desktop a quarter of the computer's memory, from 512 MiB up to 8 GiB
+(`bufferBytes` in `gp.env`), and 128 MiB in the browser, including geometry
+allocations, copied attributes and spare row capacity. Features are processed in bounded
+batches, in input order. Many small buffers can therefore exceed 2,000,000 vertices together.
+Dissolve All retains the shared 2,000,000-vertex limit before union and checks the dissolved
+result too. Multipoint discs count before their union even when they overlap; for Dissolve All
+their charges also accumulate across features.
+Distance-based Select Layer By Location uses the same per-selector complexity limit and
+memory budget for retained selector geometries, row capacity and a conservative spatial-index
+storage allowance. With more than 16 distance selectors, selection stops with an error after
+50,000,000 actual candidate checks across all target features, on both the grid and fallback
+paths. Early matches stop their scan, so large input counts alone do not refuse a request.
+Smaller selector sets keep their bounded-width linear scan. Selection at zero distance keeps
+its existing behavior without these buffer limits. An excessive request fails with an error, never partial output; select fewer features
+or split complex features. These budgets cover retained results, not total process memory:
+the input layers, temporary geometry on active workers and polygon-overlay scratch are additional.
 **Calculate Geometry Attributes** measures polygon areas and perimeters, and line lengths,
 on the WGS 84 ellipsoid, independently of the map's display projection. Holes are subtracted
 regardless of ring winding, and multipart measurements are summed. Ring directions are
@@ -228,7 +404,21 @@ use the smaller polar region in either direction; reversing a ring does not sele
 complement. Edges follow the shortest geodesics between vertices. The output fields remain
 `area_km2`, `perimeter_km` and `length_km`; point coordinates are unchanged.
 Spatial Join's **Largest overlap** still measures area on a sphere of radius 6,371 km; it can
-differ from the ellipsoid by up to about 0.9 % (a small area near a pole).
+differ from the ellipsoid by up to about 0.9 % (a small area near a pole). The same WGS 84
+measure backs the attribute table's **Calculate Geometry** (`edit.calculateGeometry`), the
+[expressions](expressions.md#values)' `$area`, `$perimeter` and `$length`, the map's
+**Measure** tools on the Earth, and every network tool's edge and route lengths, so all of these
+read the same number for the same geometry, with one exception. A polygon ring with a full-turn
+edge (-180° to 180° along a parallel that the ring reaches down one meridian and leaves back up
+the other, with the ring's turns leaving it closed around the globe), such as a globe-wide band, is
+measured along its parallels and meridians on the ellipsoid by all of them, its perimeter counting
+each whole parallel; a 180° to -180° edge anywhere else is a seam along the antimeridian (a
+polygon split there), measured as the meridian it runs along. A ring winding around a pole is
+measured as the region it traces by the attribute table
+and the Measure tools (a ring that goes all the way round at 60° N gives the larger region),
+while **Calculate Geometry Attributes** gives the smaller polar cap. On the Moon or another body, the Measure tools measure on
+that body's sphere. The Radius tools still measure a local Mercator distance, and **Mensuration
+Tools** (`raster.measure`) still measure on the sphere, so those can differ from the numbers above.
 
 **Merge** (`merge`, Data Management › General) appends loaded vector layers of the same geometry
 type (points, lines or polygons) into a new layer. It needs no GeoLibre runner. Choose **Input
@@ -265,6 +455,67 @@ fewer features, or simplify ones with many vertices.
 gp.run={"tool":"featureVerticesToPoints","params":{"input":"Rivers","output":"river_vertices"}}
 ```
 
+**Points Along Lines** (`pointsAlongLines`) writes points at a set `distance` along each part of
+the `input` layer's lines, or each ring of its polygons (holes too), measured on the WGS 84
+ellipsoid as Buffer's distances are, in `units` (Kilometers by default): a point at `startOffset`
+(0 by default), then one every `distance`, stopping `endOffset` before the part's end.
+`includeEnd` adds a point where they stop when the distance doesn't land there (the first is
+always at the start offset). Each part and ring is walked on its own from its first vertex, so the
+gap between two parts never counts; a line's parts that cross the antimeridian, one ending on it
+where the next begins on its other side, as a GeoJSON file splits a line that crosses it, are one
+line. A ring ends where it starts, so a point there is made once, and a line that ends where it
+starts (a contour) is walked as a ring too; a part shorter than its offsets gets none. A line that
+passes through one place twice gets a point there each time the distance lands on it, except at a
+closed line's shared start and end, which gets one point (a line through A, B and back to A gets
+one at A). Each point
+has its feature's attributes and three fields: `orig_fid`, the feature's OID, as Feature Vertices
+To Points writes it, and, named as in QGIS's Points along geometry, `distance` (how far along its
+part, in `units`, the start offset included) and `angle` (the line's direction there, in degrees
+clockwise from north; on a vertex, halfway between the segments either side). A new field whose
+name the input already has gets a suffix (`distance_2`). QGIS's tool works differently: it
+measures `distance` along the whole feature (a polygon's rings as one, its end offset left out) in
+the layer's units, and walks a closed line as an open one, which gets a point at its end, on its
+start again, when the distance lands there. Here each part and ring starts again from 0, and the
+distance is on the ground in any coordinate system. Missing geometry, point features, and line
+or polygon features with no measurable segments (including empty geometries) are skipped with
+separate counted notices. A valid part that produces no points because of the offsets is not
+reported as unusable geometry.
+
+Each edge is the shortest path between its vertices on the ellipsoid, as Calculate Geometry
+Attributes measures it and the globe draws it. A flat map draws an edge straight in its own
+projection instead (in Web Mercator, along a constant bearing), so a point on a long edge can sit
+off the drawn line: on an east–west edge 100 km long, by about 200 m at 45° of latitude, 340 m at
+60° and 1.1 km at 80° (on one 10 km long, a hundredth of that; on the equator or along a meridian,
+not at all). Add vertices to long edges first if the points must follow the drawn line. An edge
+spanning more than 180° of longitude is taken the short way round, and one from −180° to 180° at
+one latitude has no length; a polygon cut at the antimeridian is walked as it is stored, so it gets
+points along the cut too (a polar cap whose parallel is one edge from −180° to 180°, only along the
+cut). An edge between opposite sides of the Earth has no single shortest path, and the tool takes
+the one GeographicLib does (over a pole for two points on the equator).
+
+The angle is the bearing from true north, which near a pole turns quickly along even a straight
+line (by 33° in 30 m, 11 m from the North Pole); at a pole itself, where every direction is south,
+it follows GeographicLib's convention, from the meridian of the longitude the vertex is written
+with. On a map in another projection than Web Mercator, north isn't straight up everywhere, so
+there the angle differs from the line's direction on the map. In Web Mercator it differs from a long
+edge's drawn direction by about half the edge's span of longitude times the sine of the latitude:
+at the ends of an east–west edge 100 km long, 0.45° at 45° and 2.5° at 80°; and, as Web Mercator
+isn't conformal on the ellipsoid, from a diagonal edge's by up to about 0.19° at the equator (0.1°
+at 45°, less toward the poles). A vertex less than a millimeter from the one before is passed over,
+so a near-duplicate doesn't turn a point's angle; a vertex past a pole (bad data) is taken as the
+pole, and the tool says how many it took so; and a vertex with a coordinate missing or infinite is passed over (its neighbors joined, or a
+line's end trimmed back to the last vertex it has), and the tool says how many it passed over. The output keeps what the input lost on reading, if
+anything (features, or Z and M values), as its layer's notes say. The points
+keep the input's coordinate system, with longitudes between -180 and 180, so a point past the
+antimeridian is on the far side of the map. The points are counted first and may take up to about
+4 GiB (some 20 million points with a few fields): a distance that would make more, or more than
+the browser can give in the web app, stops the tool with a message before anything is built. Use a
+larger distance, simplify lines with very many vertices, or select fewer features.
+
+```text
+gp.run={"tool":"pointsAlongLines","params":{"input":"Rivers","distance":500,"units":"Meters","includeEnd":true}}
+```
+
 **IDW Interpolation** works like the QGIS tool of the same name: every point weighs on every
 cell by 1/distanceᴾ, where P is the distance coefficient (2 by default). Lines and polygons
 contribute their vertices. Leave the extent empty to use the input's, or give it as
@@ -297,7 +548,8 @@ along it are kept, but polygons that only share an edge or a corner, and a line 
 one, give nothing. The input can be points, lines or polygons and keeps its geometry type; the
 overlay must be polygons. An overlay field whose name the input already has gets a suffix (`id_2`).
 Overlapping features within one layer are not split against each other. Like Clip and Erase, the
-overlay works on the map's Web Mercator coordinates, so the parts' edges are straight on the map.
+overlay works on the map's Web Mercator coordinates, so the parts' edges are straight on the map
+within ±85.05° (beyond it, see **Near the poles** above).
 Selections in both layers are honoured. To measure each part, run Calculate Geometry Attributes on
 the result:
 
@@ -401,8 +653,16 @@ rule), `last`, `sum` and `mean` (numeric fields), `min` and `max` (numbers or te
 matches with a value) and `join` (the values as text, separated by `delimiter`, `, ` by default).
 Every rule but `first` and `last` skips empty values. A target without matches gets empty
 values, except a `count` of 0. `mean` writes a decimal field, `count` a whole number and `join`
-text. The `sum` of a whole-number field adds its whole numbers, and is empty when too large to
-hold. For example, the total units permitted in each district:
+text. The `sum` of a whole-number field adds its whole numbers exactly, and is empty when too
+large for a 64-bit integer; the tool says how many sums were left empty, and in which fields. A
+decimal with a fraction, or a number past that range, isn't a whole number the field holds: the sum
+leaves it out. The other numeric rules leave out a number too large for a decimal (text such as
+`1e309`). The tool says how many matched numbers were left out, and in which fields. Whole numbers written as text count as the
+numbers they are, however they are written (`12`, `12.0`, `1.2e1`). `min`
+and `max` compare whole numbers exactly, past 2^53 (9,007,199,254,740,992) too, where their decimals
+can be equal. The `mean` of whole numbers comes from their exact sum; a mean that is a whole number
+past 2^53, which a decimal can't hold, is rounded, and the tool says how many were. For example, the
+total units permitted in each district:
 
 ```text
 gp.run={"tool":"spatialJoin","params":{"target":"districts","join":"permits","merge":[{"field":"units","rule":"sum"}]}}
@@ -420,7 +680,13 @@ into a `target` table or layer based on matching key values:
   `joinField` (aliases: `join_field`) names the matching key in the source table; when omitted, empty,
   or whitespace-only, it defaults to `targetField`. Numeric keys match across integer and floating-point
   types when whole numbers (e.g. `10` matches `10.0`), while non-finite floats (`NaN`, infinity) and
-  nulls never match. Incompatible key data types (e.g. text vs integer) are rejected.
+  nulls never match. A text key matches an integer key when the text is the number written out in
+  full (`"47157000100"` matches `47157000100`), so an all-digit ID typed as a number in one table and
+  as text in the other (Census GEOIDs, FIPS codes, ZIP codes) joins when the codes match exactly as
+  written. Leading zeros stay meaningful: a number that lost its zero (`1001` for `"01001"`) leaves its
+  record unmatched, and a warning says how many records missed this way, with the first pair. Other
+  incompatible key data types (e.g. text vs floating point or boolean) are rejected, and the message
+  suggests converting one key with Add Field and Calculate Field.
 - **Transferred fields:** `fields` selects specific source fields to transfer (a comma-separated list
   or a JSON array of strings, e.g. `["tax_rate", "zone_code"]`; non-string and non-array types are rejected). Repeated
   field names are deduplicated in order. When omitted or passed as a blank string (`""`), every source field except
@@ -483,10 +749,46 @@ Every statistic but `NULLS` leaves out empty values. A text field takes `COUNT`,
 `FIRST`, `LAST`, `UNIQUE`, `CONCATENATE`, `MODE`, `MINORITY` and `NULLS`; the rest need a numeric
 field. A group with no values gets empty statistics, except a `COUNT` and `UNIQUE` of 0 (its
 `NULLS` is its `FREQUENCY`). Two output fields can't share a name, so a case field can't be called
-`FREQUENCY` or `<STAT>_<field>` for a statistic asked for. Counts
-are whole numbers, `CONCATENATE` and the statistics of a text field are text, and the others are
-decimal. Without `statistics`, `field` gives that field's `COUNT`, `SUM`, `MEAN`, `MIN`, `MAX` and
-`STD`, reading its values as numbers.
+`FREQUENCY` or `<STAT>_<field>` for a statistic asked for. Counts are whole numbers, `CONCATENATE`
+and the statistics of a text field are text, and the others are decimal. A decimal holds whole
+numbers exactly only up to 2^53 (9,007,199,254,740,992): a statistic that should be a whole number
+past it (a `SUM`, `RANGE` or evenly dividing `MEAN` of whole numbers, the `MIN`, `MAX`, `FIRST`,
+`LAST`, `MODE` or `MINORITY` picked, or a whole `MEDIAN`, percentile or `IQR`) is rounded, and the
+tool says how many results were rounded and in which fields. The whole numbers are an Integer
+field's values and whole numbers written as text in a numeric field, which these checks and
+`UNIQUE`, `MODE`, `MINORITY` and `CONCATENATE` take exactly up to the 64-bit integer range. A
+longer one written in digits is read as a decimal, and its statistics aren't checked: the tool
+says how many such values it read and in which fields, as statistics of them may be rounded. A
+number written with a decimal point or an exponent (`6.02e23`) asks for a decimal and gets no
+notice. A Double field's values are decimals already, rounded as decimal arithmetic rounds, and
+get no notice. Without `statistics`, `field` gives that field's `COUNT`, `SUM`, `MEAN`, `MIN`,
+`MAX` and `STD`, reading its values as numbers.
+
+**Dissolve** (`dissolve`) merges the polygons sharing a value of `field` into one feature for
+each value, or all of them into one without a field. Each feature has the value and `count`, the
+polygons merged; records with no value form a feature of their own. **Summarize Within**
+(`countPoints`) copies the polygons and adds `point_count`, the points inside each polygon or on
+its edge; a point where polygons overlap counts in each of them.
+
+Both tools take `statistics` to add summary fields: the list Summary Statistics takes, with the
+same statistics, rules for text fields, empty values and output types (above), and `separator`
+for `CONCATENATE`. Each pair adds a field `<STAT>_<field>` after the tool's own fields:
+
+```text
+gp.run={"tool":"dissolve","params":{"input":"parcels","field":"county","statistics":[{"field":"pop","statistic":"SUM"},{"field":"owner","statistic":"FIRST"}]}}
+gp.run={"tool":"countPoints","params":{"polygons":"districts","points":"schools","statistics":[{"field":"pupils","statistic":"MEAN"}]}}
+```
+
+The first adds `SUM_pop` and `FIRST_owner` after `county` and `count`; the second adds
+`MEAN_pupils` after the districts' fields and `point_count`. Dissolve's statistics are of the
+input's fields, over exactly the records merged into each feature: a record without a polygon is
+left out of them, as it is of `count`. Summarize Within's are of the point layer's fields, over
+the points `point_count` counts; a polygon with no points (or no geometry) gets a `COUNT`,
+`UNIQUE` and `NULLS` of 0 and empty other statistics. Both use only the selected records or
+points when there is a selection, taken in record order for `FIRST`, `LAST` and `CONCATENATE`. A
+summary field can't share a name, in any case, with another output field: Dissolve's dissolve
+field, a field of Summarize Within's polygons, or another summary field. In the Tools pane, use
+**Add statistic** as in Summary Statistics. Without `statistics`, neither tool adds fields.
 
 **Pivot Table** (`pivotTable`) turns the values of one field into fields of their own. It makes a
 standalone table with a row for each combination of values of the row `fields` (one field, or
@@ -511,7 +813,8 @@ Without `statistic`, each row and pivot value can have one record at most; the t
 first pair with more, and the cells keep the value field's type. Give a `statistic` to combine the
 records instead, such as the mean income by county and year from a table of households. It
 takes any statistic from Summary Statistics (above), with the same rules for text fields, empty
-values and output types; `separator` joins `CONCATENATE`'s values. A cell with no records is
+values, output types and whole numbers past 2^53: the tool says how many cells were rounded and in
+which pivot fields. `separator` joins `CONCATENATE`'s values. A cell with no records is
 empty even for `COUNT`, which tells it apart from records that have no value (a `COUNT` of 0):
 
 ```text
@@ -532,6 +835,64 @@ output is named `<input>_Pivot` unless `output` names it.
 The AI Assistant uses Pivot Table for questions such as "mean household income by county and year":
 it runs the tool with `county` as the row field, `year` as the pivot field and `MEAN`, then reads
 the table it names with `read_features`, a row per county.
+
+**Tabulate Intersection** (`tabulateIntersection`) measures how much of each zone each class of
+polygons covers, and shares the classes' totals out to the zones by area. Both layers are polygon
+layers. Zone features sharing the values of the `zoneFields` (one field, or several as a list) make
+one zone, and class features sharing the values of the `classFields` make one class; with no class
+fields, all the class features are one class. The tool makes a standalone table with a row for each
+zone and class that overlap (pairs that only touch get none), sorted by the zone fields' values,
+then the class fields', with empty values first, as Summary Statistics sorts its rows:
+
+| Field | Holds |
+| --- | --- |
+| The zone fields | The zone's values |
+| The class fields | The class's values |
+| `area_km2` | The ground area of the class in the zone, in km², where class features overlap each other counted once |
+| `percentage` | The class's area in the zone as a percentage of the zone's area, both measured as the map draws them (below; empty for a zone with no area) |
+| Each of `sumFields` | The sum, over the class's features, of the field's value times the part of the feature's area inside the zone |
+
+A field name already used in the table, ignoring case, gets `_2` (`_3` and so on), as when a
+class field and a zone field are both called `name`.
+
+The sum fields share a total out by area, as for population counted by census block and wanted by
+school district: a block half inside a district gives it half its population. They must be numeric,
+and can't also be class fields. Zones that overlap each other each get their share, so a value can
+be shared out more than once; the value of a feature's part outside every zone isn't shared out.
+
+`area_km2` is measured on the ellipsoid, as Calculate Geometry Attributes measures it. The
+percentages and shares compare areas measured on a sphere with each edge as the map draws it (a
+straight line on the map), the lines the tool cuts along, so the shares of a feature that zones
+cover without overlapping each other add up to its whole value, up to the overlay's rounding of the
+cut. The overlay rounds coordinates to a grid (the size of the zones near a feature over about a
+billion), so a part that leaves nothing outside its zone wider than that grid is the whole feature,
+and only parts outside every zone wider than the grid are reported. A feature so narrow next to its
+zones that the rounding can move its area by more than 1% is measured only roughly, unless it lies
+wholly inside a zone, and the tool says how many there are. The percentages of classes that overlap
+each other can add up to more than 100. Like the other overlay tools, it works on the map's
+coordinates carried on past 85.05° to the poles (see **Near the poles** above), so polygons there
+keep their area. Near a pole an edge along a parallel runs far from the shortest way between its
+ends, which `area_km2` follows, so the two measures can differ widely: for a quarter cap from 88°N
+to the pole, written with one edge along 88°N, `area_km2` is about 64% of the area its
+percentage is taken from. Add vertices along such edges to bring them together.
+
+The tool says how many zone and class features have no polygon (no geometry, an empty one, a line or
+point, or a ring collapsed to no area; they are left out), how many cross the antimeridian without
+being split there (the map, and with it the percentages and shares, takes them the long way round,
+while area_km2 takes their ground shape), how many have an edge beyond 85.05° running east or west
+(their percentages and shares follow the analysis plane, which takes such an edge straight in
+longitude and latitude, not clamped as the Web Mercator map draws it, so they and area_km2 can
+differ widely, as above), how many zones overlap no class feature and so have no rows, how many
+class features have no value in a sum field (they add nothing to its shares) and,
+with sum fields, how many class features lie partly or wholly outside the zones. Only selected
+features are used when a layer has a selection, and the table is named `<zones>_Tabulate` unless
+`output` names it.
+
+```text
+gp.run={"tool":"tabulateIntersection","params":{"zones":"districts","zoneFields":"district","classes":"blocks","sumFields":["population"]}}
+gp.run={"tool":"tabulateIntersection","params":{"zones":"counties","zoneFields":"county","classes":"landcover","classFields":"class"}}
+```
+
 <figure markdown="span">
   ![Tissot's indicatrix on the Robinson projection: circles of 800 km every 30°, stretched and sheared toward the poles](https://assets.rustgis.app/images/tissot.webp)
   <figcaption>Tissot's indicatrix on Robinson: equal circles, stretched and sheared by the projection.</figcaption>
@@ -566,6 +927,169 @@ with latitude or the map's projection.
 - Both write `a5` (the cell's 64-bit id in hex, as other A5 tools read it: DuckDB, PostgreSQL,
   Python's `pya5`, R), `resolution` and `area_km2`. A cell across the antimeridian, or round a pole, is
   split at ±180° into two parts of one polygon, each within −180° to 180°.
+
+### Geometry conversions
+
+These tools write new layers, honor selected features, and retain source fields, attributes and
+CRS metadata. Coordinates are used directly, without projection or snapping.
+
+- **Polygon To Line** (`polygonToLine`) makes one multipart line feature per polygon feature,
+  including every outer and inner ring. Open rings are closed. Shared boundaries remain in both
+  features; the tool does not build a shared-edge topology.
+- **Split Line At Vertices** (`splitLineAtVertices`) writes one two-vertex feature for every
+  consecutive pair in every line part, with the source attributes. Repeated vertices produce
+  zero-length segments; parts are never connected across gaps. The browser checks the estimated
+  output memory, including repeated text attributes, before building the segments; unavailable
+  memory returns an error.
+- **Feature Envelope To Polygon** (`featureEnvelopeToPolygon`) writes one axis-aligned rectangle
+  around all coordinates of each feature in stored longitude/latitude axes. Point features and
+  horizontal or vertical lines have zero-area envelopes and are skipped with a count. Longitude
+  bounds are literal, including for features spanning the antimeridian.
+- **Unsplit Line** (`unsplitLine`) joins line parts at exactly equal endpoints where precisely
+  two part ends meet and all attribute values agree. Reversed parts and closed cycles are
+  supported. Branches, attribute changes, and intersections away from endpoints stay separate.
+  Every output chain retains its common attributes; no field values are discarded. Each chain of
+  joined parts is its own output feature, so a multipart input can become several features.
+  Joins are decided among the selected features only, when there is a selection: an unselected
+  part meeting an endpoint neither joins it nor stops a join there. Two open parts with
+  equal attributes that share both endpoints join into one closed line when no other considered
+  part ends there; a part that is already closed has two ends at its endpoint, so it joins
+  nothing there.
+
+Missing geometries and empty or too-short parts are skipped with a count. If skipping leaves
+no usable output, the tool returns an error. Non-finite coordinates and malformed rows with
+more attribute values than schema fields are errors; missing attribute values become null.
+
+```text
+gp.run={"tool":"polygonToLine","params":{"input":"Regions","output":"Boundaries"}}
+gp.run={"tool":"splitLineAtVertices","params":{"input":"Rivers"}}
+gp.run={"tool":"featureEnvelopeToPolygon","params":{"input":"Regions"}}
+gp.run={"tool":"unsplitLine","params":{"input":"Rivers"}}
+```
+
+### Checking geometry
+
+**Check Geometry** (`checkGeometry`) finds the features whose geometry breaks the OGC Simple
+Features rules and writes them to a new layer, `<input>_check` unless you name it. Only the
+selected features are checked when some are selected. Each output row is its input feature as
+stored, with the same feature id, fields, attributes and CRS, plus two text fields: `problem`,
+the codes of what is wrong separated by `, `, and `detail`, a short description of each problem
+separated by `; ` that names the part and ring (counted from 1; ring 1 is the exterior ring),
+such as `exterior ring of part 1 crosses itself; 3 repeated vertices in ring 2 of part 1`. A
+feature with more than 20 problems lists the first 20 and counts the rest. If the input already
+has a `problem` or `detail` field, the new one gets the next free name (`problem_2`) and the
+tool says so. When nothing is wrong, the output layer is empty and the message says how many
+features were checked. `repeated_vertex` is not one of the OGC rules, which allow a point
+repeated in a row: it is a data-quality check reported beside them.
+
+| Code | What is wrong |
+| --- | --- |
+| `null_geometry` | No geometry, or one without coordinates |
+| `non_finite_coordinate` | A coordinate is not a number or infinite. The row is written without geometry, so it can't spoil the layer's extent. A ring with one is reported for those coordinates and left out of every other check: its points, its edges' crossings and its containment in other rings |
+| `too_few_points` | A line part with fewer than 2 distinct points, a ring with fewer than 3, or a polygon part without rings |
+| `ring_not_closed` | A ring's last point is not its first |
+| `repeated_vertex` | The same vertex twice in a row (a closed ring's last point doesn't count) |
+| `self_intersection` | A ring crosses itself, touches itself, or runs back over itself |
+| `hole_outside_shell` | An interior ring (hole) is not inside its exterior ring |
+| `rings_intersect` | Two rings of one polygon overlap or touch along a line |
+| `disconnected_interior` | Rings of one polygon touch at points so that they cut its interior into pieces, such as a hole touching the exterior ring at two points, or three holes each touching the next |
+| `parts_overlap` | Two polygons of one multipart feature overlap or touch along a line |
+| `too_complex` | Some of the feature's checks were left out: it needs more work than the tool spends on one feature, there wasn't enough memory to check it, or the geo library's relate operation failed on some of its rings or parts (`detail` says which of the three, not which rings or parts). The checks of each ring's points still run. The tool says how many features each reason left out |
+
+Codes are listed in this order, and are never translated. The checks work in stored
+coordinates, without projection. Lines may cross themselves, so only polygon rings are checked
+for self-intersection; points are checked for missing and non-finite coordinates only. Rings may
+touch each other at single points, as long as the polygon's interior stays in one piece (checked
+once its rings have no other problem with each other); any number of rings may meet at the same
+point. An unclosed ring is reported, then checked as if it
+were closed. Ring orientation is not checked, since GeoJSON and Shapefiles wind rings in
+opposite directions. The rings of a polygon are only checked against each other when each of them is
+usable (enough points, finite coordinates, and not crossing, touching or running back over
+itself), and the parts of a feature only when each part's rings are usable and have no problem
+with each other; the tool says how many features were not fully checked this way, because some
+of their rings or parts already have problems of their own. Rings and parts that touch are compared with the
+[geo](https://github.com/georust/geo) library's relate operation.
+
+```text
+gp.run={"tool":"checkGeometry","params":{"input":"Parcels"}}
+```
+
+### Repairing geometry
+
+**Repair Geometry** (`repairGeometry`) writes every feature to a new layer, `<input>_repaired`
+unless you name it, with its geometry made valid by the rules Check Geometry checks. Only the
+selected features are processed when some are selected. Each output row keeps its feature id,
+fields, attributes and CRS, and adds a text field `repairs`: the codes of what was repaired,
+separated by `, ` and in the order of the table above, or empty for a feature that needed
+nothing. Features with nothing wrong are copied exactly as stored. If the input already has a
+`repairs` field, the new one gets the next free name (`repairs_2`) and the tool says so.
+
+How each problem is repaired:
+
+- `ring_not_closed`: the ring is closed with its first point. `repeated_vertex`: the repeats are
+  dropped. `too_few_points`: the ring or line part is dropped; an exterior ring takes its part's
+  holes with it, and a polygon part without rings is dropped too. These fixes move no coordinate:
+  a feature with only these problems keeps every other vertex exactly.
+- `self_intersection`, `hole_outside_shell`, `rings_intersect`, `disconnected_interior` and
+  `parts_overlap`: the polygon is rebuilt from its area, as the "structure" method of make-valid
+  tools does. Each ring stands for the area it winds around, so a bowtie keeps both of its
+  triangles and the direction rings are wound in doesn't matter: GeoJSON and Shapefiles, which
+  wind them in opposite directions, give the same result. Each part is its exterior ring's area
+  less the union of its holes' areas, and the feature is the union of its parts. So overlapping
+  parts merge into one, overlapping holes merge, a hole outside its exterior ring disappears (what
+  of a hole lies inside it stays a hole), and an interior cut into pieces by rings touching at
+  points becomes one part per piece. A stretch of ring that runs back over itself, with no area,
+  is left out. Rebuilt exterior rings wind counter-clockwise, holes clockwise.
+- Lines may cross themselves, so only their repeated vertices and their parts with fewer than 2
+  distinct points are repaired. Points have nothing to repair but non-finite coordinates.
+
+When a ring of a part crosses itself, Check Geometry doesn't check that part against its other
+rings or the other parts; Repair Geometry checks the feature again after the fixes that move no
+coordinate, and adds `hole_outside_shell`, `rings_intersect` and `parts_overlap` when the rebuild
+finds a hole outside, merges holes or merges parts.
+
+The rebuild uses the [geo](https://github.com/georust/geo) library's boolean overlay, which works on
+an integer grid: half the larger side of the feature's extent spans about 2<sup>29</sup> steps.
+Coordinates are stored in degrees of longitude and latitude, so a step is about
+0.000 000 000 12° (0.013 mm) for a feature 10 km across, and about 0.000 000 24° (2.6 cm at the
+equator) for one spanning the world. Rebuilt coordinates may move by up to five steps from the
+input's rings; in the tests they moved at most two thirds of a step. The overlay also leaves out
+vertices in the middle of straight edges. The tool says how many features were rebuilt and the
+farthest, in degrees, their coordinates may have moved. Every rebuilt geometry is checked again and
+written only when it is valid.
+
+A hole or part narrower than one step of that grid in any direction can be rounded onto a single
+line of it and lose its area, depending on where it lies between the grid's lines. Rounding moves a
+point by up to half a step on each axis, so across a diagonal a piece needs to be wider, up to √2
+steps at 45°. The grid follows the extent of all the rings of a part, or of all the parts of a
+feature, so this happens to a tiny or thin hole or part far from the others, such as a long sliver
+at an angle. So before the overlay takes out a part's holes or merges the parts, a hole or part
+that narrow in any direction is dropped: `no_area` is added after the other codes in `repairs`, and
+the tool says how many holes and parts were dropped this way, from how many features.
+
+A feature that can't be repaired stays in the output without geometry, with its attributes, and
+`repairs` says why. One the tool couldn't repair is written unchanged, never dropped:
+
+| Code | Written | Why |
+| --- | --- | --- |
+| `null_geometry` | without geometry | No geometry, or one without coordinates |
+| `non_finite_coordinate` | without geometry | A coordinate is not a number or infinite |
+| `too_few_points` | without geometry | Every part has too few distinct points |
+| `no_area` | without geometry | Nothing with an area is left once repaired: a ring whose points all lie on one line, or holes covering their whole part |
+| `too_complex` | unchanged | Checking or rebuilding it needs more work than the tool spends on one feature (for the rebuild, about 2 million vertices, counting those it adds where rings cross), or there wasn't enough memory for it |
+| `repair_failed` | unchanged | The geo library failed on it: its relate operation while checking, the overlay, coordinates too large or too small for the overlay's grid, or a rebuilt geometry that isn't valid |
+
+The messages say how many features were repaired, with each code; how many were written without
+geometry and why; how many were left unchanged for each reason; how many rings or parts were
+dropped, and how many holes or parts narrower than the overlay's grid; from how many features holes
+were taken out; in how many parts were merged or pieces written as parts of their own; and how far
+rebuilt coordinates may have moved. On the desktop and the command line a failure of the overlay is
+caught and the feature written unchanged; in the browser it can't be caught, so the rebuild runs only on finite coordinates the grid can hold, with
+its work bounded and its memory asked of the browser first, as in Clip and Dissolve.
+
+```text
+gp.run={"tool":"repairGeometry","params":{"input":"Parcels"}}
+```
 
 ## GeoLibre tools
 
@@ -606,6 +1130,18 @@ each tool (Conversion, Hydrology, LiDAR, Projection, Raster, Remote Sensing, Ter
 then e.g. **GeoLibre › Terrain › Derivatives**). A runner too old to list subcategories groups
 them by category only. Find Tools searches them.
 
+Field-name parameters (`field`, `*_field`, `fields` and `*_fields`) have a **Fields** menu beside
+the text box. Pick an input layer or table first, then choose one of its fields. For tools with
+several inputs, the longest matching input-name prefix selects the source: for example,
+`denominator_weight_field` uses `denominator`, not `input`. Without a matching prefix, suggestions
+come from the first vector or table input. Weight and numeric field suggestions show numeric
+columns; a value or class field can also use text columns.
+
+The text box stays editable for new column names or fields not yet known before a model runs.
+For plural field parameters, each choice appends a name, separated by a comma (or by `;` if the
+text already uses that separator). Follow the parameter's help if its runner needs different
+list syntax, and check the tool's own help for what a weight field left blank means.
+
 - Raster inputs are passed as their own files; vector layers (or their selection) are written
   in the first raster input's coordinate system, or, with no raster input, the UTM zone around
   the data. The latter uses metres; data spanning more than 40° of longitude stays in degrees.
@@ -630,8 +1166,9 @@ next visit. The runner's code comes from jsDelivr, pinned to one geolibre-wasm r
 same trust as installing that package. Tools that read files by path (LiDAR files, for instance) need the desktop app,
 since a web page has no file system.
 
-In the desktop app and on the command line, RustGIS waits while a tool runs, so a long run on
-a large raster or point cloud keeps the window busy until it finishes. In the web app the run
+In the desktop app the Tools pane runs a GeoLibre tool in the background like any other; its
+**Cancel** takes effect when the GeoLibre program ends, and the result is then dropped. On the
+command line RustGIS waits while a tool runs. In the web app the run
 is started in the background and the result is added when it ends, but the tool itself runs
 in the page, so the page is busy while it computes.
 
@@ -645,8 +1182,8 @@ click them on the map:
 | Raster Functions | Slope, aspect, hillshade, NDVI, band math (`(b4-b3)/(b4+b3)`), remapping, thresholds, resampling |
 | Function Editor | Chains raster functions, each on the previous output |
 | Suitability Modeler | Scores rasters 1–10 and adds them with weights |
-| Visibility Analysis | A viewshed from a point on an elevation raster |
-| Exploratory 3D Analysis | A line of sight between two points, split into seen and hidden parts |
+| Visibility Analysis | A viewshed from a point on an elevation raster, with the Earth's curvature and the refraction of visible light (1/7, as `gdal_viewshed`) |
+| Exploratory 3D Analysis | A line of sight between two points, split into seen and hidden parts, with the same curvature and refraction |
 | Geostatistical Wizard | An IDW surface from feature values, using 12 nearest neighbours by default |
 | Network Analysis | The shortest (or cheapest, by a cost field) route over a line layer |
 | Neighborhood Explorer | What lies within a distance of a point, with sums of numeric fields |
@@ -656,21 +1193,61 @@ click them on the map:
 | Embeddings | The features most like the selected one, by their numeric attributes |
 | Data Interop | KML, GPX, CSV with WKT, GeoJSON or CSV |
 
+Network routing rebuilds its graph for each request and solves each edge length on WGS 84.
+Large line networks can therefore take longer to route than with spherical lengths; repeated
+routes do not currently share a cached graph.
+
 Rasters these make are kept in the project. **Environments** (`gp.env`) set an extent from the map
 view, full extent, a layer or a longitude/latitude box (or `null` to clear it). For tools that
 honour it, this restricts an unselected main feature input by bounding-box intersection, not by
 clipping its geometry; an existing selection takes precedence and overlay inputs stay whole.
 The Geostatistical Wizard uses the environment's extent and raster cell size (degrees).
 IDW Interpolation and Ordinary Kriging instead use their own `extent` and `pixelSize` parameters;
-the environment does not set their output grids. Project Raster (`raster.project`) puts a raster
-on a grid of any coordinate system, cell size and extent; Raster Functions › Resample matches a target
-raster's grid.
+the environment does not set their output grids.
+
+`gp.env` also returns the memory limits on this computer (`limits`). On the desktop they follow the
+computer's memory, or a container's limit when it is lower: each plans for a quarter of it, never
+below the web app's fixed limits and never above a ceiling.
+
+| Limit | Floor (web app value in brackets) | Desktop: a quarter of memory at | Ceiling |
+|---|---|---|---|
+| `rasterSamples`: samples a raster read holds (cells times bands) | 120 million (32 million in the web app) | 8 bytes a sample | 1 billion |
+| `outputPixels`: pixels of a raster a tool makes | 64 million | 16 bytes a pixel | 512 million |
+| `pagedFeatures`: features read from a service page by page | 100,000 | 20 KB a feature (about 100,000 for every 8 GB) | 1 million |
+| `densityCells`: cells of a Kernel Density raster | 16 million | 16 bytes a cell | 512 million |
+| `bufferBytes`: memory for Buffer's output and Select Layer By Location's buffered selectors | 512 MiB (128 MiB in the web app) | the bytes themselves | 8 GiB |
+| `threadScratchBytes`: working memory a tool's threads take together, beyond one thread's | 256 MiB | a sixteenth of memory, on top of the quarter | 4 GiB |
+| `projectBytes`: the largest project file saved or opened (see [Projects](workspace.md#projects)) | 512 MiB | 5 bytes for each byte of the file (about 800 MiB for every 16 GB) | 4 GiB |
+
+So a computer with 16 GB reads rasters of up to about 500 million samples. A run that passes on one
+computer can be refused on a smaller one; the error names the limit there. Project Raster (`raster.project`) puts a raster
+on a grid of any coordinate system, cell size and extent, and Polygons to Raster
+(`raster.rasterize`) burns polygons onto the same grids; Raster Functions › Resample matches a
+target raster's grid.
 
 The **Script** pane runs commands from text, one per line (`id {json}`); its box grows with the script down to the bottom of the pane,
 short of the buttons, and then scrolls, so **Run** stays in view; Ctrl+Enter (⌘+Enter on macOS)
 in the box runs the script too. Above a run's results, a line tells its number, how long it took
 and when it started (`Run #2 (0.84 s)`, and `14:04 UTC` on the right), so a run made again by
-mistake shows (Undo takes a whole run back). It colours the commands as you type, in both
+mistake shows (Undo takes a whole run back). The results show each line's result cut to a line;
+**Details…** on the run's line opens them whole in a window, as View Details in ArcGIS Pro's
+Geoprocessing History: each line folded under its command, opening to its result laid out to
+read, **Copy** for one and **Copy All** for the run, and why it stopped, if it did. **Clear**
+empties the pane: the script, its results, the count (the next run is Run #1 again) and the
+Details window. It asks nothing: the box keeps the focus, so Ctrl+Z (⌘+Z) brings the script back;
+after a click elsewhere, Ctrl+Z undoes in the project instead, so click into the box first. It is
+off with nothing to clear, and while a run is under way. Opening a
+project (New, Open, the sample, a template, or the same one again), from the app, a script, the
+assistant or an agent, starts the pane blank: the script, its results, the count and the Details
+window go with the old project. A script that opens a project itself stays, with its results, as
+the new project's Run #1. On the desktop, a script's tools, models and batches, with selections, layer
+renames and definition queries, the environment and the projection between them, are worked out
+in the background first, so the map and the rest of the window stay in use: the status bar shows
+**Run Script** and **Cancel**, and the results say **Running…** until the run is added. From the
+first line of any other kind (an edit, Add Data, a save, an export, a style or a zoom, a plugin
+or GeoLibre tool, a tool that writes a file) the rest runs as a script always has, holding the
+window until it finishes. A tool whose inputs change meanwhile runs again as the
+results are added, as in a model's run. It colours the commands as you type, in both
 themes: `#` comments in green italics, the command id, and the JSON's strings, numbers and
 `true`/`false`/`null`; an id no command has, or one that can't run in a script (`ui.*`, `script.*`,
 `notebook.run`), and parameters that aren't valid JSON are red and underlined. A script is read to
@@ -739,10 +1316,47 @@ their name.
   are none. The tools then run in flow order, and each node shows how it fared. A result that
   only feeds other tools is removed once the model has run; the outputs, and tools at the end
   of the flow, stay on the map. A run that fails is undone as a whole.
+- On the desktop, **Run** (here or in the Workflows pane's Models section) works out the tools
+  in the background, so the map and the rest of the window stay in use: the status bar shows
+  **Run Model**, how far its current tool has come, and **Cancel**, and the canvas says
+  **Running…** until the results are added, as one step to undo. What a tool reads that changes
+  meanwhile (an edit, a selection, a layer added or reordered, the environment, the projection)
+  has that tool and those after it run again as the results are added, and so does a tool that
+  writes a file, a plugin tool or a GeoLibre tool, with those after it. Those run as a model
+  always has, holding the window until they finish, with the work limits of a run that can't
+  be cancelled. The tools worked out in the background take no work limit, as a run that can
+  be stopped takes none. Tools that run holding the window or from the command line keep it, so
+  the same model can finish in the background and stop at the limit there. A file a tool reads
+  by its path isn't compared: one changed during the run gives the result from what was read. A model run from a script in the Script pane is worked
+  out in the background with the script; one run from the command line or the assistant runs
+  where the command runs.
 - **Save** keeps the model in the project; **Export** writes it as a `*.model.json` file, which
   **Import** (or dropping the file on the window) opens again. A model from a file may not read
-  or write files. **Copy Command** copies a `model.run` command that runs the model from the
+  or write files, use the network or run other software, including plugin and GeoLibre tools. **Copy Command** copies a `model.run` command that runs the model from the
   Script pane, the command line or Python.
+
+Import checks declared model and web-tool versions before interpreting their contents. Unsupported
+versions, unreadable nodes, connections or steps, and unknown file, graph, node, connection or step
+fields are refused. A file containing both a graph and steps is refused rather than choosing one.
+Connections using unknown ports or feeding multiple sources into a single-valued port are refused.
+Connections from inputs with missing or blank layer names are also refused. For connections to tools,
+layer names must have no surrounding whitespace, must not look like numeric step references (`%1`),
+and must not contain semicolons on multi-input ports; these names cannot be preserved in steps.
+Graphs that would lose nodes or connections during import are refused with a count and
+advice to fix the file, leaving the current project unchanged. Supported files and legacy files
+without a version marker continue to import, including repeated sources in multi-input tools such
+as Merge. Graphs containing a loop are refused rather than becoming empty steps. IDs that need
+trimming or exceed 100 characters, and positions outside the supported
+canvas bounds, are refused before they can be changed. Repeated inputs stay intact when an imported
+model is saved or renamed. If import must trim, shorten or replace a model name, or make it unique,
+it reports the change with a notice.
+
+Step files keep the existing 2,000-step limit. Converting steps to a ModelBuilder graph has a
+1,000-step limit: opening, exporting or checking (`model.validate`) a larger model as a graph
+gives an error and leaves the
+original steps intact. References to a step that is not earlier in the model, or has no layer
+output, also stop graph conversion before data can be dropped. Larger models can still run as
+steps or be shared as a web tool.
 
 The Workflows pane's Models section lists the project's models, and New Model From History turns
 the geoprocessing you've run into one. Models made as steps (`model.new` with `steps`, where `%1`
@@ -799,7 +1413,7 @@ The Analyze tab's imagery groups open their tools in the Workflows pane:
   are layers or file paths; where they overlap, the first one with data wins. Tiles in different
   coordinate systems or cell sizes, or opened from an overview, are refused rather than quietly
   resampled, as are tiles whose cells don't line up; the mosaic has to fit in memory (120 million
-  values: cells times bands).
+  values, cells times bands, or more on a computer with more memory: see Environments).
 - **Project Raster** (`raster.project`) puts a raster on a grid of your choosing, so rasters from
   different sources line up cell for cell (for map algebra, the Suitability Modeler, a series for
   Trend Analysis, or the inputs of a model): `{"layer": "ndvi", "crs": 31983, "cellSize": 100,
@@ -816,10 +1430,14 @@ The Analyze tab's imagery groups open their tools in the Workflows pane:
   - **Another raster's grid:** `"grid": "dem_100m"` takes its coordinate system, cells and extent
     exactly, instead of `crs`, `cellSize`, `origin` and `extent`.
   - **Resampling:** `nearest` (the default: it never invents a value, which is right for classes),
-    `bilinear` or `cubic` sample each cell at its centre. `average` and `mode` take every pixel whose
-    centre falls in the cell (no-data skipped), its mean or its most frequent value (of those
-    tied, the one that reaches the top count first, the pixels taken row by row, as in GDAL), which
-    is what a coarser grid of elevation or land-cover classes should hold. A
+    `bilinear` or `cubic` sample each cell at its centre. A cell whose centre falls on a no-data
+    pixel (or on NaN, with or without a no-data value; in a colour image, no-data in every
+    colour channel, alpha aside) is no-data; otherwise they interpolate from the pixels around it that have a value,
+    as gdalwarp does. Going coarser, they skip the detail between cell centres and can give a jagged
+    result, where gdalwarp widens its kernel to smooth it. `average` and `mode`
+    take every pixel whose centre falls in the cell (no-data skipped), its mean or its most frequent
+    value (of those tied, the one that reaches the top count first, the pixels taken row by row, as
+    in GDAL), which is what a coarser grid of elevation or land-cover classes should hold. A
     cell no pixel centre falls in, on a grid finer than the raster, takes the pixel under its
     centre. Classes take `nearest` or `mode`, continuous values `bilinear` or `cubic`, or `average`
     going coarser. A whole-number pixel type keeps its type, so its mean is rounded. On a colour
@@ -830,9 +1448,44 @@ The Analyze tab's imagery groups open their tools in the Workflows pane:
     colour image gains an alpha band instead, so they are see-through.
   - Datums are shifted as everywhere in RustGIS, through each system's transformation to WGS 84
     (a Helmert step for SAD69 or Córrego Alegre, a few metres from the IBGE's grid shifts).
-  - The result has to fit in memory (120 million values, cells times bands; 32 million in the
-    web app): a grid past that is refused, naming the limit. A raster read from its overview is
+  - The result has to fit in memory (120 million values, cells times bands, or more on a computer
+    with more memory; 32 million in the web app): a grid past that is refused, naming the limit. A raster read from its overview is
     projected at that resolution, and the result says so.
+- **Polygons to Raster** (`raster.rasterize`) burns a polygon layer onto a grid, so soil,
+  geology or land-use units line up cell for cell with rasters put on that grid by Project Raster:
+  `{"layer": "Soils", "field": "unit", "grid": "ndvi_100m", "path": "soils_100m.tif"}`. It has no
+  pane yet: run it from the Script pane, the AI Assistant, the command line or Python. The result
+  is a new layer (`name`, by default the layer's name with "raster"), and with `path` a
+  cloud-optimised GeoTIFF too.
+  - **The grid** is given as for Project Raster: `"grid"`, another raster's grid taken exactly, or
+    `crs` (by default the layer's), `cellSize` (required), `origin` (`[0, 0]` by default, so the
+    result lines up with any raster projected with the same `crs` and `cellSize`) and `extent` (by
+    default the polygons' bounds).
+  - **What a cell takes:** a cell takes a polygon's value when its centre falls inside it, holes
+    cut out. A numeric `field` gives its values; a text `field` gives codes 1 to n, in sorted order
+    of its values. A table named after the result with "classes" (`code`, `value`), numbered if
+    the project has a table of that name, holds every code; the result's `classTable` names it,
+    its `classes` lists the first 256, and `classCount` gives the total. With no field, every
+    polygon gives `value` (1 by default), a mask.
+  - Where polygons overlap, the later feature wins, as GDAL burns. With a selection, only the
+    selected features are burned. Features with no value in the field, with no valid polygon, or
+    holding no cell centre are skipped, and the result and a notice count them.
+  - Cells under no polygon take `nodata` (0 by default). A polygon whose value is the no-data
+    value is refused, so give another `nodata`, such as 255, when 0 is a class.
+  - **Pixel type:** bytes when every value and the no-data value are whole numbers from 0 to 255,
+    16-bit when they are up to 65,535, and 32-bit floating point otherwise. Past 16,777,216, 32 bits
+    no longer hold every whole number, so a whole number past it is refused, from an Integer field,
+    a text field's codes or `value`; for an Integer field, a text field gives codes instead. Any
+    other value that 32 bits can't hold exactly, a Double field's included, is rounded, and a notice
+    counts them. Up to 256 whole-number values are drawn with unique values.
+  - **Limits:** a polygon narrower than a cell can hold no cell centre and be missed; there is no
+    "all touched" rule, and lines and points aren't burned. The grid has to fit in memory (120
+    million cells, or more on a computer with more memory; 32 million in the web app): a grid past
+    that is refused before anything is burned. A layer read in place (only the part in view loaded)
+    is refused until all its features are loaded. Taken from a raster read from its overview, the
+    grid is the overview's, and a notice says so. The command runs where it is called, with no Cancel
+    yet and no cap on its work: each polygon fills the cells it covers, so many large polygons on a
+    fine grid take time in proportion.
 - **Classification Wizard** (unsupervised k-means) and **Classification Tools** (minimum distance
   from training polygons).
 - **Mensuration**: distances along the surface, heights between two points, areas, and volumes
@@ -1013,15 +1666,18 @@ data is unavailable, shows the available band range for invalid band input, and 
 only selected polygons will appear in the output. Both tools report parts omitted during raster-grid
 projection while retaining the valid parts.
 
-Field parameters in Dissolve, XY Table to Point, IDW, Kriging, Summary Statistics and Pivot Table accept
-case-insensitive names. An exact spelling takes precedence; otherwise a name matching several
-fields is rejected as ambiguous. This prevents silently using the wrong field.
+Field parameters in Dissolve, Summarize Within, XY Table to Point, IDW, Kriging, Summary
+Statistics and Pivot Table accept case-insensitive names. An exact spelling takes precedence;
+otherwise a name matching several fields is rejected as ambiguous. This prevents silently using
+the wrong field.
 
 ## Deep learning and hosted imagery
 
 **Analyze › Deep Learning Tools** trains a neural network (a multilayer perceptron) on the pixels
 under training polygons and classifies every pixel, adding a class raster with a confidence band
-and reporting the accuracy on held-back pixels. Trained models stay in the project; **Publish ›
+and reporting the accuracy on held-back pixels. Run from its pane in the desktop app, it trains
+on every sampled pixel for all the epochs asked, however long that takes, and can be cancelled;
+elsewhere it keeps to a few seconds of work (see the limits above). Trained models stay in the project; **Publish ›
 Share As › Deep Learning** saves one as a package to apply in other projects. **Analyze › Create
 Hosted Imagery** cuts a raster into XYZ web map tiles (PNG, transparent outside the raster) with
 a TileJSON file and a viewer page.

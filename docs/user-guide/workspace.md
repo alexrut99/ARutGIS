@@ -11,6 +11,20 @@ streamed layers reopen their sources, and file-backed rasters reopen their files
 sources accessible when moving a project. See [Project items](data.md#project-items) for
 templates, packages and files for individual items.
 
+A project file holds the features of every layer loaded whole (GeoJSON, KML/KMZ, GPX, and
+Shapefiles of up to 100,000 features), so a project of many such layers grows large. How large a
+project can be saved and opened follows the computer's memory: on the desktop, as much as a
+quarter of it holds open (about 800 MiB of project for every 16 GB), from 512 MiB up to 4 GiB; in
+the web app and a 32-bit build, 512 MiB. Save refuses a project past it, rather than writing one that can't be opened
+again, and Open refuses a larger file, saying its size, the limit, and how much memory a computer
+needs to open it. A project saved on a
+computer with more memory may need one like it to open. A project package (`.rgispkg`) holds
+at most 1 GiB once unzipped (256 MiB in the web app), its project and its files together, as zip
+archives do here; the package file itself is smaller. `gp.env` reports the limit as
+`projectBytes`. A GeoPackage, FlatGeobuf, GeoParquet or Shapefile of more than 100,000 features
+(or any, added with `"stream": true`) is read in place and stays out of the project file; a
+smaller one is loaded whole.
+
 **Open** also accepts a project package (`.rgispkg`), as do drag-and-drop and the desktop
 command line. A package opens as a new, unsaved project; Save writes a plain `.rgis` file.
 Opening or creating a project clears undo history; saving does not.
@@ -32,9 +46,19 @@ The browser app doesn't ask yet; it warns before you leave a page with unsaved c
 default), RustGIS keeps your changes as a [recovery copy](#autosave-and-recovery) and offers them
 back the next time it starts; with autosave off, they are lost, so save before you quit.
 
-Saved layer addresses omit passwords, access keys, tokens and signatures. The open session
-keeps them, but after restarting RustGIS a protected source may need you to sign in to its
-connection again or add it again with credentials.
+Saving removes recognized credentials from supported layer and video addresses and from
+recognized task, model, notebook and history parameters. Notices count detected removals and
+content that could not be checked. Unrecognized credentials can remain in addresses without a
+notice. Diagnostic logging uses a broader sensitive-name list: a parameter named `auth` or
+`jwt` may be hidden in a diagnostic message while remaining in a saved address. Inspect
+shared addresses when a service uses names outside the recognized saved-credential rules.
+The open session keeps its credentials, but a saved workflow or protected source may
+need them again when reopened. User notes, feature data and opaque content are preserved.
+Review addresses and preserved content before sharing a file; see
+[Sharing projects and generated items](https://github.com/opengeos/RustGIS/blob/main/SECURITY.md#sharing-projects-and-generated-items)
+for the supported scope.
+A cloud-optimised GeoTIFF's look in its address (`#bands=…`, `#range=…`, `#dequantize=aef`, a data
+cube's fixed range too) is saved; any other `#` part isn't.
 
 ### Autosave and recovery
 
@@ -42,7 +66,7 @@ The desktop app keeps a recovery copy of unsaved work. While the project has cha
 saved, it writes a copy every few minutes (5 by default), and only when something changed since
 the last one. Choose how often, or turn it off, in **Settings › Autosave**
 (`ui.autosave={"minutes": 10}`; `0` is off). The copy is written in the background, so a large
-project doesn't hold up the app. It leaves out layer passwords, keys and tokens, as a saved project
+project doesn't hold up the app. It removes recognized layer credentials, as a saved project
 does. It is kept in the `recovery` folder of the app's
 [data folder](../installation.md#settings-data-and-cache-folders), not beside your project.
 Saving, opening or starting another project, and choosing **Don't Save** when you quit remove it.
@@ -75,8 +99,27 @@ The browser app doesn't autosave yet; it warns before you leave a page with unsa
 
 RustGIS keeps a **log** of the commands run in the session: what was done, when, with what, and
 whether it worked. It is an audit trail of the session, for reviewing work or recalling what was
-run; it runs nothing again (History's Copy as code and recorded tasks do that). Every
+run; it runs nothing again by itself, but an entry can be copied back as a Script pane line. Every
 front end goes into it alike: the app, scripts, the AI Assistant, the command line, Python and MCP.
+
+In the app, the **History** pane has two views: **Tool runs**, the tools run on the project (saved
+with it, and each can run again), and **Session log**, which shows the log newest first: each
+command with whether it worked, when it started (UTC) and in which project, how long it took, its
+error and its parameters (on one line; all of them on hover). It lists the newest 200 that match
+and says how many there are; type part of a command's id (`layer.`, `export`) to filter, press
+**This project** to list only the commands run in the project open now (two projects of the same
+name are told apart), or tick **Failed only**.
+
+A right-click on an entry offers **Copy Parameters** and **Copy Command**, the entry as a line for
+the Script pane (`layer.buffer {"distance":10}`; undo and redo as themselves). A script run offers
+**Copy Script** and **Open in Script Pane** instead, which puts the script in the Script pane in
+place of its own (Ctrl+Z, ⌘+Z on a Mac, brings that back; not while the pane runs one). Where the
+log cut an entry's parameters short or took secrets out of them, copying its command or its
+parameters says so, as it may not run as it ran, and its script can be neither copied nor opened:
+it would run only in part. **Save Log As…** writes the whole log as CSV or JSON Lines, as the
+name's extension says (CSV without one; in the browser it is downloaded as CSV, and the download
+isn't itself an entry in the log, as a saved file is). **Clear Log** empties it and
+**Log Commands** turns it off or on.
 
 - **What goes in:** each command that changes the project, and each that names a file, folder,
   address or connection, reads included (an export, a download, a save, opening a file), plus
@@ -87,7 +130,9 @@ front end goes into it alike: the app, scripts, the AI Assistant, the command li
   file permission, since it names the files and addresses the user's commands used.
 - **Each entry:** `at` (when it started, in milliseconds since 1970, UTC; for a plugin's command
   that waited for its downloads, when its last run started), `command`, `params`, `ok`, `error`
-  when it failed, and `millis`, how long it took.
+  when it failed, `millis`, how long it took, `project`, the name of the project open when it ran
+  (the one it opened, for a command that opens one), and `partial`, true when its parameters were
+  cut short or had secrets taken out.
 - **For the session only:** the log is kept in memory, across the projects opened or made in the
   session, until RustGIS closes or the log is cleared. A saved project, its recovery copy, a
   package or a template carries none of it, so sharing a project shares no log. Reading, writing
@@ -103,7 +148,8 @@ front end goes into it alike: the app, scripts, the AI Assistant, the command li
   as plain words, with no name or address form (a password typed into a note), isn't recognised:
   look at an exported log before sharing it. Each entry's parameters are clipped to about 4 KB of
   JSON (a long text is cut, a list keeps its first 100 items), its error to 500 characters and a
-  `…`, and the log keeps its last 10,000 entries, the oldest dropped first. Plugins' commands take
+  `…`, and the log keeps its last 10,000 entries, the oldest dropped first (the pane and an
+  export say how many were dropped, and which: the oldest, or older plugin entries). Plugins' commands take
   at most 1,000 of those places: past that, a plugin's new entry pushes out an older plugin entry,
   not one of the user's.
 
@@ -111,9 +157,10 @@ From scripts: `project.log {"since"?, "until"?, "command"?, "failed"?, "limit"?}
 newest last (`command` is an id, or the start of one ending in a dot, `layer.`; `limit` is a whole
 number, 100 by default and at most 1,000, with `count` saying how many match), and
 `project.exportLog {"path": "log.csv"}` writes it out as CSV (one row an entry, the parameters as a
-JSON column) or JSON Lines (`.jsonl` or `.ndjson`), as the path's extension says; any other
-extension (a `.json`, a project) is refused, whatever `format` is given. `project.clearLog` empties
-it (leaving its own entry) and `project.logCommands {"on": false}` stops it (what is there stays).
+JSON column, the project last) or JSON Lines (`.jsonl` or `.ndjson`), as the path's extension says;
+any other extension (a `.json`, a project) is refused, whatever `format` is given.
+`project.clearLog` empties it (leaving its own entry) and `project.logCommands {"on": false}` stops
+it (what is there stays).
 
 ### GeoLibre projects
 
@@ -172,9 +219,24 @@ file sources cannot be resolved and are listed in the import notes.
 Each layer keeps its look:
 
 - **Renderers**: single symbol, categorized (as Unique Values, a category's merged values each a
-  class, its "all other values" category the rest), graduated (as Graduated Colors), and
-  rule-based where every rule picks values of one field (an else rule the rest); point cluster,
-  displacement and other renderers that wrap one are drawn by the one inside.
+  class, its "all other values" category the rest; by a field, or by an expression as Unique
+  Values by that [expression](cartography.md), its boolean categories matching true and false;
+  one that can't be read on the layer draws every feature with the first category's symbol
+  that's switched on, or nothing when no category is, noted),
+  graduated (as Graduated Colors, by a field: ranges by an expression are noted and drawn with
+  the first range's symbol), and
+  rule-based: as Unique Values on a field where every rule picks values of that field at every
+  scale (an else rule the rest), else as Unique Values by an
+  [expression](cartography.md) that gives each feature the first rule it meets, each rule a class
+  named by its label. A rule's condition is its filter and its parents' (an else rule's: that
+  none of its siblings draws the feature, at their scales), and its scale range, as `@map_scale`
+  (a rule inside another within both ranges; a switched-off rule takes the rules under it). A
+  top-level else rule draws the rest. QGIS draws a feature that several rules pick with each of
+  their symbols, RustGIS with the first's: the notes say how many such features the layer has. A
+  rule whose filter can't be read on the layer is left out, noted by its label; when none can be,
+  or there are more than 200 rules, or they are too long for one expression, every feature is
+  drawn with the first rule's symbol, noted. Point cluster, displacement and
+  other renderers that wrap one are drawn by the one inside.
 - **Symbols**: simple fills, lines and markers with their colours, widths in any unit, offsets,
   caps, joins, dashes and the symbol's opacity; a line's simple lines as stacked strokes, its
   rendering passes as their levels when the renderer draws in symbol levels; marker and hashed
@@ -209,6 +271,12 @@ Each layer keeps its look:
 Projects and styles from QGIS 1 and 2 read too: their legend gives the layers' order, and the
 older names of the same settings are read.
 
+A label's text that is an expression (not only a field) carries over as its class's text
+expression, and its data-defined size (turned from the text's unit into points), colour and
+rotation as its [expressions](cartography.md#labeling); QGIS 2's counterclockwise rotation is
+turned clockwise. Other data-defined label settings are noted by name, and a colour expression
+on see-through text is drawn opaque, noted.
+
 A symbol's data-defined size, fill and outline colours, outline width and marker angle carry over
 as the layer's [symbol expressions](cartography.md#symbols-by-expression), sizes turned from the
 symbol's unit (millimetres, points, pixels, inches; map units at the reference scale) into points, where RustGIS's [expression language](expressions.md) reads them. A marker of several layers
@@ -218,8 +286,13 @@ does a line of several strokes. They apply to every feature, so a layer whose cl
 ones (or one with a class switched off) leaves them out, noted. One using a
 function or variable it lacks, or a field the layer hasn't, is noted and left out.
 
-QGIS filter expressions carry over where they are SQL: fields compared with values, `LIKE`, `IN`,
-`IS NULL`, joined by `AND`, `OR` and `NOT`. What RustGIS doesn't draw as QGIS does is drawn as
+QGIS filter expressions (a layer's filter, label and renderer rules) carry over: those that are
+SQL (fields compared with values, `LIKE`, `IN`, `IS NULL`, joined by `AND`, `OR` and `NOT`) as
+before, the rest (functions, arithmetic, `CASE`, `@map_scale`) as they are, for the
+[expression language](expressions.md), QGIS's map scale (`@map_scale`, `$scale`) read as RustGIS's
+(see below), in filters and in data-defined symbol and label settings. One it can't read on the layer (a function or variable it
+lacks, a field the layer hasn't) is noted and left out, as is one measuring with `$area`,
+`$perimeter` or `$length`, which QGIS gives in the project's units. What RustGIS doesn't draw as QGIS does is drawn as
 near as it can, or left out, and said: the import's notes list, layer by layer, what was
 approximated (gradient and shapeburst fills' offsets left out and colour ramps other than gradients drawn from their first colour to their last, SVG, raster and random fills and dense brushes as a tint of their colour, SVG markers as circles,
 dashed polygon outlines solid, label halos with sharp corners drawn round and blended ones drawn
@@ -227,7 +300,7 @@ over the map, label backgrounds of other shapes drawn as rectangles, label dista
 and polygons, a distance around points moved straight up, labels wrapped at a shortest line
 length or justified, values outside a graduated renderer's ranges in its first or last class, file options
 such as `layerid` that RustGIS doesn't read) and what was skipped (arrow lines, other data-defined
-settings, draw effects, label callouts, labels from expressions, contours and other raster
+settings, draw effects, label callouts, contours and other raster
 renderers RustGIS has no match for, PostGIS, WFS
 and other sources RustGIS doesn't read, diagrams, joins, virtual fields, a layer's other styles,
 and the project's print layouts, annotations, bookmarks, map themes and relations). A database
@@ -362,8 +435,8 @@ duplication and nudging have their own [layout shortcuts](layouts.md#layouts).
       **Delete**. A recorded tool's step is named after the tool.
     - In the Browser pane, a click on a task opens its steps; **Run All Steps** is in its context
       menu.
-    - A task from a file (`.rgistask`, or inside a project or a package) can't read or write files
-      or run scripts. Its built-in analysis tools may still name their output layers with a plain
+    - A task from a file (`.rgistask`, or inside a project or a package) can't read or write files,
+      use the network, run other software or perform actions reserved to the user. Its built-in analysis tools may still name their output layers with a plain
       name: one with `/`, `\`, `.` or `:` (a folder, an extension or a drive) makes the task count
       as writing files, so write `Buffer 1500 m` rather than `Buffer 1.5 km`. GeoLibre and plugin
       tools' outputs are refused.
@@ -412,7 +485,10 @@ duplication and nudging have their own [layout shortcuts](layouts.md#layouts).
   raster's edge, or across a line (a cross section), with gain, loss and a chart.
 - **Infographics** (Home tab) summarise what's in view: counts, totals and top categories.
 - **Offline**: Download Map takes the data in view into an offline area; open it to edit, then
-  Sync sends changed, new and deleted features back and refreshes it. **Feature Cache** prepares
+  Sync sends changed, new and deleted features back and refreshes it. A feature changed in the
+  map since the last sync and also edited or deleted offline takes the offline version, with a
+  warning naming it (Undo reverts the whole sync, restoring the map's version); an offline edit
+  to a feature since deleted from the map is dropped, with a warning too. **Feature Cache** prepares
   every layer's geometry for the current projection (Fill, Empty, Cancel, Auto Cache).
 - **Settings › Customize** chooses the ribbon's tabs and the Quick Access Toolbar's extra
   buttons. Settings and Help always remain visible. **Help** opens the user guide and the
@@ -420,8 +496,12 @@ duplication and nudging have their own [layout shortcuts](layouts.md#layouts).
 - **Plugins**: **Plugins › Plugin Manager** installs, updates and removes [plugins](../plugins.md)
   from the registry at [plugins.rustgis.app](https://plugins.rustgis.app) or from a file.
 - **Language**: **Settings › Language** switches the interface among
-  [20 languages](../i18n.md) and chooses the [worldview](maps.md#worldview) of the built-in
+  [22 languages](../i18n.md) and chooses the [worldview](maps.md#worldview) of the built-in
   borders.
+- **Theme**: **Settings › Theme** picks the interface colours, spacing and text sizes, from the
+  built-in Light and Dark themes, a theme [file](../themes.md) in the desktop app’s themes folder, or
+  **Follow the System** where the platform reports its own theme. **Interface Scale** beside it
+  sets the whole interface from 80% to 200%.
 - **Autosave**: **Settings › Autosave** sets how often the desktop app keeps a
   [recovery copy](#autosave-and-recovery) of unsaved work, or turns it off.
 - **Start-up**: **Settings › Start-up** sets what RustGIS opens with: **Start With** the World Atlas

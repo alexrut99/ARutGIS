@@ -265,8 +265,39 @@ fn grid(ui: &mut Ui, id: &str, add: impl FnOnce(&mut Ui)) {
 fn content(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class, t: &Tokens) {
     field(app, ui, l, c);
     ui.add_space(4.0);
+    // Closed until the class has an expression.
+    let owner = egui::Id::unique((layer_key(app, l), c.name));
+    egui::CollapsingHeader::new(RichText::new(tl!("By Expression")).font(semibold(12.5)))
+        .id_salt(owner.with("label_by_open"))
+        .default_open(!c.it.by.is_empty())
+        .show(ui, |ui| by_expression(app, ui, l, c, t));
+    ui.add_space(4.0);
     heading(ui, "SQL Query");
     sql(app, ui, l, c, t);
+}
+
+/// The class's text, size, colour and angle per feature from expressions (`labels.by`); each
+/// empty takes the field, or the class's own setting.
+fn by_expression(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class, t: &Tokens) {
+    ui.label(
+        RichText::new(tl!(
+            "Text, e.g. \"name\" || ' (' || round(\"pop\" / 1e6, 1) || ' M)', in place of the field; size in points, color as '#RRGGBB', angle in degrees clockwise. Empty: the field's or the class's own."
+        ))
+        .small()
+        .color(t.text_dim),
+    );
+    let by = &c.it.by;
+    let mut rows = vec![("text", tl!("Text"), &by.text), ("size", tl!("Size"), &by.size), ("color", tl!("Color"), &by.color)];
+    // Labels along lines keep the line's angle (one set by command still shows, to clear it).
+    if !(l.geometry_type() == rustgis_engine::data::GeometryType::Polyline && c.it.placement.along_line()) || by.angle.is_some() {
+        rows.push(("angle", tl!("Angle"), &by.angle));
+    }
+    let owner = egui::Id::unique((layer_key(app, l), c.name));
+    for (key, label, cur) in rows {
+        if let Some(text) = crate::panes::expression_box(ui, owner.with(("label_by", key)), label, cur.as_deref(), &l.dataset, t) {
+            run(app, "labels.by", c.params(json!({ key: text })));
+        }
+    }
 }
 
 fn heading(ui: &mut Ui, text: &str) {
@@ -525,7 +556,9 @@ fn text_symbol(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
         // The whole range `labels.style` accepts (#457); the map follows a drag and letting
         // go runs the command once, so a drag is one undo step.
         let mut size = f64::from(c.it.size);
-        let r = ui.add(egui::DragValue::new(&mut size).range(LABEL_SIZE).speed(0.1).suffix(" pt")).labelled_by(input_label.id);
+        let r = ui
+            .add(egui::DragValue::new(&mut size).update_while_editing(false).range(LABEL_SIZE).speed(0.1).suffix(" pt"))
+            .labelled_by(input_label.id);
         let id = l.id;
         crate::ribbon::live_drag(
             app,
@@ -614,7 +647,9 @@ fn background(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
     let number = |app: &mut RustGisApp, ui: &mut Ui, label: &str, cur: f32, range: std::ops::RangeInclusive<f64>, key: &'static str| {
         let input_label = ui.label(tl!(label));
         let mut v = f64::from(cur);
-        let r = ui.add(egui::DragValue::new(&mut v).range(range.clone()).speed(0.05).suffix(" pt")).labelled_by(input_label.id);
+        let r = ui
+            .add(egui::DragValue::new(&mut v).update_while_editing(false).range(range.clone()).speed(0.05).suffix(" pt"))
+            .labelled_by(input_label.id);
         crate::ribbon::live_drag(
             app,
             ui,
@@ -679,9 +714,16 @@ fn wrapping(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
     let input_label = ui.label(tl!("Wrap length"));
     let mut n = f64::from(c.it.wrap_length);
     let r = ui
-        .add(egui::DragValue::new(&mut n).range(0..=MAX_WRAP_LENGTH).speed(0.2).max_decimals(0).custom_formatter(|v, _| {
-            if v <= 0.0 { tl!("Off").to_string() } else { crate::i18n::fmt("{n} characters", &[("n", &v.to_string())]) }
-        }))
+        .add(
+            egui::DragValue::new(&mut n)
+                .update_while_editing(false)
+                .range(0..=MAX_WRAP_LENGTH)
+                .speed(0.2)
+                .max_decimals(0)
+                .custom_formatter(|v, _| {
+                    if v <= 0.0 { tl!("Off").to_string() } else { crate::i18n::fmt("{n} characters", &[("n", &v.to_string())]) }
+                }),
+        )
         .labelled_by(input_label.id)
         .on_hover_text(tl!("Lines longer than this are broken between their words."));
     let id = l.id;
@@ -717,7 +759,9 @@ fn letter_spacing(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
     let input_label = ui.label(tl!("Letter spacing"));
     let (lo, hi) = (rustgis_engine::map::layout::MIN_LETTER_SPACING, rustgis_engine::map::layout::MAX_LETTER_SPACING);
     let mut spacing = f64::from(c.it.spacing);
-    let r = ui.add(egui::DragValue::new(&mut spacing).range(lo..=hi).speed(0.05).suffix(" pt")).labelled_by(input_label.id);
+    let r = ui
+        .add(egui::DragValue::new(&mut spacing).update_while_editing(false).range(lo..=hi).speed(0.05).suffix(" pt"))
+        .labelled_by(input_label.id);
     let id = l.id;
     crate::ribbon::live_drag(
         app,
@@ -763,7 +807,9 @@ fn halo_style(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
         }
         let Some(width) = c.it.halo_width else { return };
         let mut w = f64::from(width);
-        let r = ui.add(egui::DragValue::new(&mut w).range(HALO_WIDTH).speed(0.05).suffix(" pt")).labelled_by(input_label.id);
+        let r = ui
+            .add(egui::DragValue::new(&mut w).update_while_editing(false).range(HALO_WIDTH).speed(0.05).suffix(" pt"))
+            .labelled_by(input_label.id);
         let id = l.id;
         crate::ribbon::live_drag(
             app,
@@ -857,6 +903,7 @@ pub(crate) fn family_picker(ui: &mut Ui, salt: impl std::hash::Hash + std::fmt::
     Picked { response, chosen }
 }
 
+/// Edits this label class's placement, including overlap and callout options, through commands.
 fn position(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
     let cur = c.it.placement;
     let pick = |app: &mut RustGisApp, ui: &mut Ui, pl: LabelPlacement| {
@@ -893,10 +940,87 @@ fn position(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
         });
         if cur.along_line() {
             repeat(app, ui, l, c);
+            // One label a line: other places along it, tried when its own won't do (#1187). Each
+            // repeat is already a place of its own.
+            if c.it.repeat.is_none() {
+                ui.add_space(4.0);
+                let mut on = c.it.other_positions;
+                let help = tl!("If its place is taken or (curved) the line bends too much, the label tries other places along the line.");
+                if ui.checkbox(&mut on, tl!("Try other places along the line")).on_hover_text(help).changed() {
+                    run(app, "labels.placement", c.params(json!({"otherPositions": on})));
+                }
+            }
         }
     }
     ui.add_space(6.0);
     offset(app, ui, l, c);
+    ui.add_space(6.0);
+    crowding(app, ui, l, c);
+}
+
+/// Where labels crowd: every one shown, over the others, rather than some left out; and
+/// callouts, which move a crowded label to a free spot nearby with a line back to its feature,
+/// no longer than so far.
+fn crowding(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
+    use rustgis_engine::map::symbology::{CALLOUT_REACH, callout_reach};
+    let id = l.id;
+    grid(ui, "crowding", |ui| {
+        let input_label = ui.label(tl!("Show all labels"));
+        let mut all = c.it.show_all;
+        if ui
+            .checkbox(&mut all, "")
+            .labelled_by(input_label.id)
+            .on_hover_text(tl!("Draw every label, over the others where they crowd, rather than leaving some out."))
+            .changed()
+        {
+            run(app, "labels.placement", c.params(json!({"showAll": all})));
+        }
+        ui.end_row();
+        let input_label = ui.label(tl!("Callouts"));
+        ui.horizontal(|ui| {
+            let mut on = c.it.callout.is_some();
+            if ui
+                .checkbox(&mut on, "")
+                .labelled_by(input_label.id)
+                .on_hover_text(tl!(
+                    "Move a label crowded off its spot to a free one nearby, with a line back to its feature. Labels along lines stay."
+                ))
+                .changed()
+            {
+                run(app, "labels.placement", c.params(json!({"callout": on})));
+            }
+            let Some(reach) = c.it.callout else { return };
+            let mut v = f64::from(reach);
+            let r = ui
+                .add(
+                    egui::DragValue::new(&mut v)
+                        .update_while_editing(false)
+                        .range(CALLOUT_REACH)
+                        .speed(1.0)
+                        .max_decimals(0)
+                        .prefix(format!("{} ", tl!("at most")))
+                        .suffix(" pt"),
+                )
+                .labelled_by(input_label.id)
+                .on_hover_text(tl!("The longest a callout's line may be."));
+            crate::ribbon::live_drag(
+                app,
+                ui,
+                &r,
+                f64::from(reach),
+                v,
+                |app, x| {
+                    if let Some(k) = app.session.map_mut().layer_mut(id).and_then(|l| class_mut(&mut l.labels, c.name)) {
+                        k.callout = callout_reach(x);
+                    }
+                },
+                |app, x| {
+                    run(app, "labels.placement", c.params(json!({"callout": x})));
+                },
+            );
+        });
+        ui.end_row();
+    });
 }
 
 /// Along a line, a label every so many points, spaced out from the one at its middle; off, the one
@@ -918,6 +1042,7 @@ fn repeat(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
             let r = ui
                 .add(
                     egui::DragValue::new(&mut v)
+                        .update_while_editing(false)
                         .range(LABEL_REPEAT)
                         .speed(1.0)
                         .max_decimals(1)
@@ -956,7 +1081,7 @@ fn offset(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
             let input_label = ui.label(tl!(label));
             let mut v = f64::from(cur.get(i).copied().unwrap_or(0.0));
             let r = ui
-                .add(egui::DragValue::new(&mut v).range(LABEL_OFFSET).speed(0.1).suffix(" pt"))
+                .add(egui::DragValue::new(&mut v).update_while_editing(false).range(LABEL_OFFSET).speed(0.1).suffix(" pt"))
                 .labelled_by(input_label.id)
                 .on_hover_text(tl!("A label along a line isn't moved."));
             crate::ribbon::live_drag(
@@ -1336,6 +1461,64 @@ mod tests {
         assert!(h.query_by_role_and_label(Role::CheckBox, BOX).is_none(), "not for polygons");
     }
 
+    /// A line layer's labels can try other places along the line (#1187): the box is there for a
+    /// placement along the line without a repeat, and hiding it leaves what it was set to.
+    #[test]
+    fn other_positions_are_set_in_the_pane_along_lines() {
+        use egui::accesskit::Role;
+        const BOX: &str = "Try other places along the line";
+        let mut h = harness(with_cities());
+        h.run();
+        let rivers = layer_id(h.state(), "Rivers");
+        h.state_mut().session.run("layer.select", &json!({"layer": rivers})).unwrap();
+        h.run();
+        open_tab(&mut h, "Position");
+        let on = |h: &egui_kittest::Harness<'_, RustGisApp>| {
+            h.state().session.map().layer_by_name("Rivers").unwrap().labels.default.other_positions
+        };
+        assert!(h.query_by_role_and_label(Role::CheckBox, BOX).is_none(), "not off the line");
+        for position in ["parallel", "curved"] {
+            h.state_mut().session.run("labels.placement", &json!({"layer": rivers, "position": position})).unwrap();
+            h.run();
+            assert!(h.query_by_role_and_label(Role::CheckBox, BOX).is_some(), "{position}");
+        }
+        h.get_by_role_and_label(Role::CheckBox, BOX).click();
+        h.run();
+        assert!(on(&h));
+        h.state_mut().session.run("labels.placement", &json!({"layer": rivers, "repeat": 144})).unwrap();
+        h.run();
+        assert!(h.query_by_role_and_label(Role::CheckBox, BOX).is_none(), "not with a repeat");
+        assert!(on(&h), "hidden, it's kept");
+        h.state_mut().session.run("labels.placement", &json!({"layer": rivers, "repeat": null})).unwrap();
+        h.run();
+        h.get_by_role_and_label(Role::CheckBox, BOX).click();
+        h.run();
+        assert!(!on(&h));
+        let countries = layer_id(h.state(), "Countries");
+        h.state_mut().session.run("layer.select", &json!({"layer": countries})).unwrap();
+        h.run();
+        assert!(h.query_by_role_and_label(Role::CheckBox, BOX).is_none(), "not for polygons");
+    }
+
+    /// The box along the line sets the class chosen, not Default (#1187).
+    #[test]
+    fn other_positions_along_lines_set_the_chosen_class() {
+        let mut app = with_cities();
+        let rivers = layer_id(&app, "Rivers");
+        app.session.run("layer.select", &json!({"layer": rivers})).unwrap();
+        app.run("labels.class.add", json!({"name": "Named"})).unwrap();
+        app.run("labels.placement", json!({"class": "Named", "position": "curved"})).unwrap();
+        let mut h = harness(app);
+        h.run();
+        pick_class(&mut h, "Default", "Named");
+        open_tab(&mut h, "Position");
+        h.get_by_role_and_label(egui::accesskit::Role::CheckBox, "Try other places along the line").click();
+        h.run();
+        let l = labels(h.state());
+        assert!(l.class("Named").unwrap().other_positions);
+        assert!(!l.default.other_positions);
+    }
+
     #[test]
     fn the_background_and_the_offset_are_set_in_the_pane() {
         use egui::accesskit::Role;
@@ -1552,6 +1735,43 @@ mod tests {
         assert_eq!(app.session.undo_depth(), steps + 1, "letting go runs labels.style once");
         app.run("edit.undo", json!(null)).unwrap();
         assert_eq!(app.session.map().layer(id).unwrap().labels.default.color, before, "one undo takes the whole pick back");
+    }
+
+    /// The Content tab's By Expression boxes set the class's text and size per feature in one
+    /// step each; one that doesn't read says why and isn't applied.
+    #[test]
+    fn label_expressions_are_set_in_the_content_tab() {
+        use egui::accesskit::Role;
+        let app = with_cities();
+        let steps = app.session.undo_depth();
+        let mut h = harness(app);
+        h.run();
+        let by = |h: &egui_kittest::Harness<'_, RustGisApp>| {
+            h.state().session.map().layer(h.state().session.active_layer.unwrap()).unwrap().labels.default.by.clone()
+        };
+        h.get_by_label("By Expression").click();
+        h.run();
+        let enter = |h: &mut egui_kittest::Harness<'static, RustGisApp>, label: &str, text: &str| {
+            h.get_by_role_and_label(Role::TextInput, label).focus();
+            h.run();
+            h.get_by_role_and_label(Role::TextInput, label).type_text(text);
+            h.run();
+            h.key_press(egui::Key::Enter);
+            h.run();
+        };
+        enter(&mut h, "Text", "nosuch || 'x'");
+        assert!(h.query_by_label_contains("Invalid:").is_some(), "says why");
+        assert_eq!((by(&h).text, h.state().session.undo_depth()), (None, steps), "not applied");
+        h.get_by_role_and_label(Role::TextInput, "Text").focus();
+        h.run();
+        h.key_press(egui::Key::Escape);
+        h.run();
+        enter(&mut h, "Text", "upper(name)");
+        assert_eq!(by(&h).text.as_deref(), Some("upper(name)"));
+        enter(&mut h, "Size", "scale_linear(pop_max, 0, 2e7, 8, 20)");
+        assert_eq!(by(&h).size.as_deref(), Some("scale_linear(pop_max, 0, 2e7, 8, 20)"));
+        assert_eq!(h.state().session.undo_depth(), steps + 2, "a step each");
+        assert!(h.query_by_role_and_label(Role::TextInput, "Angle").is_some(), "points take an angle");
     }
 
     fn clause(app: &RustGisApp) -> Option<String> {

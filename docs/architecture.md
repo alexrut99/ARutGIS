@@ -42,6 +42,27 @@ Plugin commands (`plugin:<plugin>/<command>`) dispatch through `Session::run` to
 changes form one undo step. WebAssembly plugins reach the session through permission-checked
 requests. Process plugins use the same host protocol but are not sandboxed (see [Plugins](plugins.md)).
 
+## Troubleshooting diagnostics
+
+`rustgis_data::diagnostics` provides the bounded, sanitized session history without a UI
+dependency. `Session::notify` and `Session::warn` retain messages immediately, independently
+of pane visibility and project undo/persistence. Command sources contain registered ids,
+never command parameters. Errors rejected before command execution are captured too.
+The frontend also routes UI-only command failures through the notice path, without duplicating
+errors already reported by an engine command.
+Unavailable undo/redo keyboard shortcuts do not dispatch a command, matching their disabled
+toolbar buttons; direct command failures still follow the same capture path.
+
+HTTP failures are observed at the shared tile/data/service transport boundaries, not by
+polling failed cache entries. A weak `Capture` travels through tile scheduling, native worker
+queues, data/render workers, and browser fetch callbacks. Synchronous scopes restore the
+previous owner; browser futures receive explicit captures and never hold a thread-local scope
+across an await. Unowned requests are not broadcast to other sessions. Transport metadata
+uses observed statuses and known timeout/connection causes only.
+
+The egui Diagnostics pane (`ui.pane.diagnosticLog`) filters and copies these sanitized records.
+The existing Diagnostic Monitor (`ui.pane.diagnostics`) remains the performance view.
+
 ## Never crash
 
 Production code forbids unsafe Rust. Library crates deny Clippy's unwrap, expect, panic,
@@ -112,10 +133,19 @@ model listing.
   the requested bucket's explicit-grant status. Copy only that login and grant boolean, not
   the grant list; parse and validate addresses and prepare signatures outside the lock.
   Keychain calls and network I/O never run under the registry lock.
+- **Web-service login bindings.** Session-only Basic and API-key-header logins use 128-bit
+  cryptographically random bearer capabilities, encoded as 32 lowercase hex digits. Native
+  builds use `getrandom`'s OS source; browser builds enable its `wasm_js` backend, which calls
+  `globalThis.crypto.getRandomValues` in both windows and workers. No initialization hook or
+  time/counter/hash fallback is used. A missing or throwing secure source returns a fixed,
+  non-secret activation error before installing an entry or replacing the session's prior
+  login. Collisions retry at most four times without overwriting a live entry.
 - **Earthdata Login token.** `rustgis_tiles::earthdata::set_secret_store` gets `Services::secrets`
   from `RustGisApp::with_services`, and `prefs::opt_in`'s store for the command line and Python. `earthdata.login` with
   `remember` keeps the token at `earthdata/token`, and without it (or when the store refuses
-  it) deletes the remembered one; `earthdata.logout` always deletes it. The token is read back
+  it) deletes the remembered one; `earthdata.logout` always deletes it and calls `cache::clear`,
+  as `arcgis.signOut` does, so what was read with the token is not served after it (a read still
+  under way then is kept when it ends, as at an ArcGIS sign-out). The token is read back
   once per store given, on the first
   request to an Earthdata data host or when the NASA Earthaccess pane opens (on a worker), never
   over a token typed this session. An expired token is deleted, not sent, and the pane and the

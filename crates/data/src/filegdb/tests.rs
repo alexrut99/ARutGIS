@@ -323,6 +323,30 @@ fn a_multipatch_is_its_footprint_with_its_heights() {
     assert!((area(&rows[1].geometry) - 50.0).abs() < 1e-6, "the hull of an L of walls: {:?}", rows[1].geometry);
     assert!(report.messages.iter().any(|m| m.contains("footprints")), "{report:?}");
     assert!(report.messages.iter().any(|m| m.contains("1 multipatches with no faces")), "{report:?}");
+    assert!(!report.messages.iter().any(|m| m.contains("no footprint")), "every multipatch has one: {report:?}");
+}
+
+/// A multipatch whose points outline no area (too few, or a wall standing in a straight line) is
+/// kept without geometry, and the reader says so. One with no points has nothing to lose: not counted.
+#[test]
+fn a_multipatch_without_a_footprint_is_counted() {
+    let floor = (2, vec![(0.0, 0.0, 0.0), (0.0, 10.0, 0.0), (10.0, 10.0, 0.0), (10.0, 0.0, 0.0), (0.0, 0.0, 0.0)]);
+    let stub = (2, vec![(20.0, 20.0, 0.0), (21.0, 21.0, 0.0)]);
+    let wall = (2, vec![(30.0, 30.0, 0.0), (30.0, 30.0, 5.0), (40.0, 30.0, 5.0), (40.0, 30.0, 0.0), (30.0, 30.0, 0.0)]);
+    let fields = [F::Oid, F::Shape { z: true, wkt: LONLAT }];
+    let rows = vec![
+        vec![V::Blob(multipatch(&[floor]))],
+        vec![V::Blob(multipatch(&[stub]))],
+        vec![V::Blob(multipatch(&[wall]))],
+        vec![V::Blob(multipatch(&[]))],
+    ];
+    let files = geodatabase(vec![("Buildings", table(9 | 0x8000_0000, &fields, &rows))]);
+    let layers = read_files(&files).unwrap();
+    let (ds, report) = &layers[0];
+    let rows: Vec<&crate::Feature> = ds.features.iter().collect();
+    assert_eq!(rows.len(), 4, "all kept");
+    assert!(rows[0].geometry.is_some() && rows[1..].iter().all(|f| f.geometry.is_none()), "{rows:?}");
+    assert!(report.messages.iter().any(|m| m.contains("2 multipatches have no footprint")), "{report:?}");
 }
 
 #[test]
@@ -416,6 +440,17 @@ fn a_small_ring_far_from_the_origin_has_an_area() {
     let ring: Vec<Coord> =
         [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)].iter().map(|&(x, y)| Coord::new(1e9 + x, 1e9 + y)).collect();
     assert_eq!(signed_area(&ring), -2.0, "clockwise, twice its area");
+}
+
+/// A height that isn't a finite number can't say which way a face looks: the hull stands in, rather
+/// than that face going without a word.
+#[test]
+fn a_multipatch_with_an_infinite_height_is_its_hull() {
+    let roof = vec![[0.0, 0.0, 5.0], [10.0, 0.0, f64::INFINITY], [10.0, 10.0, 5.0], [0.0, 10.0, 5.0], [0.0, 0.0, 5.0]];
+    let mut budget = 10;
+    let (shape, hull) = footprint(std::slice::from_ref(&roof), &[2], &mut budget);
+    assert_eq!((hull, budget), (Some(Hull::Unmerged), 10));
+    assert!(shape.is_some());
 }
 
 /// A table's multipatches merge no more faces than its budget: past it, they are hulls.
@@ -622,4 +657,29 @@ fn reads_what_gdal_writes_when_gdal_is_installed() {
     // One layer by name, ignoring case.
     assert_eq!(read_dir(&gdb, Some("BLOCKS")).unwrap().layers.len(), 1);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Another body's system in a File Geodatabase or an ArcGIS page (Mars, IAU 2015) is read as its
+/// longitude/latitude with one notice, refused when it can't be converted, and an Earth system
+/// that can't be converted is read as longitude/latitude, as before.
+#[test]
+fn planetary_systems_are_said_or_refused() {
+    let gcs = r#"GEOGCS["GCS_Mars_2015_-_Sphere_Ocentric",DATUM["D_Mars_2015_-_Sphere",SPHEROID["Mars_2015_-_Sphere",3396190.0,0.0]],PRIMEM["Reference_Meridian",0.0],UNIT["Degree",0.0174532925199433]]"#;
+    let bonne = |gcs: &str| {
+        format!(
+            r#"PROJCS["Bonne",{gcs},PROJECTION["Bonne"],PARAMETER["Central_Meridian",0.0],PARAMETER["Standard_Parallel_1",30.0],UNIT["Meter",1.0]]"#
+        )
+    };
+    let body = |m: &String| m.contains("belongs to another body than the Earth");
+    let mut report = ReadReport::default();
+    let (crs, t) = esri_crs(None, Some(gcs), &mut report).unwrap();
+    assert!(crs.is_some_and(Crs::is_planetary) && t.is_some());
+    assert_eq!(report.messages.iter().filter(|m| body(m)).count(), 1, "{:?}", report.messages);
+    let e = esri_crs(None, Some(&bonne(gcs)), &mut ReadReport::default()).err().unwrap().to_string();
+    assert!(e.contains("belongs to another body than the Earth") && e.contains("Bonne"), "{e}");
+    let earth = r#"GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]"#;
+    let mut report = ReadReport::default();
+    let (crs, t) = esri_crs(None, Some(&bonne(earth)), &mut report).unwrap();
+    assert!(crs.is_none() && t.is_none());
+    assert!(report.messages.iter().any(|m| m.contains("Bonne")) && !report.messages.iter().any(body), "{:?}", report.messages);
 }

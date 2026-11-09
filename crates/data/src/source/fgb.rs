@@ -12,11 +12,13 @@ use super::{Batch, FeatureSource, Reproject, Request, Sampler, SourceInfo, clamp
 use crate::raster::Crs;
 use crate::{DataError, Feature, Field, FieldType, GeometryType, Result, Value, wkb};
 use flatgeobuf::geozero::{ColumnValue, CoordDimensions, PropertyProcessor, ToWkb};
-use flatgeobuf::{ColumnType, FallibleStreamingIterator, FeatureProperties, FgbReader};
+use flatgeobuf::{ColumnType, FeatureProperties};
 use rustgis_geom::Extent;
 use std::io::{BufReader, Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+mod checked;
 
 /// A file or an upload, read and seeked.
 trait ReadSeek: Read + Seek {}
@@ -35,6 +37,8 @@ pub struct FgbSource {
     info: SourceInfo,
     input: Input,
     reproject: Reproject,
+    /// The field each of the header's columns is read into, `None` for one left out (binary).
+    slots: Vec<Option<usize>>,
 }
 
 impl FgbSource {
@@ -63,6 +67,8 @@ impl FgbSource {
         Ok(src)
     }
 
+    /// Opens a FlatGeobuf from its header: schema, extent, coordinate system, and notes (including
+    /// Z or M values, which reading drops).
     fn new<R: Read + Seek>(r: R, input: Input, name: &str) -> Result<Self> {
         let reader = open_reader(r)?;
         let h = reader.header();
@@ -70,18 +76,43 @@ impl FgbSource {
         // The code is an EPSG one only when the organization is EPSG (or not given, which means EPSG).
         let epsg_org = h.crs().is_none_or(|c| c.org().is_none_or(|o| o.eq_ignore_ascii_case("epsg")));
         let code = h.crs().map(|c| c.code()).and_then(|c| u32::try_from(c).ok()).filter(|c| *c > 0 && epsg_org);
-        if !epsg_org && let Some(org) = h.crs().and_then(|c| c.org()) {
-            notes.push(format!("its coordinate system is defined by {org}, not EPSG; read as longitude/latitude"));
+        // Another body's system (an IAU organization, or WKT that says so) is said, or refused when
+        // its coordinates aren't longitude/latitude. It is checked whenever there's no EPSG code
+        // RustGIS converts, because an unknown code is read as longitude/latitude too.
+        let other_body = match h.crs() {
+            Some(c) if code.and_then(Crs::from_epsg).is_none() => {
+                Reproject::planetary("its coordinate system", c.org(), Some(i64::from(c.code())), c.wkt(), &mut notes)
+            }
+            _ => None,
+        };
+        let reproject = match other_body {
+            Some(r) => r?,
+            None => {
+                if !epsg_org && let Some(org) = h.crs().and_then(|c| c.org()) {
+                    notes.push(format!("its coordinate system is defined by {org}, not EPSG; read as longitude/latitude"));
+                }
+                // A coordinate system described (by WKT or name) but without an EPSG code can't be converted.
+                if code.is_none() && h.crs().is_some_and(|c| c.wkt().is_some_and(|w| !w.contains("WGS 84") && !w.contains("WGS84"))) {
+                    notes.push("its coordinate system has no EPSG code; read as longitude/latitude".into());
+                }
+                Reproject::from_epsg(code, &mut notes)
+            }
+        };
+        let mut fields = Vec::new();
+        let mut slots = Vec::new();
+        let mut left_out = Vec::new();
+        for c in h.columns().iter().flat_map(|cols| cols.iter()) {
+            match field_type(c.type_()) {
+                Some(ty) => {
+                    slots.push(Some(fields.len()));
+                    fields.push(Field::new(c.name().to_string(), ty));
+                }
+                None => {
+                    slots.push(None);
+                    left_out.push((c.name().to_string(), "binary".to_string()));
+                }
+            }
         }
-        // A coordinate system described (by WKT or name) but without an EPSG code can't be converted.
-        if code.is_none() && h.crs().is_some_and(|c| c.wkt().is_some_and(|w| !w.contains("WGS 84") && !w.contains("WGS84"))) {
-            notes.push("its coordinate system has no EPSG code; read as longitude/latitude".into());
-        }
-        let reproject = Reproject::from_epsg(code, &mut notes);
-        let fields = h
-            .columns()
-            .map(|cols| cols.iter().map(|c| Field::new(c.name().to_string(), field_type(c.type_()))).collect())
-            .unwrap_or_default();
         let geometry_type = {
             use flatgeobuf::GeometryType as G;
             match h.geometry_type() {
@@ -99,19 +130,27 @@ impl FgbSource {
             })
             .unwrap_or(Extent::EMPTY);
         let count = h.features_count();
-        let info = SourceInfo {
+        let mut info = SourceInfo {
             name: h.name().filter(|n| !n.trim().is_empty()).unwrap_or(name).to_string(),
             format: "FlatGeobuf",
             geometry_type,
             fields,
             extent,
             count: (count > 0).then_some(count),
-            crs: reproject.label(),
+            crs: reproject.info_crs(),
             // The crate's index search assumes the default node size; other files are scanned.
             indexed: h.index_node_size() == flatgeobuf::packed_r_tree::PackedRTree::DEFAULT_NODE_SIZE && count > 0,
             notes,
+            zm_dropped: false,
         };
-        let mut src = FgbSource { info, input, reproject };
+        info.note_columns(
+            &left_out,
+            ["of a type RustGIS has no field for was left out", "of types RustGIS has no field for were left out"],
+        );
+        if h.has_z() || h.has_m() {
+            info.drop_zm((count > 0).then_some(count));
+        }
+        let mut src = FgbSource { info, input, reproject, slots };
         if src.info.geometry_type == GeometryType::None {
             src.info.geometry_type = src.peek_kind();
         }
@@ -162,7 +201,7 @@ impl FgbSource {
             if !in_request(&geometry, req) || (late && !sample.wants()) {
                 continue;
             }
-            let mut props = Props { fields: &self.info.fields, values: vec![Value::Null; self.info.fields.len()] };
+            let mut props = Props { fields: &self.info.fields, slots: &self.slots, values: vec![Value::Null; self.info.fields.len()] };
             if f.process_properties(&mut props).is_err() {
                 out.skipped += 1;
                 continue;
@@ -216,7 +255,7 @@ impl FgbSource {
             if !in_request(&geometry, &req) {
                 continue;
             }
-            let mut props = Props { fields: &self.info.fields, values: vec![Value::Null; self.info.fields.len()] };
+            let mut props = Props { fields: &self.info.fields, slots: &self.slots, values: vec![Value::Null; self.info.fields.len()] };
             if f.process_properties(&mut props).is_err() {
                 out.skipped += 1;
                 continue;
@@ -498,7 +537,7 @@ impl FgbSource {
             if !in_request(&geometry, req) {
                 continue;
             }
-            let mut props = Props { fields: &self.info.fields, values: vec![Value::Null; self.info.fields.len()] };
+            let mut props = Props { fields: &self.info.fields, slots: &self.slots, values: vec![Value::Null; self.info.fields.len()] };
             if feat.process_properties(&mut props).is_err() {
                 out.skipped += 1;
                 continue;
@@ -551,27 +590,18 @@ impl FeatureSource for FgbSource {
     }
 }
 
-/// FlatBuffers verifies the header's layout, not the index arithmetic it advertises.
-fn open_reader<R: Read>(r: R) -> Result<FgbReader<R>> {
-    let reader = FgbReader::open(r).map_err(err)?;
-    let h = reader.header();
-    if h.index_node_size() > 0 && h.features_count() > 0 {
-        let bytes = level_bounds(h.features_count(), u64::from(h.index_node_size()))
-            // The dependency includes a root even when there is just one leaf.
-            .and_then(|levels| levels.first().and_then(|(_, end)| (*end).max(2).checked_mul(NODE)));
-        if bytes.and_then(|n| usize::try_from(n).ok()).is_none() {
-            return Err(DataError::Format("FlatGeobuf: an impossible spatial index size".into()));
-        }
-    }
-    Ok(reader)
+/// Every local and remote selection checks feature prefixes before allocating their bodies.
+fn open_reader<R: Read + Seek>(r: R) -> Result<checked::Reader<R>> {
+    checked::Reader::open(r)
 }
 
 fn err(e: flatgeobuf::Error) -> DataError {
     DataError::Format(format!("FlatGeobuf: {e}"))
 }
 
-fn field_type(t: ColumnType) -> FieldType {
-    match t {
+/// The field type a column is read as; `None` for binary, which RustGIS has no field type for.
+fn field_type(t: ColumnType) -> Option<FieldType> {
+    Some(match t {
         ColumnType::Byte
         | ColumnType::UByte
         | ColumnType::Short
@@ -582,18 +612,23 @@ fn field_type(t: ColumnType) -> FieldType {
         | ColumnType::ULong => FieldType::Integer,
         ColumnType::Float | ColumnType::Double => FieldType::Double,
         ColumnType::Bool => FieldType::Boolean,
+        ColumnType::Binary => return None,
         _ => FieldType::Text,
-    }
+    })
 }
 
 /// Collects a feature's properties into values in field order.
 struct Props<'a> {
     fields: &'a [Field],
+    /// The field of each header column (see [`FgbSource::slots`]).
+    slots: &'a [Option<usize>],
     values: Vec<Value>,
 }
 
 impl PropertyProcessor for Props<'_> {
     fn property(&mut self, idx: usize, _name: &str, v: &ColumnValue) -> flatgeobuf::geozero::error::Result<bool> {
+        // A column left out (binary), or past the header's.
+        let Some(&Some(idx)) = self.slots.get(idx) else { return Ok(false) };
         let value = match v {
             ColumnValue::Byte(x) => Value::Int(i64::from(*x)),
             ColumnValue::UByte(x) => Value::Int(i64::from(*x)),
@@ -634,10 +669,22 @@ pub fn write_in(ds: &crate::Dataset, crs: Crs) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// Refuses to write FlatGeobuf in the browser, before the writer is made: its temporary file
+/// would reach `std::env::temp_dir`, which aborts the web app. (A flag rather than `#[cfg]`, so
+/// both cases are tested natively.)
+fn writable(browser: bool) -> Result<()> {
+    if browser {
+        return Err(DataError::Unsupported("FlatGeobuf in the browser".into()));
+    }
+    Ok(())
+}
+
 /// Writes FlatGeobuf with a spatial index to `out`, in `crs`'s coordinates: the features `feed`
 /// hands to the function it is given, a run at a time, their attributes named by `fields`.
 /// Returns how many were left out for having no geometry. The writer keeps each feature in a
-/// temporary file and only its index entry in memory, so a whole layer needn't be held.
+/// temporary file and only its index entry in memory, so a whole layer needn't be held. The
+/// writer needs that file whether or not it writes an index, and the web app has no files, so
+/// there a FlatGeobuf is refused rather than written.
 pub(crate) fn write_features(
     name: &str,
     geometry_type: GeometryType,
@@ -648,6 +695,7 @@ pub(crate) fn write_features(
 ) -> Result<usize> {
     use flatgeobuf::geozero::wkb::Wkb;
     use flatgeobuf::{FgbCrs, FgbWriter, FgbWriterOptions, GeometryType as G};
+    writable(cfg!(target_arch = "wasm32"))?;
     let ty = match geometry_type {
         GeometryType::Point => G::Unknown,
         GeometryType::Polyline => G::MultiLineString,
@@ -673,6 +721,7 @@ pub(crate) fn write_features(
     let mut left_out = 0;
     feed(&mut |features| {
         for feat in features {
+            crate::progress::step(1)?;
             let Some(g) = &feat.geometry else {
                 left_out += 1;
                 continue;
@@ -702,4 +751,17 @@ pub(crate) fn write_features(
     })?;
     w.write(out).map_err(err)?;
     Ok(left_out)
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+
+    /// The browser refuses FlatGeobuf before the writer, whose temporary file aborted the web
+    /// app, is made; the desktop writes it.
+    #[test]
+    fn flatgeobuf_is_refused_in_the_browser_and_written_on_the_desktop() {
+        assert!(matches!(writable(true), Err(DataError::Unsupported(m)) if m.contains("browser")));
+        assert!(writable(false).is_ok());
+    }
 }

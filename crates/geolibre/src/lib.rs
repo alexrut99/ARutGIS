@@ -57,6 +57,7 @@ pub fn register() {
 pub fn set_runner(exe: Option<std::path::PathBuf>) -> Result<Option<(std::path::PathBuf, String)>, String> {
     let found = runner::choose(exe)?;
     rustgis_analysis::reload_external_of(SOURCE);
+    let _ = rustgis_analysis::external_tools_of(SOURCE);
     Ok(found)
 }
 
@@ -73,6 +74,7 @@ pub fn set_manifests(json: &str) -> Result<usize, String> {
         *m = Some(v);
     }
     rustgis_analysis::reload_external_of(SOURCE);
+    let _ = rustgis_analysis::external_tools_of(SOURCE);
     Ok(n)
 }
 
@@ -129,6 +131,7 @@ struct MetaParam {
 /// What a run needs to know about a tool beyond its [`ToolSpec`].
 #[derive(Clone, Debug)]
 struct Meta {
+    schema: &'static [ParamSpec],
     category: String,
     params: Vec<MetaParam>,
 }
@@ -205,6 +208,19 @@ fn toolbox_of(m: &Value, category: &str) -> String {
     }
 }
 
+/// The runner has no field metadata: infer suggestions from the last name component.
+/// Keep these editable in the form, since names can also describe new output columns.
+fn field_kind(name: &str) -> Option<ParamKind> {
+    match name.rsplit('_').next()? {
+        last if last.eq_ignore_ascii_case("fields") => Some(ParamKind::FieldNames),
+        last if last.eq_ignore_ascii_case("field") => {
+            let numeric = name.split('_').any(|part| part.eq_ignore_ascii_case("weight") || part.eq_ignore_ascii_case("numeric"));
+            Some(if numeric { ParamKind::NumericField } else { ParamKind::Field })
+        }
+        _ => None,
+    }
+}
+
 fn spec_of(m: &Value) -> Option<(ToolSpec, Meta)> {
     let id = m.get("id")?.as_str()?;
     let name = m.get("display_name").and_then(Value::as_str).filter(|n| !n.is_empty()).unwrap_or(id);
@@ -256,7 +272,7 @@ fn spec_of(m: &Value) -> Option<(ToolSpec, Meta)> {
                 }
                 _ if data == Data::Bool => ParamKind::Bool,
                 _ if data == Data::Number => ParamKind::Number,
-                _ => ParamKind::Text,
+                _ => field_kind(pname).unwrap_or(ParamKind::Text),
             },
         };
         // Example file names in the defaults ("dem.tif") are not defaults for a layer.
@@ -288,7 +304,8 @@ fn spec_of(m: &Value) -> Option<(ToolSpec, Meta)> {
         params: Box::leak(params.into_boxed_slice()),
         run: rustgis_analysis::external_placeholder,
     };
-    Some((spec, Meta { category, params: meta }))
+    let schema = spec.params;
+    Some((spec, Meta { schema, category, params: meta }))
 }
 
 /// `g` with every point converted by `f`, or `None` when a point can't be (rather than
@@ -514,6 +531,40 @@ fn option_value(v: &Value, data: Data) -> Value {
     }
 }
 
+/// Immutable manifest metadata paired with one published analysis schema.
+#[derive(Clone)]
+pub struct ResolvedTool {
+    spec: &'static ToolSpec,
+    meta: Meta,
+}
+impl ResolvedTool {
+    /// Pairs a published analysis schema with metadata from that exact manifest load.
+    pub fn capture(spec: &'static ToolSpec) -> Result<Self, String> {
+        let id = spec.id.strip_prefix(PREFIX).ok_or("not a GeoLibre tool")?;
+        let meta =
+            META.lock().ok().and_then(|m| m.as_ref().and_then(|m| m.get(id)).cloned()).ok_or("the GeoLibre metadata is unavailable")?;
+        if !std::ptr::eq(meta.schema, spec.params) {
+            return Err("the GeoLibre metadata and analysis schema belong to different loads".into());
+        }
+        let pinned = Self { spec, meta };
+        pinned.check()?;
+        Ok(pinned)
+    }
+    /// Rejects a withdrawn or replaced schema before inputs or runner arguments are prepared.
+    pub fn check(&self) -> Result<(), String> {
+        if !rustgis_analysis::published_external_tools_of(SOURCE).iter().any(|spec| std::ptr::eq(spec, self.spec)) {
+            return Err("the GeoLibre tool schema was reloaded".into());
+        }
+        Ok(())
+    }
+    /// Preparation uses captured metadata, never another lookup by tool name.
+    /// Uses captured manifest metadata to prepare arguments; does not resolve the tool by name.
+    pub fn prepare(&self, inputs: &dyn Inputs, params: &Value) -> Result<Job, String> {
+        self.check()?;
+        prepare_with(self.spec, &self.meta, inputs, params)
+    }
+}
+
 /// Prepares a run of `spec` (a GeoLibre tool) on the map's layers, with `params` already
 /// resolved (defaults filled, required ones present: see `rustgis_analysis::resolve_params`).
 pub fn prepare(spec: &ToolSpec, inputs: &dyn Inputs, params: &Value) -> Result<Job, String> {
@@ -732,6 +783,22 @@ fn run(spec: &ToolSpec, inputs: &dyn Inputs, params: &Value) -> Result<ToolResul
         let _ = job;
         Err(format!("{}: in the browser, run GeoLibre tools from the Tools pane", spec.name))
     }
+}
+
+/// Runs the immutable native choice supplied by the engine. Development-process bytes remain
+/// unsandboxed and unattested, exactly as for the ordinary runner.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_pinned(
+    tool: &ResolvedTool,
+    inputs: &dyn Inputs,
+    params: &Value,
+    pin: &runner::ResolvedRunner,
+    live: &dyn Fn() -> Result<(), String>,
+) -> Result<ToolResult, String> {
+    pin.check()?;
+    live()?;
+    let job = tool.prepare(inputs, params)?;
+    native::run_pinned(&job, pin, live)
 }
 
 #[cfg(test)]

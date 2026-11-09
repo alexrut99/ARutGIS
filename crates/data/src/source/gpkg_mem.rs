@@ -111,20 +111,14 @@ impl GpkgMemSource {
         let geom = text(get(gc, "column_name")).unwrap_or_default();
         let geom_type = text(get(gc, "geometry_type_name")).unwrap_or_default();
         let srs_id = int(get(gc, "srs_id")).unwrap_or(0);
-        // The EPSG code, as the desktop reader decides it.
+        // The coordinate system, as the desktop reader decides it.
         let srs = meta_rows(&db, &schema, "gpkg_spatial_ref_sys").unwrap_or_default();
-        let row = srs.iter().find(|r| int(get(r, "srs_id")) == Some(srs_id));
-        let epsg: Option<u32> = match row {
-            None => u32::try_from(srs_id).ok().filter(|c| matches!(c, 4326 | 3857)),
-            Some(r) => match (text(get(r, "organization")), int(get(r, "organization_coordsys_id"))) {
-                (Some(org), Some(id)) if org.eq_ignore_ascii_case("epsg") => u32::try_from(id).ok(),
-                _ => None,
-            },
-        };
-        if epsg.is_none() && srs_id > 0 && srs_id != 4326 {
-            notes.push(format!("its coordinate system (srs_id {srs_id}) has no EPSG code; read as longitude/latitude"));
-        }
-        let reproject = Reproject::from_epsg(epsg, &mut notes);
+        let row = srs.iter().find(|r| int(get(r, "srs_id")) == Some(srs_id)).map(|r| super::GpkgSrs {
+            organization: text(get(r, "organization")),
+            code: int(get(r, "organization_coordsys_id")),
+            definition: text(get(r, "definition")),
+        });
+        let reproject = super::gpkg_reproject(srs_id, row, &mut notes)?;
 
         let table = schema
             .iter()
@@ -165,9 +159,12 @@ impl GpkgMemSource {
             fields,
             extent: Extent::EMPTY,
             count: Some(count),
-            crs: reproject.label(),
+            // A system the definition gives, by its PROJ definition, so the layer keeps it
+            // (`SourceInfo::coordinate_system`), as a Shapefile's .prj does (#1476).
+            crs: reproject.info_crs(),
             indexed: false,
             notes,
+            zm_dropped: false,
         };
         let mut src = GpkgMemSource { info, db, table, geom_col, field_cols, reproject };
         // The extent the file declares, else the envelopes in the geometry headers.
@@ -179,7 +176,36 @@ impl GpkgMemSource {
         if src.info.geometry_type == GeometryType::None {
             src.info.geometry_type = src.peek_kind();
         }
+        // Z and M are 0 (none), 1 (every geometry) or 2 (optional: looked for in the first rows).
+        let (z, m) = (int(get(gc, "z")).unwrap_or(0), int(get(gc, "m")).unwrap_or(0));
+        if (z == 1 || m == 1) && src.info.count != Some(0) {
+            // Every geometry has them; how many rows have one isn't known without a scan (an empty
+            // table has none).
+            src.info.drop_zm(None);
+        } else if z == 2 || m == 2 {
+            match src.peek_zm() {
+                Some(true) => src.info.drop_zm(None),
+                Some(false) => {}
+                None => src.info.notes.push("couldn't tell whether it has Z or M values, which RustGIS doesn't keep".into()),
+            }
+        }
         Ok(src)
+    }
+
+    /// Whether any of the first few geometries has Z or M values (the scan stops there); `None`
+    /// when they can't be read.
+    fn peek_zm(&self) -> Option<bool> {
+        let mut found = false;
+        let mut looked = 0;
+        let read = self.db.rows(&self.table, |_, r| {
+            // Every row counts, so a table of empty geometries isn't read to its end.
+            looked += 1;
+            if let Some(Val::Blob(b)) = r.get(self.geom_col) {
+                found |= super::gpkg_blob::split_blob(b).is_some_and(|(_, body)| wkb::has_zm(body));
+            }
+            if found || looked >= 16 { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+        });
+        read.ok().map(|()| found)
     }
 
     /// The geometry type of a table declared as plain `GEOMETRY`, from its first few geometries
