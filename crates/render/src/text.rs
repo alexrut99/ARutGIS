@@ -102,7 +102,8 @@ fn family_font(fam: &crate::families::Family, face: Face) -> Option<(&'static Fo
         return f.map(|f| (f, slanted));
     }
     // Read and parsed with the lock let go: a file can be 48 MB, and other text is drawn meanwhile.
-    let read = crate::families::bytes(installed).and_then(|b| FontRef::try_from_slice_and_index(b, installed.index).ok());
+    let file = crate::families::bytes(installed);
+    let read = file.and_then(|b| FontRef::try_from_slice_and_index(b, installed.index).ok());
     let mut parsed = lock.lock().ok()?;
     // Another thread parsed it meanwhile: its face is the one kept.
     if let Some(f) = parsed.get(&key) {
@@ -114,8 +115,19 @@ fn family_font(fam: &crate::families::Family, face: Face) -> Option<(&'static Fo
         }
         &*Box::leak(Box::new(f))
     });
+    // Its file, for shaping the Thai it draws ([`shaper_of`]).
+    if let (Some(f), Some(bytes)) = (f, file) {
+        files().lock().unwrap_or_else(|e| e.into_inner()).insert(std::ptr::from_ref(f) as usize, (bytes, installed.index));
+    }
     parsed.insert(key, f);
     f.map(|f| (f, slanted))
+}
+
+/// The files of the named faces parsed ([`family_font`]), by their face's address: what Thai in
+/// them is shaped with.
+fn files() -> &'static std::sync::Mutex<std::collections::HashMap<usize, (&'static [u8], u32)>> {
+    static FILES: OnceLock<std::sync::Mutex<std::collections::HashMap<usize, (&'static [u8], u32)>>> = OnceLock::new();
+    FILES.get_or_init(Default::default)
 }
 
 /// The label font's regular face.
@@ -264,27 +276,27 @@ struct Placed {
 
 /// Lays out `text` at `px` pixels in `face` (with `sans` for the characters it lacks, and the
 /// fallbacks of `bold`'s weight, as [`glyph`] takes them): each drawable glyph, and the total
-/// advance. A run of Thai drawn in the installed Thai face is shaped ([`thai_run`]); characters
-/// no font covers are left out.
+/// advance. A run of Thai is shaped ([`thai_run`]) in the face that draws it, the installed Thai
+/// face or one named (Sarabun in a layout); characters no font covers are left out.
 fn shape(text: &str, px: f32, face: &'static FontRef<'static>, sans: Option<&'static FontRef<'static>>, bold: bool) -> (Vec<Placed>, f32) {
     let mut out: Vec<Placed> = Vec::new();
     let mut x = 0.0;
     let mut letter = 0;
     let mut prev: Option<(&'static FontRef<'static>, GlyphId)> = None;
-    let thai_face = thai(bold);
     let chars: Vec<(usize, char)> = text.char_indices().take(500).collect();
     let mut i = 0;
     while let Some(&(at, ch)) = chars.get(i) {
         i += 1;
         let Some((f, id)) = glyph(ch, face, sans, bold) else { continue };
-        if let Some(t) = thai_face.filter(|t| is_thai(ch) && std::ptr::eq(*t, f)) {
-            // The run: this character and the Thai ones after it that the Thai face draws too.
+        if let Some(shaper) = is_thai(ch).then(|| shaper_of(f, bold)).flatten() {
+            let t = f;
+            // The run: this character and the Thai ones after it that the same face draws.
             let mut end = i;
             while chars.get(end).is_some_and(|&(_, c)| is_thai(c) && glyph(c, face, sans, bold).is_some_and(|(g, _)| std::ptr::eq(g, t))) {
                 end += 1;
             }
             let stop = chars.get(end).map_or(text.len(), |&(b, _)| b);
-            if let Some(run) = text.get(at..stop).and_then(|run| thai_run(run, t, bold, px)) {
+            if let Some(run) = text.get(at..stop).map(|run| thai_run(run, t, shaper, px)) {
                 for (id, dx, dy, advance, cluster) in run {
                     // A glyph that doesn't advance (a vowel or tone mark) is part of the letter before.
                     let first = out.is_empty();
@@ -333,14 +345,43 @@ fn thai_shaper(bold: bool) -> Option<&'static (harfrust::FontRef<'static>, harfr
     }))
 }
 
-/// `run`, Thai text the installed Thai face `t` draws, shaped at `px` as the map view shapes it
+/// The shaper for Thai in `f`: the installed Thai face's, or (a face named, such as the Sarabun
+/// layouts use) one built from `f`'s own file, once a face. `None` for another face (the label
+/// font's, say), whose Thai is drawn a character at a time.
+fn shaper_of(f: &'static FontRef<'static>, bold: bool) -> Option<&'static (harfrust::FontRef<'static>, harfrust::ShaperData)> {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    type Shaper = &'static (harfrust::FontRef<'static>, harfrust::ShaperData);
+    if thai(bold).is_some_and(|t| std::ptr::eq(t, f)) {
+        return thai_shaper(bold);
+    }
+    static KEPT: OnceLock<Mutex<HashMap<usize, Option<Shaper>>>> = OnceLock::new();
+    let key = std::ptr::from_ref(f) as usize;
+    let kept = KEPT.get_or_init(Mutex::default);
+    if let Some(s) = kept.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return *s;
+    }
+    let file = files().lock().unwrap_or_else(|e| e.into_inner()).get(&key).copied();
+    let built = file.and_then(|(bytes, index)| harfrust::FontRef::from_index(bytes, index).ok()).map(|font| -> Shaper {
+        let data = harfrust::ShaperData::new(&font);
+        // Kept for the run of the app: one for each face drawn, a handful.
+        Box::leak(Box::new((font, data)))
+    });
+    kept.lock().unwrap_or_else(|e| e.into_inner()).insert(key, built);
+    built
+}
+
+/// `run`, Thai text the face `t` draws, shaped at `px` as the map view shapes it
 /// (the face's own rules stack a tone mark over a vowel written above and move marks clear of a
 /// tall consonant, which drawing each character on its own doesn't): each glyph with its offset
 /// from the pen (`y` down), the pen's advance after it, in pixels, and the byte in `run` its
-/// cluster starts at. `None` when the face can't be shaped, so the run is drawn a character at a
-/// time.
-fn thai_run(run: &str, t: &'static FontRef<'static>, bold: bool, px: f32) -> Option<Vec<(GlyphId, f32, f32, f32, usize)>> {
-    let (font, data) = thai_shaper(bold)?;
+/// cluster starts at. `shaper` is the face's own ([`shaper_of`]).
+fn thai_run(
+    run: &str,
+    t: &'static FontRef<'static>,
+    (font, data): &'static (harfrust::FontRef<'static>, harfrust::ShaperData),
+    px: f32,
+) -> Vec<(GlyphId, f32, f32, f32, usize)> {
     let shaper = data.shaper(font).build();
     let mut buffer = harfrust::UnicodeBuffer::new();
     buffer.push_str(run);
@@ -348,7 +389,7 @@ fn thai_run(run: &str, t: &'static FontRef<'static>, bold: bool, px: f32) -> Opt
     let shaped = shaper.shape(buffer, harfrust::ShapeOptions::new());
     let sf = t.as_scaled(em(t, px));
     let (kx, ky) = (sf.h_scale_factor(), sf.v_scale_factor());
-    let glyphs = shaped
+    shaped
         .glyph_infos()
         .iter()
         .zip(shaped.glyph_positions())
@@ -357,8 +398,7 @@ fn thai_run(run: &str, t: &'static FontRef<'static>, bold: bool, px: f32) -> Opt
             // The shaper's y is up; the pixmap's is down.
             Some((id, pos.x_offset as f32 * kx, -(pos.y_offset as f32) * ky, pos.x_advance as f32 * kx, info.cluster as usize))
         })
-        .collect();
-    Some(glyphs)
+        .collect()
 }
 
 /// Most lines a label draws: its text comes from files and attributes.
@@ -1480,6 +1520,25 @@ mod coverage_tests {
         let mut pm = crate::Canvas::new(200, 60).unwrap();
         super::styled_at(&mut pm, "ญี่ปุ่น", 4.0, 30.0, 32.0, rustgis_map::Rgba::rgb(0, 0, 0), Face::default(), 0.0);
         assert!(pm.pixmap().pixels().iter().any(|p| p.alpha() > 0), "the Thai glyphs were not drawn");
+    }
+
+    /// Thai in a face named by family (Sarabun, which the Thai layouts use) is shaped in that face
+    /// too: the tone mark over a vowel written above sits higher than over a bare consonant, as
+    /// in the installed Thai face, rather than on the vowel.
+    #[test]
+    fn thai_in_a_named_face_is_shaped() {
+        use super::{Face, face_font, shape};
+        // Sarabun is built in, so this runs everywhere.
+        let face = Face { family: crate::families::find("Sarabun"), ..Face::default() };
+        let (f, _) = face_font(face).expect("Sarabun is built in");
+        let tone_top = |text: &str| {
+            let (glyphs, _) = shape(text, 40.0, f, None, false);
+            let g = glyphs.last().unwrap();
+            let og = g.f.outline_glyph(g.id.with_scale_and_position(40.0, ab_glyph::point(g.x, 50.0 + g.y))).unwrap();
+            og.px_bounds().min.y
+        };
+        use ab_glyph::Font;
+        assert!(tone_top("ที่") < tone_top("ท่") - 2.0, "the tone mark stacks over the vowel");
     }
 
     /// A text asking for a serif (#517) where none is installed is drawn in the label font, slanted

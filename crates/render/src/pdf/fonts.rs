@@ -193,7 +193,10 @@ fn glyph_procedure(font: &FontRef<'static>, id: GlyphId, advance: f32) -> (Vec<u
             path.extend_from_slice(b"h\nf\n");
         }
     }
-    let bbox = (b[0] <= b[2]).then_some(b);
+    // The box holds the glyph's origin too: a mark drawn wholly left of it (a Thai vowel or tone
+    // mark, which takes no advance) is otherwise refused by some readers as a bad box, and left
+    // out.
+    let bbox = (b[0] <= b[2]).then_some([b[0].min(0.0), b[1], b[2].max(0.0), b[3]]);
     let mut ops = Vec::with_capacity(path.len() + 48);
     num(&mut ops, advance, 2);
     ops.extend_from_slice(b" 0 ");
