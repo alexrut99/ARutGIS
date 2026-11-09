@@ -4,7 +4,7 @@ members = ["crates/*", "apps/*", "xtask"]
 default-members = ["crates/*", "apps/rustgis", "apps/rustgis-cli", "xtask"]
 
 [workspace.package]
-version = "0.5.8"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.90"
@@ -67,7 +67,7 @@ tiff = "0.11"
 weezl = "0.2"
 # The tests' Zstandard-compressed GeoTIFFs (the version the tiff crate decodes with).
 zstd = { version = "0.14", default-features = false }
-proj4rs = { version = "0.2", default-features = false }
+proj4rs = { version = "0.3", default-features = false }
 crs-definitions = { version = "0.6", default-features = false, features = ["proj4"] }
 base64 = "0.23"
 # Deflate for PDF image streams.
@@ -98,7 +98,7 @@ tokio = { version = "1", default-features = false, features = ["rt", "net", "tim
 tokio-util = { version = "0.7", default-features = false, features = ["compat"] }
 webpki-roots = "1"
 # Excel and OpenDocument spreadsheets, in pure Rust (the browser too).
-calamine = { version = "0.37", default-features = false }
+calamine = { version = "0.38", default-features = false }
 laz = { version = "0.13", default-features = false }
 # Zarr chunk codecs, in pure Rust (the browser too): LZ4 (blosc's usual codec; already in the
 # build through parquet) and a zstd decoder.

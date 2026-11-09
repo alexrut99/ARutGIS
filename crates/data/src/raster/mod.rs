@@ -1,7 +1,9 @@
 //! Rasters: bands of numbers on a georeferenced grid (elevation, imagery, classified land cover).
 //!
-//! Pixels are held as `f32` per band. Readers never panic on malformed input and refuse rasters
-//! larger than [`MAX_SAMPLES`]; cloud-optimised GeoTIFFs fall back to their largest overview that
+//! Pixels are held as `f32` per band: whole numbers are exact up to ±16,777,216 and decimals to
+//! about 7 significant digits. Readers count the values that change on the way in
+//! ([`Raster::rounded`]). Readers never panic on malformed input and refuse rasters
+//! larger than [`max_samples`]; cloud-optimised GeoTIFFs fall back to their largest overview that
 //! fits.
 
 pub mod ascii;
@@ -16,6 +18,7 @@ pub mod gdal;
 pub mod geotiff;
 mod lzw;
 pub mod pam;
+pub mod planetary;
 pub mod wkt;
 pub mod zarr;
 
@@ -27,12 +30,62 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DataError, Result};
 
-/// Most samples (pixels × bands) held in memory: 120 million (480 MB), or 32 million in the
-/// browser, whose memory is much tighter. Reading briefly needs about twice this.
+/// Room for a band of `w × h` samples of `T`, empty: a band the machine can't hold is an error
+/// saying so, instead of ending the program (#1291). (In the browser and on Windows the check is
+/// reliable; Linux may promise memory it can't give later.)
+pub fn grid<T>(w: usize, h: usize) -> Result<Vec<T>> {
+    room(w.checked_mul(h).ok_or_else(|| no_memory(w, h))?, w, h)
+}
+
+/// A `w × h` band filled with `fill` ([`grid`]).
+pub fn filled<T: Clone>(w: usize, h: usize, fill: T) -> Result<Vec<T>> {
+    let mut v = grid(w, h)?;
+    v.resize(w * h, fill);
+    Ok(v)
+}
+
+/// A `w × h` band of `values`, its memory reserved first ([`grid`]). More than `w × h` values are
+/// an error, not cut off.
+pub fn collected<T>(w: usize, h: usize, values: impl IntoIterator<Item = T>) -> Result<Vec<T>> {
+    let mut v = grid(w, h)?;
+    let mut values = values.into_iter();
+    v.extend(values.by_ref().take(w * h));
+    if values.next().is_some() {
+        return Err(DataError::Format(format!("more values than a {w} × {h} raster holds")));
+    }
+    Ok(v)
+}
+
+/// Room for `n` samples of a `w × h` band (fewer than all of them, when fewer can come).
+pub fn room<T>(n: usize, w: usize, h: usize) -> Result<Vec<T>> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(n).map_err(|_| no_memory(w, h))?;
+    Ok(v)
+}
+
+fn no_memory(w: usize, h: usize) -> DataError {
+    DataError::Format(format!("not enough memory for a {w} × {h} raster"))
+}
+
+/// Most samples (pixels × bands) held in memory in the browser, whose memory is much tighter: 32
+/// million. The parts of a GeoTIFF the web app saves are read with it anywhere, so that the same
+/// overview is chosen.
+pub const BROWSER_SAMPLES: usize = 32_000_000;
+/// The fewest samples [`max_samples`] allows: 120 million (480 MB) on the desktop, and
+/// [`BROWSER_SAMPLES`] (its limit) in the browser.
 #[cfg(not(target_arch = "wasm32"))]
-pub const MAX_SAMPLES: usize = 120_000_000;
+pub const SAMPLES_FLOOR: usize = 120_000_000;
 #[cfg(target_arch = "wasm32")]
-pub const MAX_SAMPLES: usize = 32_000_000;
+pub const SAMPLES_FLOOR: usize = BROWSER_SAMPLES;
+/// The most [`max_samples`] allows, however much memory the computer has: a billion (4 GB).
+pub const SAMPLES_CEILING: usize = 1_000_000_000;
+
+/// Most samples (pixels × bands) held in memory: on the desktop, as many as a quarter of the
+/// computer's memory holds at 8 bytes each (a sample takes 4, and reading briefly needs about
+/// twice that), from [`SAMPLES_FLOOR`] up to [`SAMPLES_CEILING`] (#1291 step 2, #1318).
+pub fn max_samples() -> usize {
+    crate::memory::scaled(crate::memory::physical(), SAMPLES_FLOOR, SAMPLES_CEILING, 8)
+}
 /// Largest ASCII grid file read (1 GiB).
 pub const MAX_ASCII_BYTES: u64 = 1 << 30;
 /// File extensions read as rasters.
@@ -114,27 +167,47 @@ impl BandStats {
         BandStats::compute(data, f32::is_finite)
     }
 
-    fn compute(data: &[f32], valid: impl Fn(f32) -> bool) -> BandStats {
+    fn compute(data: &[f32], valid: impl Fn(f32) -> bool + Sync) -> BandStats {
         BandStats::compute_with(data, valid, None)
     }
 
     /// [`BandStats::compute`], taking the range, mean and spread from `stored` (statistics of the
     /// whole band, when `data` is a reduced overview of it).
-    fn compute_with(data: &[f32], valid: impl Fn(f32) -> bool, stored: Option<pam::Stats>) -> BandStats {
-        let (mut n, mut min, mut max, mut sum, mut sum2) = (0usize, f64::INFINITY, f64::NEG_INFINITY, 0.0f64, 0.0f64);
-        let mut whole = true;
-        for &v in data {
-            if !valid(v) {
-                continue;
+    fn compute_with(data: &[f32], valid: impl Fn(f32) -> bool + Sync, stored: Option<pam::Stats>) -> BandStats {
+        BandStats::compute_on(data, valid, stored, threads_for(data.len()))
+    }
+
+    /// [`BandStats::compute_with`] on `threads` threads. On one, one pass makes the count, range,
+    /// sums and whether every value is whole, and a second the histogram and distinct values. On
+    /// several, the sums are made on this thread, in the band's order, so the mean and spread are
+    /// the same to the bit; what doesn't depend on the order is counted on the others
+    /// ([`on_runs`]), the range while this thread sums. The range keeps the first of equal values
+    /// (−0 or 0) in the band's order either way.
+    fn compute_on(data: &[f32], valid: impl Fn(f32) -> bool + Sync, stored: Option<pam::Stats>, threads: usize) -> BandStats {
+        let ranged = |run: &[f32], sum: bool| {
+            let (mut n, mut min, mut max, mut whole, mut sums) = (0usize, f64::INFINITY, f64::NEG_INFINITY, true, (0.0f64, 0.0f64));
+            for &v in run.iter().filter(|&&v| valid(v)) {
+                let x = v as f64;
+                n += 1;
+                (min, max) = (lower(min, x), higher(max, x));
+                whole &= x.fract() == 0.0;
+                if sum {
+                    sums = (sums.0 + x, sums.1 + x * x);
+                }
             }
-            let x = v as f64;
-            n += 1;
-            min = min.min(x);
-            max = max.max(x);
-            sum += x;
-            sum2 += x * x;
-            whole &= x.fract() == 0.0;
-        }
+            (n, min, max, whole, sums)
+        };
+        let (n, mut min, mut max, whole, (sum, sum2)) = if threads <= 1 {
+            ranged(data, true)
+        } else {
+            let sums = || ranged(data, true).4;
+            let (runs, sums) = on_runs_beside(data, threads, sums, |run| ranged(run, false));
+            let mut all = (0usize, f64::INFINITY, f64::NEG_INFINITY, true, sums);
+            for (rn, rmin, rmax, rwhole, _) in runs {
+                all = (all.0 + rn, lower(all.1, rmin), higher(all.2, rmax), all.3 && rwhole, all.4);
+            }
+            all
+        };
         if n == 0 {
             return BandStats::default();
         }
@@ -145,34 +218,24 @@ impl BandStats {
             mean = s.mean.unwrap_or(mean);
             std_dev = s.std_dev.unwrap_or(std_dev);
         }
-        let mut histogram = vec![0u64; HISTOGRAM_BINS];
         let span = max - min;
         // Whole numbers within 16 bits are tracked in a bit set (fast for byte imagery); others in
         // a small set that gives up past 256 values.
         let small_ints = whole && min >= 0.0 && max <= 65_535.0;
-        let mut bits = if small_ints { vec![0u64; 1024] } else { Vec::new() };
-        let mut distinct = std::collections::BTreeSet::new();
-        let mut track = whole;
         let k = (HISTOGRAM_BINS as f64 - 1.0) / if span > 0.0 { span } else { 1.0 };
-        for &v in data {
-            if !valid(v) {
-                continue;
-            }
-            let x = v as f64;
-            let bin = ((x - min) * k).round() as usize;
-            if let Some(h) = histogram.get_mut(bin.min(HISTOGRAM_BINS - 1)) {
-                *h += 1;
-            }
-            if small_ints {
-                let i = x as usize;
-                if let Some(w) = bits.get_mut(i / 64) {
-                    *w |= 1 << (i % 64);
-                }
-            } else if track {
-                distinct.insert(x as i64);
-                track = distinct.len() <= 256;
+        let b = Binning { min, k, small_ints, whole };
+        let mut runs = on_runs(data, threads, |run| Tally::run(run, &valid, b)).into_iter();
+        let mut tally = runs.next().unwrap_or_else(|| Tally::run(&[], &valid, b));
+        for t in runs {
+            tally.histogram.iter_mut().zip(&t.histogram).for_each(|(a, b)| *a += b);
+            tally.bits.iter_mut().zip(&t.bits).for_each(|(a, b)| *a |= b);
+            tally.track &= t.track;
+            if tally.track {
+                tally.distinct.extend(t.distinct);
+                tally.track = tally.distinct.len() <= 256;
             }
         }
+        let Tally { histogram, bits, distinct, track } = tally;
         let categories = if small_ints {
             let n: u32 = bits.iter().map(|w| w.count_ones()).sum();
             (n <= 256).then(|| {
@@ -206,6 +269,234 @@ impl BandStats {
     }
 }
 
+/// How [`Tally::run`] counts a band's values: its histogram's bins from `min`, `k` bins to a unit,
+/// and how its distinct values are kept (`small_ints`: in a bit set; else, when `whole`, in a
+/// set that gives up past 256 values).
+#[derive(Clone, Copy)]
+struct Binning {
+    min: f64,
+    k: f64,
+    small_ints: bool,
+    whole: bool,
+}
+
+/// A band's values counted: its histogram, and its distinct values (the bit set of whole
+/// numbers within 16 bits, or the set and whether it still keeps them).
+struct Tally {
+    histogram: Vec<u64>,
+    bits: Vec<u64>,
+    distinct: std::collections::BTreeSet<i64>,
+    track: bool,
+}
+
+/// Values below which a band is counted on one thread (#1252): threads pay off past about a
+/// million.
+const PARALLEL_VALUES: usize = 1 << 20;
+
+/// `x` when it is below `min`, else `min`: equal values (−0 and 0) keep the first.
+fn lower(min: f64, x: f64) -> f64 {
+    if x < min { x } else { min }
+}
+
+/// `x` when it is above `max`, else `max`: equal values (−0 and 0) keep the first.
+fn higher(max: f64, x: f64) -> f64 {
+    if x > max { x } else { max }
+}
+
+/// The threads to count a band of `len` values on: at most 16, one per 256 Ki values, and one
+/// below [`PARALLEL_VALUES`] or in the browser.
+fn threads_for(len: usize) -> usize {
+    if cfg!(target_arch = "wasm32") || len < PARALLEL_VALUES {
+        1
+    } else {
+        std::thread::available_parallelism().map_or(1, |n| n.get()).min(16).min(len / (PARALLEL_VALUES / 4))
+    }
+}
+
+/// `f` over `threads` runs of `data` that cover it in order, its results in that order, the
+/// calling thread taking the first. A worker's panic is raised again here; a run whose thread
+/// can't start is made on this one.
+fn on_runs<T: Send>(data: &[f32], threads: usize, f: impl Fn(&[f32]) -> T + Sync) -> Vec<T> {
+    on_runs_beside(data, threads, || (), f).0
+}
+
+/// [`on_runs`], the calling thread running `beside` first, while the other threads start on
+/// their runs.
+fn on_runs_beside<T: Send, U>(data: &[f32], threads: usize, beside: impl FnOnce() -> U, f: impl Fn(&[f32]) -> T + Sync) -> (Vec<T>, U) {
+    if threads <= 1 || data.is_empty() {
+        let beside = beside();
+        return (vec![f(data)], beside);
+    }
+    let mut runs = data.chunks(data.len().div_ceil(threads));
+    let first = runs.next().unwrap_or_default();
+    let f = &f;
+    std::thread::scope(|scope| {
+        let started: Vec<_> = runs.map(|run| std::thread::Builder::new().spawn_scoped(scope, move || f(run)).map_err(|_| run)).collect();
+        let beside = beside();
+        let mut out = vec![f(first)];
+        for run in started {
+            out.push(match run {
+                Ok(h) => h.join().unwrap_or_else(|p| std::panic::resume_unwind(p)),
+                // The OS refused a thread: made here.
+                Err(run) => f(run),
+            });
+        }
+        (out, beside)
+    })
+}
+
+impl Tally {
+    /// `data`'s valid values counted on this thread.
+    fn run(data: &[f32], valid: &impl Fn(f32) -> bool, b: Binning) -> Tally {
+        let mut histogram = vec![0u64; HISTOGRAM_BINS];
+        let mut bits = if b.small_ints { vec![0u64; 1024] } else { Vec::new() };
+        let mut distinct = std::collections::BTreeSet::new();
+        let mut track = b.whole;
+        for &v in data {
+            if !valid(v) {
+                continue;
+            }
+            let x = v as f64;
+            let bin = ((x - b.min) * b.k).round() as usize;
+            if let Some(h) = histogram.get_mut(bin.min(HISTOGRAM_BINS - 1)) {
+                *h += 1;
+            }
+            if b.small_ints {
+                let i = x as usize;
+                if let Some(w) = bits.get_mut(i / 64) {
+                    *w |= 1 << (i % 64);
+                }
+            } else if track {
+                distinct.insert(x as i64);
+                track = distinct.len() <= 256;
+            }
+        }
+        Tally { histogram, bits, distinct, track }
+    }
+}
+
+/// The no-data value the readers leave out of [`Raster::rounded`], by one rule for every reader:
+///
+/// - The value is the file's when it is finite, else the sidecar's (`.aux.xml`) when that is
+///   finite, else none: the value [`Raster::new`] and [`Raster::apply_pam`] go on to mask with.
+/// - A sample whose value in the file is exactly that value isn't counted, even when its `f32`
+///   overflows (a Float64 no-data of −1.8e308).
+/// - Any other sample `is_valid` masks is counted, as it went from a value to no-data: one that
+///   rounds onto the no-data value (an Int32 ID 16777217 with no-data 16777216), or one `f32`
+///   holds exactly that the no-data value rounds onto (−2^63 with no-data −2^63 + 1).
+/// - Any other sample is counted when it changed, an overflow to infinity included.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Uncounted {
+    exact: Option<Exact>,
+    masked: Option<f32>,
+}
+
+/// A value exactly as a file states it: a whole number as one (an `f64` rounds those past 2^53),
+/// anything else as an `f64`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Exact {
+    Whole(i128),
+    Float(f64),
+}
+
+impl Exact {
+    /// A number as text: whole when it is written as one.
+    pub(crate) fn parse(text: &str) -> Option<Exact> {
+        let text = text.trim();
+        text.parse::<i128>().map(Exact::Whole).ok().or_else(|| text.parse::<f64>().ok().map(Exact::Float))
+    }
+
+    /// The value as an `f64` (rounded, for a whole number past 2^53).
+    pub(crate) fn wide(self) -> f64 {
+        match self {
+            Exact::Whole(w) => w as f64,
+            Exact::Float(x) => x,
+        }
+    }
+
+    /// Whether two values are the same number.
+    pub(crate) fn same(self, other: Exact) -> bool {
+        match (self, other) {
+            (Exact::Whole(a), Exact::Whole(b)) => a == b,
+            (Exact::Float(a), Exact::Float(b)) => a == b,
+            // Only an integral float within i128's range (the cast saturates past it) can be one.
+            (Exact::Whole(w), Exact::Float(x)) | (Exact::Float(x), Exact::Whole(w)) => {
+                x.fract() == 0.0 && x.abs() < 2f64.powi(127) && x as i128 == w
+            }
+        }
+    }
+}
+
+impl Uncounted {
+    /// The value from the file's own no-data value and the sidecar's.
+    pub(crate) fn new(file: Option<Exact>, sidecar: Option<f64>) -> Uncounted {
+        let exact = file.filter(|v| v.wide().is_finite()).or(sidecar.filter(|v| v.is_finite()).map(Exact::Float));
+        Uncounted { exact, masked: exact.map(|d| d.wide() as f32).filter(|d| d.is_finite()) }
+    }
+
+    /// Whether a sample read as `f` is held, when the no-data value decides it: `Some(true)` for
+    /// the no-data value itself; `Some(false)` for any other sample [`Raster::is_valid`] masks as
+    /// no-data, exact in `f32` or not, as it went from a value to no-data; `None` otherwise (the
+    /// reader's own test decides). `value` gives the sample's value in the file; it is asked for
+    /// only when `f` matches the value's `f32` (or both are infinite, for a value past `f32`'s
+    /// range).
+    pub(crate) fn decides(self, f: f32, value: impl FnOnce() -> Option<Exact>) -> Option<bool> {
+        let is = |v: Option<Exact>| self.exact.zip(v).is_some_and(|(a, b)| a.same(b));
+        match self.masked {
+            Some(m) if f == m => Some(is(value())),
+            None if self.exact.is_some() && f.is_infinite() && is(value()) => Some(true),
+            _ => None,
+        }
+    }
+}
+
+/// Cases of [`Uncounted`]'s rule that every reader's tests read (a no-data value that isn't finite,
+/// one past `f32`'s range, a sidecar's, a sample rounding onto it), so the readers agree.
+#[cfg(test)]
+pub(crate) struct NodataCase {
+    /// The file's own no-data value, as it writes it (a GeoTIFF tag, an ASCII grid header, a
+    /// Zarr `_FillValue`).
+    pub file: Option<&'static str>,
+    /// The sidecar's (`.aux.xml`; Zarr stores have none).
+    pub sidecar: Option<f64>,
+    /// The samples of a 2 × 2 Float64 band.
+    pub samples: [f64; 4],
+    /// How many a GeoTIFF or ASCII grid counts as rounded.
+    pub counted: u64,
+    /// How many a Zarr store counts: it has no sidecar.
+    pub zarr: u64,
+}
+
+#[cfg(test)]
+pub(crate) const NODATA_CASES: &[NodataCase] = &[
+    // No no-data value: too many digits and an overflow to infinity are both counted.
+    NodataCase { file: None, sidecar: None, samples: [0.123_456_789_012_345, 1.0, -1e39, 2.0], counted: 2, zarr: 2 },
+    // A NaN or infinite file value is ignored and the sidecar's is used: 0.1 isn't counted, but
+    // 0.1000000001, a value that rounds onto it and so becomes no-data, is. Zarr, with no
+    // sidecar, counts all three.
+    NodataCase { file: Some("nan"), sidecar: Some(0.1), samples: [0.1, 0.100_000_000_1, 0.123_456_789_012_345, 2.0], counted: 2, zarr: 3 },
+    NodataCase { file: Some("inf"), sidecar: Some(0.1), samples: [0.1, 0.100_000_000_1, 0.123_456_789_012_345, 2.0], counted: 2, zarr: 3 },
+    // Past f32's range: the no-data value itself isn't counted, another overflow is.
+    NodataCase { file: Some("-1.7976931348623157e308"), sidecar: None, samples: [f64::MIN, -1e39, 0.5, 2.0], counted: 1, zarr: 1 },
+    NodataCase { file: Some("-1e39"), sidecar: None, samples: [-1e39, -2e39, 0.5, 2.0], counted: 1, zarr: 1 },
+    // A finite file value wins over the sidecar's; 1.00000001 and the ID 16777217 round onto it
+    // and become no-data, so they are counted, while the no-data value itself isn't.
+    NodataCase { file: Some("1"), sidecar: Some(0.1), samples: [1.000_000_01, 0.123_456_789_012_345, 0.5, 2.0], counted: 2, zarr: 2 },
+    NodataCase { file: Some("16777216"), sidecar: None, samples: [16_777_217.0, 16_777_216.0, 0.5, 2.0], counted: 1, zarr: 1 },
+];
+
+/// Cases of [`Uncounted`]'s rule for 64-bit whole numbers past 2^53, which an `f64` rounds: the
+/// file's no-data value as it writes it, four Int64 samples, how many a GeoTIFF or ASCII grid
+/// counts, and how many a Zarr store (which masks exact matches only) counts.
+#[cfg(test)]
+pub(crate) const NODATA_WHOLE_CASES: &[(&str, [i64; 4], u64, u64)] = &[
+    // −2^63 + 1 is the no-data value, written and stored exactly, so it isn't counted. −2^63, which
+    // f32 holds, shares its f32: a GeoTIFF or grid masks it as no-data and counts it; Zarr keeps it.
+    ("-9223372036854775807", [i64::MIN + 1, i64::MIN + 1, i64::MIN, 1], 1, 0),
+    // −2^63 is the no-data value; −2^63 + 1 rounds onto it and is counted everywhere.
+    ("-9223372036854775808", [i64::MIN, i64::MIN + 1, 0, 1], 1, 1),
+];
+
 /// One band of pixels, row by row.
 #[derive(Clone)]
 pub struct Band {
@@ -224,6 +515,26 @@ impl Band {
             return None;
         }
         self.classes.get(v as usize).map(String::as_str).filter(|s| !s.is_empty())
+    }
+}
+
+/// The longest a raster read in place is waited for natively: its overview as a layer opens, its
+/// tiles as it is exported.
+pub const IN_PLACE_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// An alpha band's opaque value for a pixel type (`UInt16`: 65535): the type's largest, 1 for
+/// floating point (as TIFF keeps it), 255 for bytes and anything else.
+pub fn alpha_max(data_type: &str) -> f32 {
+    match data_type {
+        "Int8" => 127.0,
+        "Int16" => 32767.0,
+        "UInt16" => 65535.0,
+        "Int32" => 2_147_483_647.0,
+        "UInt32" => 4_294_967_295.0,
+        "Int64" => 9.223_372e18,
+        "UInt64" => 1.844_674_4e19,
+        "Float16" | "Float32" | "Float64" => 1.0,
+        _ => 255.0,
     }
 }
 
@@ -261,6 +572,26 @@ pub struct Raster {
     /// `false` for a scan (a TIFF with no GeoTIFF tags, a PNG, a JPEG): `transform` is then only
     /// a stand-in until the picture is placed or georeferenced, and says nothing about the ground.
     pub georeferenced: bool,
+    /// What reading it left out or cut (a colour table, names), one line a kind with a count,
+    /// for whoever adds it to the map to say (AGENTS.md, Never silent). Empty when nothing was
+    /// left out.
+    pub lost: Vec<String>,
+    /// How many values of each band changed when read as `f32` (Int32 IDs past 16,777,216, Float64
+    /// values with more digits than `f32` holds), by band; empty when none did. NaN values and
+    /// samples that are the no-data value aren't counted (one that rounds onto it is). The two are
+    /// compared once read as `f32`: a long decimal whose `f32` reading differs from the no-data
+    /// value's (rounded through `f64`) is counted, as it isn't masked as no-data either.
+    pub rounded: Vec<u64>,
+    /// By band, whether the band holds some values rounded when its source was read, how many
+    /// not known: a raster made from part of one with `rounded` values (a clip, a pixel edit)
+    /// keeps an unknown share of them, so it carries this mark instead of a count. Empty when
+    /// none does.
+    pub rounded_some: Vec<bool>,
+    /// Who holds the rights to the picture (the TIFF Copyright tag): the credits a map's tile
+    /// layers ask for, on a GeoTIFF of the view. Read from a GeoTIFF that has it, and written
+    /// when this raster is exported; a raster made from it (clipped, reprojected) starts
+    /// without.
+    pub copyright: Option<String>,
     transformer: Transformer,
     extent: Extent,
 }
@@ -276,6 +607,75 @@ impl std::fmt::Debug for Raster {
     }
 }
 
+/// A band's own name, for a file's metadata: `None` while it keeps its number (`Band 3`).
+pub(crate) fn band_name_of(r: &Raster, band: usize) -> Option<&str> {
+    r.bands.get(band).map(|b| b.name.as_str()).filter(|n| !n.trim().is_empty() && *n != format!("Band {}", band + 1))
+}
+
+/// GDAL's metadata tag (42112) for the bands `bands` of `r`, written as samples in that order:
+/// their names, and the first one's class names. Both GeoTIFF writers take it from here.
+pub(crate) fn gdal_metadata_of(r: &Raster, bands: &[usize]) -> Option<String> {
+    let names: Vec<Option<&str>> = bands.iter().map(|b| band_name_of(r, *b)).collect();
+    let first = bands.first().and_then(|b| r.bands.get(*b)).map_or(&[][..], |b| &b.classes[..]);
+    pam::gdal_metadata(&names, first)
+}
+
+/// Text for a TIFF ASCII tag, which holds 7-bit ASCII only: control characters (a NUL would end
+/// it early) as spaces, `©` and `®` as `(c)` and `(R)`, any other character outside ASCII as `?`
+/// ([`tag_text_changes`] counts them), trimmed.
+pub fn tag_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '©' => out.push_str("(c)"),
+            '®' => out.push_str("(R)"),
+            c if c.is_control() => out.push(' '),
+            c if c.is_ascii() => out.push(c),
+            _ => out.push('?'),
+        }
+    }
+    out.trim().to_string()
+}
+
+/// What [`tag_text`] changes in `s` (the trimmed ends not counted): how many `©` and `®` it
+/// writes as `(c)` and `(R)`, how many characters as `?`, and how many control characters as
+/// spaces, line breaks and tabs among them.
+pub fn tag_text_changes(s: &str) -> (usize, usize, usize) {
+    let inner = s.trim_matches(|c: char| c.is_control() || c.is_ascii_whitespace());
+    let symbols = inner.chars().filter(|c| matches!(c, '©' | '®')).count();
+    let questioned = inner.chars().filter(|c| !c.is_ascii() && !c.is_control() && !matches!(c, '©' | '®')).count();
+    (symbols, questioned, inner.chars().filter(|c| c.is_control()).count())
+}
+
+/// What writing `s` to a TIFF ASCII tag ([`tag_text`]) changes, for an export to say: `None`
+/// when it is written as it is (or is empty); that no tag is written when nothing of it is left.
+pub fn tag_text_note(s: &str) -> Option<String> {
+    // Nothing a tag can hold (control characters only): the writers write no tag.
+    if tag_text(s).is_empty() {
+        return (!s.is_empty()).then(|| "the credits hold nothing a Copyright tag can, so the file has none".to_string());
+    }
+    let (symbols, questioned, spaced) = tag_text_changes(s);
+    let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {one}") } else { format!("{n} {many}") };
+    let parts: Vec<String> = [
+        (symbols, count(symbols, "© or ® as (c) or (R)", "©s or ®s as (c) or (R)")),
+        (questioned, count(questioned, "character as ?", "characters as ?")),
+        (spaced, count(spaced, "control character as a space", "control characters as spaces")),
+    ]
+    .into_iter()
+    .filter(|(n, _)| *n > 0)
+    .map(|(_, part)| part)
+    .collect();
+    (!parts.is_empty()).then(|| format!("the Copyright tag holds ASCII only, so it is written with {}", parts.join(", ")))
+}
+
+/// How many of the names [`gdal_metadata_of`] writes for `bands` hold a character XML can't (a
+/// control character), which is written as a space: for a writer to say.
+pub fn gdal_metadata_changed(r: &Raster, bands: &[usize]) -> usize {
+    let names = bands.iter().filter_map(|b| band_name_of(r, *b));
+    let first = bands.first().and_then(|b| r.bands.get(*b)).map_or(&[][..], |b| &b.classes[..]);
+    names.chain(first.iter().map(String::as_str)).filter(|n| n.chars().any(pam::xml_cannot_hold)).count()
+}
+
 impl Raster {
     /// Builds a raster from bands of `width × height` pixels and computes statistics.
     #[allow(clippy::too_many_arguments)]
@@ -289,6 +689,39 @@ impl Raster {
         nodata: Option<f64>,
         color: ColorHint,
         data_type: impl Into<String>,
+    ) -> Result<Raster> {
+        Raster::build(name, width, height, bands, transform, crs, nodata, color, data_type, true)
+    }
+
+    /// [`Raster::new`] without statistics (each band's are empty): a part of a larger raster,
+    /// drawn with the whole's (a cloud-optimised GeoTIFF's view, read in place).
+    #[allow(clippy::too_many_arguments)]
+    pub fn unmeasured(
+        name: impl Into<String>,
+        width: u32,
+        height: u32,
+        bands: Vec<Vec<f32>>,
+        transform: GeoTransform,
+        crs: Crs,
+        nodata: Option<f64>,
+        color: ColorHint,
+        data_type: impl Into<String>,
+    ) -> Result<Raster> {
+        Raster::build(name, width, height, bands, transform, crs, nodata, color, data_type, false)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        name: impl Into<String>,
+        width: u32,
+        height: u32,
+        bands: Vec<Vec<f32>>,
+        transform: GeoTransform,
+        crs: Crs,
+        nodata: Option<f64>,
+        color: ColorHint,
+        data_type: impl Into<String>,
+        measure: bool,
     ) -> Result<Raster> {
         let n = (width as usize).checked_mul(height as usize).ok_or_else(|| DataError::Format("raster too large".into()))?;
         if n == 0 || bands.is_empty() {
@@ -306,7 +739,12 @@ impl Raster {
         let bands = bands
             .into_iter()
             .enumerate()
-            .map(|(i, data)| Band { name: format!("Band {}", i + 1), stats: BandStats::compute(&data, valid), data, classes: Vec::new() })
+            .map(|(i, data)| Band {
+                name: format!("Band {}", i + 1),
+                stats: if measure { BandStats::compute(&data, valid) } else { BandStats::default() },
+                data,
+                classes: Vec::new(),
+            })
             .collect();
         let mut r = Raster {
             name: name.into(),
@@ -321,6 +759,10 @@ impl Raster {
             source: None,
             overview: None,
             georeferenced: true,
+            lost: Vec::new(),
+            rounded: Vec::new(),
+            rounded_some: Vec::new(),
+            copyright: None,
             transformer,
             extent: Extent::EMPTY,
         };
@@ -332,14 +774,60 @@ impl Raster {
     }
 
     /// Applies what GDAL's `.aux.xml` sidecar says about the bands: their descriptions name them,
-    /// their category names name their classes, its no-data value applies when the file has none,
-    /// and its statistics stand in for those of a reduced overview (the whole band's, where the
-    /// overview's only approximate them).
-    pub fn apply_pam(&mut self, pam: &pam::Pam) {
+    /// their category names name their classes, its no-data value applies when the file has none
+    /// (the file's own is kept, as GDAL keeps it, and one it gives otherwise said), and its statistics stand in for those of a reduced overview (the whole band's, where the
+    /// overview's only approximate them). What it left out is said as `from`'s ("its GDAL
+    /// metadata", "its .aux.xml sidecar").
+    pub fn apply_pam(&mut self, pam: &pam::Pam, from: &str) {
+        self.lost.extend(pam.lost.iter().map(|l| format!("{from}: {l}")));
+        // Names for bands the raster doesn't have have nowhere to go.
+        let beyond = pam
+            .bands
+            .iter()
+            .filter(|b| (b.band == 0 || b.band > self.bands.len()) && (b.description.is_some() || !b.categories.is_empty()))
+            .count();
+        if beyond > 0 {
+            self.lost.push(format!("{from}: names for {beyond} band(s) it doesn't have (it has {}) left out", self.bands.len()));
+        }
+        // So is a no-data value: it isn't the raster's.
+        let outside = pam.bands.iter().filter(|b| (b.band == 0 || b.band > self.bands.len()) && b.nodata.is_some()).count();
+        if outside > 0 {
+            self.lost.push(format!("{from}: a no-data value for {outside} band(s) it doesn't have (it has {}) left out", self.bands.len()));
+        }
         let mut recompute = false;
         if self.nodata.is_none() {
-            self.nodata = pam.nodata();
+            self.nodata = pam.nodata_within(self.bands.len());
             recompute = self.nodata.is_some();
+            // Bands that disagree give none: their no-data pixels are read as values, and said.
+            let mut given: Vec<f64> =
+                pam.bands.iter().filter(|b| (1..=self.bands.len()).contains(&b.band)).filter_map(|b| b.nodata).collect();
+            given.sort_by(f64::total_cmp);
+            given.dedup();
+            if self.nodata.is_none() && given.len() > 1 {
+                let values: Vec<String> = given.iter().take(4).map(|v| v.to_string()).collect();
+                let more = if given.len() > 4 { ", …" } else { "" };
+                self.lost.push(format!(
+                    "{from}: its bands give different no-data values ({}{more}): none is applied, so those pixels are read as values",
+                    values.join(", ")
+                ));
+            }
+        } else if let Some(own) = self.nodata {
+            // The file's own no-data value is kept; a sidecar's other one for its bands is said.
+            let mut other: Vec<f64> = pam
+                .bands
+                .iter()
+                .filter(|b| (1..=self.bands.len()).contains(&b.band))
+                .filter_map(|b| b.nodata)
+                .filter(|v| !(v == &own || (v.is_nan() && own.is_nan())))
+                .collect();
+            other.sort_by(f64::total_cmp);
+            other.dedup();
+            if !other.is_empty() {
+                let values: Vec<String> = other.iter().take(4).map(|v| v.to_string()).collect();
+                let more = if other.len() > 4 { ", …" } else { "" };
+                self.lost
+                    .push(format!("{from}: its no-data value ({}{more}) isn't the file's own ({own}), which is kept", values.join(", ")));
+            }
         }
         let nd = self.nodata.map(|v| v as f32);
         let valid = move |v: f32| v.is_finite() && nd.is_none_or(|d| v != d);
@@ -460,6 +948,30 @@ impl Raster {
         self.bands.len()
     }
 
+    /// Whether band `b` holds values rounded when its source was read: counted in `rounded`, or
+    /// marked in `rounded_some` with no count.
+    pub fn band_rounded(&self, b: usize) -> bool {
+        self.rounded.get(b).is_some_and(|n| *n > 0) || self.rounded_some.get(b).copied().unwrap_or(false)
+    }
+
+    /// Marks this raster, made from part of `src` band for band (a clip, a pixel edit, a
+    /// resample), as holding some of `src`'s rounded values, how many unknown: the bands of `src`
+    /// that held any are marked, and the count, which was `src`'s whole, isn't kept.
+    pub fn keep_rounded_mark(&mut self, src: &Raster) {
+        self.keep_rounded_marks(std::iter::once(src));
+    }
+
+    /// As [`Raster::keep_rounded_mark`], for a raster made from parts of several (a mosaic): a
+    /// band is marked when any source's band of that number held rounded values.
+    pub fn keep_rounded_marks<'a>(&mut self, srcs: impl IntoIterator<Item = &'a Raster>) {
+        let mut marks = vec![false; self.band_count()];
+        for src in srcs {
+            marks.iter_mut().enumerate().for_each(|(b, m)| *m |= src.band_rounded(b));
+        }
+        self.rounded = Vec::new();
+        self.rounded_some = if marks.contains(&true) { marks } else { Vec::new() };
+    }
+
     /// Whether a value is a real measurement (not no-data or NaN).
     pub fn is_valid(&self, v: f32) -> bool {
         // Compared in f32, as the pixels (and the statistics) are: a no-data value such as
@@ -528,12 +1040,16 @@ pub fn read_path(path: &Path) -> Result<Raster> {
     }
     let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("raster").to_string();
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    // The `.aux.xml` sidecar, read first: a no-data value it gives (for a file that has none) keeps
+    // those pixels out of the rounded count as they are read.
+    let pam = pam::read(path);
+    let sidecar_nodata = pam.as_ref().and_then(pam::Pam::nodata);
     let mut r = match ext.as_str() {
         "tif" | "tiff" => {
             #[cfg(not(target_arch = "wasm32"))]
-            let r = geotiff::read_file(path, &name)?;
+            let r = geotiff::read_file_with_nodata(path, &name, sidecar_nodata)?;
             #[cfg(target_arch = "wasm32")]
-            let r = geotiff::read(std::io::BufReader::new(std::fs::File::open(path)?), &name)?;
+            let r = geotiff::read_with_nodata(std::io::BufReader::new(std::fs::File::open(path)?), &name, sidecar_nodata)?;
             r
         }
         "png" | "jpg" | "jpeg" => read_scan(&name, std::io::BufReader::new(std::fs::File::open(path)?))?,
@@ -542,7 +1058,7 @@ pub fn read_path(path: &Path) -> Result<Raster> {
                 return Err(DataError::Format("the ASCII grid is too large to open".into()));
             }
             let text = std::fs::read_to_string(path)?;
-            ascii::read(&text, &name, sidecar_crs(path))?
+            read_ascii(path, &text, &name, sidecar_nodata)?
         }
         #[cfg(not(target_arch = "wasm32"))]
         _ if gdal::is_gdal_raster_name(&path.to_string_lossy()) => {
@@ -551,8 +1067,33 @@ pub fn read_path(path: &Path) -> Result<Raster> {
         }
         other => return Err(DataError::Unsupported(format!(".{other}"))),
     };
-    if let Some(p) = pam::read(path) {
-        r.apply_pam(&p);
+    // `apply_pam` takes the no-data of the bands the raster has, which the decoder may not have
+    // left out of the rounded count: it left out the sidecar's no-data for all bands. When the two
+    // differ (a record for a band the raster lacks, or one only some bands give), the file is read
+    // again with the one applied (none, when the bands it has give none), so the rounded count
+    // leaves out just its pixels. Only an ASCII grid, or a GeoTIFF of a type `f32` can round, is read again.
+    let applied = pam.as_ref().map(|p| p.nodata_within(r.bands.len()));
+    if let Some(nd) = applied
+        && nd != sidecar_nodata
+        && r.nodata.is_none()
+        && (ext == "asc"
+            || (matches!(ext.as_str(), "tif" | "tiff")
+                && matches!(r.data_type.as_str(), "UInt32" | "Int32" | "UInt64" | "Int64" | "Float64")))
+    {
+        // The second read gives all the first did: the first goes before it, so two aren't held.
+        drop(r);
+        r = if ext == "asc" {
+            read_ascii(path, &std::fs::read_to_string(path)?, &name, nd)?
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            let again = geotiff::read_file_with_nodata(path, &name, nd)?;
+            #[cfg(target_arch = "wasm32")]
+            let again = geotiff::read_with_nodata(std::io::BufReader::new(std::fs::File::open(path)?), &name, nd)?;
+            again
+        };
+    }
+    if let Some(p) = &pam {
+        r.apply_pam(p, pam::SIDECAR);
     }
     r.source = Some(path.display().to_string());
     Ok(r)
@@ -600,9 +1141,10 @@ pub(crate) fn unreferenced(w: u32, h: u32) -> GeoTransform {
 }
 
 /// Every `k`-th pixel of interleaved `ch`-sample pixels, one vector per band.
-fn deinterleave<T: Copy + Into<f32>>(raw: &[T], w: u32, h: u32, ch: usize, k: u32) -> Vec<Vec<f32>> {
+fn deinterleave<T: Copy + Into<f32>>(raw: &[T], w: u32, h: u32, ch: usize, k: u32) -> Result<Vec<Vec<f32>>> {
     let step = k.max(1) as usize;
-    let mut bands: Vec<Vec<f32>> = (0..ch).map(|_| Vec::with_capacity((w as usize).div_ceil(step) * (h as usize).div_ceil(step))).collect();
+    let (ow, oh) = ((w as usize).div_ceil(step), (h as usize).div_ceil(step));
+    let mut bands: Vec<Vec<f32>> = (0..ch).map(|_| grid(ow, oh)).collect::<Result<_>>()?;
     for row in (0..h as usize).step_by(step) {
         for col in (0..w as usize).step_by(step) {
             let at = (row * w as usize + col) * ch;
@@ -611,15 +1153,15 @@ fn deinterleave<T: Copy + Into<f32>>(raw: &[T], w: u32, h: u32, ch: usize, k: u3
             }
         }
     }
-    bands
+    Ok(bands)
 }
 
 /// Reads a PNG or JPEG as a raster with no coordinates (`georeferenced` is false): its bands as
 /// they are (grey, grey and alpha, RGB, RGBA; 8 or 16 bits). A picture is decoded whole, so one
-/// whose decoded size passes four times [`MAX_SAMPLES`] bytes is refused (save it as a TIFF); one
-/// with more than [`MAX_SAMPLES`] samples is read at every second pixel, with its `overview` set.
+/// whose decoded size passes four times [`max_samples`] bytes is refused (save it as a TIFF); one
+/// with more than [`max_samples`] samples is read at every second pixel, with its `overview` set.
 pub fn read_scan<R: std::io::BufRead + std::io::Seek>(name: &str, source: R) -> Result<Raster> {
-    read_scan_limited(name, source, MAX_SAMPLES)
+    read_scan_limited(name, source, max_samples())
 }
 
 /// [`read_scan`], holding at most `max` samples (the tests' small limit exercises the reduction).
@@ -671,14 +1213,14 @@ fn read_scan_limited<R: std::io::BufRead + std::io::Seek>(name: &str, mut source
         }
     }
     let (bands, color, data_type) = match &img {
-        D::ImageLuma8(i) => (deinterleave(i.as_raw(), w, h, ch, k), ColorHint::Gray, "UInt8"),
-        D::ImageLumaA8(i) => (deinterleave(i.as_raw(), w, h, ch, k), ColorHint::GrayAlpha, "UInt8"),
-        D::ImageRgb8(i) => (deinterleave(i.as_raw(), w, h, ch, k), ColorHint::Rgb { alpha: false }, "UInt8"),
-        D::ImageRgba8(i) => (deinterleave(i.as_raw(), w, h, ch, k), ColorHint::Rgb { alpha: true }, "UInt8"),
-        D::ImageLuma16(i) => (deinterleave(i.as_raw(), w, h, ch, k), ColorHint::Gray, "UInt16"),
-        D::ImageLumaA16(i) => (deinterleave(i.as_raw(), w, h, ch, k), ColorHint::GrayAlpha, "UInt16"),
-        D::ImageRgb16(i) => (deinterleave(i.as_raw(), w, h, ch, k), ColorHint::Rgb { alpha: false }, "UInt16"),
-        D::ImageRgba16(i) => (deinterleave(i.as_raw(), w, h, ch, k), ColorHint::Rgb { alpha: true }, "UInt16"),
+        D::ImageLuma8(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::Gray, "UInt8"),
+        D::ImageLumaA8(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::GrayAlpha, "UInt8"),
+        D::ImageRgb8(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::Rgb { alpha: false }, "UInt8"),
+        D::ImageRgba8(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::Rgb { alpha: true }, "UInt8"),
+        D::ImageLuma16(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::Gray, "UInt16"),
+        D::ImageLumaA16(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::GrayAlpha, "UInt16"),
+        D::ImageRgb16(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::Rgb { alpha: false }, "UInt16"),
+        D::ImageRgba16(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::Rgb { alpha: true }, "UInt16"),
         _ => return Err(fail(&"this pixel format isn't supported")),
     };
     drop(img);
@@ -720,7 +1262,7 @@ fn rotate(r: &Raster, degrees: f64) -> Result<Raster> {
     if n > 32 << 20 {
         return Err(DataError::Format(format!("{}: the turned picture is too large ({ow} × {oh} pixels)", r.name)));
     }
-    let mut bands: Vec<Vec<f32>> = vec![vec![0.0; n]; r.bands.len()];
+    let mut bands = (0..r.bands.len()).map(|_| filled(ow as usize, oh as usize, 0.0f32)).collect::<Result<Vec<_>>>()?;
     for row in 0..oh {
         for col in 0..ow {
             // The output pixel's centre, turned back into the picture.
@@ -776,8 +1318,7 @@ fn north_up(bands: Vec<Vec<f32>>, w: u32, h: u32, affine: [f64; 6], max: usize) 
         return Err(DataError::Format(format!("{w} × {h} pixels turned is too large to open")));
     }
     let (ow, oh) = (ow as u32, oh as u32);
-    let n = ow as usize * oh as usize;
-    let mut out: Vec<Vec<f32>> = vec![vec![f32::NAN; n]; bands.len()];
+    let mut out = (0..bands.len()).map(|_| filled(ow as usize, oh as usize, f32::NAN)).collect::<Result<Vec<_>>>()?;
     for row in 0..oh {
         let y = max_y - (f64::from(row) + 0.5) * cell - y0;
         for col in 0..ow {
@@ -834,7 +1375,7 @@ pub fn read_bytes(file_name: &str, bytes: &[u8]) -> Result<Raster> {
         // The parts of a large GeoTIFF the web app read (see `geotiff::read_sparse`).
         "tif" | "tiff" if cog::Sparse::is_container(bytes) => {
             let parts = cog::Sparse::from_container(bytes).ok_or_else(|| DataError::Format("a damaged GeoTIFF part file".into()))?;
-            match geotiff::read_sparse(&parts, &name)? {
+            match geotiff::read_saved_parts(&parts, &name)? {
                 geotiff::Partial::Done(r) => Ok(*r),
                 geotiff::Partial::Need(..) => Err(DataError::Format("the parts of the GeoTIFF kept don't hold the whole overview".into())),
             }
@@ -849,9 +1390,32 @@ pub fn read_bytes(file_name: &str, bytes: &[u8]) -> Result<Raster> {
     }
 }
 
-/// The coordinate system in a `.prj` next to an ASCII grid, when it's one RustGIS understands.
-fn sidecar_crs(path: &Path) -> Option<Crs> {
-    wkt::crs_from_wkt(&read_prj(path)?).ok()
+/// An ASCII grid at `path` (its `text`), in the coordinate system of the `.prj` next to it.
+fn read_ascii(path: &Path, text: &str, name: &str, nodata: Option<f64>) -> Result<Raster> {
+    let (crs, unread) = sidecar_crs(path)?;
+    let mut r = ascii::read_with_nodata(text, name, crs, nodata)?;
+    // A .prj that couldn't be read leaves the grid in longitude/latitude, as a Shapefile's does.
+    r.lost.extend(unread.map(|e| format!("the .prj file: {e}; coordinates are read as longitude/latitude")));
+    Ok(r)
+}
+
+/// The coordinate system in the `.prj` next to an ASCII grid, when RustGIS understands it. Else
+/// why it doesn't, so the grid is read without it and says so. Another body's system RustGIS
+/// doesn't understand is an error instead, because the grid would land in the wrong place as
+/// longitude/latitude.
+fn sidecar_crs(path: &Path) -> Result<(Option<Crs>, Option<String>)> {
+    let Some(prj) = read_prj(path) else {
+        // One that is there but can't be read as text (not UTF-8, too large to be one) is said too.
+        let there = std::fs::metadata(path.with_extension("prj")).is_ok_and(|m| m.is_file());
+        return Ok((None, there.then(|| "it can't be read as text".to_string())));
+    };
+    match wkt::crs_from_wkt(&prj) {
+        Ok(crs) => Ok((Some(crs), None)),
+        Err(e) => match planetary::refused_wkt(&prj, &e) {
+            Some(refused) => Err(DataError::Format(format!("the .prj file: {refused}"))),
+            None => Ok((None, Some(e))),
+        },
+    }
 }
 
 /// The text of the `.prj` next to a file (`None` when there's none, or it's too large to be one).
@@ -867,6 +1431,100 @@ pub fn read_prj(path: &Path) -> Option<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// A large band's statistics, counted on any number of threads, are those of one pass on
+    /// one thread (#1252) to the bit: the sums in the band's order, the counts, range, histogram
+    /// and distinct values whatever the runs. No-data, NaN, −0 and 0 (the first kept), byte-like
+    /// values, 257 small whole values, more than 256 whole values, runs that each have at most
+    /// 256 but more together, and fractions. The thread count is forced, so the merge is tested on
+    /// a machine with one core too.
+    #[test]
+    fn band_stats_on_several_threads_are_one_threads() {
+        // The statistics as one pass on one thread made them before #1252 (the first of equal
+        // values kept in the range).
+        fn one_pass(data: &[f32], valid: impl Fn(f32) -> bool) -> BandStats {
+            let (mut n, mut min, mut max, mut sum, mut sum2) = (0usize, f64::INFINITY, f64::NEG_INFINITY, 0.0f64, 0.0f64);
+            let mut whole = true;
+            for &v in data.iter().filter(|&&v| valid(v)) {
+                let x = v as f64;
+                n += 1;
+                if x < min {
+                    min = x;
+                }
+                if x > max {
+                    max = x;
+                }
+                sum += x;
+                sum2 += x * x;
+                whole &= x.fract() == 0.0;
+            }
+            if n == 0 {
+                return BandStats::default();
+            }
+            let mean = sum / n as f64;
+            let std_dev = (sum2 / n as f64 - mean * mean).max(0.0).sqrt();
+            let span = max - min;
+            let k = (HISTOGRAM_BINS as f64 - 1.0) / if span > 0.0 { span } else { 1.0 };
+            let mut histogram = vec![0u64; HISTOGRAM_BINS];
+            let mut distinct = std::collections::BTreeSet::new();
+            for &v in data.iter().filter(|&&v| valid(v)) {
+                let x = v as f64;
+                histogram[(((x - min) * k).round() as usize).min(HISTOGRAM_BINS - 1)] += 1;
+                if whole {
+                    distinct.insert(x as i64);
+                }
+            }
+            let categories = (whole && distinct.len() <= 256).then(|| distinct.into_iter().map(|v| v as f64).collect());
+            BandStats { count: n, min, max, mean, std_dev, histogram, categories }
+        }
+        let n = 2_000_003usize;
+        let at = |i: usize| ((i as u64 * 7919 + i as u64 / 1013 * 31) % 100_003) as usize;
+        let bands: [(&str, Vec<f32>); 7] = [
+            ("bytes", (0..n).map(|i| (at(i) % 256) as f32).collect()),
+            ("257 small whole", (0..n).map(|i| (at(i) % 257) as f32).collect()),
+            ("few whole", (0..n).map(|i| (at(i) % 200) as f32 * 3.0 - 250.0).collect()),
+            // Each half has 200 values, together 400: two runs keep theirs, the merge gives up.
+            ("halves", (0..n).map(|i| -((at(i) % 200) as f32) - if i < n / 2 { 1.0 } else { 201.0 }).collect()),
+            ("wide whole", (0..n).map(|i| at(i) as f32 - 7.0).collect()),
+            ("fractions", (0..n).map(|i| at(i) as f32 * 0.013 - 400.0).collect()),
+            ("gaps", (0..n).map(|i| [f32::NAN, -0.0, 0.0, -9999.0, 17.5][at(i) % 5]).collect()),
+        ];
+        let bits = |s: &BandStats| (s.count, s.min.to_bits(), s.max.to_bits(), s.mean.to_bits(), s.std_dev.to_bits());
+        let valid = |v: f32| v.is_finite() && v != -9999.0;
+        for (name, data) in &bands {
+            let want = one_pass(data, valid);
+            for threads in [1, 2, 7, 16] {
+                let got = BandStats::compute_on(data, valid, None, threads);
+                assert_eq!(bits(&got), bits(&want), "{name} on {threads}");
+                assert_eq!(got.histogram, want.histogram, "{name} on {threads}");
+                assert_eq!(got.categories, want.categories, "{name} on {threads}");
+            }
+        }
+        assert!(BandStats::compute_on(&bands[1].1, valid, None, 2).categories.is_none(), "257 small whole values");
+        assert!(BandStats::compute_on(&bands[3].1, valid, None, 2).categories.is_none(), "400 in two runs of 200");
+        // A band too small for threads, and one with no valid value.
+        let small: Vec<f32> = (0..1000).map(|i| (i % 37) as f32).collect();
+        assert_eq!(BandStats::from_values(&small), one_pass(&small, f32::is_finite));
+        assert_eq!(BandStats::compute_on(&vec![f32::NAN; n], valid, None, 4), BandStats::default());
+    }
+
+    /// A band the machine can't hold is an error naming its size, not the end of the program
+    /// (#1291), on 64-bit (the reservation fails) and wasm32 (the size overflows) alike; one it can
+    /// is the size asked for.
+    #[test]
+    fn a_band_too_large_to_hold_is_an_error() {
+        let huge = 1usize << 31;
+        let err = grid::<f32>(huge, huge).unwrap_err().to_string();
+        assert_eq!(err, format!("not enough memory for a {huge} × {huge} raster"));
+        assert!(filled(usize::MAX, 2, 0u8).is_err());
+        assert!(room::<f64>(usize::MAX / 2, 1, 1).is_err(), "too many bytes to ask for");
+        assert_eq!(filled(3, 2, f32::NAN).map(|v| v.len()).ok(), Some(6));
+        assert!(grid::<u16>(4, 5).is_ok_and(|g| g.is_empty() && g.capacity() >= 20));
+        assert!(collected(huge, huge, std::iter::repeat(0.0f32)).is_err());
+        assert!(collected(3, 2, 0..7).is_err(), "more than w × h values");
+        assert_eq!(collected(3, 2, 0..6).ok(), Some(vec![0, 1, 2, 3, 4, 5]));
+        assert_eq!(collected(3, 2, 0..4).ok(), Some(vec![0, 1, 2, 3]));
+    }
 
     /// A PNG of `w`×`h` pixels, red in its top half and blue below.
     pub(crate) fn png(w: u32, h: u32) -> Vec<u8> {
@@ -948,6 +1606,66 @@ pub(crate) mod tests {
             assert_eq!(b.class_name(v), None, "{v}");
         }
         assert!(small().bands[0].classes.is_empty(), "no sidecar, no names");
+        // Names for a band the raster doesn't have are said, not dropped.
+        let mut one = small();
+        one.apply_pam(
+            &pam::Pam {
+                bands: vec![pam::PamBand { band: 2, description: Some("NIR".into()), ..Default::default() }],
+                lost: vec!["1 band record(s) for no band from 1 to 65536 left out".into()],
+            },
+            pam::SIDECAR,
+        );
+        assert!(
+            one.lost.iter().any(|l| l == "its .aux.xml sidecar: names for 1 band(s) it doesn't have (it has 1) left out"),
+            "{:?}",
+            one.lost
+        );
+        // A no-data value for a band it doesn't have isn't its own, and is said.
+        let mut zero = small();
+        zero.nodata = None;
+        zero.apply_pam(
+            &pam::Pam { bands: vec![pam::PamBand { band: 2, nodata: Some(0.0), ..Default::default() }], lost: Vec::new() },
+            pam::SIDECAR,
+        );
+        assert_eq!(zero.nodata, None);
+        // Bands that disagree give none, and say so; bands that agree give theirs.
+        let mut two = small();
+        two.nodata = None;
+        let both = |a: f64, b: f64| pam::Pam {
+            bands: vec![
+                pam::PamBand { band: 1, nodata: Some(a), ..Default::default() },
+                pam::PamBand { band: 1, nodata: Some(b), ..Default::default() },
+            ],
+            lost: Vec::new(),
+        };
+        two.apply_pam(&both(0.0, 255.0), pam::SIDECAR);
+        assert_eq!(two.nodata, None);
+        assert_eq!(
+            two.lost,
+            ["its .aux.xml sidecar: its bands give different no-data values (0, 255): none is applied, so those pixels are read as values"]
+        );
+        let mut same = small();
+        same.nodata = None;
+        same.apply_pam(&both(0.0, 0.0), pam::SIDECAR);
+        assert!(same.nodata == Some(0.0) && same.lost.is_empty(), "{:?}", same.lost);
+        // A file with its own no-data value keeps it; a sidecar giving another says so, one giving
+        // the same says nothing.
+        let mut own = small();
+        own.nodata = Some(-9999.0);
+        own.apply_pam(&both(0.0, -9999.0), pam::SIDECAR);
+        assert_eq!(own.nodata, Some(-9999.0));
+        assert_eq!(own.lost, ["its .aux.xml sidecar: its no-data value (0) isn't the file's own (-9999), which is kept"]);
+        let mut agreed = small();
+        agreed.nodata = Some(-9999.0);
+        agreed.apply_pam(&both(-9999.0, -9999.0), pam::SIDECAR);
+        assert!(agreed.lost.is_empty(), "{:?}", agreed.lost);
+        assert_eq!(zero.lost, ["its .aux.xml sidecar: a no-data value for 1 band(s) it doesn't have (it has 1) left out"]);
+        // What the document left out is said as the sidecar's, not the GDAL tag's.
+        assert!(
+            one.lost.iter().any(|l| l == "its .aux.xml sidecar: 1 band record(s) for no band from 1 to 65536 left out"),
+            "{:?}",
+            one.lost
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -959,13 +1677,14 @@ pub(crate) mod tests {
                 stats: Some(pam::Stats { min: -50.0, max: 900.0, mean: Some(300.0), std_dev: Some(40.0) }),
                 ..Default::default()
             }],
+            ..Default::default()
         };
         let mut full = small();
-        full.apply_pam(&pam);
+        full.apply_pam(&pam, pam::SIDECAR);
         assert_eq!((full.bands[0].stats.min, full.bands[0].stats.max), (1.0, 12.0), "the whole band's own statistics are exact");
         let mut ov = small();
         ov.overview = Some((400, 300));
-        ov.apply_pam(&pam);
+        ov.apply_pam(&pam, pam::SIDECAR);
         let s = &ov.bands[0].stats;
         assert_eq!((s.min, s.max, s.mean, s.std_dev, s.count), (-50.0, 900.0, 300.0, 40.0, 11));
         assert_eq!(s.histogram.iter().sum::<u64>(), 11);

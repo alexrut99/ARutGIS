@@ -12,10 +12,10 @@ use crate::{CmdResult, CommandSpec as C, Session};
 
 pub fn commands() -> Vec<C> {
     vec![
-        C::new("project.importQgis", "Import QGIS Project", "Project › Import", import_project).params(
+        C::new("project.importQgis", "Import QGIS Project", "Project › Import", import_project).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Reserved).with(crate::policy::Effect::Files)).params(
             r#"{"path"?: "*.qgs|*.qgz", "text"?: "a .qgs file's text", "data"?: "a .qgs or .qgz file, base64", "dir"?: "the folder its relative paths start from (default: the file's)"} → the layers added and notes on what wasn't carried over"#,
         ),
-        C::new("style.importQgis", "Import QGIS Style", "Style › Styles", import_style).when(need_layer).params(
+        C::new("style.importQgis", "Import QGIS Style", "Style › Styles", import_style).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files)).when(need_layer).params(
             r#"{"layer"?, "path"?: "*.qml", "text"?: "a .qml file's text", "data"?: "a .qml file, base64"} → notes on what wasn't carried over"#,
         ),
     ]
@@ -56,13 +56,7 @@ const MAX_XML: usize = 64 << 20;
 
 /// Reads at most [`MAX_FILE`] bytes of `path` (natively: the web app passes `text` or `data`).
 fn read_file(path: &str) -> Result<Vec<u8>, String> {
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    std::fs::File::open(path).and_then(|f| f.take(MAX_FILE + 1).read_to_end(&mut bytes)).map_err(|e| format!("{path}: {e}"))?;
-    if bytes.len() as u64 > MAX_FILE {
-        return Err(format!("{path} is too large for a QGIS project"));
-    }
-    Ok(bytes)
+    crate::project::read_file(std::path::Path::new(path), MAX_FILE)
 }
 
 fn import_project(s: &mut Session, p: &Value) -> CmdResult {
@@ -218,33 +212,148 @@ fn add_layer(s: &mut Session, layer: &qgis::ProjectLayer, has_dir: bool, report:
     layer.style.apply(l);
     // What reads only against the layer's fields: its definition query, and what the style names.
     if let Some(q) = &layer.definition_query {
-        match rustgis_data::query::parse(q, &l.dataset) {
+        match parse_imported(q, &l.dataset) {
             Ok(_) => l.definition_query = Some(q.clone()),
             Err(e) => report.skipped(name, format!("its filter `{q}` ({e})")),
         }
     }
-    check_fields(l, name, report);
+    check_fields(l, name, &layer.style.rules, layer.style.categories_by.as_ref(), &layer.style.bool_classes, report);
     Ok(Some(added_name))
 }
 
+/// An imported QGIS expression read on `ds`. QGIS measures `$area`, `$perimeter` and `$length`
+/// in the project's units, which aren't read yet, so an expression using them doesn't read.
+fn parse_imported(text: &str, ds: &rustgis_data::Dataset) -> Result<rustgis_data::query::Expr, String> {
+    if qgis::reads_measure(text) {
+        return Err("it measures in the QGIS project's units, which RustGIS doesn't read yet".into());
+    }
+    rustgis_data::query::parse(text, ds)
+}
+
 /// Checks what a style names against the layer's fields: its label classes' clauses and fields
-/// (a class that can't label is switched off) and the field a Unique Values or Graduated Colors
-/// renderer classes by.
-fn check_fields(l: &mut rustgis_map::Layer, name: &str, report: &mut Report) {
+/// (a class that can't label is switched off), the field a Unique Values or Graduated Colors
+/// renderer classes by, and the expression its classes (rules or categories, `by`) are picked by.
+fn check_fields(
+    l: &mut rustgis_map::Layer,
+    name: &str,
+    rules: &[qgis::RuleFilter],
+    by: Option<&qgis::CategoriesBy>,
+    bool_classes: &[String],
+    report: &mut Report,
+) {
     for c in std::iter::once(&mut l.labels.default).chain(l.labels.classes.iter_mut()) {
         if let Some(w) = c.where_.clone()
-            && let Err(e) = rustgis_data::query::parse(&w, &l.dataset)
+            && let Err(e) = parse_imported(&w, &l.dataset)
         {
             report.skipped(name, format!("the label class \"{}\", whose clause `{w}` doesn't fit the layer ({e})", c.name));
             c.visible = false;
         }
-        // (A class with no field set labels nothing, and isn't noted.)
-        if c.visible && !c.field.is_empty() && l.dataset.field_index(&c.field).is_none() {
+        // Its data-defined text, size, colour and angle: an expression that doesn't read here is
+        // left out, as the symbol's are below.
+        for (what, slot) in [("text", &mut c.by.text), ("size", &mut c.by.size), ("colour", &mut c.by.color), ("angle", &mut c.by.angle)] {
+            if let Some(text) = slot.as_deref()
+                && let Err(e) = parse_imported(text, &l.dataset)
+            {
+                report.skipped(name, format!("the label {what} `{text}` of the class \"{}\" ({e})", c.name));
+                *slot = None;
+            }
+        }
+        // (A class with no field set labels nothing, and isn't noted; one whose text is an
+        // expression needs none.)
+        if c.visible && c.by.text.is_none() && !c.field.is_empty() && l.dataset.field_index(&c.field).is_none() {
             report.skipped(name, format!("labels from the field {}, which the layer hasn't", c.field));
             c.visible = false;
         }
     }
+    // Classes by expression (the style's rule-based renderer's): a rule whose filter doesn't read
+    // here is left out, the rest kept.
+    // (Whether the categories were set aside for one symbol, or nothing, below.)
+    let mut fell_back = false;
+    if l.renderer.expression().is_some() && !rules.is_empty() {
+        let kept = fit_rules(l, name, rules, report);
+        note_overlapping_rules(l, name, &kept, report);
+    } else if let Some(by) = by
+        && l.renderer.expression().is_some()
+        && let Some(fi) = l.dataset.field_index(&by.qgis)
+    {
+        // QGIS classes by a field when its attribute names one, as it writes a name with spaces
+        // or other characters (unquoted): classed by that field.
+        if let Some(field) = l.dataset.fields.get(fi)
+            && let rustgis_map::Renderer::Unique { field: f, expression, .. } = &mut l.renderer
+        {
+            *f = field.name.clone();
+            *expression = None;
+        }
+    } else if let Some(by) = by
+        && let Some(e) = l.renderer.expression().map(str::to_string)
+        && let Err(why) = parse_imported(&e, &l.dataset)
+    {
+        // The style's categorized renderer by an expression that doesn't read here: every
+        // feature drawn with its first drawn category's symbol, as before such renderers were
+        // classed (none: as the rest).
+        fell_back = true;
+        let mut drawn = "as the rest, which draws nothing: no category is drawn";
+        if let Some((symbol, strokes, fills)) = &by.first {
+            l.renderer = rustgis_map::Renderer::Single(*symbol);
+            l.line_strokes.clone_from(strokes);
+            // (Only a polygon layer's fills draw, as `Style::apply` sets them.)
+            if l.geometry_type() == rustgis_data::GeometryType::Polygon {
+                l.fill_layers.clone_from(fills);
+            }
+            drawn = "with its first category's symbol (of those switched on)";
+        }
+        report.approximated(
+            name,
+            format!("its classes by the expression `{}`, which doesn't fit the layer ({why}): every feature drawn {drawn}", by.qgis),
+        );
+    }
+    // The style's boolean categories, matching values as they print: by an expression, a
+    // boolean's (`True`); by a field, its own (a boolean field's `True`, a text field's `true`).
+    // A value another category already has, or two categories share, stays as written.
+    if let rustgis_map::Renderer::Unique { field, expression, .. } = &l.renderer
+        && !fell_back
+        && !bool_classes.is_empty()
+        && let Some(printed) = match expression {
+            Some(_) => Some(true),
+            None => l.dataset.field_index(field).and_then(|i| l.dataset.fields.get(i)).map(|f| f.ty == rustgis_data::FieldType::Boolean),
+        }
+    {
+        let (mut taken, mut shared): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
+        for k in bool_classes {
+            let Some(to) = qgis::bool_key(k, printed) else { continue };
+            if to == k {
+                continue;
+            }
+            let twice =
+                matches!(&l.renderer, rustgis_map::Renderer::Unique { classes, .. } if classes.iter().filter(|c| c.0 == *k).count() > 1);
+            if twice {
+                shared.push(k);
+            } else if !qgis::rename_class(&mut l.renderer, k, to) {
+                taken.push(k);
+            }
+        }
+        let count = |n: usize| if n == 1 { "1 boolean category".to_string() } else { format!("{n} boolean categories") };
+        if let Some(first) = taken.first() {
+            report.approximated(
+                name,
+                format!(
+                    "{} kept as written (the first: {first}), as another category has the value it would match: its features take that category's symbol",
+                    count(taken.len())
+                ),
+            );
+        }
+        if let Some(first) = shared.first() {
+            report.approximated(
+                name,
+                format!(
+                    "{} kept as written (the first: {first}), its value listed by more than one category: its features drawn as the rest",
+                    count(shared.len())
+                ),
+            );
+        }
+    }
     let field = match &l.renderer {
+        rustgis_map::Renderer::Unique { expression: Some(_), .. } => None,
         rustgis_map::Renderer::Unique { field, .. } | rustgis_map::Renderer::Graduated { field, .. } => Some(field.clone()),
         _ => None,
     };
@@ -262,12 +371,108 @@ fn check_fields(l: &mut rustgis_map::Layer, name: &str, report: &mut Report) {
         ("angle", &mut by.angle),
     ] {
         if let Some(text) = slot.as_deref()
-            && let Err(e) = rustgis_data::query::parse(text, &l.dataset)
+            && let Err(e) = parse_imported(text, &l.dataset)
         {
             report.skipped(name, format!("its data-defined symbol {what} `{text}` ({e})"));
             *slot = None;
         }
     }
+}
+
+/// Leaves the rules of a rule-based renderer (classed by expression) that don't read on `l`'s
+/// fields out of its classes, each noted; none left: the first rule's symbol for every feature,
+/// noted. The rules kept.
+fn fit_rules(l: &mut rustgis_map::Layer, name: &str, rules: &[qgis::RuleFilter], report: &mut Report) -> Vec<qgis::RuleFilter> {
+    let mut kept = Vec::new();
+    // Those that don't fit, said once: how many, and the first.
+    let mut unfit: Option<(String, usize)> = None;
+    for r in rules {
+        match parse_imported(&r.when, &l.dataset) {
+            Ok(_) => kept.push(r.clone()),
+            Err(e) => match &mut unfit {
+                Some((_, n)) => *n += 1,
+                None => unfit = Some((format!("\"{}\", whose filter `{}` doesn't fit the layer ({e})", r.key, r.condition), 1)),
+            },
+        }
+    }
+    if let Some((first, n)) = unfit {
+        let what =
+            if n == 1 { format!("the rule {first}") } else { format!("{n} rules whose filters don't fit the layer, the first {first}") };
+        report.skipped(name, what);
+    }
+    if kept.len() == rules.len() {
+        return kept;
+    }
+    let rustgis_map::Renderer::Unique { classes, class_strokes, class_fills, expression, .. } = &mut l.renderer else { return kept };
+    if kept.is_empty() {
+        // As before rules were classed: the first rule's symbol, strokes and fills.
+        let first = rules.first().and_then(|r| classes.iter().find(|c| c.0 == r.key)).cloned();
+        if let Some((key, sym)) = first {
+            let strokes = class_strokes.get(&key).cloned().unwrap_or_default();
+            let fills = class_fills.get(&key).cloned().unwrap_or_default();
+            l.renderer = rustgis_map::Renderer::Single(sym);
+            l.line_strokes = strokes;
+            l.fill_layers = fills;
+        }
+        report.approximated(name, "its rules, none of whose filters fit the layer, drawn with the first rule's symbol");
+        return kept;
+    }
+    let keys: std::collections::HashSet<&str> = kept.iter().map(|r| r.key.as_str()).collect();
+    classes.retain(|c| keys.contains(c.0.as_str()));
+    class_strokes.retain(|k, _| keys.contains(k.as_str()));
+    class_fills.retain(|k, _| keys.contains(k.as_str()));
+    *expression = Some(qgis::rules_expression(&kept));
+    kept
+}
+
+/// The most rule checks counted (rules × features): past it, the features that several rules
+/// pick are noted as a possibility.
+const MAX_RULE_CHECKS: usize = 20_000_000;
+
+/// Notes the features of `l` that more than one of a rule-based renderer's `rules` picks at some
+/// scale: QGIS draws such a feature with each rule's symbol, RustGIS with the first's.
+fn note_overlapping_rules(l: &rustgis_map::Layer, name: &str, rules: &[qgis::RuleFilter], report: &mut Report) {
+    let ds = &l.dataset;
+    let mut compiled: Vec<_> = rules.iter().filter_map(|r| Some((r, parse_imported(&r.condition, ds).ok()?))).collect();
+    // Only rules some scale draws together can pick a feature together: in the order of where
+    // they start zoomed in, a rule meets one before it when it starts within the farthest out
+    // any of those reaches (a sweep over their scale ranges).
+    compiled.sort_by(|a, b| a.0.inside.unwrap_or(0.0).total_cmp(&b.0.inside.unwrap_or(0.0)));
+    if !together(compiled.iter().map(|c| c.0)) {
+        return;
+    }
+    let what = "each with the first rule that picks it, where QGIS draws it with every one";
+    // Rules read at no map scale can't be counted for one that reads it (an else rule beside a
+    // rule with a scale range does too).
+    let scaled = compiled.iter().any(|(r, _)| qgis::reads_scale(&r.condition));
+    if scaled || compiled.len().saturating_mul(ds.features.len()) > MAX_RULE_CHECKS || l.source.is_some() {
+        report.approximated(name, format!("features that more than one of its rules picks (if any), drawn {what}"));
+        return;
+    }
+    let env = rustgis_data::query::Env::default();
+    // (Only the features its definition query keeps are drawn.)
+    let shown = l.visible_rows();
+    let n = (0..ds.features.len())
+        .filter(|row| shown.get(*row).copied().unwrap_or(false) && ds.features.get(*row).is_some_and(|f| f.geometry.is_some()))
+        .filter(|row| together(compiled.iter().filter(|(_, e)| rustgis_data::query::matches(e, ds, *row, &env)).map(|c| c.0)))
+        .count();
+    if n > 0 {
+        report.approximated(name, format!("{n} features that more than one of its rules picks, drawn {what}"));
+    }
+}
+
+/// Whether two of `rules` (in the order of where they start zoomed in) are drawn at some scale
+/// together: one starts within the farthest out any rule before it reaches.
+fn together<'a>(rules: impl Iterator<Item = &'a qgis::RuleFilter>) -> bool {
+    let mut reach: Option<f64> = None;
+    // (A range that starts in beyond where it ends out is never drawn.)
+    for r in rules.filter(|r| r.inside.unwrap_or(0.0) <= r.out.unwrap_or(f64::INFINITY)) {
+        if reach.is_some_and(|out| r.inside.unwrap_or(0.0) <= out) {
+            return true;
+        }
+        reach = Some(reach.unwrap_or(f64::NEG_INFINITY).max(r.out.unwrap_or(f64::INFINITY)));
+    }
+    false
 }
 
 /// Gives what a QGIS web layer was added as the layer's visibility, opacity and blending mode.
@@ -423,7 +628,7 @@ fn import_style(s: &mut Session, p: &Value) -> CmdResult {
             report.skipped(&name, "a raster's colouring, which a feature layer hasn't (only its opacity and scale range are taken)");
         }
         style.apply(l);
-        check_fields(l, &name, &mut report);
+        check_fields(l, &name, &style.rules, style.categories_by.as_ref(), &style.bool_classes, &mut report);
     }
     Ok(json!({"notes": report.notes.iter().map(note_json).collect::<Vec<_>>()}))
 }

@@ -12,7 +12,7 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use super::{Batch, FeatureSource, Reproject, Request, SourceInfo, clamp_limit, stride};
-use crate::io::{FeatureSink, Schema, declared_crs, geojson_attrs, geojson_geometry, geometry_to_lonlat};
+use crate::io::{FeatureSink, Schema, declared_crs, geojson_attrs, geojson_geometry, geojson_has_z, geometry_to_lonlat};
 use crate::{DataError, Feature, GeometryType, Result};
 use rustgis_geom::Extent;
 use serde_json::Value as Json;
@@ -59,6 +59,8 @@ struct Scan {
     /// Points, lines and polygons seen.
     kinds: [usize; 3],
     skipped: usize,
+    /// The places of features whose heights reading drops.
+    zm: Vec<u32>,
 }
 
 impl Scan {
@@ -83,6 +85,10 @@ impl Scan {
         };
         let b = match &geom {
             Some(g) => {
+                // Only a geometry kept counts.
+                if geojson_has_z(f) {
+                    self.zm.push(u32::try_from(self.places.len()).unwrap_or(u32::MAX));
+                }
                 let e = g.extent();
                 self.extent = self.extent.union(&e);
                 if let Some(slot) = self.kinds.get_mut(kind_slot(g.kind())) {
@@ -136,6 +142,10 @@ impl GeoJsonSource {
         let mut scan = Scan::default();
         let rest = if std::fs::metadata(path)?.len() <= in_memory {
             let text = std::fs::read_to_string(path)?;
+            // Its objects and vertices would all become a JSON tree, only to be refused below.
+            if crate::cityjson::looks_like_cityjson(&text) {
+                return Err(DataError::Unsupported("only GeoJSON FeatureCollections are read in place".into()));
+            }
             crate::io::stream_features(&text, &mut InText { scan: &mut scan, start: text.as_ptr() as usize }).map_err(bad)?
         } else {
             let read = std::rc::Rc::new(std::cell::Cell::new(0u64));
@@ -153,7 +163,7 @@ impl GeoJsonSource {
         if scan.skipped > 0 {
             notes.push(format!("{} features had unreadable geometry", scan.skipped));
         }
-        let reproject = Reproject::known(declared_crs(&rest, &mut notes));
+        let reproject = Reproject::known(declared_crs(&rest, &mut notes)?);
         // The declaration may come after the features, so only now can each be tried: those the
         // declared system can't convert are found here (and left out of every read, the count,
         // the extent and the geometry type), as they are when the file is read whole.
@@ -181,7 +191,7 @@ impl GeoJsonSource {
             Some((1, _)) => GeometryType::Polyline,
             Some(_) => GeometryType::Polygon,
         };
-        let info = SourceInfo {
+        let mut info = SourceInfo {
             name: name.to_string(),
             format: "GeoJSON",
             geometry_type,
@@ -191,7 +201,13 @@ impl GeoJsonSource {
             crs: reproject.label(),
             indexed: false,
             notes,
+            zm_dropped: false,
         };
+        // Features the declared system can't convert are left out, and so are their heights.
+        let zm = scan.zm.iter().filter(|i| failed.binary_search(i).is_err()).count() as u64;
+        if zm > 0 {
+            info.drop_zm(Some(zm));
+        }
         let unreadable = scan.skipped;
         Ok(GeoJsonSource { info, path: path.to_path_buf(), places: scan.places, boxes: scan.boxes, reproject, failed, unreadable })
     }
@@ -373,8 +389,12 @@ impl<'de> serde::de::Visitor<'de> for Top<'_> {
                 // The last of repeated members wins, as when read whole.
                 *self.scan = Scan::default();
                 map.next_value_seed(Elements { scan: &mut *self.scan, read: self.read.clone() })?;
-            } else {
+            } else if key == "type" || key == "crs" {
                 rest.insert(key, map.next_value()?);
+            } else {
+                // All that's looked at above: another document's members, such as a CityJSON
+                // model's objects and vertices, mustn't become a JSON tree only to be refused.
+                map.next_value::<serde::de::IgnoredAny>()?;
             }
         }
         Ok(rest)

@@ -53,7 +53,7 @@ files, and exported maps are drawn turned and tilted. A tilted map keeps the sca
 of the view: nearer ground is larger, farther ground smaller and drawn coarser, fading into fog
 and, past about 72 degrees, a sky above the horizon. Labels stay upright, and those too far away
 to read are left out. Point markers stand upright, facing you, as MapLibre's circles do, smaller
-with distance (aggregated, masked or blended point layers, and layers of more than 50,000 points,
+with distance (aggregated, masked, blended or diagrammed point layers, and layers of more than 50,000 points,
 keep their markers on the ground). Extruded layers (Style › Extrusion) stand up in perspective on a tilted
 map, as in MapLibre: walls lit by the way they face and darker toward their foot, roofs at their
 height, with the labels of extruded features on their roofs. While a tilted map moves, the
@@ -75,8 +75,10 @@ ground's heights, labels and point markers stand on it, and nearer slopes hide w
 them. The heights come from a DEM raster layer of the project (heights in metres; the layer can
 stay hidden) or from elevation tiles: Terrarium (`terrarium`, as the free
 `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`) or Mapbox
-Terrain-RGB (`mapbox`, also MapTiler's). `map.terrain` sets it: `{"layer": "DEM"}` or
-`{"tiles": "https://…/{z}/{x}/{y}.png", "encoding": "terrarium"}`, with `"exaggeration"`
+Terrain-RGB (`mapbox`, also MapTiler's). **View › Scene › Terrain** turns it on from the active
+layer (make the DEM the active layer first) and off again; a notice names the layer and says to
+tilt the map. `map.terrain` sets it: `{"layer": "DEM"}`, or `{}` for the active raster layer when
+no terrain is on, or `{"tiles": "https://…/{z}/{x}/{y}.png", "encoding": "terrarium"}`, with `"exaggeration"`
 (0 to 20, default 1) to stretch the heights; `{"exaggeration": 2}` alone changes only that, and
 `{"off": true}` flattens the map again. Terrain is saved with the project and shows in exported
 maps; a flat (untilted) view, the globe and other projections stay flat, extruded layers are
@@ -105,13 +107,15 @@ down, or delete it. Bookmark edits run `bookmark.*` commands and undo with ++ctr
 
 **Home › Navigate › Locate › By Place or Address…** (`map.findPlace`) looks up a place or an
 address by name with OpenStreetMap's [Nominatim](https://nominatim.org) (or a
-[Photon](https://photon.komoot.io) server, or a geocoder of your own given by its address) and
-zooms to the one picked. The search goes to that server over the network; see
+[Photon](https://photon.komoot.io) server, PDOK's
+[Locatieserver](data.md#geocoding-addresses) for Dutch addresses and places, or a geocoder of your
+own given by its address) and zooms to the one picked. The search goes to that server over the network; see
 [Geocoding addresses](data.md#geocoding-addresses) for whole tables.
 
 The **search box** at the foot of the left pane searches the map as you type: a latitude and
 longitude (`40.7, -74.0`, `40.7N 74W` or `40°42'46"N 74°0'21"W`; latitude first unless the
-letters or a number past ±90 say otherwise), the map's layers and bookmarks by name, and the
+letters or a number past ±90 say otherwise), a UTM position or an MGRS reference (see
+[Coordinate readouts](#coordinate-readouts)), the map's layers and bookmarks by name, and the
 values in its layers' attribute tables (the best few per layer, by the feature's name where it has
 one). Places come from Nominatim when you press ++enter++ on **Search places**, since the public
 servers don't allow searching as you type. The arrow keys move through the list and ++enter++
@@ -123,14 +127,67 @@ the command line or a script, and goes to a hit with `"go"`:
 rustgis-cli run --sample --cmd 'map.search={"query":"Tokyo","go":true}'
 ```
 
-**Right-click the map** for a menu about that place. Its first row shows the latitude and
-longitude; click it to copy them. Below it, **Copy As GeoJSON** copies the place as a point
-feature, **Center Map Here** and **Zoom In Here** move the view, and **Directions To Here** and
+**Right-click the map** for a menu about that place. Its first row shows the place in the status
+bar's coordinate format (latitude and longitude as `40.712800, -74.006000` for decimal degrees);
+click it to copy it. North of 84° N and south of 80° S, where UTM and MGRS have no zone, and on
+the map of another body than the Earth, it shows and copies the latitude and longitude, and its
+hover text says why. Below it, **Copy As GeoJSON**
+copies the place as a point feature, **Center Map Here** and **Zoom In Here** move the view, and **Directions To Here** and
 **Directions From Here** open the [Directions](#directions) pane. **Quick Analysis** runs a tool
 at the place: a buffer of 500 m, 1 km or 5 km (¼, 1 or 5 miles when the Directions pane is set
 to miles; `gp.bufferPoint`), a viewshed of 2, 5 or 15 km or a line of sight on an elevation
 raster in the map, and **Open In Geoprocessing…** opens the Buffer tool. **View In Google Maps**
 and **View In Google Earth** open the place in your browser at about the same zoom.
+
+### Coordinate readouts
+
+The status bar shows the pointer's coordinates while it is over the map, and keeps the last
+position (dimmed) when it leaves, so you can move to the status bar and click it. It reads `—`
+until the pointer has been over the map, and again after you switch to another map or open another
+project. Click the coordinates to step through four formats; the choice is remembered and also
+sets the right-click menu's first row. The same place in each:
+
+| Format | Example | Notes |
+| --- | --- | --- |
+| Decimal degrees | `15.3000° E  49.8500° N` | four decimal places |
+| DMS | `15°18′00.0″ E  49°51′00.0″ N` | degrees, minutes and seconds |
+| UTM | `33north 521567 5521996` | zone and hemisphere (`33south …` south of the equator), easting and northing in metres, rounded to the metre |
+| MGRS | `33U WR 21566 21996` | zone (two digits: `04Q FJ …`) and band, the 100 km square, easting and northing within it, truncated to the metre |
+
+UTM states the hemisphere, as GeographicLib's `GeoConvert -u -l` writes it, not the latitude band:
+in plain UTM a letter after the zone is commonly read as the hemisphere, so `38S` (band S, 32° N
+to 40° N) would be taken for the southern hemisphere, 10,000 km away. Latitude bands are MGRS's.
+UTM and MGRS are on WGS 84, with the zone exceptions for southern Norway (32V) and Svalbard (31X,
+33X, 35X and 37X), and cover 80° S to 84° N. Nearer the poles they would need the Universal Polar
+Stereographic grid, which RustGIS doesn't have: there the readout shows *No UTM here* (or
+*No MGRS here*) rather than a wrong reference, and so it does on the map of another body than
+the Earth, where degrees still read. Scripts set the format with
+`ui.coordinateFormat={"format":"utm"}` (`decimal`, `dms`, `utm` or `mgrs`); without `format`
+it steps to the next one. A saved format this version doesn't know, say from a newer RustGIS,
+reads as decimal degrees with a notice, and stays saved until you pick a format.
+
+The [search box](#navigating) takes the same grid references, in any case:
+
+- **MGRS** with or without spaces: `33UWR2156621996`, `33U WR 21566 21996`, `33UWR 2156 2199`,
+  or a 100 km square alone, `33UWR`; a zone below 10 with or without its leading zero (`04QFJ`,
+  `4QFJ`). The digits are an even count from 0 to 10, half for the
+  easting and half for the northing, and the search goes to the middle of the square they name.
+  A 100 km square is also looked for in the attribute tables, since Sentinel-2 tiles are named
+  after them.
+- **UTM** as the readout writes it, zone and hemisphere: `33north 521567 5521996`,
+  `21south 371625 6170423` (also with a space, `33 north …`); or zone and latitude band:
+  `33U 521567 5521996`. `33N` reads as the northern hemisphere when the northing isn't in band
+  N, since both readings agree.
+  `S` after the zone is always band S (32° N to 40° N), as in `11S 384629 3768405` (Los
+  Angeles); with a northing outside band S it could mean the southern hemisphere, so it finds
+  nothing: write `south` instead.
+
+A reference that doesn't exist (square letters the zone doesn't use, a northing or a square
+outside the band, an odd number of digits, a place outside the zone) finds nothing rather than a
+place somewhere else, and the list says why; `map.search` returns the reason as `gridError`. A
+100 km square written with spaces, such as `5 Ave` or `4K TV`, is as likely ordinary text, so one
+that names no square gives no reason; written as one word, `38TMJ`, it does. On the map of
+another body, grid references find nothing.
 
 ### Directions
 
@@ -195,19 +252,35 @@ Ocean, Atlas, Blank), which need no network, and web tile layers over them:
   the desktop read in place a tile at a time (**Tile Archive File…**, Add Data, or drop it on the
   window); in the web app added with Add Data and held in memory for the session (a project keeps
   the layer, and asks for the file again).
-- **Map styles**: a MapLibre style document (`style.json`), with its vector and raster sources.
+- **Map styles**: a MapLibre style document (`style.json`), with its vector, raster and
+  elevation (`raster-dem`: Terrarium, Mapbox or custom encoding) sources.
   RustGIS draws background, fill, line, circle and raster layers, labels with their icons from
-  the style's sprite (SDF icons in their `icon-color`), and fill patterns; it evaluates the
-  style's expressions and zoom functions. Labels are placed as MapLibre places them: at points,
+  the style's sprites (SDF icons in their `icon-color`; the icons of a sprite in the style's
+  list are named `<sprite id>:<name>`, those of a sprite with the id `default` just `<name>`), and
+  fill patterns; it evaluates the style's expressions and zoom functions, `image` among them (an
+  icon's name when a sprite has it, so `coalesce` falls back to the next). When the style draws
+  images, a notice says why any are missing: a sprite at an address RustGIS won't fetch, an entry
+  of the list that can't be read, or a sprite whose download failed, which loses only its own
+  icons and patterns and is tried again. From elevation it draws `color-relief` layers (a
+  `color-relief-color` that is an `interpolate` or `step` on `["elevation"]`) and `hillshade`
+  layers (each `hillshade-method`, lit as the map is drawn, north up; slopes are steepened at
+  small scales so relief stays visible). Its shading follows the style's colours, exaggeration
+  and light rather than matching MapLibre's pixel for pixel. Other `color-relief-color`
+  expressions aren't drawn, and a notice names the layers skipped. If a style's elevation source can't be read, its relief and
+  hillshade layers are left out with a notice saying why, and the rest is drawn. Labels are placed
+  as MapLibre places them: at points,
   in the middle of areas, and along lines (street names every `symbol-spacing`, turned to the
   street, where it bends less than `text-max-angle`; shields and one-way arrows), wrapped to
   `text-max-width`, the style's later layers first and then by `symbol-sort-key`, kept apart by
   `text-padding` and the `*-optional`, `*-allow-overlap` and `*-ignore-placement` rules. Text
-  along a line is drawn straight rather than curved round its bends. Line patterns, hillshade
-  and 3D extrusion are not drawn (extrusions draw flat). A label shows the lines of its text
+  along a line is drawn straight rather than curved round its bends. Line patterns and 3D
+  extrusion are not drawn (extrusions draw flat). A label shows the lines of its text
   that the map's font can draw: a style's "Syria / سوريا" shows as "Syria".
   A style's root `center`, `zoom`, `bearing` and `pitch` say where it opens: `map.addTiles` with
   `"view": true` takes the map there once the style has loaded.
+
+HTTPS tiles use [platform certificate trust](data.md#https-certificates) on desktop and the
+command line, including private CAs trusted by the operating system. The web app uses the browser.
 
 The gallery's **Web Basemaps** need no API key: the OpenFreeMap vector maps (Liberty, Bright,
 Positron, Dark, Fiord) and USGS Imagery. Choosing one replaces the other web basemaps; tick
@@ -329,11 +402,11 @@ projection, and clicking the coordinate system in the status bar opens the **Coo
 System** dialog, which also takes a projected EPSG code (such as `3035`, `32633` for UTM zone
 33N or `2056` for Switzerland) or an ESRI code, the one `.prj` files and ArcGIS name (such as
 `ESRI:102033` for South America Albers Equal Area Conic, or `ESRI:54030` for World Robinson). A
-code whose projection method or datum grid RustGIS can't use (Polyconic such as `5880`, Cassini,
-oblique Mercator, or a NAD27 code that needs a grid) is refused with the reason, rather than drawn
-in another projection. RustGIS supports a subset of Esri's projected systems, checked against
-PROJ at representative points; unsupported codes such as World Miller (`ESRI:54003`) are refused
-as unknown codes. The presets:
+code whose projection method or datum grid RustGIS can't use (Laborde such as `8441`, or a NAD27
+code that needs a grid) is refused with the reason, rather than drawn in another projection.
+RustGIS supports a subset of Esri's projected systems, checked against
+PROJ at representative points; unsupported codes such as World Miller (`ESRI:54003`) and the
+two-point oblique Mercators (`ESRI:53025`, `ESRI:54025`) are refused as unknown codes. The presets:
 
 | Preset | Kind |
 | --- | --- |

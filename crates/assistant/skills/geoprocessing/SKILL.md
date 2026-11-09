@@ -19,13 +19,26 @@ Based on the RustGIS user guide, Analysis › Geoprocessing tools
      one covers), `update` (`input`, `update`: the input's polygons with the update polygons
      laid over them), `split` (`input`, `split`, `field`: one clipped layer per split polygon
      or field value)
-   - generalization: `dissolve` (`input`, `field`), `simplify` (`input`, `tolerance`)
-   - geometry: `convexHull`, `featureToPoint`, `featureVerticesToPoints`, `xyTableToPoint`
-     (`input`, `x`, `y`, `crs`), `calculateGeometry`
+   - generalization: `dissolve` (`input`, `field`, `statistics`: summary fields over each
+     group's records, as in `summaryStatistics`), `simplify` (`input`, `tolerance`)
+   - geometry: `convexHull`, `featureToPoint`, `featureVerticesToPoints`, `pointsAlongLines`
+     (`input`, `distance`, `units`, `startOffset`, `endOffset`, `includeEnd`), `xyTableToPoint`
+     (`input`, `x`, `y`, `crs`), `calculateGeometry`; `polygonToLine`, `splitLineAtVertices`,
+     `featureEnvelopeToPolygon`, `unsplitLine` (`input`, optional `output`; see the user guide
+     for envelope axes and endpoint-joining rules); `checkGeometry` (`input`: a layer of the
+     features with invalid geometry, saying what is wrong with each); `repairGeometry` (`input`:
+     every feature with its geometry made valid where it can be, and a field saying what was
+     repaired; features with a missing or non-finite coordinate, even in a hole, or left with no
+     usable points or, for polygons, no area once repaired are written without geometry; valid
+     points and lines are kept; other features too complex to check, or whose repair fails,
+     are written unchanged)
    - selection: `selectByLocation` (`input`, `select`, `distance`, `invert`), `selectByAttributes`
      (`input`, `where`)
-   - statistics: `countPoints` (Summarize Within: `polygons`, `points`), `summaryStatistics`
-     (`input`, `statistics`, `case`), `pivotTable` (`input`, `fields`, `pivot`, `value`, `statistic`)
+   - statistics: `countPoints` (Summarize Within: `polygons`, `points`, `statistics`: summary
+     fields of the points in each polygon, as in `summaryStatistics`), `summaryStatistics`
+     (`input`, `statistics`, `case`), `pivotTable` (`input`, `fields`, `pivot`, `value`, `statistic`),
+     `tabulateIntersection` (`zones`, `zoneFields`, `classes`, `classFields`, `sumFields`: class
+     areas and totals shared out to zones by overlap)
    - joins: `spatialJoin` (`target`, `join`, `match`), `joinField` (`target`, `targetField`,
      `joinTable`, `joinField`, `fields`, `prefix`, `duplicates`)
    - conversion: `exportFeatures` (`input`, `where`)
