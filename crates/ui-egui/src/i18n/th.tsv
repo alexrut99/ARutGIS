@@ -4514,3 +4514,301 @@ Datum	พื้นหลักฐาน
 Thai subdistricts, districts and provinces	ตำบล อำเภอ จังหวัด (กรมการปกครอง)
 Finds a subdistrict, district or province by its name (ต.สุเทพ อ.เมือง จ.เชียงใหม่) or a postcode (50200), from the Department of Provincial Administration's boundaries (CC BY 4.0), downloaded the first time (about 11 MB).	ค้นหาตำบล อำเภอ หรือจังหวัดจากชื่อ (ต.สุเทพ อ.เมือง จ.เชียงใหม่) หรือรหัสไปรษณีย์ (50200) จากแนวเขตของกรมการปกครอง (CC BY 4.0) ครั้งแรกจะดาวน์โหลดข้อมูลประมาณ 11 MB
 Names and postcodes: Department of Provincial Administration, via OpenGISData-Thailand (CC BY 4.0)	ชื่อและรหัสไปรษณีย์: กรมการปกครอง ผ่าน OpenGISData-Thailand (CC BY 4.0)
+# RustGIS 0.6.0's new strings
+"instance" must be a layer's instance number, not {value}	"instance" ต้องเป็นหมายเลขอินสแตนซ์ของชั้นข้อมูล ไม่ใช่ {value}
+"layer" must be a layer's id or name, not {value}	"layer" ต้องเป็นรหัสหรือชื่อของชั้นข้อมูล ไม่ใช่ {value}
+(expression)	(นิพจน์)
+(none)	(ไม่มี)
+1 entry	1 รายการ
+1 more class isn't listed: the list's limit doesn't change how it's drawn	ยังมีอีก 1 คลาสที่ไม่ได้แสดงในรายการ: ขีดจำกัดของรายการไม่มีผลต่อการวาด
+A new GeoPackage	GeoPackage ใหม่
+A new table in a GeoPackage	ตารางใหม่ใน GeoPackage
+A small chart of several numeric fields, drawn on each feature over its symbol	แผนภูมิขนาดเล็กของฟิลด์ตัวเลขหลายฟิลด์ วาดบนแต่ละฟีเจอร์ทับสัญลักษณ์ของฟีเจอร์นั้น
+A streamed layer needs Load All Features first	ชั้นข้อมูลแบบสตรีมต้องใช้ "โหลดฟีเจอร์ทั้งหมด" ก่อน
+A table replaced in a GeoPackage	ตารางที่ถูกแทนที่ใน GeoPackage
+A theme file	ไฟล์ธีม
+A theme file was refused. Open Settings > Theme for the reason.	ไฟล์ธีมถูกปฏิเสธ เปิด การตั้งค่า > ธีม เพื่อดูสาเหตุ
+An API key sent in a header must use plain ASCII characters.	คีย์ API ที่ส่งในส่วนหัว (header) ต้องใช้อักขระ ASCII ธรรมดาเท่านั้น
+another project was opened	มีการเปิดโปรเจกต์อื่น
+API key in a header	คีย์ API ในส่วนหัว (header)
+Application	แอปพลิเคชัน
+at most	ไม่เกิน
+Bar	แท่ง
+Bar Chart	แผนภูมิแท่ง
+Basic authentication	การยืนยันตัวตนแบบ Basic
+Batch Run	เรียกใช้แบบกลุ่ม
+Callouts	เส้นโยงป้ายชื่อ
+Check Geometry	ตรวจสอบรูปทรงเรขาคณิต
+Choose a field	เลือกฟิลด์
+Choose which saved connection to use for this address. This choice lasts for this session.	เลือกการเชื่อมต่อที่บันทึกไว้ที่จะใช้กับที่อยู่นี้ ตัวเลือกนี้มีผลเฉพาะเซสชันนี้
+Class Fields	ฟิลด์คลาส
+Clear all diagnostic history for this session	ล้างประวัติการวินิจฉัยทั้งหมดของเซสชันนี้
+Clear Diagram	ล้างแผนภูมิ
+Clear Log	ล้างบันทึก
+Columns	คอลัมน์
+Commands that change the project, or that name a file, folder or address, appear here.	คำสั่งที่เปลี่ยนแปลงโปรเจกต์ หรือที่ระบุไฟล์ โฟลเดอร์ หรือที่อยู่ จะแสดงที่นี่
+Connection failure	การเชื่อมต่อล้มเหลว
+connection must be a saved web-service connection id (text)	connection ต้องเป็นรหัสการเชื่อมต่อบริการเว็บที่บันทึกไว้ (ข้อความ)
+Converts polygon boundaries, including holes, to multipart lines. Shared boundaries are kept for each feature.	แปลงเส้นขอบของรูปหลายเหลี่ยม รวมทั้งขอบของรู เป็นเส้นแบบหลายส่วน (multipart) เส้นขอบที่ใช้ร่วมกันจะคงอยู่ในแต่ละฟีเจอร์
+Coordinates in {format}. Click to switch: decimal degrees, DMS, UTM, MGRS. UTM and MGRS cover the Earth from 80° S to 84° N.	พิกัดในรูปแบบ {format} คลิกเพื่อสลับ: องศาทศนิยม, DMS, UTM, MGRS โดย UTM และ MGRS ครอบคลุมโลกตั้งแต่ 80° S ถึง 84° N
+Copied the layout to the clipboard	คัดลอกเลย์เอาต์ไปยังคลิปบอร์ดแล้ว
+Copied the layout to the clipboard at {dpi} dpi, not {wanted}: the page is too large for a larger image	คัดลอกเลย์เอาต์ไปยังคลิปบอร์ดแล้วที่ {dpi} dpi ไม่ใช่ {wanted}: หน้ามีขนาดใหญ่เกินกว่าจะสร้างภาพที่ใหญ่กว่านี้
+Copied. The log cut its parameters short or took their secrets out, so it may not run as it ran.	คัดลอกแล้ว บันทึกได้ตัดพารามิเตอร์ให้สั้นลงหรือนำข้อมูลลับออก จึงอาจทำงานไม่เหมือนตอนที่เรียกใช้จริง
+Copy All	คัดลอกทั้งหมด
+Copy an image of the layout to the clipboard.	คัดลอกภาพของเลย์เอาต์ไปยังคลิปบอร์ด
+Copy coordinates to the clipboard. No {format} here: outside the UTM zones (80° S to 84° N), so latitude and longitude are copied	คัดลอกพิกัดไปยังคลิปบอร์ด ไม่มี {format} ที่นี่: อยู่นอกโซน UTM (80° S ถึง 84° N) จึงคัดลอกละติจูดและลองจิจูดแทน
+Copy coordinates to the clipboard. {format} is a grid of the Earth, so latitude and longitude are copied	คัดลอกพิกัดไปยังคลิปบอร์ด {format} เป็นกริดบนผิวโลก จึงคัดลอกเป็นละติจูดและลองจิจูด
+Copy diagnostics	คัดลอกข้อมูลการวินิจฉัย
+Copy Parameters	คัดลอกพารามิเตอร์
+Copy Script	คัดลอกสคริปต์
+Copy the filtered history, including technical details	คัดลอกประวัติที่กรองแล้ว รวมถึงรายละเอียดทางเทคนิค
+could not draw the layout	วาดเลย์เอาต์ไม่ได้
+Couldn't install the update: {error}	ติดตั้งอัปเดตไม่สำเร็จ: {error}
+Creates points at a set distance along each line, or each polygon ring.	สร้างจุดตามระยะที่กำหนดไปตามแต่ละเส้น หรือตามแต่ละวงขอบของรูปหลายเหลี่ยม
+Ctrl+Z	Ctrl+Z
+Cut Polygon	ตัดรูปหลายเหลี่ยม
+Dark	มืด
+decimal degrees	องศาทศนิยม
+degrees, minutes and seconds	องศา ลิปดา และฟิลิปดา
+Describing {name}	กำลังอธิบาย {name}
+Destinations ({operation}): {places}	ปลายทาง ({operation}): {places}
+Details…	รายละเอียด…
+Diagram	แผนภูมิ
+Diagram Settings	การตั้งค่าแผนภูมิ
+Download and Install	ดาวน์โหลดและติดตั้ง
+Download it again and load it.	ดาวน์โหลดอีกครั้งแล้วโหลดใหม่
+Downloading: {done} MB	กำลังดาวน์โหลด: {done} MB
+Downloading: {done} of {total} MB	กำลังดาวน์โหลด: {done} จาก {total} MB
+Downloading… {name}	กำลังดาวน์โหลด… {name}
+Drag a label to where it should be · drag the map to pan · Esc to stop	ลากป้ายชื่อไปยังตำแหน่งที่ต้องการ · ลากแผนที่เพื่อเลื่อน · Esc เพื่อหยุด
+Drag a label to where it should be; its callout's line follows. Shift-click a moved label to put it back.	ลากป้ายชื่อไปยังตำแหน่งที่ต้องการ เส้นโยงจะเลื่อนตาม กด Shift ค้างแล้วคลิกป้ายชื่อที่ย้ายแล้วเพื่อนำกลับที่เดิม
+Drape the map over the heights of the active raster layer (a DEM, in metres), and tilt the map to see the relief. Click again to flatten it.	คลุมแผนที่ลงบนค่าความสูงของชั้นข้อมูลแรสเตอร์ที่ใช้งานอยู่ (DEM หน่วยเมตร) แล้วเอียงแผนที่เพื่อดูความสูงต่ำของภูมิประเทศ คลิกอีกครั้งเพื่อทำให้แบนราบ
+Draw a line across the selected feature's edge · double-click to reshape it	วาดเส้นตัดผ่านขอบของฟีเจอร์ที่เลือก · ดับเบิลคลิกเพื่อปรับรูปทรง
+Draw a line across the selected feature's edge; double-click to reshape it	วาดเส้นตัดผ่านขอบของฟีเจอร์ที่เลือก แล้วดับเบิลคลิกเพื่อปรับรูปทรง
+Draw a line across the selected polygons · double-click to cut them	วาดเส้นตัดผ่านรูปหลายเหลี่ยมที่เลือก · ดับเบิลคลิกเพื่อตัด
+Draw a line across the selected polygons; double-click to cut them	วาดเส้นตัดผ่านรูปหลายเหลี่ยมที่เลือก แล้วดับเบิลคลิกเพื่อตัด
+Draw every label, over the others where they crowd, rather than leaving some out.	วาดป้ายชื่อทุกป้าย โดยให้ซ้อนทับกันในจุดที่หนาแน่น แทนที่จะละบางป้ายไว้
+Drop this field	นำฟิลด์นี้ออก
+Duration: {duration} ms	ระยะเวลา: {duration} ms
+Each line's whole result, to read or copy	ผลลัพธ์ทั้งหมดของแต่ละบรรทัด สำหรับอ่านหรือคัดลอก
+Empty Index Cache	ล้างแคชดัชนี
+Empty the script and its results ({keys} brings the script back)	ล้างสคริปต์และผลลัพธ์ (กด {keys} เพื่อนำสคริปต์กลับมา)
+End Offset	ระยะเว้นจากปลายเส้น
+Enter the password or key for this connection. Web-service logins last for this session only.	ป้อนรหัสผ่านหรือคีย์ของการเชื่อมต่อนี้ การลงชื่อเข้าใช้บริการเว็บมีผลเฉพาะเซสชันนี้
+Enter this connection's password or API key to log in.	ป้อนรหัสผ่านหรือคีย์ API ของการเชื่อมต่อนี้เพื่อลงชื่อเข้าใช้
+Errors	ข้อผิดพลาด
+Everything done in this session, from the app, scripts, the AI Assistant or plugins	ทุกอย่างที่ทำในเซสชันนี้ ทั้งจากแอป สคริปต์ ผู้ช่วย AI หรือปลั๊กอิน
+Exact request	คำขอฉบับเต็ม
+Export the selected layer as a 3D model (OBJ or STL), polygons extruded.	ส่งออกชั้นข้อมูลที่เลือกเป็นโมเดล 3 มิติ (OBJ หรือ STL) โดยยกรูปหลายเหลี่ยมขึ้นเป็นแท่ง
+Failed only	เฉพาะที่ล้มเหลว
+Failed replacement export	การส่งออกแบบแทนที่ที่ล้มเหลว
+Favourite Arrangement	การจัดเรียงโปรด
+Feature Envelope To Polygon	กรอบล้อมรอบฟีเจอร์เป็นรูปหลายเหลี่ยม
+Feature ID	รหัสฟีเจอร์
+Feature identifier, not a dataset field or a row position.	ตัวระบุฟีเจอร์ ไม่ใช่ฟิลด์ของชุดข้อมูลหรือลำดับแถว
+File export	การส่งออกไฟล์
+Filter by command	กรองตามคำสั่ง
+Fixed	คงที่
+Follow the System	ตามระบบ
+Forget this plugin: the app stops trying to load it at start.	ลืมปลั๊กอินนี้: แอปจะไม่พยายามโหลดปลั๊กอินนี้ตอนเริ่มต้นอีก
+given up before its read began: its project was closed, or more than 64 downloads started after it	ยกเลิกก่อนเริ่มอ่าน: โปรเจกต์ของรายการนี้ถูกปิด หรือมีการดาวน์โหลดเริ่มขึ้นหลังจากนั้นมากกว่า 64 รายการ
+Header name	ชื่อส่วนหัว (header)
+Hidden columns: {n}	คอลัมน์ที่ซ่อน: {n}
+Hide Column	ซ่อนคอลัมน์
+How much of each zone each class of polygons covers, with the classes' totals shared out to the zones by area.	สัดส่วนที่รูปหลายเหลี่ยมแต่ละคลาสครอบคลุมในแต่ละโซน โดยแบ่งยอดรวมของแต่ละคลาสให้โซนต่าง ๆ ตามพื้นที่
+HTTP failure	HTTP ล้มเหลว
+HTTP status: {status}	สถานะ HTTP: {status}
+If its place is taken or (curved) the line bends too much, the label tries other places along the line.	หากตำแหน่งนั้นถูกใช้แล้ว หรือ (แบบโค้งตามเส้น) เส้นโค้งมากเกินไป ป้ายชื่อจะลองตำแหน่งอื่นตามแนวเส้น
+In place	จากแหล่งข้อมูลโดยตรง
+In place of the Script pane's script ({keys} brings it back)	แทนที่สคริปต์ในแผงสคริปต์ (กด {keys} เพื่อนำกลับมา)
+In place, holding a {w} × {h} overview	จากแหล่งข้อมูลโดยตรง พร้อมภาพรวมขนาด {w} × {h}
+Include End Point	รวมจุดปลาย
+Info	ข้อมูล
+Input Class Features	ฟีเจอร์คลาสอินพุต
+Input Zone Features	ฟีเจอร์โซนอินพุต
+Install and Restart	ติดตั้งและเริ่มใหม่
+Interface Scale	ขนาดอินเทอร์เฟซ
+Interface scale held to {percent}%	จำกัดขนาดอินเทอร์เฟซไว้ที่ {percent}%
+Into	ลงใน
+Invert Color Ramp	กลับชุดไล่สี
+It can't run in a script	เรียกใช้ในสคริปต์ไม่ได้
+it changed since it was installed: install it again from the Plugin Manager	ปลั๊กอินถูกเปลี่ยนแปลงหลังจากติดตั้ง: ติดตั้งใหม่อีกครั้งจากตัวจัดการปลั๊กอิน
+its copy kept in the browser is damaged: {error}	สำเนาที่เก็บไว้ในเบราว์เซอร์เสียหาย: {error}
+its layer was removed	ชั้นข้อมูลของรายการนี้ถูกนำออกแล้ว
+Joins exact endpoint matches through degree-two nodes when all attributes agree. Branches stay separate.	เชื่อมเส้นที่จุดปลายตรงกันพอดีผ่านโหนดที่มีสองเส้นมาบรรจบ เมื่อแอตทริบิวต์ทั้งหมดตรงกัน ส่วนเส้นที่แตกสาขาจะยังแยกกัน
+Kind	ชนิด
+Labels by Expression	ป้ายชื่อตามนิพจน์
+Light	สว่าง
+line {line} ({command})	บรรทัด {line} ({command})
+line {n}: {command}	บรรทัด {n}: {command}
+Load a Theme from File…	โหลดธีมจากไฟล์…
+Load All parameters must be an object	พารามิเตอร์ของ "โหลดทั้งหมด" ต้องเป็นออบเจกต์
+Loaded {id}.	โหลด {id} แล้ว
+Loading a theme file needs the desktop app	การโหลดไฟล์ธีมต้องใช้แอปเดสก์ท็อป
+Locatieserver (the Netherlands)	Locatieserver (เนเธอร์แลนด์)
+Log Out	ออกจากระบบ
+Log Out of Connection	ออกจากระบบการเชื่อมต่อ
+Logged in	ลงชื่อเข้าใช้แล้ว
+Logged out. Enter the password or key to log in again.	ออกจากระบบแล้ว ป้อนรหัสผ่านหรือคีย์เพื่อลงชื่อเข้าใช้อีกครั้ง
+Logging is off: commands run now aren't recorded.	ปิดการบันทึกอยู่: คำสั่งที่เรียกใช้ตอนนี้จะไม่ถูกบันทึก
+Login	การลงชื่อเข้าใช้
+Messages and failed requests from this session. Oldest entries are discarded when the history is full.	ข้อความและคำขอที่ล้มเหลวจากเซสชันนี้ เมื่อประวัติเต็ม รายการที่เก่าที่สุดจะถูกลบทิ้ง
+MGRS	MGRS
+Move a label crowded off its spot to a free one nearby, with a line back to its feature. Labels along lines stay.	ย้ายป้ายชื่อที่ถูกเบียดออกจากตำแหน่งไปยังที่ว่างใกล้เคียง พร้อมเส้นโยงกลับไปยังฟีเจอร์ ส่วนป้ายชื่อที่วางตามแนวเส้นจะอยู่ที่เดิม
+Move Label	ย้ายป้ายชื่อ
+Move Left	ย้ายไปทางซ้าย
+Move Right	ย้ายไปทางขวา
+Move, rotate, scale, merge, explode, split, cut, reshape or flip the selected features.	ย้าย หมุน ปรับขนาด ผสาน แยกส่วน แบ่ง ตัด ปรับรูปทรง หรือกลับทิศฟีเจอร์ที่เลือก
+Needs two or more numeric fields.	ต้องมีฟิลด์ตัวเลขอย่างน้อยสองฟิลด์
+Network	เครือข่าย
+Network failures	เครือข่ายล้มเหลว
+New Connection…	การเชื่อมต่อใหม่…
+Next Coordinate Format	รูปแบบพิกัดถัดไป
+No command matches	ไม่มีคำสั่งที่ตรงกัน
+No diagnostic entries match this filter.	ไม่มีรายการวินิจฉัยที่ตรงกับตัวกรองนี้
+no model '{name}'	ไม่มีโมเดล '{name}'
+No place at this grid reference: {reason}	ไม่มีตำแหน่งที่พิกัดกริดนี้: {reason}
+No place there to move the label to; it stays where it was.	ไม่มีที่ว่างให้ย้ายป้ายชื่อไป ป้ายชื่อจึงอยู่ที่เดิม
+No saved web-service connection with this id.	ไม่มีการเชื่อมต่อบริการเว็บที่บันทึกไว้ซึ่งมีรหัสนี้
+No such tile layer	ไม่มีชั้นข้อมูลไทล์นี้
+No theme is named {name}.	ไม่มีธีมชื่อ {name}
+No {format} here	ไม่มี {format} ที่นี่
+not a UTM or MGRS grid reference	ไม่ใช่พิกัดกริด UTM หรือ MGRS
+Not added: a drawn line holds at most 10,000 points	ไม่ได้เพิ่ม: เส้นที่วาดมีจุดได้ไม่เกิน 10,000 จุด
+Not loaded	ไม่ได้โหลด
+Not traced: a drawn line holds at most 10,000 points	ไม่ได้ลากตามขอบ: เส้นที่วาดมีจุดได้ไม่เกิน 10,000 จุด
+Nothing ran: the script has no commands.	ไม่มีอะไรทำงาน: สคริปต์ไม่มีคำสั่ง
+Off, the commands run aren't recorded; what is in the log stays	ปิด คำสั่งที่เรียกใช้จะไม่ถูกบันทึก ส่วนที่อยู่ในบันทึกแล้วจะยังคงอยู่
+On the map	บนแผนที่
+Only the commands run in the project open now	เฉพาะคำสั่งที่เรียกใช้ในโปรเจกต์ที่เปิดอยู่ตอนนี้
+Open Diagnostics	เปิดการวินิจฉัย
+Open in Script Pane	เปิดในแผงสคริปต์
+PDOK's public server	เซิร์ฟเวอร์สาธารณะของ PDOK
+Pick the GeoPackage next. Its other tables are kept.	จากนั้นเลือก GeoPackage ตารางอื่นในไฟล์นั้นจะยังคงอยู่
+Pie	วงกลม
+Pie Chart	แผนภูมิวงกลม
+PNG image or GeoTIFF	ภาพ PNG หรือ GeoTIFF
+Points Along Lines	จุดตามแนวเส้น
+polar (UPS) grid references, north of 84° N or south of 80° S, aren't supported	ไม่รองรับพิกัดกริดขั้วโลก (UPS) ทางเหนือของ 84° N หรือทางใต้ของ 80° S
+Polygon To Line	รูปหลายเหลี่ยมเป็นเส้น
+Polygons to Raster	รูปหลายเหลี่ยมเป็นแรสเตอร์
+Put this layer's moved labels back where their classes place them.	นำป้ายชื่อที่ย้ายแล้วของชั้นข้อมูลนี้กลับไปยังตำแหน่งที่คลาสกำหนด
+Read	การอ่าน
+Reading in place…	กำลังอ่านจากแหล่งข้อมูลโดยตรง…
+Reading the tileset of {name}	กำลังอ่านชุดไทล์ของ {name}
+Reading the window failed unexpectedly	การอ่านช่วงพื้นที่ของแรสเตอร์ล้มเหลวโดยไม่คาดคิด
+Reload Themes	โหลดธีมใหม่
+Removed {id}.	นำ {id} ออกแล้ว
+Removed {name}	นำ {name} ออกแล้ว
+Repair Geometry	ซ่อมแซมรูปทรงเรขาคณิต
+Request failure	คำขอล้มเหลว
+Reset Interface Scale	รีเซ็ตขนาดอินเทอร์เฟซ
+Reset Moved	รีเซ็ตป้ายชื่อที่ย้าย
+Reshape	ปรับรูปทรง
+Reverse the order of the classes' colors.	กลับลำดับสีของคลาส
+Review errors, warnings, information and failed network requests from this session.	ตรวจสอบข้อผิดพลาด คำเตือน ข้อมูล และคำขอเครือข่ายที่ล้มเหลวจากเซสชันนี้
+Review messages and failed network requests	ตรวจสอบข้อความและคำขอเครือข่ายที่ล้มเหลว
+Review this request	ตรวจสอบคำขอนี้
+RustGIS was updated to {version}.	อัปเดต ARutGIS เป็น {version} แล้ว
+RustGIS {version} installs when RustGIS closes.	ARutGIS {version} จะติดตั้งเมื่อปิด ARutGIS
+RustGIS {version} wasn't installed: try again from Help › Check for Updates, or install it from the release page.	ไม่ได้ติดตั้ง ARutGIS {version}: ลองอีกครั้งจาก ช่วยเหลือ › ตรวจหาอัปเดต หรือติดตั้งจากหน้าเผยแพร่เวอร์ชัน
+RUSTGIS_UPDATE_RELEASE	RUSTGIS_UPDATE_RELEASE
+S after the zone is latitude band S; for the southern hemisphere write the zone, then south (33 south 412345 3768000)	S หลังโซนหมายถึงแถบละติจูด S สำหรับซีกโลกใต้ ให้เขียนโซนแล้วตามด้วย south (33 south 412345 3768000)
+Save changes before testing this connection.	บันทึกการเปลี่ยนแปลงก่อนทดสอบการเชื่อมต่อนี้
+Save Log As…	บันทึกล็อกเป็นไฟล์…
+Save the connection first: a login belongs to a saved connection.	บันทึกการเชื่อมต่อก่อน: การลงชื่อเข้าใช้ต้องผูกกับการเชื่อมต่อที่บันทึกไว้
+Scaled by sum	ปรับขนาดตามผลรวม
+Script Results	ผลลัพธ์สคริปต์
+Search results: PDOK Locatieserver (Kadaster)	ผลการค้นหา: PDOK Locatieserver (Kadaster)
+Select a raster or tile layer in the Layers pane first	เลือกชั้นข้อมูลแรสเตอร์หรือชั้นข้อมูลไทล์ในแผงชั้นข้อมูลก่อน
+Session log	บันทึกเซสชัน
+Set Diagram	กำหนดแผนภูมิ
+Settings › Theme	การตั้งค่า › ธีม
+Several saved connections match this address. Choose a connection explicitly.	มีการเชื่อมต่อที่บันทึกไว้หลายรายการที่ตรงกับที่อยู่นี้ โปรดระบุการเชื่อมต่อให้ชัดเจน
+Shapefile Index Cache	แคชดัชนี Shapefile
+Show All Columns	แสดงคอลัมน์ทั้งหมด
+Show all labels	แสดงป้ายชื่อทั้งหมด
+Split Line At Vertices	แบ่งเส้นที่จุดยอด
+Start angle	มุมเริ่มต้น
+Start Offset	ระยะเว้นจากต้นเส้น
+Starting active layer: {active}; selected layers: [{selected}]	ชั้นข้อมูลที่ใช้งานอยู่ตอนเริ่ม: {active}; ชั้นข้อมูลที่เลือก: [{selected}]
+Steps needing access	ขั้นตอนที่ต้องขอสิทธิ์เข้าถึง
+STL 3D Model…	โมเดล 3 มิติ STL…
+Sum Fields	ฟิลด์ที่จะรวมค่า
+Tabulate Intersection	ตารางการซ้อนทับ (Tabulate Intersection)
+Target details ({operation}): {targets}	รายละเอียดเป้าหมาย ({operation}): {targets}
+Technical details	รายละเอียดทางเทคนิค
+Text, e.g. "name" || ' (' || round("pop" / 1e6, 1) || ' M)', in place of the field; size in points, color as '#RRGGBB', angle in degrees clockwise. Empty: the field's or the class's own.	ข้อความ เช่น "name" || ' (' || round("pop" / 1e6, 1) || ' M)' ใช้แทนฟิลด์ ขนาดเป็นพอยต์ สีเป็น '#RRGGBB' มุมเป็นองศาตามเข็มนาฬิกา เว้นว่าง: ใช้ค่าของฟิลด์หรือของคลาสเอง
+the 100 km square letters aren't used in this zone	ไม่ใช้ตัวอักษรระบุจัตุรัส 100 km ในโซนนี้
+the browser kept neither a copy of it nor where to download it	เบราว์เซอร์ไม่ได้เก็บทั้งสำเนาและแหล่งที่จะดาวน์โหลด
+The coordinate format must be decimal, dms, utm or mgrs	รูปแบบพิกัดต้องเป็น decimal, dms, utm หรือ mgrs
+The filter searches the first {n} of them; the service.add command adds any other by its name.	ตัวกรองค้นหาใน {n} รายการแรก ส่วนคำสั่ง service.add เพิ่มรายการอื่นได้ด้วยชื่อ
+the grid digits must be an even count of 0 to 10, half for the easting and half for the northing	ตัวเลขกริดต้องมีจำนวนหลักเป็นเลขคู่ตั้งแต่ 0 ถึง 10 โดยครึ่งหนึ่งเป็นค่าพิกัดตะวันออก (easting) อีกครึ่งเป็นค่าพิกัดเหนือ (northing)
+The installer is downloaded and checked. RustGIS closes, installs the update and opens again.	ระบบจะดาวน์โหลดและตรวจสอบตัวติดตั้ง จากนั้น ARutGIS จะปิด ติดตั้งอัปเดต และเปิดขึ้นใหม่
+The interface colours, spacing and text sizes: a built-in theme or a file from the themes folder.	สี ระยะห่าง และขนาดตัวอักษรของอินเทอร์เฟซ: ใช้ธีมในตัวหรือไฟล์จากโฟลเดอร์ธีม
+the latitude band must be a letter from C to X (not I or O)	แถบละติจูดต้องเป็นตัวอักษร C ถึง X (ยกเว้น I และ O)
+the layer Export Features was opened on is gone	ชั้นข้อมูลที่เปิด "ส่งออกฟีเจอร์" ไว้ไม่มีอยู่แล้ว
+the layer's description took too long	การอธิบายชั้นข้อมูลใช้เวลานานเกินไป
+The log cut it short or took its secrets out: it would run only in part	บันทึกได้ตัดให้สั้นลงหรือนำข้อมูลลับออก: จะทำงานได้เพียงบางส่วน
+The longest a callout's line may be.	ความยาวสูงสุดของเส้นโยง
+the map it was asked for isn't open	แผนที่ที่ร้องขอไม่ได้เปิดอยู่
+The newest {shown} of {count} entries	{shown} รายการล่าสุดจาก {count} รายการ
+the northing doesn't fall in the latitude band given	ค่าพิกัดเหนือ (northing) ไม่อยู่ในแถบละติจูดที่ระบุ
+The notes are cut here: the release page has all of them.	บันทึกประจำรุ่นแสดงถึงตรงนี้เท่านั้น: ดูทั้งหมดได้ที่หน้าเผยแพร่เวอร์ชัน
+The one waiting after it was left too	รายการที่รออยู่ถัดไปก็ถูกยกเลิกด้วย
+the page is too large to copy to the clipboard: export it instead	หน้ามีขนาดใหญ่เกินกว่าจะคัดลอกไปยังคลิปบอร์ด: ให้ส่งออกแทน
+The password or key must fit a 4096-byte HTTP header, without control characters.	รหัสผ่านหรือคีย์ต้องไม่เกินขนาดส่วนหัว HTTP 4096 ไบต์ และไม่มีอักขระควบคุม
+the place lies outside the zone given	ตำแหน่งอยู่นอกโซนที่ระบุ
+The plugin blocklist couldn't be downloaded ({error}); the last one read, if any, stays in force.	ดาวน์โหลดรายการปลั๊กอินที่ถูกบล็อกไม่ได้ ({error}) รายการล่าสุดที่อ่านไว้ (ถ้ามี) ยังคงมีผล
+The plugin blocklist couldn't be read ({error}); the last one read, if any, stays in force.	อ่านรายการปลั๊กอินที่ถูกบล็อกไม่ได้ ({error}) รายการล่าสุดที่อ่านไว้ (ถ้ามี) ยังคงมีผล
+The plugin {id} wasn't loaded (open Plugins › Plugin Manager to see it): {reason}.	ไม่ได้โหลดปลั๊กอิน {id} (เปิด ปลั๊กอิน › ตัวจัดการปลั๊กอิน เพื่อดู): {reason}
+The plugin {id} wasn't loaded. Open Plugins › Plugin Manager to see it.	ไม่ได้โหลดปลั๊กอิน {id} เปิด ปลั๊กอิน › ตัวจัดการปลั๊กอิน เพื่อดู
+the recovery copy is too large (maximum {mib} MiB on this computer)	สำเนาสำหรับกู้คืนใหญ่เกินไป (สูงสุด {mib} MiB บนคอมพิวเตอร์เครื่องนี้)
+The saved coordinate format isn't known to this version, so decimal degrees are shown.	เวอร์ชันนี้ไม่รู้จักรูปแบบพิกัดที่บันทึกไว้ จึงแสดงเป็นองศาทศนิยม
+The saved favourite arrangement of publication layouts can't be used ({why}), so "classic" is used.	ใช้การจัดเรียงโปรดของเลย์เอาต์สำหรับเผยแพร่ที่บันทึกไว้ไม่ได้ ({why}) จึงใช้ "classic" แทน
+The script, for the Script pane	สคริปต์ สำหรับแผงสคริปต์
+The session login could not be used. Enter it again.	ใช้การลงชื่อเข้าใช้ของเซสชันไม่ได้ ป้อนใหม่อีกครั้ง
+The size of the menu, the panes and the text drawn in them.	ขนาดของเมนู แผงต่าง ๆ และข้อความในแผงเหล่านั้น
+The tools run on this project: saved with it, and each can run again	เครื่องมือที่เรียกใช้กับโปรเจกต์นี้: บันทึกไว้พร้อมโปรเจกต์ และเรียกใช้ซ้ำได้ทุกรายการ
+the UTM zone must be 1 to 60	โซน UTM ต้องอยู่ระหว่าง 1 ถึง 60
+The whole log, as CSV or JSON Lines (.jsonl): it may name files and addresses, so look at it before sharing it	บันทึกทั้งหมดเป็น CSV หรือ JSON Lines (.jsonl): อาจมีชื่อไฟล์และที่อยู่ จึงควรตรวจดูก่อนแชร์
+The {n} waiting after it were left too	อีก {n} รายการที่รออยู่ถัดไปก็ถูกยกเลิกด้วย
+Theme {name} loaded and kept at {path}	โหลดธีม {name} แล้ว และเก็บไว้ที่ {path}
+This platform does not report the system theme	แพลตฟอร์มนี้ไม่แจ้งธีมของระบบ
+This project	โปรเจกต์นี้
+This project uses a connection for {origin} that is not saved on this computer.	โปรเจกต์นี้ใช้การเชื่อมต่อสำหรับ {origin} ที่ไม่ได้บันทึกไว้ในคอมพิวเตอร์เครื่องนี้
+This read was already started	เริ่มการอ่านนี้ไปแล้ว
+This release has no installer for this computer: get it from the release page.	รุ่นนี้ไม่มีตัวติดตั้งสำหรับคอมพิวเตอร์เครื่องนี้: ดาวน์โหลดจากหน้าเผยแพร่เวอร์ชัน
+This request's login does not belong to this session.	การลงชื่อเข้าใช้ของคำขอนี้ไม่ได้เป็นของเซสชันนี้
+This service layer isn't recorded: its tile discovery crossed origins, and a task could use a different login.	ชั้นข้อมูลบริการนี้ไม่ได้ถูกบันทึก: การค้นหาไทล์ของชั้นข้อมูลข้ามไปยังต้นทาง (origin) อื่น และงานอาจใช้การลงชื่อเข้าใช้อื่น
+Timeout	หมดเวลา
+Tool runs	การเรียกใช้เครื่องมือ
+Trace Edge Path	ลากตามแนวขอบ
+Trace must be on or off	การลากตามขอบต้องเป็นเปิดหรือปิด
+Try Again	ลองอีกครั้ง
+Try other places along the line	ลองตำแหน่งอื่นตามแนวเส้น
+Trying again…	กำลังลองอีกครั้ง…
+Turns a table's addresses into points: each row's address fields are joined with commas (such as street, city, country) and looked up. OpenStreetMap's public Nominatim and Photon take up to 100 addresses a run, one a second; PDOK's Locatieserver (Dutch addresses) and a server of your own take more.	แปลงที่อยู่ในตารางเป็นจุด: ฟิลด์ที่อยู่ของแต่ละแถวจะถูกต่อกันด้วยจุลภาค (เช่น ถนน เมือง ประเทศ) แล้วนำไปค้นหา Nominatim และ Photon สาธารณะของ OpenStreetMap รับได้ครั้งละไม่เกิน 100 ที่อยู่ ที่อยู่ละหนึ่งวินาที ส่วน Locatieserver ของ PDOK (ที่อยู่ในเนเธอร์แลนด์) และเซิร์ฟเวอร์ของคุณเองรับได้มากกว่า
+Type the password or key, or leave it blank to use this connection's session login, then Save.	พิมพ์รหัสผ่านหรือคีย์ หรือเว้นว่างไว้เพื่อใช้การลงชื่อเข้าใช้ของเซสชันสำหรับการเชื่อมต่อนี้ แล้วกด บันทึก
+Unsplit Line	รวมเส้นที่ถูกแบ่ง
+User	ผู้ใช้
+UTM	UTM
+Wait for the run to finish	รอให้การเรียกใช้เสร็จสิ้น
+Wait for the Script pane's run to finish	รอให้การเรียกใช้ในแผงสคริปต์เสร็จสิ้น
+Warning	คำเตือน
+Warnings	คำเตือน
+Wavefront OBJ…	Wavefront OBJ…
+Web-service logins last for this session only.	การลงชื่อเข้าใช้บริการเว็บมีผลเฉพาะเซสชันนี้
+What each slice or bar says beside it: its value, its share in percent, or both	สิ่งที่แสดงข้างแต่ละชิ้นหรือแต่ละแท่ง: ค่า สัดส่วนเป็นร้อยละ หรือทั้งสองอย่าง
+What's new	มีอะไรใหม่
+While drawing, click two points on a feature's edge to follow the edge between them	ขณะวาด คลิกสองจุดบนขอบของฟีเจอร์เพื่อลากตามขอบระหว่างสองจุดนั้น
+While drawing, click two points on a feature's edge to follow the edge between them.	ขณะวาด คลิกสองจุดบนขอบของฟีเจอร์เพื่อลากตามขอบระหว่างสองจุดนั้น
+Words in the command's id, such as layer. or export	คำในรหัสคำสั่ง เช่น layer. หรือ export
+Worked	สำเร็จ
+Writes a separate two-vertex line for each consecutive vertex pair.	เขียนเส้นแยกที่มีสองจุดยอดสำหรับจุดยอดแต่ละคู่ที่อยู่ติดกัน
+Writes every feature with its geometry made valid where it can be: rings closed, repeated vertices and degenerate parts dropped, self-intersections, overlapping parts and holes outside their shell resolved. Features with a missing or non-finite coordinate anywhere, even in a hole, or left with no usable points or, for polygons, no area once repaired, are written without geometry. Other features too complex to check, or whose repair fails, are written unchanged. Says what was repaired in each.	เขียนทุกฟีเจอร์โดยทำให้รูปทรงเรขาคณิตถูกต้องเท่าที่ทำได้: ปิดวงขอบ ตัดจุดยอดซ้ำและส่วนที่เสื่อมรูป (degenerate) ทิ้ง และแก้ไขการตัดกันเอง ส่วนที่ซ้อนทับกัน และรูที่อยู่นอกขอบนอก ฟีเจอร์ที่มีพิกัดขาดหายหรือไม่ใช่ค่าจำกัด (non-finite) ที่ใดก็ตาม แม้อยู่ในรู หรือฟีเจอร์ที่ไม่เหลือจุดที่ใช้ได้ หรือรูปหลายเหลี่ยมที่ไม่มีพื้นที่หลังซ่อมแซม จะถูกเขียนโดยไม่มีรูปทรงเรขาคณิต ฟีเจอร์อื่นที่ซับซ้อนเกินกว่าจะตรวจสอบ หรือซ่อมแซมไม่สำเร็จ จะถูกเขียนโดยไม่เปลี่ยนแปลง และแจ้งว่าซ่อมแซมอะไรไปบ้างในแต่ละฟีเจอร์
+Writes one axis-aligned bounding rectangle per feature in stored longitude/latitude coordinates. Zero-area envelopes are skipped.	เขียนสี่เหลี่ยมล้อมรอบที่ขนานกับแกนหนึ่งรูปต่อฟีเจอร์ ในพิกัดลองจิจูด/ละติจูดที่จัดเก็บไว้ โดยข้ามกรอบล้อมรอบที่มีพื้นที่เป็นศูนย์
+Writes the features with invalid geometry, such as self-intersecting or unclosed rings, holes outside their shell or overlapping parts, and says what is wrong with each.	เขียนฟีเจอร์ที่มีรูปทรงเรขาคณิตไม่ถูกต้อง เช่น วงขอบที่ตัดกันเองหรือไม่ปิด รูที่อยู่นอกขอบนอก หรือส่วนที่ซ้อนทับกัน และแจ้งว่าแต่ละฟีเจอร์ผิดพลาดอย่างไร
+Zone Fields	ฟิลด์โซน
+⌘+Z	⌘+Z
+＋ Add field	＋ เพิ่มฟิลด์

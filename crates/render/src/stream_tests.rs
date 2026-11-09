@@ -543,7 +543,6 @@ fn layout_export_keeps_all_drawn_legend_classes() {
     page.add(
         "legend",
         (90.0, 0.0, 45.0, 95.0),
-<<<<<<< HEAD
         ElementKind::Legend {
             frame,
             title: "classes".into(),
@@ -551,10 +550,8 @@ fn layout_export_keeps_all_drawn_legend_classes() {
             hide_other: false,
             exclude: vec![],
             look: Default::default(),
+            columns: 1,
         },
-=======
-        ElementKind::Legend { frame, title: "classes".into(), all_classes: false, hide_other: false, exclude: vec![], columns: 1 },
->>>>>>> v0.6.0
     );
     let expected = layout::render(&page, &mut [base.clone()], 96.0, &layout::PageInfo::default()).unwrap();
     for size in [1, 3, 20] {
