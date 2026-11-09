@@ -56,10 +56,10 @@ impl Measure {
                 ("km2", 1e6),
                 ("ha", 1e4),
                 ("ac", rustgis_geom::SQUARE_METRES_PER_ACRE),
-                // Thailand's rai, 1,600 m² (ARutGIS).
-                ("rai", rustgis_geom::SQUARE_METRES_PER_RAI),
                 ("ft2", rustgis_geom::SQUARE_METRES_PER_SQUARE_FOOT),
                 ("mi2", rustgis_geom::SQUARE_METRES_PER_SQUARE_MILE),
+                // Thailand's rai, 1,600 m² (ARutGIS).
+                ("rai", rustgis_geom::SQUARE_METRES_PER_RAI),
             ],
             Measure::Perimeter | Measure::Length => {
                 &[("m", 1.0), ("km", 1e3), ("ft", rustgis_geom::METRES_PER_FOOT), ("mi", rustgis_geom::METRES_PER_MILE)]
