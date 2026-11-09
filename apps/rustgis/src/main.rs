@@ -178,6 +178,8 @@ mod running {
     pub struct NoMarker {
         pub why: String,
         /// Another copy holds it, as opposed to a settings folder that can't be written.
+        // (ARutGIS's own updater doesn't ask; kept for RustGIS's start-up checks and tests.)
+        #[allow(dead_code)]
         pub other_copy: bool,
     }
 
@@ -342,10 +344,6 @@ impl eframe::App for App {
     fn on_exit(&mut self) {
         self.0.end_exports();
         self.0.end_autosave();
-        // The installer starts before the marker goes, so a RustGIS started meanwhile finds this
-        // one still running.
-        #[cfg(windows)]
-        run_installer(&self.0);
         running::close(&self.1);
         self.0.start_update();
     }
@@ -447,23 +445,6 @@ fn backends(flag: Option<&str>, env: Option<&str>, windows: bool) -> wgpu::Backe
     chosen.unwrap_or(if windows { wgpu::Backends::DX12 | wgpu::Backends::GL } else { wgpu::Backends::PRIMARY | wgpu::Backends::GL })
 }
 
-/// Help › Check for Updates › Install and Restart: the downloaded, checked installer runs as
-/// RustGIS closes, silently, and opens RustGIS again when done (#1290). It waits for this
-/// process to end before replacing its files (`packaging/windows/rustgis.nsi`).
-///
-/// Nothing can be shown here, as RustGIS closes: the next start says whether the update arrived
-/// (`UpdateState::last_install_notice`), a failure to run the installer included.
-#[cfg(windows)]
-fn run_installer(app: &RustGisApp) {
-    use std::os::windows::process::CommandExt;
-    let Some(i) = app.update.installer_at_exit() else { return };
-    // NSIS reads `/D=` last and unquoted, spaces and all: raw, not quoted as an argument.
-    match std::process::Command::new(&i.installer).args(&i.args).raw_arg(&i.folder).spawn() {
-        Ok(_) => log::info!("running {} to update RustGIS", i.installer.display()),
-        Err(e) => log::warn!("could not run the installer {} ({e}): RustGIS stays as it is", i.installer.display()),
-    }
-}
-
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--version" || a == "-V") {
@@ -544,19 +525,6 @@ fn main() -> eframe::Result {
     for e in plugin_errors {
         log::warn!("{e}");
         app.session.notify(e, true);
-    }
-    // Help › Check for Updates' Install and Restart, last time: did the update arrive? Not asked
-    // by a second copy, started while the first is still open: it would take the note of an
-    // update that hasn't run yet. A settings folder that can't lock, or can't be written, can't
-    // tell a second copy apart, and is asked anyway: a note the installer may still be at work on
-    // is left alone, and asked about again once it can't be, and the notice isn't put off for good.
-    if !marker.as_ref().is_err_and(|no| no.other_copy)
-        && let Some((text, error)) = {
-            rustgis_ui_egui::i18n::set_current(app.chosen_lang());
-            app.update.last_install_notice()
-        }
-    {
-        app.session.notify(text, error);
     }
     for e in open_files(&mut app, &files) {
         eprintln!("rustgis: {e}");

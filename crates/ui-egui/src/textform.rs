@@ -141,8 +141,14 @@ fn style_grid(ui: &mut Ui, id: egui::Id, f: Fields<'_>, out: &mut Settled, auto_
             )
             .labelled_by(input_label.id)
         } else {
-            ui.add(egui::DragValue::new(f.size).update_while_editing(false).range(rustgis_engine::map::graphics::FONT_SIZE).speed(0.2).suffix(" pt"))
-                .labelled_by(input_label.id)
+            ui.add(
+                egui::DragValue::new(f.size)
+                    .update_while_editing(false)
+                    .range(rustgis_engine::map::graphics::FONT_SIZE)
+                    .speed(0.2)
+                    .suffix(" pt"),
+            )
+            .labelled_by(input_label.id)
         };
         // Named for assistive technology, as its label sits in the other column.
         let size = *f.size;
