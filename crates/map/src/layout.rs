@@ -1818,10 +1818,6 @@ fn ink() -> Rgba {
     Rgba::rgb(0x22, 0x22, 0x22)
 }
 
-fn white() -> Rgba {
-    Rgba::rgb(0xFF, 0xFF, 0xFF)
-}
-
 fn yes() -> bool {
     true
 }
@@ -2765,12 +2761,12 @@ impl Layout {
                     *divisions = (*divisions).clamp(1, MAX_SCALE_DIVISIONS);
                     *subdivisions = (*subdivisions).min(MAX_SCALE_DIVISIONS);
                     *division = finite_or(*division, 0.0).max(0.0);
-                    cut(unit_text, MAX_SURROUND_TEXT);
+                    cut_text(unit_text, MAX_SURROUND_TEXT);
                     *bar_height = finite_or(*bar_height, 0.0).clamp(0.0, MAX_BAR_HEIGHT);
                     text.clamp();
                 }
                 ElementKind::NorthArrow { label, text, .. } => {
-                    cut(label, MAX_SURROUND_TEXT);
+                    cut_text(label, MAX_SURROUND_TEXT);
                     text.clamp();
                 }
                 ElementKind::Rectangle { width, .. } | ElementKind::Ellipse { width, .. } => {
@@ -2809,12 +2805,12 @@ impl Layout {
             self.elements.push(e);
         }
         // A group of one is no group.
-        let mut count: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        let mut members: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
         for g in self.elements.iter().filter_map(|e| e.group) {
-            *count.entry(g).or_default() += 1;
+            *members.entry(g).or_default() += 1;
         }
         for e in &mut self.elements {
-            if e.group.is_some_and(|g| count.get(&g).is_none_or(|n| *n < 2)) {
+            if e.group.is_some_and(|g| members.get(&g).is_none_or(|n| *n < 2)) {
                 e.group = None;
             }
         }
@@ -2863,7 +2859,7 @@ impl LayoutRepairs {
 }
 
 /// `s` cut to `n` characters.
-fn cut(s: &mut String, n: usize) {
+fn cut_text(s: &mut String, n: usize) {
     s.truncate(s.char_indices().nth(n).map_or(s.len(), |(i, _)| i));
 }
 
@@ -3468,6 +3464,7 @@ mod tests {
             hide_other: false,
             exclude: Vec::new(),
             look: Box::new(look.clone()),
+            columns: 1,
         };
         let back: ElementKind = serde_json::from_str(&serde_json::to_string(&kind).unwrap()).unwrap();
         assert_eq!(back, kind);

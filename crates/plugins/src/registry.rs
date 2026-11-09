@@ -382,6 +382,10 @@ mod download_tests {
         }
         assert!(!dest.exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod fetch_tests {
     use super::*;
     use std::io::{Read, Write};
