@@ -527,24 +527,103 @@ pub fn wrap(line: &str, size: f32, bold: bool, spacing: f32, max_w: f32) -> Vec<
     wrap_by(line, max_w, |s| spaced_width(s, size, bold, spacing))
 }
 
+/// Whether a line may break after `c`: a dash, a slash or the like.
+fn breaks_after(c: char) -> bool {
+    matches!(c, '-' | '/' | '&' | '+' | ')' | '\u{AD}' | '\u{B7}' | '\u{200B}' | '\u{2010}' | '\u{2013}')
+}
+
+/// [`wrap_by`] over the whole of `line`, for text that is kept as it is broken: nothing of it is
+/// left out or changed. Every character is in the lines in its place, but the one space each
+/// break at a space takes (the last of several), so joining the lines with a space, or with
+/// nothing where the break was after a dash or between Thai words, gives the line again:
+/// indentation and spaces typed twice stay as they were typed.
+pub fn wrap_whole_by(line: &str, max_w: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
+    // What a line is measured as: the spaces it ends with draw nothing.
+    let ink = |from: usize, to: usize| width(line.get(from..to).unwrap_or_default().trim_end_matches(' '));
+    let whole = vec![line.to_string()];
+    let total = ink(0, line.len());
+    if !(max_w.is_finite() && max_w > 0.0) || total <= max_w {
+        return whole;
+    }
+    // Where a line may start: after the spaces that follow a word, after a dash, and between
+    // the words of Thai and the like. (The spaces a line starts with are its indentation.)
+    let mut starts: Vec<usize> = Vec::new();
+    let unspaced = rustgis_data::linebreak::unspaced(line);
+    let between_words = |starts: &mut Vec<usize>, from: usize, to: usize| {
+        if !unspaced {
+            return;
+        }
+        let mut at = from;
+        for piece in rustgis_data::linebreak::pieces(line.get(from..to).unwrap_or_default()) {
+            if at > from {
+                starts.push(at);
+            }
+            at += piece.len();
+        }
+    };
+    // The run of letters being read (from a space or a dash), and whether one came before.
+    let (mut run, mut worded, mut dashed) = (None::<usize>, false, false);
+    for (i, c) in line.char_indices() {
+        if c == ' ' {
+            if let Some(from) = run.take() {
+                between_words(&mut starts, from, i);
+            }
+        } else {
+            match run {
+                None if worded => starts.push(i),
+                Some(from) if dashed => {
+                    between_words(&mut starts, from, i);
+                    starts.push(i);
+                }
+                _ => {}
+            }
+            if run.is_none() || dashed {
+                run = Some(i);
+            }
+            worded = true;
+        }
+        dashed = breaks_after(c);
+    }
+    if let Some(from) = run {
+        between_words(&mut starts, from, line.len());
+    }
+    starts.sort_unstable();
+    starts.dedup();
+    if starts.is_empty() {
+        return whole;
+    }
+    // As many lines as the width takes, each aiming at an equal share of it, as `wrap_by`.
+    let target = total / (total / max_w).ceil().max(1.0);
+    let mut out: Vec<String> = Vec::new();
+    let mut from = 0;
+    let mut end = None;
+    for next in starts.into_iter().chain([line.len()]) {
+        let Some(now_end) = end else {
+            end = Some(next);
+            continue;
+        };
+        let (now, then) = (ink(from, now_end), ink(from, next));
+        if then <= target || (then <= max_w.max(target) && (then - target).abs() <= (now - target).abs()) {
+            end = Some(next);
+            continue;
+        }
+        // The line ends here: the space before the next one is the break.
+        let ended = line.get(from..now_end).unwrap_or_default();
+        out.push(ended.strip_suffix(' ').unwrap_or(ended).to_string());
+        from = now_end;
+        end = Some(next);
+    }
+    out.push(line.get(from..).unwrap_or_default().to_string());
+    out
+}
+
 /// [`wrap`] with the width of a piece of text measured by `width`, in the units of `max_w`. A
 /// label is broken within its first 2000 characters: what is past them isn't drawn.
 pub fn wrap_by(line: &str, max_w: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
-    wrap_within(line, 2000, max_w, width)
-}
-
-/// [`wrap_by`] over the whole of `line`, however long: for text that is kept as it is broken,
-/// where nothing may be left out.
-pub fn wrap_whole_by(line: &str, max_w: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
-    wrap_within(line, usize::MAX, max_w, width)
-}
-
-/// [`wrap_by`] over the first `most` characters of `line`.
-fn wrap_within(line: &str, most: usize, max_w: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
     // The pieces a line may break after: each with whether a space followed it.
     let mut pieces: Vec<(String, bool)> = Vec::new();
     let mut cur = String::new();
-    for c in line.chars().take(most) {
+    for c in line.chars().take(2000) {
         if c == ' ' {
             if !cur.is_empty() {
                 pieces.push((std::mem::take(&mut cur), true));
@@ -555,7 +634,7 @@ fn wrap_within(line: &str, most: usize, max_w: f32, width: impl Fn(&str) -> f32)
             continue;
         }
         cur.push(c);
-        if matches!(c, '-' | '/' | '&' | '+' | ')' | '\u{AD}' | '\u{B7}' | '\u{200B}' | '\u{2010}' | '\u{2013}') {
+        if breaks_after(c) {
             pieces.push((std::mem::take(&mut cur), false));
         }
     }

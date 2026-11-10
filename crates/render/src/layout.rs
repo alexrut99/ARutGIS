@@ -3261,6 +3261,21 @@ mod tests {
         let many = "a\n".repeat(300);
         assert_eq!(wrap_text(&many, 50.0, 12.0, sarabun), many);
         assert_eq!(wrap_text("a b\r\nc\n\n", 50.0, 12.0, sarabun), "a b\nc\n\n");
+        // Only the breaks are new: indentation and spaces typed twice stay, in the lines broken
+        // too, and each break at a space takes one space, so the text reads back as typed.
+        let spaced = "  A  B   CCCCCCCCCCCCCCCCCCCC -  DDDDDDDDDDDDDDDDDDDD/EEEEEEEEEEEEEEEEEEEE  ";
+        let lines = wrapped_lines(spaced, 150.0, px, face, 0.0);
+        assert!(lines.len() >= 3 && lines[0].starts_with("  A  B"), "{lines:?}");
+        assert!(lines.last().is_some_and(|l| l.ends_with("EEEE  ")), "{lines:?}");
+        let rejoined = lines.iter().enumerate().fold(String::new(), |mut all, (i, l)| {
+            // (A line that ended at the slash was broken there without a space.)
+            if i > 0 && !all.ends_with('/') {
+                all.push(' ');
+            }
+            all + l
+        });
+        assert_eq!(rejoined, spaced, "{lines:?}");
+        assert_eq!(wrapped_lines("  A  B CCCCCCCCCC", 60.0, px, face, 0.0), ["  A  B", "CCCCCCCCCC"]);
     }
 
     #[test]

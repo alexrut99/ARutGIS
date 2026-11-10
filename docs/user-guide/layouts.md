@@ -297,7 +297,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   Width** breaks each such line between its words (at spaces and dashes, and between the words of
   Thai, Lao, Khmer and Burmese, which have no spaces between them), into lines of about the same
   length. The breaks are put in the text, as Shift+Enter puts them, so the text reads the same in
-  any version, and none of it is left out however long it is (a text its breaks would take past
+  any version, and nothing else in it changes: indentation and spaces typed twice stay, and none
+  of it is left out however long it is (a text its breaks would take past
   the 5000 characters an element holds is refused, and stays as it was); press it again after
   resizing the element or changing the size. A Thai standard
   sheet's long title is broken this way when the sheet is made, and the map starts below its
