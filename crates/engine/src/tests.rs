@@ -31345,6 +31345,22 @@ fn layout_text_wraps_when_asked_and_a_long_thai_title_takes_its_lines() {
     assert!(s.run("layout.update", &json!({"element": id, "wrapText": "yes"})).unwrap_err().contains("wrapText must be true or false"));
     let arrow = s.run("layout.addElement", &json!({"kind": "northArrow"})).unwrap()["element"].as_u64().unwrap();
     assert!(s.run("layout.update", &json!({"element": arrow, "wrapText": true})).unwrap_err().contains("only text elements wrap"));
+    // A long paragraph is broken whole: nothing past a label's length or a page's lines is lost.
+    let long = format!("{}END", "word ".repeat(600));
+    let para = s.run("layout.addElement", &json!({"kind": "text", "text": long, "size": 10, "w": 20, "h": 30})).unwrap();
+    let para = para["element"].as_u64().unwrap();
+    s.run("layout.update", &json!({"element": para, "wrapText": true})).unwrap();
+    let broken = text_of(&s, para);
+    assert!(broken.lines().count() > 200 && broken.replace('\n', " ") == long, "{} lines", broken.lines().count());
+    // Text its breaks would take past what an element holds is refused, and the call's other
+    // changes with it: a break after a dash adds a character.
+    let dashes = "ab-".repeat(1666);
+    s.run("layout.update", &json!({"element": para, "text": dashes, "w": 200})).unwrap();
+    let refused = s.run("layout.update", &json!({"element": para, "w": 40, "size": 12, "wrapText": true})).unwrap_err();
+    assert!(refused.contains("longer than the 5000 characters"), "{refused}");
+    let l = &s.project.layouts[s.active_layout.unwrap()];
+    let e = l.element(para as u32).unwrap();
+    assert!(matches!(&e.kind, ElementKind::Text { text, size, .. } if *text == dashes && *size == 10.0) && e.w == 200.0);
     // Nothing new is saved: an older RustGIS reads the layout whole.
     let saved = serde_json::to_value(&s.project.layouts[s.active_layout.unwrap()]).unwrap().to_string();
     assert!(!saved.contains("wrap"), "{saved}");

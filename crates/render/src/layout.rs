@@ -3031,9 +3031,11 @@ pub fn wrap_text(s: &str, width_mm: f64, size: f64, face: TextFace<'_>) -> Strin
     wrapped_lines(s, width, px, drawn, face.letter_spacing as f32 * 1.33).join("\n")
 }
 
-/// [`wrap_text`]'s lines: `width`, the size `px` and `spacing` in the same units.
+/// [`wrap_text`]'s lines: `width`, the size `px` and `spacing` in the same units. Every line and
+/// every word of the text is in them, however long it is: the text is kept as it is broken, so
+/// the most lines and characters a page draws don't bound it.
 fn wrapped_lines(s: &str, width: f32, px: f32, face: text::Face, spacing: f32) -> Vec<String> {
-    let lines = s.lines().take(200);
+    let lines = s.split('\n').map(|line| line.strip_suffix('\r').unwrap_or(line));
     if !(width.is_finite() && width > 0.0) {
         return lines.map(str::to_string).collect();
     }
@@ -3041,7 +3043,7 @@ fn wrapped_lines(s: &str, width: f32, px: f32, face: text::Face, spacing: f32) -
         let (left, right) = text::styled_extent(t, px, face, spacing);
         (right - left).max(0.0)
     };
-    lines.flat_map(|line| text::wrap_by(line, width, ink)).take(200).collect()
+    lines.flat_map(|line| text::wrap_whole_by(line, width, ink)).collect()
 }
 
 /// Text in an element: lines split at `\n` from the top, each placed by the style's alignment. A
@@ -3251,6 +3253,14 @@ mod tests {
         assert_eq!(wrap_text("Short", 50.0, 12.0, sarabun), "Short");
         // Wrapped again, text that fits is as it was.
         assert_eq!(wrap_text(&wrapped, 50.0, 12.0, sarabun), wrapped);
+        // The text is kept as it is broken, so all of it is: a line longer than a label's 2000
+        // characters, more lines than a page draws, and the empty lines it ends with.
+        let long = format!("{}END", "word ".repeat(600));
+        let lines = wrapped_lines(&long, 120.0, px, face, 0.0);
+        assert!(lines.len() > 200 && lines.join(" ") == long, "{} lines", lines.len());
+        let many = "a\n".repeat(300);
+        assert_eq!(wrap_text(&many, 50.0, 12.0, sarabun), many);
+        assert_eq!(wrap_text("a b\r\nc\n\n", 50.0, 12.0, sarabun), "a b\nc\n\n");
     }
 
     #[test]

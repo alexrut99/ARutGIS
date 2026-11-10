@@ -527,12 +527,24 @@ pub fn wrap(line: &str, size: f32, bold: bool, spacing: f32, max_w: f32) -> Vec<
     wrap_by(line, max_w, |s| spaced_width(s, size, bold, spacing))
 }
 
-/// [`wrap`] with the width of a piece of text measured by `width`, in the units of `max_w`.
+/// [`wrap`] with the width of a piece of text measured by `width`, in the units of `max_w`. A
+/// label is broken within its first 2000 characters: what is past them isn't drawn.
 pub fn wrap_by(line: &str, max_w: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
+    wrap_within(line, 2000, max_w, width)
+}
+
+/// [`wrap_by`] over the whole of `line`, however long: for text that is kept as it is broken,
+/// where nothing may be left out.
+pub fn wrap_whole_by(line: &str, max_w: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
+    wrap_within(line, usize::MAX, max_w, width)
+}
+
+/// [`wrap_by`] over the first `most` characters of `line`.
+fn wrap_within(line: &str, most: usize, max_w: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
     // The pieces a line may break after: each with whether a space followed it.
     let mut pieces: Vec<(String, bool)> = Vec::new();
     let mut cur = String::new();
-    for c in line.chars().take(2000) {
+    for c in line.chars().take(most) {
         if c == ' ' {
             if !cur.is_empty() {
                 pieces.push((std::mem::take(&mut cur), true));

@@ -3357,6 +3357,9 @@ pub(crate) fn text_style(p: &Value, italic: bool, align: TextAlign, spacing: f64
     Ok((italic, align, spacing))
 }
 
+/// The most characters a text element holds.
+const MAX_TEXT_CHARS: usize = 5000;
+
 /// Whether `p` asks for a text element's text to be wrapped (`wrapText`): not when not given; one
 /// given but not true or false is an error.
 fn wrap_text_given(p: &Value) -> Result<bool, String> {
@@ -4082,6 +4085,10 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
     }
     let l = active(s, p)?;
     let e = l.element_mut(id).ok_or_else(|| format!("no element {id}"))?;
+    // Text is wrapped after the call's other changes, and may then be too long to keep: the
+    // element is put back as it was, so the call changes nothing.
+    let unwrapped = wrap_text.then(|| e.clone());
+    let mut wrapped_too_long = false;
     if let Some(r) = rotation {
         e.rotation = normalize_rotation(r);
     }
@@ -4131,7 +4138,7 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
                 (*italic, *align, *letter_spacing, *font, *font_name) = (i, a, l, f, n);
             }
             if let Some(t) = ps(p, "text") {
-                *text = t.chars().take(5000).collect();
+                *text = t.chars().take(MAX_TEXT_CHARS).collect();
             }
             if let Some(v) = num("size", *rustgis_map::graphics::FONT_SIZE.start(), *rustgis_map::graphics::FONT_SIZE.end()) {
                 *size = v;
@@ -4151,7 +4158,14 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
                     font_name: font_name.as_deref(),
                     letter_spacing: *letter_spacing,
                 };
-                *text = rustgis_render::layout::wrap_text(text, e.w, *size, face).chars().take(5000).collect();
+                // Breaking between Thai words adds a character at each break. Text a break
+                // would take past the most an element holds is refused, never cut short.
+                let wrapped = rustgis_render::layout::wrap_text(text, e.w, *size, face);
+                if wrapped.chars().count() > MAX_TEXT_CHARS {
+                    wrapped_too_long = true;
+                } else {
+                    *text = wrapped;
+                }
             }
         }
         ElementKind::Legend { title, all_classes, hide_other, exclude, look, columns, .. } => {
@@ -4238,6 +4252,12 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             }
         }
         _ => {}
+    }
+    if wrapped_too_long {
+        if let Some(before) = unwrapped {
+            *e = before;
+        }
+        return Err(format!("the text broken into lines is longer than the {MAX_TEXT_CHARS} characters a text holds: nothing was changed"));
     }
     // A legend in columns is told again when its box or what it lists changes; a move changes neither.
     let in_columns = matches!(&e.kind, ElementKind::Legend { columns, .. } if *columns > 1);

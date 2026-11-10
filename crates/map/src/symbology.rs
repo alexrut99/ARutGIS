@@ -1017,7 +1017,7 @@ impl Renderer {
         let env = rustgis_data::query::Env::default();
         // The first values by text, and while every value reads as a number, by number too: the
         // order is known only once every feature is classed (`rustgis_data::value::numeric_classes`).
-        let mut by_text: FirstValues<String> = FirstValues::new(max);
+        let mut by_text: FirstValues<AsRead> = FirstValues::new(max);
         let mut by_number: FirstValues<rustgis_data::value::ClassText> = FirstValues::new(max);
         let mut text_seen = false;
         for r in (0..ds.features.len()).filter(|r| rows.get(*r).copied().unwrap_or(true)) {
@@ -1034,17 +1034,14 @@ impl Renderer {
             if !text_seen {
                 by_number.add(read.clone(), drawn);
             }
-            by_text.add(read.into_text(), drawn);
+            by_text.add(AsRead(read.into_text()), drawn);
         }
         // (Numbers come before the empty text and `<Null>`, so with any number, one is kept.)
         let numeric = !text_seen && rustgis_data::value::ClassText::numeric(by_number.kept.keys());
         let (vals, features): (Vec<String>, usize) = if numeric {
             (by_number.kept.into_keys().map(rustgis_data::value::ClassText::into_text).collect(), by_number.rest)
         } else {
-            // In the order text is read in (Thai as its dictionary has it), not that of its bytes.
-            let mut vals: Vec<String> = by_text.kept.into_keys().collect();
-            vals.sort_by(|a, b| rustgis_data::value::text_cmp(a, b));
-            (vals, by_text.rest)
+            (by_text.kept.into_keys().map(|AsRead(text)| text).collect(), by_text.rest)
         };
         let rest = PastClasses { features, by_number: numeric };
         let n = vals.len();
@@ -1570,7 +1567,10 @@ impl Renderer {
             // (Each value read as a number once; the sort is stable.)
             order.sort_by_cached_key(|i| rustgis_data::value::ClassText::new(classes.get(*i).map(|(k, _)| k.clone()).unwrap_or_default()));
         } else {
-            order.sort_by_cached_key(|i| classes.get(*i).map(|(k, _)| unique_label(class_labels, k).to_lowercase()));
+            // (Thai labels as a Thai dictionary has them; the sort is stable.)
+            order.sort_by_cached_key(|i| {
+                AsRead(classes.get(*i).map(|(k, _)| unique_label(class_labels, k).to_lowercase()).unwrap_or_default())
+            });
         }
         order
     }
@@ -1964,6 +1964,24 @@ fn carry_class(new: Symbol, old: &Symbol, scheme: Rgba, g: GeometryType) -> Symb
 pub fn normalize_label(t: &str) -> String {
     let t: String = t.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     t.trim().chars().take(MAX_LABEL).collect::<String>().trim_end().to_string()
+}
+
+/// A class value's text in the order text is read in ([`rustgis_data::value::text_cmp`]: Thai as
+/// its dictionary has it), not that of its bytes: the first values are chosen in the order they
+/// are then listed in.
+#[derive(PartialEq, Eq)]
+struct AsRead(String);
+
+impl Ord for AsRead {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        rustgis_data::value::text_cmp(&self.0, &other.0)
+    }
+}
+
+impl PartialOrd for AsRead {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// The first values in a map's order, never more than `max` kept, each with how many features
@@ -3865,6 +3883,25 @@ mod tests {
         all.sort();
         assert_eq!(classes.iter().map(|c| c.0.clone()).collect::<Vec<_>>(), all[..MAX_UNIQUE]);
         assert_eq!(rest, PastClasses { features: 2 * (100 - MAX_UNIQUE), by_number: false });
+        // Thai text is kept in its dictionary's order, the first values chosen in that order
+        // too: a word written with a leading vowel isn't past the rest, as its bytes are.
+        let mut thai = Dataset::new("p", GeometryType::Point, vec![rustgis_data::Field::new("t", rustgis_data::FieldType::Text)]);
+        for t in ["คา", "เก", "ตาก", "เชียงใหม่"] {
+            thai.push(Some(rustgis_data::Geometry::Point(rustgis_geom::Coord::new(0.0, 0.0))), vec![rustgis_data::Value::Text(t.into())]);
+        }
+        let values = |r: &Renderer| match r {
+            Renderer::Unique { classes, .. } => classes.iter().map(|c| c.0.clone()).collect::<Vec<_>>(),
+            _ => panic!(),
+        };
+        let (r, rest) = Renderer::unique_by_up_to(&thai, &[], "t", Ramp::Harbour, base, 1).unwrap();
+        assert_eq!(values(&r), ["เก"]);
+        assert_eq!(rest, PastClasses { features: 3, by_number: false });
+        let (r, _) = Renderer::unique_by_counted(&thai, &[], "t", Ramp::Harbour, base).unwrap();
+        assert_eq!(values(&r), ["เก", "คา", "เชียงใหม่", "ตาก"]);
+        let by_field = Renderer::unique(&thai, &[], "t", Ramp::Harbour, base).unwrap();
+        assert_eq!(values(&by_field), values(&r), "a field's classes are those of an expression that is the field");
+        let legend = |r: &Renderer| r.legend_for(&thai, &[]).into_iter().map(|e| e.label).collect::<Vec<_>>();
+        assert_eq!(legend(&by_field), ["เก", "คา", "เชียงใหม่", "ตาก"]);
         // One text among the numbers, given last: the first are taken in text order, though every
         // value before it read as a number, and though those kept are all numbers.
         let (r, rest) = Renderer::unique_by_counted(&d, &[], "CASE WHEN n = 99 THEN 'x' ELSE n END", Ramp::Harbour, base).unwrap();
