@@ -31297,8 +31297,9 @@ fn merge_distinguishes_case_sensitive_file_paths() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-/// A text element wraps its lines when asked (only a text, only true or false), and a Thai
-/// standard sheet's title wraps: a long one takes the lines it needs and the map starts below.
+/// A text element's text is wrapped when asked (only a text's, only by true or false): the line
+/// breaks are put in the text, so nothing new is saved. A Thai standard sheet's long title is
+/// broken between its words, and the map starts below its lines.
 #[test]
 fn layout_text_wraps_when_asked_and_a_long_thai_title_takes_its_lines() {
     use rustgis_map::layout::ElementKind;
@@ -31306,34 +31307,47 @@ fn layout_text_wraps_when_asked_and_a_long_thai_title_takes_its_lines() {
     let title_of = |s: &Session, r: &Value| {
         let l = &s.project.layouts[r["layout"].as_u64().unwrap() as usize];
         let (t, f) = (l.elements.iter().find(|e| e.name == "Title").unwrap(), l.elements.iter().find(|e| e.name == "Map Frame").unwrap());
-        (matches!(&t.kind, ElementKind::Text { wrap: true, .. }), t.h, f.y)
+        let ElementKind::Text { text, .. } = &t.kind else { panic!("the title is text") };
+        (text.clone(), t.h, f.y)
     };
     let short = s.run("layout.new", &json!({"template": "thai", "title": "แผนที่กรุงเทพฯ"})).unwrap();
     let long = "แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมและดินโคลนถล่มในเขตอำเภอเมืองเชียงใหม่จังหวัดเชียงใหม่ประจำปีงบประมาณสองพันห้าร้อยหกสิบเจ็ด";
-    let long = s.run("layout.new", &json!({"template": "thai", "title": long})).unwrap();
-    let ((wraps, h1, y1), (wraps2, h2, y2)) = (title_of(&s, &short), title_of(&s, &long));
-    assert!(wraps && wraps2);
+    let made = s.run("layout.new", &json!({"template": "thai", "title": long})).unwrap();
+    let ((one, h1, y1), (two, h2, y2)) = (title_of(&s, &short), title_of(&s, &made));
+    assert_eq!(one, "แผนที่กรุงเทพฯ", "a title that fits is as it was given");
+    assert_eq!((two.lines().count(), two.replace('\n', "")), (2, long.to_string()), "{two}");
+    assert!(two.lines().all(|l| !l.starts_with(['\u{0E31}', '\u{0E34}', '\u{0E35}', '\u{0E48}', '\u{0E49}'])), "{two}");
     assert!(h2 > h1 + 5.0 && y2 > y1 + 5.0, "two lines: the title {h1} → {h2} mm, the map from {y1} → {y2} mm");
-    // Text added wraps only when asked; the setting is changed, and is a text's alone.
-    let wrap_of = |s: &Session, id: u64| {
+    // A text is as it is typed until its wrapping is asked for; then it stays within its element.
+    let note = "หมายเหตุ ข้อมูลแนวเขตการปกครองใช้เพื่อการศึกษาเท่านั้นไม่สามารถใช้อ้างอิงทางกฎหมายได้";
+    let text_of = |s: &Session, id: u64| {
         let l = &s.project.layouts[s.active_layout.unwrap()];
-        matches!(&l.element(id as u32).unwrap().kind, ElementKind::Text { wrap: true, .. })
+        let ElementKind::Text { text, .. } = &l.element(id as u32).unwrap().kind else { panic!("a text") };
+        text.clone()
     };
-    let plain = s.run("layout.addElement", &json!({"kind": "text", "text": "หมายเหตุ"})).unwrap()["element"].as_u64().unwrap();
-    let wrapping =
-        s.run("layout.addElement", &json!({"kind": "text", "text": "หมายเหตุ", "wrap": true})).unwrap()["element"].as_u64().unwrap();
-    assert!(!wrap_of(&s, plain) && wrap_of(&s, wrapping));
-    s.run("layout.update", &json!({"element": plain, "wrap": true})).unwrap();
-    s.run("layout.update", &json!({"element": wrapping, "wrap": false})).unwrap();
-    assert!(wrap_of(&s, plain) && !wrap_of(&s, wrapping));
-    assert!(s.run("layout.update", &json!({"element": plain, "wrap": "yes"})).unwrap_err().contains("wrap must be true or false"));
-    assert!(s.run("layout.addElement", &json!({"kind": "text", "wrap": 1})).is_err());
+    let add = json!({"kind": "text", "text": note, "font": "Sarabun", "size": 10, "w": 50, "h": 30});
+    let id = s.run("layout.addElement", &add).unwrap()["element"].as_u64().unwrap();
+    assert_eq!(text_of(&s, id), note);
+    s.run("layout.update", &json!({"element": id, "wrapText": true})).unwrap();
+    let wrapped = text_of(&s, id);
+    assert!(
+        wrapped.lines().count() >= 3 && wrapped.replace('\n', " ").replace("  ", " ").replace(' ', "") == note.replace(' ', ""),
+        "{wrapped}"
+    );
+    // Narrower, with the call's other changes: wrapped as the element is after them.
+    s.run("layout.update", &json!({"element": id, "w": 30, "wrapText": true})).unwrap();
+    assert!(text_of(&s, id).lines().count() > wrapped.lines().count());
+    // One step to undo; false asks for nothing; anything else, or another element, is refused.
+    s.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(text_of(&s, id), wrapped);
+    s.run("layout.update", &json!({"element": id, "wrapText": false})).unwrap();
+    assert_eq!(text_of(&s, id), wrapped);
+    assert!(s.run("layout.update", &json!({"element": id, "wrapText": "yes"})).unwrap_err().contains("wrapText must be true or false"));
     let arrow = s.run("layout.addElement", &json!({"kind": "northArrow"})).unwrap()["element"].as_u64().unwrap();
-    assert!(s.run("layout.update", &json!({"element": arrow, "wrap": true})).unwrap_err().contains("only text elements wrap"));
-    // A layout saved without the setting reads as not wrapping, and one that wraps keeps it.
+    assert!(s.run("layout.update", &json!({"element": arrow, "wrapText": true})).unwrap_err().contains("only text elements wrap"));
+    // Nothing new is saved: an older RustGIS reads the layout whole.
     let saved = serde_json::to_value(&s.project.layouts[s.active_layout.unwrap()]).unwrap().to_string();
-    assert_eq!(saved.matches("\"wrap\":true").count(), 2, "the title and the one text");
-    assert!(!saved.contains("\"wrap\":false"));
+    assert!(!saved.contains("wrap"), "{saved}");
 }
 
 /// A Thai standard map sheet: Sarabun texts, a double neatline, a UTM grid labelled outside

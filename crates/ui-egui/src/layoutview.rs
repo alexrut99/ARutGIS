@@ -2934,7 +2934,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
         label_type(app, ui, (li, id), &text, own, if arrow { "Letter type" } else { "Number type" }, None, &update);
     }
     // A layout's text: the form a text graphic has too (#516, #535), with the page's dynamic text.
-    if let ElementKind::Text { text, size, color, bold, italic, align, letter_spacing, font, font_name, wrap } = &e.kind {
+    if let ElementKind::Text { text, size, color, bold, italic, align, letter_spacing, font, font_name } = &e.kind {
         let key = (li, id, "text");
         let mut buf = app.layout.typing.remove(&key).unwrap_or_else(|| text.clone());
         let (mut sz, mut c, mut bb) = (*size, crate::theme::c32(*color), *bold);
@@ -2979,14 +2979,14 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
         if settled.letter_spacing {
             update(app, json!({"letterSpacing": ls}));
         }
-        // Lines wider than the element broken between words (Thai words too), or as typed.
-        let mut wraps = *wrap;
+        // The lines wider than the element broken between words (Thai words too): the breaks are
+        // put in the text, as Shift+Enter puts them.
         if ui
-            .checkbox(&mut wraps, tl!("Wrap lines to the element's width"))
-            .on_hover_text(tl!("A line wider than the element breaks between its words, so it stays within the element's sides"))
-            .changed()
+            .button(tl!("Wrap Text to the Element's Width"))
+            .on_hover_text(tl!("Breaks each line wider than the element between its words, so the text stays within the element's sides"))
+            .clicked()
         {
-            update(app, json!({"wrap": wraps}));
+            update(app, json!({"wrapText": true}));
         }
         if settled.font {
             // A named family with its fallback (#762), else the generic one.

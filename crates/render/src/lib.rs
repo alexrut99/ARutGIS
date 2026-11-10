@@ -6530,28 +6530,31 @@ mod tests {
     }
 
     /// Thai, written without spaces between its words, wraps between them: never inside a word,
-    /// nor between a letter and the vowel or tone mark on it.
+    /// nor between a letter and the vowel or tone mark on it. (Measured in Sarabun, which is
+    /// built in: the label font of a computer without a Thai face draws no Thai to measure.)
     #[test]
     fn thai_wraps_between_its_words() {
-        let width = |s: &str| text::measure(s, 9.0, false);
+        let face = text::Face { family: crate::families::find("Sarabun"), ..text::Face::default() };
+        let width = |s: &str| {
+            let (left, right) = text::styled_extent(s, 12.0, face, 0.0);
+            right - left
+        };
         let title = "แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมในเขตอำเภอเมืองเชียงใหม่";
-        let lines = text::wrap(title, 9.0, false, 0.0, width(title) * 0.55);
+        let lines = text::wrap_by(title, width(title) * 0.55, width);
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert_eq!(lines.concat(), title, "nothing is added or lost where it breaks");
         let words = rustgis_data::linebreak::pieces(title);
         let ends: Vec<usize> = words
             .iter()
             .scan(0, |at, w| {
-                Some({
-                    *at += w.len();
-                    *at
-                })
+                *at += w.len();
+                Some(*at)
             })
             .collect();
         assert!(ends.contains(&lines[0].len()), "{lines:?} breaks between two of {words:?}");
         // Spaces still break, and are left out there; a word no dictionary parts keeps its line.
-        assert_eq!(text::wrap("บ้านหนองหอย เชียงใหม่", 9.0, false, 0.0, width("บ้านหนองหอย") * 1.1), ["บ้านหนองหอย", "เชียงใหม่"]);
-        assert_eq!(text::wrap("กรุงเทพมหานคร", 9.0, false, 0.0, 1.0), ["กรุงเทพมหานคร"]);
+        assert_eq!(text::wrap_by("บ้านหนองหอย เชียงใหม่", width("บ้านหนองหอย") * 1.1, width), ["บ้านหนองหอย", "เชียงใหม่"]);
+        assert_eq!(text::wrap_by("กรุงเทพมหานคร", 1.0, width), ["กรุงเทพมหานคร"]);
     }
 
     #[test]

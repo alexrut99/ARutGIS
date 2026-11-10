@@ -365,7 +365,7 @@ fn draw_page(
                     None => placeholder(target, r, "Colorbar", ppp),
                 }
             }
-            ElementKind::Text { text: t, size, color, bold, italic, align, letter_spacing, font, font_name, wrap } => {
+            ElementKind::Text { text: t, size, color, bold, italic, align, letter_spacing, font, font_name } => {
                 let first = layout.first_frame().and_then(frame);
                 let s = expand(t, layout, info, first.and_then(|f| maps.get(f.1).map(|m| (m, f.2))));
                 // An installed family by name (#762), else its generic one. The app doesn't wait
@@ -373,7 +373,7 @@ fn draw_page(
                 // it now (`families::find_ready`).
                 let family = font_name.as_deref().and_then(crate::families::find_ready);
                 let face = text::Face { bold: *bold, italic: *italic, serif: *font == rustgis_map::layout::FontFamily::Serif, family };
-                let style = TextStyle { face, align: *align, spacing: *letter_spacing as f32, wrap: *wrap };
+                let style = TextStyle { face, align: *align, spacing: *letter_spacing as f32 };
                 text_block(target, r, &s, *size as f32, *color, style, ppp);
             }
             ElementKind::Picture { image } => {
@@ -2998,8 +2998,6 @@ struct TextStyle {
     align: TextAlign,
     /// Letter spacing in points.
     spacing: f32,
-    /// Lines wider than the element break between words.
-    wrap: bool,
 }
 
 /// The distance between two lines of text at `size` points, in mm, as [`text_block`] sets them.
@@ -3007,13 +3005,36 @@ pub fn line_pitch_mm(size: f64) -> f64 {
     size.clamp(2.0, 400.0) * 1.33 * 1.25 * 25.4 / 96.0
 }
 
-/// The lines a text element draws: those its text has, and with `wrap`, each one wider than
-/// `width` broken between its words into lines of about the same length ([`text::wrap_by`]: at
-/// spaces and dashes, and between Thai words). `width`, the size `px` and `spacing` are in the
-/// same units; a word wider than the element keeps a line of its own.
-pub(crate) fn text_lines(s: &str, wrap: bool, width: f32, px: f32, face: text::Face, spacing: f32) -> Vec<String> {
+/// The face a text element is drawn in, for [`wrap_text`]: as the element's own fields.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TextFace<'a> {
+    pub bold: bool,
+    pub italic: bool,
+    pub serif: bool,
+    /// An installed family by name, drawn in the sans or serif where it isn't installed.
+    pub font_name: Option<&'a str>,
+    /// In points.
+    pub letter_spacing: f64,
+}
+
+/// `s` with each line wider than a text element `width_mm` wide broken between its words, as
+/// the element draws it at `size` points in `face`: at spaces and dashes, and between the words
+/// of Thai and the other scripts written without spaces ([`text::wrap_by`]), into lines of about
+/// the same length. Lines the text has stay lines, a line that fits is as it was, and a word
+/// wider than the element keeps a line of its own. Dynamic text is measured as it is written,
+/// not as it is filled in.
+pub fn wrap_text(s: &str, width_mm: f64, size: f64, face: TextFace<'_>) -> String {
+    let family = face.font_name.and_then(crate::families::find_ready);
+    let drawn = text::Face { bold: face.bold, italic: face.italic, serif: face.serif, family };
+    let px = size.clamp(2.0, 400.0) as f32 * 1.33;
+    let width = (width_mm * rustgis_map::layout::PT_PER_MM) as f32;
+    wrapped_lines(s, width, px, drawn, face.letter_spacing as f32 * 1.33).join("\n")
+}
+
+/// [`wrap_text`]'s lines: `width`, the size `px` and `spacing` in the same units.
+fn wrapped_lines(s: &str, width: f32, px: f32, face: text::Face, spacing: f32) -> Vec<String> {
     let lines = s.lines().take(200);
-    if !wrap || !(width.is_finite() && width > 0.0) {
+    if !(width.is_finite() && width > 0.0) {
         return lines.map(str::to_string).collect();
     }
     let ink = |t: &str| {
@@ -3023,23 +3044,15 @@ pub(crate) fn text_lines(s: &str, wrap: bool, width: f32, px: f32, face: text::F
     lines.flat_map(|line| text::wrap_by(line, width, ink)).take(200).collect()
 }
 
-/// How many lines a wrapping text element `width_mm` wide draws `s` in ([`text_lines`]), upright
-/// and normally spaced at `size` points, in the installed family `font_name` or else the sans.
-pub fn wrapped_lines(s: &str, width_mm: f64, size: f64, bold: bool, font_name: Option<&str>) -> usize {
-    let face = text::Face { bold, italic: false, serif: false, family: font_name.and_then(crate::families::find_ready) };
-    let px = size.clamp(2.0, 400.0) as f32 * 1.33;
-    text_lines(s, true, (width_mm * rustgis_map::layout::PT_PER_MM) as f32, px, face, 0.0).len()
-}
-
-/// Text in an element: lines split at `\n` from the top (and where they wrap, [`text_lines`]),
-/// each placed by the style's alignment. A centred or right-aligned line wider than the element
-/// runs out past its left edge, as a left-aligned one runs past its right.
+/// Text in an element: lines split at `\n` from the top, each placed by the style's alignment. A
+/// centred or right-aligned line wider than the element runs out past its left edge, as a
+/// left-aligned one runs past its right.
 fn text_block(pm: &mut Canvas, r: Rect, s: &str, size: f32, color: Rgba, style: TextStyle, ppp: f64) {
     let px = size.clamp(2.0, 400.0) * 1.33 * ppp as f32;
     // Letter spacing is in points, as the size is.
     let spacing = style.spacing * 1.33 * ppp as f32;
     let mut y = r.y() + px * 0.6;
-    for line in &text_lines(s, style.wrap, r.width(), px, style.face, spacing) {
+    for line in s.lines().take(200) {
         if y > r.y() + r.height() + px {
             break;
         }
@@ -3208,30 +3221,36 @@ mod tests {
         assert!(!frame.items.iter().any(|i| matches!(i, Item::Image(_))));
     }
 
-    /// A text element that wraps breaks the lines wider than it between words (Thai ones too),
-    /// keeping the lines its text has; one that doesn't draws each line as long as it is.
+    /// Wrapping a text element's text breaks the lines wider than the element between words
+    /// (Thai ones too, in a face that draws them), keeping the lines the text has.
     #[test]
-    fn a_wrapping_text_element_breaks_its_long_lines_between_words() {
-        let face = text::Face::default();
-        let long = "แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมในเขตอำเภอเมืองเชียงใหม่\nShort";
+    fn wrapping_text_breaks_its_long_lines_between_words() {
+        let face = text::Face { family: crate::families::find("Sarabun"), ..text::Face::default() };
+        let title = "แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมในเขตอำเภอเมืองเชียงใหม่";
         let (px, width) = (16.0, 200.0);
         let ink = |t: &str| {
             let (l, r) = text::styled_extent(t, px, face, 0.0);
             r - l
         };
-        assert_eq!(text_lines(long, false, width, px, face, 0.0), ["แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมในเขตอำเภอเมืองเชียงใหม่", "Short"]);
-        let lines = text_lines(long, true, width, px, face, 0.0);
+        assert!(ink(title) > width, "the title is wider than the element: {}", ink(title));
+        let lines = wrapped_lines(&format!("{title}\nShort"), width, px, face, 0.0);
         assert!(lines.len() > 2 && lines.last().is_some_and(|l| l == "Short"), "{lines:?}");
         assert!(lines.iter().all(|l| ink(l) <= width), "{lines:?}");
-        assert_eq!(lines[..lines.len() - 1].concat(), "แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมในเขตอำเภอเมืองเชียงใหม่");
-        assert_eq!(
-            text_lines("The quick brown fox jumps over the lazy dog", true, 120.0, px, face, 0.0).join(" "),
-            "The quick brown fox jumps over the lazy dog"
+        assert_eq!(lines[..lines.len() - 1].concat(), title, "nothing is added or lost where Thai breaks");
+        let english = "The quick brown fox jumps over the lazy dog";
+        let lines = wrapped_lines(english, 120.0, px, face, 0.0);
+        assert!(lines.len() > 1 && lines.join(" ") == english, "{lines:?}");
+        // A width that is none wraps nothing; the text is as the element 50 mm wide draws it.
+        assert_eq!(wrapped_lines("a b", f32::NAN, px, face, 0.0), ["a b"]);
+        let sarabun = TextFace { font_name: Some("Sarabun"), ..TextFace::default() };
+        let wrapped = wrap_text(&format!("{title}\nShort"), 50.0, 12.0, sarabun);
+        assert!(
+            wrapped.lines().count() > 2 && wrapped.ends_with("\nShort") && wrapped.replace('\n', "") == format!("{title}Short"),
+            "{wrapped}"
         );
-        // A width that is none wraps nothing, and the lines counted are those drawn.
-        assert_eq!(text_lines("a b", true, f32::NAN, px, face, 0.0), ["a b"]);
-        assert!(wrapped_lines(long, 50.0, 12.0, false, None) > 2);
-        assert_eq!(wrapped_lines("Short", 50.0, 12.0, false, None), 1);
+        assert_eq!(wrap_text("Short", 50.0, 12.0, sarabun), "Short");
+        // Wrapped again, text that fits is as it was.
+        assert_eq!(wrap_text(&wrapped, 50.0, 12.0, sarabun), wrapped);
     }
 
     #[test]
@@ -4083,7 +4102,7 @@ mod tests {
     /// as before.
     #[test]
     fn text_takes_italic_alignment_and_letter_spacing() {
-        let plain = TextStyle { face: text::Face::default(), align: TextAlign::Left, spacing: 0.0, wrap: false };
+        let plain = TextStyle { face: text::Face::default(), align: TextAlign::Left, spacing: 0.0 };
         let base = styled_line(plain);
         let (l, r, ..) = text_ink(&base);
         assert!(l < 4, "left-aligned starts at the left: {l}");

@@ -293,12 +293,14 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   **Alignment** (left, center or right within the element) and **Letter spacing** in points
   (spaced-out names such as O C E A N O, or a negative value to tighten) are the same form a text
   on the map has in the pane; Enter ends the text and Shift+Enter starts a new line. A line is as
-  long as it is typed, past the element's sides when it is wider; with **Wrap lines to the
-  element's width** on, a line wider than the element breaks between its words (at spaces and
-  dashes, and between the words of Thai, Lao, Khmer and Burmese, which have no spaces between
-  them), into lines of about the same length. A Thai standard sheet's title wraps, and a long one
-  takes the lines it needs above the map. Scripts set them with `italic`, `align`,
-  `letterSpacing` and `wrap` on `layout.addElement` and `layout.update`. A layout's text also takes a **Font**:
+  long as it is typed, past the element's sides when it is wider; **Wrap Text to the Element's
+  Width** breaks each such line between its words (at spaces and dashes, and between the words of
+  Thai, Lao, Khmer and Burmese, which have no spaces between them), into lines of about the same
+  length. The breaks are put in the text, as Shift+Enter puts them, so the text reads the same in
+  any version; press it again after resizing the element or changing the size. A Thai standard
+  sheet's long title is broken this way when the sheet is made, and the map starts below its
+  lines. Scripts set them with `italic`, `align` and `letterSpacing` on `layout.addElement` and
+  `layout.update`, and wrap with `"wrapText": true` on `layout.update`. A layout's text also takes a **Font**:
   Sans-serif (the default) or Serif, for a title or a classic atlas look. The serif is one installed
   on the computer (Georgia or Times New Roman on Windows and macOS, Noto, DejaVu or Liberation Serif
   on Linux), with its own bold and italic faces, so italic there is a true italic rather than
