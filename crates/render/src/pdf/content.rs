@@ -260,25 +260,25 @@ impl Writer<'_> {
         for g in &run.glyphs {
             if g.ch == none {
                 if let Some(alone) = ring.replace(g) {
-                    place(&mut placed, &mut self.fonts, self.doc, alone, none, None);
+                    place(&mut placed, self.fonts, self.doc, alone, none, None);
                 }
                 continue;
             }
             if let Some(under) = mark.take().filter(|_| widthless(g)) {
                 // The two as one, in place of the first alone.
                 placed.pop();
-                place(&mut placed, &mut self.fonts, self.doc, under, g.ch, Some(ems(under, g)));
+                place(&mut placed, self.fonts, self.doc, under, g.ch, Some(ems(under, g)));
                 continue;
             }
             let with = if g.ch == '\u{0E33}' { ring.take().map(|r| ems(g, r)) } else { None };
             let before = placed.len();
-            place(&mut placed, &mut self.fonts, self.doc, g, none, with);
+            place(&mut placed, self.fonts, self.doc, g, none, with);
             if placed.len() > before && widthless(g) {
                 mark = Some(g);
             }
         }
         if let Some(alone) = ring {
-            place(&mut placed, &mut self.fonts, self.doc, alone, none, None);
+            place(&mut placed, self.fonts, self.doc, alone, none, None);
         }
         if placed.is_empty() {
             return;
