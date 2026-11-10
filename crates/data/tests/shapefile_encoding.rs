@@ -611,8 +611,12 @@ fn text_that_isnt_windows_874_thai_isnt_read_as_it() {
         (0x00, cut, None),
         (0x57, b"Montr\xe9al \x96 Qu\xe9bec".to_vec(), Some("Montréal – Québec")),
         (0x57, b"\xc0 l'\xe9t\xe9, \xe0 B\xe9ziers".to_vec(), Some("À l'été, à Béziers")),
+        (0x57, b"J\xc4\xc4".to_vec(), Some("JÄÄ")),
+        (0x57, b"\xc4\xc4NEKOSKI S\xd6\xd6KSM\xc4KI".to_vec(), Some("ÄÄNEKOSKI SÖÖKSMÄKI")),
+        (0x57, b"\xe9\xe9 \xe0\xe8\xe9 \xdc\xdf".to_vec(), Some("éé àèé Üß")),
     ] {
-        let files = parts(&text, ldid, None);
+        // Several rows: the same accents again in each don't make them Thai either.
+        let files = named_parts(b"name", &text, ldid, None, 3);
         let layers = io::read_zip("places.zip", &rustgis_data::zip::write(&files).unwrap()).unwrap();
         if let Some(expected) = expected {
             assert_eq!(layers[0].0.value(0, 0), &Value::Text(expected.into()), "LDID {ldid:02X}");

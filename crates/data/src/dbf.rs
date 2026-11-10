@@ -220,13 +220,19 @@ fn is_utf8(pieces: &[&[u8]]) -> bool {
     })
 }
 
-/// Whether text that isn't ASCII is Thai in Windows-874 (TIS-620): its bytes above 127 are
-/// nearly all Thai letters, vowels, tone marks and digits there, and nearly all next to one
-/// another, as letters in Thai words are. Accented letters in a Western code page fall in the
-/// same byte range, but alone among plain letters ("Montr\xe9al").
+/// Whether text that isn't ASCII is Thai in Windows-874 (TIS-620). Western accented letters fall
+/// in the same byte range, so it takes all of these, which Thai meets and Western text doesn't:
+/// - its bytes above 127 are nearly all Thai letters, vowels, tone marks and digits there, and
+///   nearly all next to one another, as letters in Thai words are (an accent is alone among plain
+///   letters: "Montr\xe9al");
+/// - a fifth of them are at least the consonants ก to ฟ (0xA1–0xBF), symbols in Western code pages
+///   (¡ to ¿), not letters: "J\xc4\xc4" (JÄÄ) has none;
+/// - nearly every vowel or tone mark written above or below a letter (0xD1, 0xD4–0xDA, 0xE7–0xEE)
+///   follows another Thai byte, never a plain letter or the start, as "\xe9" does in "\xe9t\xe9".
 fn looks_thai(pieces: &[&[u8]]) -> bool {
     let thai = |b: u8| matches!(b, 0xA1..=0xDA | 0xDF..=0xFB);
-    let (mut high, mut in_thai, mut together) = (0usize, 0usize, 0usize);
+    let mark = |b: u8| matches!(b, 0xD1 | 0xD4..=0xDA | 0xE7..=0xEE);
+    let (mut high, mut in_thai, mut together, mut consonants, mut marks, mut stray) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
     for p in pieces {
         for (i, &b) in p.iter().enumerate() {
             if b < 0x80 {
@@ -234,11 +240,17 @@ fn looks_thai(pieces: &[&[u8]]) -> bool {
             }
             high += 1;
             in_thai += usize::from(thai(b));
-            let next_to = |j: Option<usize>| j.and_then(|j| p.get(j)).is_some_and(|&n| n >= 0x80);
-            together += usize::from(next_to(i.checked_sub(1)) || next_to(i.checked_add(1)));
+            consonants += usize::from((0xA1..=0xBF).contains(&b));
+            let before = i.checked_sub(1).and_then(|j| p.get(j)).copied();
+            let after = p.get(i + 1).copied();
+            together += usize::from(before.is_some_and(|n| n >= 0x80) || after.is_some_and(|n| n >= 0x80));
+            if mark(b) {
+                marks += 1;
+                stray += usize::from(!before.is_some_and(thai));
+            }
         }
     }
-    high >= 3 && in_thai * 20 >= high * 19 && together * 5 >= high * 4
+    high >= 3 && in_thai * 20 >= high * 19 && together * 5 >= high * 4 && consonants * 5 >= high && stray * 20 <= marks
 }
 
 /// The name of a code page a language driver may name and RustGIS can't decode, for the note.
