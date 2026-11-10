@@ -568,3 +568,59 @@ fn malformed_multibyte_fields_replace_bytes_without_dropping_records() {
         check_ldid_readers(ldid, text, "X�", None, &[]);
     }
 }
+
+/// Thai text written without a code page (no `.cpg`, and no language driver or the "ANSI" one,
+/// 0x57), as ArcGIS on a Thai Windows computer leaves it, is read as Windows-874 in every reader,
+/// field names and values alike, with a note saying so.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn thai_text_without_a_code_page_reads_as_windows_874_in_all_readers() {
+    use rustgis_data::source::{FeatureSource, Request};
+    // "ชื่อ" and "ที่ดินสุเทพ" in Windows-874.
+    let (field, text) = (b"\xaa\xd7\xe8\xcd".as_slice(), b"\xb7\xd5\xe8\xb4\xd4\xb9\xca\xd8\xe0\xb7\xbe".as_slice());
+    for ldid in [0x00, 0x57, 0xff] {
+        let files = named_parts(field, text, ldid, None, 3);
+        let said = |m: &[String]| m.iter().any(|m| m.contains("Windows-874"));
+        let layers = io::read_zip("places.zip", &rustgis_data::zip::write(&files).unwrap()).unwrap();
+        assert_eq!(layers[0].0.value(2, 0), &Value::Text("ที่ดินสุเทพ".into()), "LDID {ldid:02X}");
+        assert_eq!(layers[0].0.fields[0].name, "ชื่อ", "LDID {ldid:02X}");
+        assert!(said(&layers[0].1.messages), "LDID {ldid:02X}: {:?}", layers[0].1.messages);
+        let dir = tempfile::tempdir().unwrap();
+        for (name, bytes) in files {
+            std::fs::write(dir.path().join(name), bytes).unwrap();
+        }
+        let path = dir.path().join("places.shp");
+        let (ds, report) = io::read_path(&path).unwrap();
+        assert_eq!(ds.value(0, 0), &Value::Text("ที่ดินสุเทพ".into()), "LDID {ldid:02X}");
+        assert!(said(&report.messages), "LDID {ldid:02X}: {:?}", report.messages);
+        let src = open_shp(&path, "places").unwrap();
+        assert_eq!(src.read(&Request::all()).unwrap().features[1].attrs, [Value::Text("ที่ดินสุเทพ".into())], "LDID {ldid:02X}");
+        assert_eq!(src.info().fields[0].name, "ชื่อ", "LDID {ldid:02X}");
+        assert!(said(&src.info().notes), "LDID {ldid:02X}: {:?}", src.info().notes);
+    }
+}
+
+/// Text that isn't Thai in Windows-874 keeps the encoding it had, without a note: UTF-8 Thai (one
+/// with a character cut off at the field's end too), and Western accents, alone among letters.
+#[test]
+fn text_that_isnt_windows_874_thai_isnt_read_as_it() {
+    let mut cut = "มามา".as_bytes().to_vec();
+    cut.extend_from_slice(&"ม".as_bytes()[..2]);
+    for (ldid, text, expected) in [
+        (0x00, "ที่ดิน สุเทพ".as_bytes()[..18].to_vec(), Some("ที่ดิน")),
+        (0x00, cut, None),
+        (0x57, b"Montr\xe9al \x96 Qu\xe9bec".to_vec(), Some("Montréal – Québec")),
+        (0x57, b"\xc0 l'\xe9t\xe9, \xe0 B\xe9ziers".to_vec(), Some("À l'été, à Béziers")),
+        (0x57, b"J\xc4\xc4".to_vec(), Some("JÄÄ")),
+        (0x57, b"\xc4\xc4NEKOSKI S\xd6\xd6KSM\xc4KI".to_vec(), Some("ÄÄNEKOSKI SÖÖKSMÄKI")),
+        (0x57, b"\xe9\xe9 \xe0\xe8\xe9 \xdc\xdf".to_vec(), Some("éé àèé Üß")),
+    ] {
+        // Several rows: the same accents again in each don't make them Thai either.
+        let files = named_parts(b"name", &text, ldid, None, 3);
+        let layers = io::read_zip("places.zip", &rustgis_data::zip::write(&files).unwrap()).unwrap();
+        if let Some(expected) = expected {
+            assert_eq!(layers[0].0.value(0, 0), &Value::Text(expected.into()), "LDID {ldid:02X}");
+        }
+        assert!(!layers[0].1.messages.iter().any(|m| m.contains("Windows-874")), "LDID {ldid:02X}: {:?}", layers[0].1.messages);
+    }
+}

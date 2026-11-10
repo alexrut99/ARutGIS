@@ -120,7 +120,16 @@ fn ldid_code_page(ldid: u8) -> Option<u16> {
     })
 }
 
-pub(crate) fn encoding(cpg: Option<&[u8]>, ldid: u8, notes: &mut Vec<String>) -> DbfEncoding {
+/// How much of the start of a `.dbf` (its header and first rows) is looked at to tell Thai text
+/// written without a code page.
+pub(crate) const SAMPLE_BYTES: u64 = 256 * 1024;
+
+/// The encoding of a `.dbf`'s text: its `.cpg`, else its language driver ID (byte 29), else UTF-8.
+/// `start` is the file's first bytes (up to [`SAMPLE_BYTES`]): when the code page isn't given (no
+/// `.cpg` and no language driver, or one naming no page RustGIS knows) or is the system's "ANSI"
+/// page (0x57), and the text there isn't UTF-8 but reads as Thai, it is Windows-874 (TIS-620), as
+/// a Thai Windows computer's ArcGIS reads it; a note says so.
+pub(crate) fn encoding(cpg: Option<&[u8]>, ldid: u8, start: &[u8], notes: &mut Vec<String>) -> DbfEncoding {
     if let Some(bytes) = cpg {
         let label = if bytes.len() <= MAX_CPG_BYTES { std::str::from_utf8(bytes).unwrap_or("") } else { "" };
         let label = label.trim().trim_start_matches('\u{feff}').trim();
@@ -129,12 +138,28 @@ pub(crate) fn encoding(cpg: Option<&[u8]>, ldid: u8, notes: &mut Vec<String>) ->
         }
         notes.push("Shapefile: unsupported or empty .cpg; using the .dbf code page, or UTF-8 if unavailable".into());
     }
-    // No language driver: UTF-8, as it always was, without a note.
+    let thai = |notes: &mut Vec<String>, why: &str| {
+        let pieces = text_pieces(start);
+        (!is_utf8(&pieces) && looks_thai(&pieces)).then(|| {
+            notes.push(format!("Shapefile: {why}, and its text reads as Thai, so it was read as Windows-874 (TIS-620)"));
+            DbfEncoding::Standard(rs::WINDOWS_874)
+        })
+    };
+    // No language driver: UTF-8, as it always was, without a note, unless it is Thai.
     if ldid == 0 {
-        return DbfEncoding::Utf8;
+        return thai(notes, "no code page is given (no .cpg, and none in the .dbf)").unwrap_or(DbfEncoding::Utf8);
+    }
+    // "ANSI": the code page of the computer that wrote it, which is Windows-1252 unless the text says otherwise.
+    if ldid == 0x57
+        && let Some(encoding) = thai(notes, "the .dbf names the writing computer's own code page (0x57) and there is no .cpg")
+    {
+        return encoding;
     }
     let page = ldid_code_page(ldid);
     if let Some(encoding) = page.and_then(DbfEncoding::from_number) {
+        return encoding;
+    }
+    if let Some(encoding) = thai(notes, &format!("the .dbf's code page (0x{ldid:02X}) isn't one RustGIS knows")) {
         return encoding;
     }
     let named = page.map_or_else(String::new, |p| match page_name(p) {
@@ -143,6 +168,89 @@ pub(crate) fn encoding(cpg: Option<&[u8]>, ldid: u8, notes: &mut Vec<String>) ->
     });
     notes.push(format!("Shapefile: unsupported .dbf code page 0x{ldid:02X}{named}; using UTF-8"));
     DbfEncoding::Utf8
+}
+
+/// Most pieces of text [`text_pieces`] takes.
+const MAX_PIECES: usize = 1 << 16;
+
+/// The text in the start of a `.dbf`: its field names and the values of its character fields in the
+/// rows there, each one piece without its padding.
+fn text_pieces(dbf: &[u8]) -> Vec<&[u8]> {
+    let u16_at = |at: usize| dbf.get(at..at + 2).map_or(0, |b| usize::from(u16::from_le_bytes([b[0], b[1]])));
+    let (header_len, row_len) = (u16_at(8), u16_at(10));
+    let mut pieces = Vec::new();
+    let mut fields = Vec::new();
+    let mut offset = 1usize;
+    let mut at = 32usize;
+    while at + 32 <= header_len.min(dbf.len()) && dbf.get(at) != Some(&0x0D) {
+        let Some(d) = dbf.get(at..at + 32) else { break };
+        let name = d.get(..11).unwrap_or_default();
+        pieces.push(name.split(|&b| b == 0).next().unwrap_or_default());
+        let len = usize::from(d.get(16).copied().unwrap_or(0));
+        if d.get(11).is_some_and(|t| t.eq_ignore_ascii_case(&b'C')) {
+            fields.push((offset, len));
+        }
+        offset += len;
+        at += 32;
+    }
+    if header_len == 0 || row_len == 0 || offset > row_len {
+        return pieces;
+    }
+    let mut row = header_len;
+    while let Some(record) = dbf.get(row..row + row_len) {
+        for &(start, len) in &fields {
+            if let Some(value) = record.get(start..start + len) {
+                let end = value.iter().rposition(|&b| b != b' ' && b != 0).map_or(0, |i| i + 1);
+                pieces.push(value.get(..end).unwrap_or_default());
+            }
+        }
+        if pieces.len() >= MAX_PIECES {
+            break;
+        }
+        row += row_len;
+    }
+    pieces
+}
+
+/// Whether text is UTF-8, a character cut off at a piece's end (a field too short for it) aside.
+fn is_utf8(pieces: &[&[u8]]) -> bool {
+    pieces.iter().all(|p| match std::str::from_utf8(p) {
+        Ok(_) => true,
+        Err(e) => e.error_len().is_none(),
+    })
+}
+
+/// Whether text that isn't ASCII is Thai in Windows-874 (TIS-620). Western accented letters fall
+/// in the same byte range, so it takes all of these, which Thai meets and Western text doesn't:
+/// - its bytes above 127 are nearly all Thai letters, vowels, tone marks and digits there, and
+///   nearly all next to one another, as letters in Thai words are (an accent is alone among plain
+///   letters: "Montr\xe9al");
+/// - a fifth of them are at least the consonants ก to ฟ (0xA1–0xBF), symbols in Western code pages
+///   (¡ to ¿), not letters: "J\xc4\xc4" (JÄÄ) has none;
+/// - nearly every vowel or tone mark written above or below a letter (0xD1, 0xD4–0xDA, 0xE7–0xEE)
+///   follows another Thai byte, never a plain letter or the start, as "\xe9" does in "\xe9t\xe9".
+fn looks_thai(pieces: &[&[u8]]) -> bool {
+    let thai = |b: u8| matches!(b, 0xA1..=0xDA | 0xDF..=0xFB);
+    let mark = |b: u8| matches!(b, 0xD1 | 0xD4..=0xDA | 0xE7..=0xEE);
+    let (mut high, mut in_thai, mut together, mut consonants, mut marks, mut stray) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+    for p in pieces {
+        for (i, &b) in p.iter().enumerate() {
+            if b < 0x80 {
+                continue;
+            }
+            high += 1;
+            in_thai += usize::from(thai(b));
+            consonants += usize::from((0xA1..=0xBF).contains(&b));
+            let before = i.checked_sub(1).and_then(|j| p.get(j)).copied();
+            let after = p.get(i + 1).copied();
+            together += usize::from(before.is_some_and(|n| n >= 0x80) || after.is_some_and(|n| n >= 0x80));
+            if mark(b) {
+                marks += 1;
+                stray += usize::from(!before.is_some_and(thai));
+            }
+        }
+    }
+    high >= 3 && in_thai * 20 >= high * 19 && together * 5 >= high * 4 && consonants * 5 >= high && stray * 20 <= marks
 }
 
 /// The name of a code page a language driver may name and RustGIS can't decode, for the note.
@@ -273,10 +381,10 @@ mod tests {
     #[test]
     fn a_page_rustgis_cant_decode_is_named_in_the_note() {
         let mut notes = Vec::new();
-        assert!(matches!(encoding(None, 0x6C, &mut notes), DbfEncoding::Utf8));
+        assert!(matches!(encoding(None, 0x6C, &[], &mut notes), DbfEncoding::Utf8));
         assert_eq!(notes, ["Shapefile: unsupported .dbf code page 0x6C (code page 863, DOS French Canadian); using UTF-8"]);
         let mut notes = Vec::new();
-        encoding(None, 0xFF, &mut notes);
+        encoding(None, 0xFF, &[], &mut notes);
         assert_eq!(notes, ["Shapefile: unsupported .dbf code page 0xFF; using UTF-8"]);
     }
 }

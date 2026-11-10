@@ -46,7 +46,10 @@ labels), Windows code pages such as `1252`, `CP1252` and `Windows-1252`, ISO-885
 and common East Asian encodings are supported. The Esri `0x57` DBF marker
 is read as Windows-1252. An unreadable, empty, invalid, oversized or unsupported `.cpg` gives a notice and
 falls back to the DBF code page; an unsupported DBF code page gives a notice and falls back to
-UTF-8. Files without encoding metadata keep the UTF-8 default. Unsupported characters become
+UTF-8. Files without encoding metadata keep the UTF-8 default. Thai text written without a code
+page (no `.cpg`, and no DBF code page, the `0x57` marker or one RustGIS doesn't know), as ArcGIS on a
+Thai Windows computer leaves it, is read as Windows-874 (TIS-620) when it isn't UTF-8, with a
+notice; a `.cpg` naming `874` or `TIS-620` says so outright. Unsupported characters become
 replacement characters. This applies to zipped files and large files read in place too.
 See the [DBF language-driver support inventory](shapefile-encoding.md) for every recognized
 marker and the legacy code pages that still use the UTF-8 fallback.
