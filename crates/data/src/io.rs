@@ -2130,7 +2130,12 @@ fn read_shapefile_parts(mut parts: ShapefileParts, name: &str, crs: Option<Crs>)
     use std::io::Cursor;
     let fmt = |e: shapefile::Error| DataError::Format(format!("Shapefile: {e}"));
     let mut encoding_notes = Vec::new();
-    let encoding = crate::dbf::encoding(parts.cpg.as_deref(), parts.dbf.get(29).copied().unwrap_or(0), &mut encoding_notes);
+    let encoding = crate::dbf::encoding(
+        parts.cpg.as_deref(),
+        parts.dbf.get(29).copied().unwrap_or(0),
+        parts.dbf.get(..parts.dbf.len().min(crate::dbf::SAMPLE_BYTES as usize)).unwrap_or_default(),
+        &mut encoding_notes,
+    );
     crate::dbf::readable_header_date(&mut parts.dbf);
     let dbf = shapefile::dbase::ReaderBuilder::new()
         .with_encoding(encoding.decoder())
