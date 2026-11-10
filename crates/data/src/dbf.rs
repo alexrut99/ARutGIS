@@ -229,7 +229,7 @@ fn is_utf8(pieces: &[&[u8]]) -> bool {
 ///   (¡ to ¿), not letters: "J\xc4\xc4" (JÄÄ) has none;
 /// - nearly every vowel or tone mark written above or below a letter (0xD1, 0xD4–0xDA, 0xE7–0xEE)
 ///   follows another Thai byte, never a plain letter or the start, as "\xe9" does in "\xe9t\xe9".
-fn looks_thai(pieces: &[&[u8]]) -> bool {
+pub(crate) fn looks_thai(pieces: &[&[u8]]) -> bool {
     let thai = |b: u8| matches!(b, 0xA1..=0xDA | 0xDF..=0xFB);
     let mark = |b: u8| matches!(b, 0xD1 | 0xD4..=0xDA | 0xE7..=0xEE);
     let (mut high, mut in_thai, mut together, mut consonants, mut marks, mut stray) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);

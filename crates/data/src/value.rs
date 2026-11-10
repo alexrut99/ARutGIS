@@ -122,6 +122,45 @@ impl std::fmt::Display for Value {
     }
 }
 
+/// Orders text, Thai as a Thai dictionary does (the Royal Institute's): by its consonants first,
+/// so a vowel written before its consonant (เ แ โ ใ ไ) counts after it ("เก" follows "กา", and
+/// "เชียงใหม่" is among the ช's, not after "ฮ"), and tone marks, ็ and ์ only tell apart words
+/// otherwise the same. Other text is in the order of its characters, as it always was.
+pub fn text_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let thai = |s: &str| s.chars().any(|c| ('\u{0E01}'..='\u{0E5B}').contains(&c));
+    if !thai(a) && !thai(b) {
+        return a.cmp(b);
+    }
+    thai_order(a).cmp(thai_order(b)).then_with(|| a.cmp(b))
+}
+
+/// A text's characters in the order a Thai dictionary weighs them: a leading vowel after the
+/// consonant it is written before, without tone marks, ็ and ์.
+fn thai_order(s: &str) -> impl Iterator<Item = char> + '_ {
+    let mut chars = s.chars().peekable();
+    let mut held: Option<char> = None;
+    std::iter::from_fn(move || {
+        loop {
+            if let Some(vowel) = held.take() {
+                return Some(vowel);
+            }
+            let c = chars.next()?;
+            match c {
+                '\u{0E47}'..='\u{0E4C}' | '\u{0E4E}' => {}
+                '\u{0E40}'..='\u{0E44}' => match chars.peek() {
+                    Some(&next) if ('\u{0E01}'..='\u{0E2E}').contains(&next) => {
+                        chars.next();
+                        held = Some(c);
+                        return Some(next);
+                    }
+                    _ => return Some(c),
+                },
+                _ => return Some(c),
+            }
+        }
+    })
+}
+
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         use std::cmp::Ordering;
@@ -131,7 +170,7 @@ impl PartialOrd for Value {
                 (Value::Null, Value::Null) => Some(Ordering::Equal),
                 (Value::Null, _) => Some(Ordering::Less),
                 (_, Value::Null) => Some(Ordering::Greater),
-                _ => Some(self.to_string().to_lowercase().cmp(&other.to_string().to_lowercase())),
+                _ => Some(text_cmp(&self.to_string().to_lowercase(), &other.to_string().to_lowercase())),
             },
         }
     }
@@ -263,7 +302,7 @@ fn cmp_read_classes(a: &str, x: Option<ClassNumber>, b: &str, y: Option<ClassNum
         (Some(x), Some(y)) => cmp_class_numbers(a, x, b, y).then_with(|| a.cmp(b)),
         (Some(_), None) => Ordering::Less,
         (None, Some(_)) => Ordering::Greater,
-        (None, None) => a.cmp(b),
+        (None, None) => text_cmp(a, b),
     }
 }
 
@@ -377,7 +416,7 @@ pub fn sort_class_values(values: &mut Vec<String>) {
     if ClassText::numeric(&read) {
         read.sort();
     } else {
-        read.sort_by(|a, b| a.text.cmp(&b.text));
+        read.sort_by(|a, b| text_cmp(&a.text, &b.text));
     }
     values.extend(read.into_iter().map(ClassText::into_text));
 }
@@ -385,6 +424,27 @@ pub fn sort_class_values(values: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Thai is ordered as a Thai dictionary orders it, in class values and in values compared
+    /// (the attribute table's sort); other text keeps the order of its characters.
+    #[test]
+    fn thai_text_is_in_dictionary_order() {
+        let provinces = ["อุบลราชธานี", "เชียงใหม่", "กระบี่", "แพร่", "ขอนแก่น", "ไทรโยค", "เลย", "ลำปาง", "โคราช", "ใต้", "ตาก"];
+        let expected = ["กระบี่", "ขอนแก่น", "โคราช", "เชียงใหม่", "ตาก", "ใต้", "ไทรโยค", "แพร่", "ลำปาง", "เลย", "อุบลราชธานี"];
+        assert_eq!(sorted(&provinces), expected);
+        let mut values: Vec<Value> = provinces.iter().map(|p| Value::Text(p.to_string())).collect();
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        assert_eq!(values, expected.map(|p| Value::Text(p.to_string())));
+        // A vowel before its consonant counts after it; tone marks only tell apart the same word.
+        assert_eq!(sorted(&["เก", "กา", "กี", "แก", "ไก่", "ไก"]), ["กา", "กี", "เก", "แก", "ไก", "ไก่"]);
+        assert_eq!(sorted(&["ไม้", "ไม่", "ไม", "ไมค์"]), ["ไม", "ไม่", "ไม้", "ไมค์"]);
+        // Thai follows Latin letters, and text without Thai is as it was.
+        assert_eq!(sorted(&["เมือง", "Zoo", "apple", "กา"]), ["Zoo", "apple", "กา", "เมือง"]);
+        assert_eq!(text_cmp("Éa", "Zz"), "Éa".cmp("Zz"));
+        // A leading vowel with no consonant after it stays where it is, and ties are broken.
+        assert_eq!(text_cmp("เ", "เ"), std::cmp::Ordering::Equal);
+        assert_eq!(text_cmp("เ1", "ก"), std::cmp::Ordering::Greater);
+    }
 
     fn sorted(values: &[&str]) -> Vec<String> {
         let mut v: Vec<String> = values.iter().map(|s| s.to_string()).collect();

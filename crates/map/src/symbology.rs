@@ -1041,7 +1041,10 @@ impl Renderer {
         let (vals, features): (Vec<String>, usize) = if numeric {
             (by_number.kept.into_keys().map(rustgis_data::value::ClassText::into_text).collect(), by_number.rest)
         } else {
-            (by_text.kept.into_keys().collect(), by_text.rest)
+            // In the order text is read in (Thai as its dictionary has it), not that of its bytes.
+            let mut vals: Vec<String> = by_text.kept.into_keys().collect();
+            vals.sort_by(|a, b| rustgis_data::value::text_cmp(a, b));
+            (vals, by_text.rest)
         };
         let rest = PastClasses { features, by_number: numeric };
         let n = vals.len();
