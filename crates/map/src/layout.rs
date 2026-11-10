@@ -2015,6 +2015,11 @@ pub enum ElementKind {
         /// (trimmed, bounded, none when not a name).
         #[serde(default, deserialize_with = "crate::symbology::de_font", skip_serializing_if = "Option::is_none")]
         font_name: Option<String>,
+        /// A line wider than the element breaks between its words (at spaces, and between the
+        /// words of Thai and the other scripts written without spaces), so it stays within the
+        /// element's sides. Left out when not, as text always was: a line as long as it is typed.
+        #[serde(default, skip_serializing_if = "is_false")]
+        wrap: bool,
     },
     Picture {
         /// Base64 PNG or JPEG.
@@ -2088,6 +2093,7 @@ impl ElementKind {
             letter_spacing: 0.0,
             font: FontFamily::Sans,
             font_name: None,
+            wrap: false,
         }
     }
 

@@ -23,7 +23,7 @@ Features**, `select.layerFromSelection`).
 ### The attribute table
 
 ++ctrl+t++ (or **Home › Selection › Attributes**) docks the active layer's table under the map.
-Click a column header to sort by it (a second click reverses the order, a third unsorts), click a row to select it (++ctrl++ or
+Click a column header to sort by it (a second click reverses the order, a third unsorts; Thai text is in the order of a Thai dictionary), click a row to select it (++ctrl++ or
 ++shift++ toggles it without clearing the other rows), and double-click a cell to change its value. **Selected only**
 keeps to the selected rows and **Filter rows…** keeps rows where any value contains the text typed,
 ignoring letter case. The toolbar opens Select By Attributes and zooms to, switches, clears or

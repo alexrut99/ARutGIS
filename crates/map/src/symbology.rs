@@ -2530,14 +2530,19 @@ pub fn wrapped(text: &str, wrap_char: Option<&str>, wrap_length: u32) -> String 
         }
         let mut current = String::new();
         for word in line.split_whitespace() {
-            let (have, add) = (current.chars().count(), word.chars().count());
-            if have > 0 && have + 1 + add > most {
-                out.push(std::mem::take(&mut current));
+            // Thai and the like break between words, which no space parts: a word after one of
+            // its line joins it without a space.
+            for (i, piece) in rustgis_data::linebreak::pieces(word).into_iter().enumerate() {
+                let space = usize::from(i == 0);
+                let (have, add) = (current.chars().count(), piece.chars().count());
+                if have > 0 && have + space + add > most {
+                    out.push(std::mem::take(&mut current));
+                }
+                if !current.is_empty() && i == 0 {
+                    current.push(' ');
+                }
+                current.push_str(piece);
             }
-            if !current.is_empty() {
-                current.push(' ');
-            }
-            current.push_str(word);
         }
         out.push(current);
     }
@@ -3118,6 +3123,10 @@ mod tests {
         assert_eq!(wrapped("Kantonsspital Winterthur", None, 5), "Kantonsspital\nWinterthur", "a long word keeps its own line");
         assert_eq!(wrapped("Höhe über Meer", None, 9), "Höhe über\nMeer", "characters, not bytes");
         assert_eq!(wrapped("a\nb c d", None, 3), "a\nb c\nd", "lines it has stay lines");
+        // Thai has no spaces between its words: it breaks between them, and a space stays one.
+        assert_eq!(wrapped("อุทยานแห่งชาติดอยอินทนนท์", None, 12), "อุทยานแห่ง\nชาติดอย\nอินทนนท์");
+        assert_eq!(wrapped("โรงเรียนบ้านหนองหอย เชียงใหม่", None, 20), "โรงเรียนบ้านหนองหอย\nเชียงใหม่");
+        assert_eq!(wrapped("วัดพระสิงห์", None, 30), "วัดพระสิงห์", "a line that fits is as it was");
         assert_eq!(wrapped(" Ober  Winterthur", None, 20), " Ober  Winterthur", "a line that fits stays as it is");
         assert_eq!(wrapped("unchanged text", None, 0), "unchanged text");
         let base = serde_json::json!({"enabled": true, "field": "name", "size": 9.0, "color": [0, 0, 0, 255], "halo": true, "bold": false});

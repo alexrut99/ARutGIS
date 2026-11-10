@@ -6529,6 +6529,31 @@ mod tests {
         assert_eq!((text::line_count(&p.text), p.angle), (1, Some(0.5)));
     }
 
+    /// Thai, written without spaces between its words, wraps between them: never inside a word,
+    /// nor between a letter and the vowel or tone mark on it.
+    #[test]
+    fn thai_wraps_between_its_words() {
+        let width = |s: &str| text::measure(s, 9.0, false);
+        let title = "แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมในเขตอำเภอเมืองเชียงใหม่";
+        let lines = text::wrap(title, 9.0, false, 0.0, width(title) * 0.55);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines.concat(), title, "nothing is added or lost where it breaks");
+        let words = rustgis_data::linebreak::pieces(title);
+        let ends: Vec<usize> = words
+            .iter()
+            .scan(0, |at, w| {
+                Some({
+                    *at += w.len();
+                    *at
+                })
+            })
+            .collect();
+        assert!(ends.contains(&lines[0].len()), "{lines:?} breaks between two of {words:?}");
+        // Spaces still break, and are left out there; a word no dictionary parts keeps its line.
+        assert_eq!(text::wrap("บ้านหนองหอย เชียงใหม่", 9.0, false, 0.0, width("บ้านหนองหอย") * 1.1), ["บ้านหนองหอย", "เชียงใหม่"]);
+        assert_eq!(text::wrap("กรุงเทพมหานคร", 9.0, false, 0.0, 1.0), ["กรุงเทพมหานคร"]);
+    }
+
     #[test]
     fn wraps_balanced_at_spaces_and_dashes() {
         let width = |s: &str| text::measure(s, 9.0, false);

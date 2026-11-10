@@ -85,7 +85,13 @@ pub fn wrap_with(s: &str, w: f64, width: impl Fn(&str) -> f64) -> Vec<String> {
     let mut out = Vec::new();
     for para in s.lines().take(2000) {
         let mut line = String::new();
-        for word in para.split_whitespace().take(5000) {
+        // Words, each with whether a space parts it from the one before: Thai and the like break
+        // between words no space parts.
+        let words = para
+            .split_whitespace()
+            .flat_map(|word| rustgis_data::linebreak::pieces(word).into_iter().enumerate().map(|(i, piece)| (piece, i == 0)))
+            .take(5000);
+        for (word, spaced) in words {
             // A word wider than the line (a long URL…) is broken across lines: the most of its
             // characters that fit, found by halving (a few measures a line, not one a character).
             let mut word = word.to_string();
@@ -107,7 +113,13 @@ pub fn wrap_with(s: &str, w: f64, width: impl Fn(&str) -> f64) -> Vec<String> {
                 word = chars[fits..].iter().collect();
             }
             let word = word.as_str();
-            let next = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+            let next = if line.is_empty() {
+                word.to_string()
+            } else if spaced {
+                format!("{line} {word}")
+            } else {
+                format!("{line}{word}")
+            };
             if !line.is_empty() && width(&next) > w {
                 out.push(std::mem::take(&mut line));
                 line = word.to_string();

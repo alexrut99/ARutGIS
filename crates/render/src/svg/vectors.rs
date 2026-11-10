@@ -198,7 +198,7 @@ fn glyphs(out: &mut String, defs: &mut Defs, run: &GlyphRun) {
     let upm = run.font.units_per_em().filter(|u| u.is_finite() && *u > 0.0).unwrap_or(1000.0);
     let face = std::ptr::from_ref(run.font) as usize;
     let k = run.size / upm;
-    let text: String = run.glyphs.iter().map(|g| g.ch).collect();
+    let text: String = run.glyphs.iter().map(|g| g.ch).filter(|c| *c != crate::text::NO_CHAR).collect();
     let _ = writeln!(out, r#"<g aria-label="{}"{}{}>"#, super::esc(&text), paint("fill", run.color), transform_attr(run.transform));
     for g in &run.glyphs {
         let id = match defs.glyphs.get(&(face, g.id.0)) {
@@ -216,8 +216,14 @@ fn glyphs(out: &mut String, defs: &mut Defs, run: &GlyphRun) {
         // Spaces have no outline: nothing to place.
         if let Some(id) = id {
             // (Eight decimals: a small size over a large em is a small scale.)
-            let _ =
-                writeln!(out, r##"<use xlink:href="#{id}" transform="matrix({} 0 0 {} {} 0)"/>"##, trimmed(k, 8), trimmed(-k, 8), num(g.x));
+            let _ = writeln!(
+                out,
+                r##"<use xlink:href="#{id}" transform="matrix({} 0 0 {} {} {})"/>"##,
+                trimmed(k, 8),
+                trimmed(-k, 8),
+                num(g.x),
+                num(g.y)
+            );
         }
     }
     out.push_str("</g>\n");
@@ -370,8 +376,11 @@ mod tests {
         );
         let font = crate::text::label_font().unwrap();
         let o = font.glyph_id('o');
-        let glyphs =
-            vec![Glyph { id: o, x: 0.0, ch: 'o' }, Glyph { id: font.glyph_id(' '), x: 6.0, ch: ' ' }, Glyph { id: o, x: 9.0, ch: 'o' }];
+        let glyphs = vec![
+            Glyph { id: o, x: 0.0, y: 0.0, ch: 'o' },
+            Glyph { id: font.glyph_id(' '), x: 6.0, y: 0.0, ch: ' ' },
+            Glyph { id: o, x: 9.0, y: 0.0, ch: 'o' },
+        ];
         d.glyphs(GlyphRun { font, size: 12.0, color: Color::BLACK, transform: Transform::from_translate(60.0, 40.0), glyphs });
         let mut pic = tiny_skia::Pixmap::new(2, 2).unwrap();
         pic.fill(Color::from_rgba8(0, 128, 0, 255));

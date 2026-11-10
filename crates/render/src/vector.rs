@@ -106,11 +106,15 @@ pub struct GlyphRun {
 }
 
 /// A glyph at its pen position along the run, and the character it stands for (what copying
-/// the text gives).
+/// the text gives): [`crate::text::NO_CHAR`] for one that stands for none of its own.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Glyph {
     pub id: GlyphId,
     pub x: f32,
+    /// How far below the run's baseline it is drawn, in the run's pixels: other than 0 for a
+    /// mark a shaper moves (a Thai tone mark raised over a vowel), which stays in its run so the
+    /// text reads in order.
+    pub y: f32,
     pub ch: char,
 }
 
@@ -438,7 +442,7 @@ pub(crate) fn replay(items: &[Item], pm: &mut Pixmap, base: Transform) {
                 let mut pb = PathBuilder::new();
                 for g in &run.glyphs {
                     let Some(o) = run.font.outline(g.id) else { continue };
-                    let at = |p: ab_glyph::Point| (g.x + p.x * k, -p.y * k);
+                    let at = |p: ab_glyph::Point| (g.x + p.x * k, g.y - p.y * k);
                     let mut last = None;
                     for c in &o.curves {
                         let (a, e) = match c {
@@ -567,7 +571,7 @@ mod tests {
             size: 12.0,
             color: Color::BLACK,
             transform: Transform::identity(),
-            glyphs: vec![Glyph { id: ab_glyph::Font::glyph_id(font, 'W'), x: 0.0, ch: 'W' }],
+            glyphs: vec![Glyph { id: ab_glyph::Font::glyph_id(font, 'W'), x: 0.0, y: 0.0, ch: 'W' }],
         };
         let mut page = Drawing::new(10.0, 10.0);
         page.glyphs(run());

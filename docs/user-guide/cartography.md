@@ -14,6 +14,7 @@ Select a layer in Layers and open **Style › Symbology** (or the Symbology pane
   renderer's field is kept when available; otherwise the first available field is used, including
   text fields. There are up to 64 classes: the first values in numeric order when every value is
   a number (9, 10, 100, as on a numeric field or a text field of codes), otherwise in text order
+  (Thai as a Thai dictionary has it: เชียงใหม่ among the ช, not after ฮ)
   (by character, so `B` before `a`). Features with a value past them draw as
   `<all other values>`, and a notice says how many and in which order the classes were taken. The
   legend lists the classes by number when every class is a number, a class renamed by hand in its
@@ -507,7 +508,9 @@ Turn labels on per layer (Labeling › Labels › **Label**), then:
 - **Wrapping**: a label's text broken into lines (Labeling pane › Symbol): **Wrap at** a
   character (or a few, up to 8), a line break wherever it occurs, left out (a space puts each
   word on its own line, `/` breaks `Zürich/Winterthur`), and **Wrap length**, the longest line in characters, broken
-  between words (a longer word keeps a line of its own). **Line alignment** lines the lines up
+  between words (a longer word keeps a line of its own; Thai, Lao, Khmer and Burmese, written
+  without spaces, break between their words too, never between a letter and its vowel or tone
+  mark). **Line alignment** lines the lines up
   left (as labels always have), centred or right. A label curved along a line, character by
   character, isn't wrapped
   (`labels.style={"layer": "Cities", "wrapChar": " ", "wrapLength": 12, "lineAlign": "center"}`;

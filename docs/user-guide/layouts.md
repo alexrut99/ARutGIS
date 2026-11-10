@@ -292,8 +292,13 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   and ocean names are; the built-in fonts have no italic face, so the letters are slanted 12°),
   **Alignment** (left, center or right within the element) and **Letter spacing** in points
   (spaced-out names such as O C E A N O, or a negative value to tighten) are the same form a text
-  on the map has in the pane; Enter ends the text and Shift+Enter starts a new line. Scripts set them with `italic`, `align` and
-  `letterSpacing` on `layout.addElement` and `layout.update`. A layout's text also takes a **Font**:
+  on the map has in the pane; Enter ends the text and Shift+Enter starts a new line. A line is as
+  long as it is typed, past the element's sides when it is wider; with **Wrap lines to the
+  element's width** on, a line wider than the element breaks between its words (at spaces and
+  dashes, and between the words of Thai, Lao, Khmer and Burmese, which have no spaces between
+  them), into lines of about the same length. A Thai standard sheet's title wraps, and a long one
+  takes the lines it needs above the map. Scripts set them with `italic`, `align`,
+  `letterSpacing` and `wrap` on `layout.addElement` and `layout.update`. A layout's text also takes a **Font**:
   Sans-serif (the default) or Serif, for a title or a classic atlas look. The serif is one installed
   on the computer (Georgia or Times New Roman on Windows and macOS, Noto, DejaVu or Liberation Serif
   on Linux), with its own bold and italic faces, so italic there is a true italic rather than
@@ -370,7 +375,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
 - **Export** writes PDF (every map series page by default, up to 500), or PNG or SVG of the current page.
   A PDF keeps the page as vectors: text, shapes, surrounds and map frames (their features, labels
   and grids, turned with the frame) stay sharp at any zoom or print size, and linear and radial
-  gradient fills are PDF gradients. What is pixels by nature is a picture in it at the export's
+  gradient fills are PDF gradients. Its text can be copied and searched, Thai with its vowels and
+  tone marks as it was written. What is pixels by nature is a picture in it at the export's
   `dpi`, keeping its layer's opacity and blend mode: rasters, web tile layers, pictures, legend
   images from map services, a masked layer, and a frame that is tilted, on the globe or with view
   effects. Hatch and dot fills, shapeburst fills, and sweeping, repeating or reflected gradients

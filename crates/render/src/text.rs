@@ -296,14 +296,14 @@ fn shape(text: &str, px: f32, face: &'static FontRef<'static>, sans: Option<&'st
                 end += 1;
             }
             let stop = chars.get(end).map_or(text.len(), |&(b, _)| b);
-            if let Some(run) = text.get(at..stop).map(|run| thai_run(run, t, shaper, px)) {
-                for (id, dx, dy, advance, cluster) in run {
+            if let Some((run, shaped)) = text.get(at..stop).map(|run| (run, thai_run(run, t, shaper, px))) {
+                let stands_for = glyph_chars(run, &shaped, |c| Some(t.glyph_id(c)).filter(|g| g.0 != 0));
+                for ((id, dx, dy, advance, _), ch) in shaped.into_iter().zip(stands_for) {
                     // A glyph that doesn't advance (a vowel or tone mark) is part of the letter before.
                     let first = out.is_empty();
                     if advance != 0.0 && !first {
                         letter += 1;
                     }
-                    let ch = text.get(at + cluster..).and_then(|r| r.chars().next()).unwrap_or(ch);
                     out.push(Placed { f: t, id, x: x + dx, y: dy, letter, ch });
                     x += advance;
                 }
@@ -401,6 +401,66 @@ fn thai_run(
         .collect()
 }
 
+/// The character each glyph of a shaped run stands for (what copying the text gives), so the
+/// glyphs' characters in their order are the run's text. A shaper gives a cluster (a consonant
+/// with the vowels and tone marks on it) one place in the text for all its glyphs, which may be
+/// more than its characters and in another order: SARA AM (ำ) is drawn as a ring above the
+/// consonant and an AA after it, with a tone mark between them. In each cluster, a glyph that is
+/// a character's own (`nominal`) stands for it; the AA of a SARA AM stands for the SARA AM and
+/// its ring for nothing ([`NO_CHAR`]); the glyphs left (a mark's variant, raised or moved aside)
+/// stand for the characters left, in order.
+fn glyph_chars(run: &str, glyphs: &[(GlyphId, f32, f32, f32, usize)], nominal: impl Fn(char) -> Option<GlyphId>) -> Vec<char> {
+    const SARA_AM: char = '\u{0E33}';
+    let mut out = vec![NO_CHAR; glyphs.len()];
+    let cluster = |k: usize| glyphs.get(k).map(|g| g.4);
+    let mut i = 0;
+    while let Some(start) = cluster(i) {
+        let mut j = i;
+        while cluster(j) == Some(start) {
+            j += 1;
+        }
+        // The cluster's text: up to where the next one starts (they ascend, left to right).
+        let end = cluster(j).filter(|&e| e > start).unwrap_or(run.len());
+        let mut left: Vec<char> = run.get(start..end).unwrap_or_default().chars().collect();
+        let id = |k: usize| glyphs.get(k).map(|g| g.0);
+        let mut give = |k: usize, c: char| {
+            if let Some(o) = out.get_mut(k) {
+                *o = c;
+            }
+        };
+        for k in i..j {
+            if let Some(p) = left.iter().position(|&c| nominal(c).is_some() && nominal(c) == id(k)) {
+                give(k, left.remove(p));
+            }
+        }
+        let free = |out: &[char]| (i..j).filter(|&k| out.get(k) == Some(&NO_CHAR)).collect::<Vec<usize>>();
+        let mut split = false;
+        if let Some(p) = left.iter().position(|&c| c == SARA_AM)
+            && let Some(k) = free(&out).into_iter().rev().find(|&k| id(k).is_some() && id(k) == nominal('\u{0E32}'))
+        {
+            if let Some(o) = out.get_mut(k) {
+                *o = left.remove(p);
+            }
+            split = true;
+        }
+        // The rest in order; with a SARA AM in two glyphs there is one glyph more than
+        // characters, and the ring, which stands for nothing, is the first of them.
+        let free = free(&out);
+        let skip = if split { free.len().saturating_sub(left.len()) } else { 0 };
+        for (k, c) in free.into_iter().skip(skip).zip(left) {
+            if let Some(o) = out.get_mut(k) {
+                *o = c;
+            }
+        }
+        i = j;
+    }
+    out
+}
+
+/// What a glyph that stands for no character of its own has as its character: copying the text
+/// gives nothing for it (a SARA AM's ring, whose AA stands for the vowel).
+pub const NO_CHAR: char = '\0';
+
 /// Most lines a label draws: its text comes from files and attributes.
 const MAX_LINES: usize = 200;
 
@@ -459,10 +519,16 @@ fn spaced_width(text: &str, size: f32, bold: bool, spacing: f32) -> f32 {
 }
 
 /// A line of a label broken into lines about `max_w` points wide, as MapLibre wraps a label to
-/// `text-max-width`: at spaces, and after a hyphen, dash, slash or the like; the lines balanced
+/// `text-max-width`: at spaces, after a hyphen, dash, slash or the like, and between words of
+/// Thai and the other scripts written without spaces ([`rustgis_data::linebreak`]); the lines balanced
 /// (each near the same width) rather than filled, and a word longer than that a line of its
 /// own. A line that fits, or can't be broken, is kept as it is.
 pub fn wrap(line: &str, size: f32, bold: bool, spacing: f32, max_w: f32) -> Vec<String> {
+    wrap_by(line, max_w, |s| spaced_width(s, size, bold, spacing))
+}
+
+/// [`wrap`] with the width of a piece of text measured by `width`, in the units of `max_w`.
+pub fn wrap_by(line: &str, max_w: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
     // The pieces a line may break after: each with whether a space followed it.
     let mut pieces: Vec<(String, bool)> = Vec::new();
     let mut cur = String::new();
@@ -484,7 +550,17 @@ pub fn wrap(line: &str, size: f32, bold: bool, spacing: f32, max_w: f32) -> Vec<
     if !cur.is_empty() {
         pieces.push((cur, true));
     }
-    let width = |s: &str| spaced_width(s, size, bold, spacing);
+    // Thai, Lao, Khmer and Burmese have no spaces between words: they break between them.
+    if rustgis_data::linebreak::unspaced(line) {
+        pieces = pieces
+            .into_iter()
+            .flat_map(|(piece, space_after)| {
+                let words = rustgis_data::linebreak::pieces(&piece);
+                let last = words.len().saturating_sub(1);
+                words.iter().enumerate().map(|(i, w)| (w.to_string(), i == last && space_after)).collect::<Vec<_>>()
+            })
+            .collect();
+    }
     let total = width(line);
     if pieces.len() < 2 || !(max_w.is_finite() && max_w > 0.0) || total <= max_w {
         return vec![line.to_string()];
@@ -1218,17 +1294,17 @@ fn keep_glyphs(
     color: Rgba,
     lean: impl Fn(&FontRef<'static>) -> bool,
 ) {
-    // A run for each stretch in one face at one height: a Thai mark moved up or down by the
-    // shaper starts a run of its own, its baseline moved with it.
-    for run in glyphs.chunk_by(|a, b| std::ptr::eq(a.f, b.f) && a.y == b.y) {
+    // A run for each stretch in one face: a Thai mark moved up or down by the shaper stays in
+    // its run, moved in it, so the text is read in the order it was written.
+    for run in glyphs.chunk_by(|a, b| std::ptr::eq(a.f, b.f)) {
         let Some(first) = run.first() else { continue };
         let kx = if lean(first.f) { -SLANT } else { 0.0 };
         pm.glyphs(crate::vector::GlyphRun {
             font: first.f,
             size: px,
             color: tiny_skia::Color::from_rgba8(color.r(), color.g(), color.b(), color.a()),
-            transform: Transform::from_row(1.0, 0.0, kx, 1.0, origin.0, origin.1 + first.y),
-            glyphs: run.iter().map(|g| crate::vector::Glyph { id: g.id, x: g.x + spacing * g.letter as f32, ch: g.ch }).collect(),
+            transform: Transform::from_row(1.0, 0.0, kx, 1.0, origin.0, origin.1),
+            glyphs: run.iter().map(|g| crate::vector::Glyph { id: g.id, x: g.x + spacing * g.letter as f32, y: g.y, ch: g.ch }).collect(),
         });
     }
 }
@@ -1539,6 +1615,24 @@ mod coverage_tests {
         };
         use ab_glyph::Font;
         assert!(tone_top("ที่") < tone_top("ท่") - 2.0, "the tone mark stacks over the vowel");
+    }
+
+    /// The glyphs of shaped Thai stand for its characters in the order they were written, so
+    /// copying the text from a PDF gives it back: each vowel and tone mark its own, and a SARA AM
+    /// (ำ), drawn as a ring and an AA with any tone mark between them, the AA's.
+    #[test]
+    fn thai_glyphs_stand_for_the_text_as_written() {
+        use super::{Face, NO_CHAR, face_font, shape};
+        let face = Face { family: crate::families::find("Sarabun"), ..Face::default() };
+        let (f, _) = face_font(face).expect("Sarabun is built in");
+        for text in ["ที่", "น้ำ", "ตำบล", "ผู้ใหญ่", "ป่ำ", "กำแพง", "ก็", "สิทธิ์", "เชียงใหม่", "อำเภอเมืองเชียงใหม่", "ฟ้า ปี่ กิ่ง"]
+        {
+            let (glyphs, _) = shape(text, 40.0, f, None, false);
+            let read: String = glyphs.iter().map(|g| g.ch).filter(|c| *c != NO_CHAR).collect();
+            assert_eq!(read, text);
+        }
+        let (glyphs, _) = shape("ตำ", 40.0, f, None, false);
+        assert_eq!(glyphs.iter().map(|g| g.ch).collect::<Vec<_>>(), ['ต', NO_CHAR, 'ำ'], "the ring stands for nothing");
     }
 
     /// A text asking for a serif (#517) where none is installed is drawn in the label font, slanted

@@ -4812,3 +4812,5 @@ Writes the features with invalid geometry, such as self-intersecting or unclosed
 Zone Fields	ฟิลด์โซน
 ⌘+Z	⌘+Z
 ＋ Add field	＋ เพิ่มฟิลด์
+Wrap lines to the element's width	ตัดบรรทัดตามความกว้างของกรอบ
+A line wider than the element breaks between its words, so it stays within the element's sides	บรรทัดที่กว้างกว่ากรอบจะถูกตัดระหว่างคำ ข้อความจึงไม่ล้นออกนอกกรอบ

@@ -76,7 +76,7 @@ fn elements(
             let _ = writeln!(s, r#"<g transform="rotate({} {} {})">"#, num(-e.rotation), num(cx), num(cy));
         }
         match &e.kind {
-            ElementKind::Text { text: t, size, color, bold, italic, align, letter_spacing, font, font_name } => {
+            ElementKind::Text { text: t, size, color, bold, italic, align, letter_spacing, font, font_name, wrap } => {
                 let first = layout.first_frame().and_then(|id| layout.element(id)).and_then(|f| match &f.kind {
                     ElementKind::MapFrame { map, center, scale, bearing, pitch, .. } => {
                         let m = maps.iter().find(|m| m.name.eq_ignore_ascii_case(map))?;
@@ -93,9 +93,18 @@ fn elements(
                     TextAlign::Center => ("middle", x + w / 2.0),
                     TextAlign::Right => ("end", x + w),
                 };
-                let lines: Vec<(f64, &str)> = text
-                    .lines()
-                    .take(200)
+                // The lines the page draws, wrapped as it wraps them (measured in points).
+                let face = crate::text::Face {
+                    bold: *bold,
+                    italic: *italic,
+                    serif: *font == FontFamily::Serif,
+                    family: font_name.as_deref().and_then(crate::families::find_ready),
+                };
+                let (width_pt, px_pt, spacing_pt) = ((w * PT_PER_MM) as f32, (em * PT_PER_MM) as f32, (*letter_spacing * 1.33) as f32);
+                let wrapped = crate::layout::text_lines(&text, *wrap, width_pt, px_pt, face, spacing_pt);
+                let lines: Vec<(f64, &str)> = wrapped
+                    .iter()
+                    .map(String::as_str)
                     .enumerate()
                     .map(|(i, l)| (y + em * (0.6 + 1.25 * i as f64), l))
                     .take_while(|(ly, _)| *ly <= y + h + em)

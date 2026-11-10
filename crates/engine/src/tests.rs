@@ -31297,6 +31297,45 @@ fn merge_distinguishes_case_sensitive_file_paths() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A text element wraps its lines when asked (only a text, only true or false), and a Thai
+/// standard sheet's title wraps: a long one takes the lines it needs and the map starts below.
+#[test]
+fn layout_text_wraps_when_asked_and_a_long_thai_title_takes_its_lines() {
+    use rustgis_map::layout::ElementKind;
+    let mut s = world();
+    let title_of = |s: &Session, r: &Value| {
+        let l = &s.project.layouts[r["layout"].as_u64().unwrap() as usize];
+        let (t, f) = (l.elements.iter().find(|e| e.name == "Title").unwrap(), l.elements.iter().find(|e| e.name == "Map Frame").unwrap());
+        (matches!(&t.kind, ElementKind::Text { wrap: true, .. }), t.h, f.y)
+    };
+    let short = s.run("layout.new", &json!({"template": "thai", "title": "แผนที่กรุงเทพฯ"})).unwrap();
+    let long = "แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมและดินโคลนถล่มในเขตอำเภอเมืองเชียงใหม่จังหวัดเชียงใหม่ประจำปีงบประมาณสองพันห้าร้อยหกสิบเจ็ด";
+    let long = s.run("layout.new", &json!({"template": "thai", "title": long})).unwrap();
+    let ((wraps, h1, y1), (wraps2, h2, y2)) = (title_of(&s, &short), title_of(&s, &long));
+    assert!(wraps && wraps2);
+    assert!(h2 > h1 + 5.0 && y2 > y1 + 5.0, "two lines: the title {h1} → {h2} mm, the map from {y1} → {y2} mm");
+    // Text added wraps only when asked; the setting is changed, and is a text's alone.
+    let wrap_of = |s: &Session, id: u64| {
+        let l = &s.project.layouts[s.active_layout.unwrap()];
+        matches!(&l.element(id as u32).unwrap().kind, ElementKind::Text { wrap: true, .. })
+    };
+    let plain = s.run("layout.addElement", &json!({"kind": "text", "text": "หมายเหตุ"})).unwrap()["element"].as_u64().unwrap();
+    let wrapping =
+        s.run("layout.addElement", &json!({"kind": "text", "text": "หมายเหตุ", "wrap": true})).unwrap()["element"].as_u64().unwrap();
+    assert!(!wrap_of(&s, plain) && wrap_of(&s, wrapping));
+    s.run("layout.update", &json!({"element": plain, "wrap": true})).unwrap();
+    s.run("layout.update", &json!({"element": wrapping, "wrap": false})).unwrap();
+    assert!(wrap_of(&s, plain) && !wrap_of(&s, wrapping));
+    assert!(s.run("layout.update", &json!({"element": plain, "wrap": "yes"})).unwrap_err().contains("wrap must be true or false"));
+    assert!(s.run("layout.addElement", &json!({"kind": "text", "wrap": 1})).is_err());
+    let arrow = s.run("layout.addElement", &json!({"kind": "northArrow"})).unwrap()["element"].as_u64().unwrap();
+    assert!(s.run("layout.update", &json!({"element": arrow, "wrap": true})).unwrap_err().contains("only text elements wrap"));
+    // A layout saved without the setting reads as not wrapping, and one that wraps keeps it.
+    let saved = serde_json::to_value(&s.project.layouts[s.active_layout.unwrap()]).unwrap().to_string();
+    assert_eq!(saved.matches("\"wrap\":true").count(), 2, "the title and the one text");
+    assert!(!saved.contains("\"wrap\":false"));
+}
+
 /// A Thai standard map sheet: Sarabun texts, a double neatline, a UTM grid labelled outside
 /// the frame on every side, a locator of Thailand outlining the map, and the particulars with
 /// the date in the Buddhist Era; the map drawn in UTM zone 47N or 48N when asked.
