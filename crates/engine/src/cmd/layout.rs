@@ -694,7 +694,7 @@ fn thai_standard(s: &mut Session, p: &Value, l: &mut Layout) -> Result<(), Strin
     // spaces to break at), and the map starts below them (below three at most: a longer title
     // runs on under them).
     let title_size = 20.0 * k;
-    let face = rustgis_render::layout::TextFace { bold: true, font_name: Some(THAI_FONT), ..Default::default() };
+    let face = rustgis_render::layout::TextFace { bold: true, font_name: Some(THAI_FONT), aligned: true, ..Default::default() };
     let title = rustgis_render::layout::wrap_text(&title, iw, title_size, face);
     let title_lines = title.lines().count().clamp(1, 3);
     let title_h = 11.0 * k + (title_lines - 1) as f64 * rustgis_render::layout::line_pitch_mm(title_size);
@@ -4157,6 +4157,7 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
                     serif: *font == FontFamily::Serif,
                     font_name: font_name.as_deref(),
                     letter_spacing: *letter_spacing,
+                    aligned: *align != TextAlign::Left,
                 };
                 // Breaking between Thai words adds a character at each break. Text a break
                 // would take past the most an element holds is refused, never cut short.
