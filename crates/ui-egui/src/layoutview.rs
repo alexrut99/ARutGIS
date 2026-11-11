@@ -277,7 +277,7 @@ const PAN_PREVIEW_SIDE: f64 = 8192.0;
 /// for tiles still on their way, as it's drawn while the pointer moves.
 fn pan_preview(app: &mut RustGisApp, ctx: &egui::Context, layout: &Layout, id: u32, s: f32) -> Option<egui::TextureHandle> {
     let e = layout.element(id)?;
-    let ElementKind::MapFrame { map, center, scale, bearing, pitch, .. } = &e.kind else { return None };
+    let ElementKind::MapFrame { map, center, scale, bearing, pitch, exclude, .. } = &e.kind else { return None };
     // A tilted view's perspective follows the drawing's height, so a taller drawing wouldn't match
     // the frame: a pitched frame slides the page as before.
     if *pitch != 0.0 {
@@ -292,7 +292,7 @@ fn pan_preview(app: &mut RustGisApp, ctx: &egui::Context, layout: &Layout, id: u
     // thin frame could pass the first and not the second).
     let side = (ctx.input(|i| i.max_texture_side) as f64).min(PAN_PREVIEW_SIDE);
     let ppp = screen.min((PAN_PREVIEW_PIXELS / (w * h).max(1.0)).sqrt()).min(side / w.max(h).max(1.0)).max(0.01);
-    let pm = rustgis_engine::render::layout::frame_map_preview(m, cam, w, h, ppp)?;
+    let pm = rustgis_engine::render::layout::frame_map_preview(m, exclude, cam, w, h, ppp)?;
     let img = egui::ColorImage::from_rgba_premultiplied([pm.width() as usize, pm.height() as usize], pm.data());
     Some(ctx.load_texture("layout_pan_preview", img, egui::TextureOptions::LINEAR))
 }
@@ -3061,6 +3061,46 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
             ("Label type", "labelType", &look.label),
         ] {
             label_type(app, ui, (li, id), t, dark, title, Some(key), &update);
+        }
+    }
+    // The layers a map frame draws: a checkbox for each layer and web layer of its map, ticked
+    // when drawn. A locator shows the map without its detail this way; the map itself, and the
+    // other frames that show it, keep every layer. Names gone from the map drop out of the list
+    // as it's written back.
+    if let ElementKind::MapFrame { map, exclude, .. } = &e.kind
+        && let Some(m) = app.session.project.maps.iter().find(|m| m.name.eq_ignore_ascii_case(map))
+    {
+        // Once each: layers may share a name, and the frame leaves names out.
+        let mut names: Vec<String> = Vec::new();
+        for name in m.layers.iter().map(|l| &l.name).chain(m.tiles.iter().map(|t| &t.name)) {
+            if !names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                names.push(name.clone());
+            }
+        }
+        let kept: Vec<String> = exclude.iter().filter(|x| names.iter().any(|n| n.eq_ignore_ascii_case(x))).cloned().collect();
+        if !names.is_empty() {
+            ui.add_space(4.0);
+            egui::CollapsingHeader::new(tl!("Layers")).id_salt(("frame_layers", id)).default_open(!exclude.is_empty()).show(ui, |ui| {
+                let left_out = |n: &str| exclude.iter().any(|x| x.eq_ignore_ascii_case(n));
+                for n in &names {
+                    let mut drawn = !left_out(n);
+                    let hover = tl!("Draw this layer in this map frame. The map, and other frames showing it, keep the layer either way.");
+                    if ui.checkbox(&mut drawn, n.as_str()).on_hover_text(hover).changed() {
+                        let mut next: Vec<&String> = kept.iter().filter(|x| !x.eq_ignore_ascii_case(n)).collect();
+                        if !drawn {
+                            next.push(n);
+                        }
+                        update(app, json!({"exclude": next}));
+                    }
+                }
+                if !exclude.is_empty() {
+                    ui.label(
+                        egui::RichText::new(tl!("A project with layers left out of a map frame opens in ARutGIS 0.6.2 and later."))
+                            .size(11.0)
+                            .weak(),
+                    );
+                }
+            });
         }
     }
     if let ElementKind::MapFrame { grid, .. } = &e.kind {

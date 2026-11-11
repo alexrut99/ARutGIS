@@ -348,6 +348,7 @@ pub fn page_layout(s: &Session, pres: &Presentation, page: &Page) -> Layout {
                     extent_width: rustgis_map::layout::INDICATOR_WIDTH,
                     bearing: *bearing,
                     pitch: *pitch,
+                    exclude: Vec::new(),
                 },
             );
         }

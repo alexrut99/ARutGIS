@@ -538,6 +538,7 @@ fn layout_export_keeps_all_drawn_legend_classes() {
             extent_width: INDICATOR_WIDTH,
             bearing: 0.0,
             pitch: 0.0,
+            exclude: Vec::new(),
         },
     );
     page.add(
@@ -1159,6 +1160,7 @@ fn layout_export_rejects_unopened_local_shapefiles_and_required_masks() {
                 extent_width: INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch,
+                exclude: Vec::new(),
             },
         );
         for masked in [false, true] {

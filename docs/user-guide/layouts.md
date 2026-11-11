@@ -124,6 +124,16 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   muted page, and **Remove Extent Indicator** takes it away. Scripts set the same with `color`
   and `width` on `layout.addElement` (`kind` `extentIndicator`), or `layout.update` with
   `"extentIndicator": {"color": "#555555", "width": 1}` (`false` removes it).
+- **The layers a frame draws**: the **Layers** section of a frame's properties has a checkbox
+  for each layer and web layer of the frame's map: untick one and this frame draws the map
+  without it. A locator map keeps the country's outline and leaves out the parcels, contours and
+  points that would be a smudge at its scale. The map itself, and other frames showing it, keep
+  every layer; the frame's legend lists what the frame draws, and a renamed layer stays left
+  out. Scripts give the same with `"exclude": ["Parcels", "Contours"]` on `layout.update`
+  (`[]` draws every layer again). A project or a layout file with layers left out of a frame is
+  saved as format 2: ARutGIS 0.6.2 and later open it, and an older version says to update
+  rather than draw every layer and save the project without the choice. Projects that don't
+  use it are saved as before and open in every version.
 - **Grids**: the **Grid** section of a frame's properties turns the grid on and sets its
   **Interval** in degrees (**Auto** picks one from the frame's extent), its **Style** (full lines
   across the frame, ticks along its neatline only, or both, with the **Tick length**), its colour

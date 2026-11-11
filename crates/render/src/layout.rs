@@ -188,6 +188,9 @@ fn draw_page(
             && let Some(map) = maps.get_mut(mi)
         {
             let view = View { width: fw, height: fh, pixels_per_point: 1.0, camera: cam, sky: false };
+            // (As the frame draws it: without the layers it leaves out, which aren't read for it.)
+            let framed = Without::new(map, layout.frame_exclude(*f));
+            let map = &mut *framed.map;
             let lonlat = crate::view_lonlat(map, &view);
             let scale = map.ground_res_at(&cam) / rustgis_geom::PIXEL_M;
             map.sync_sources(&lonlat, scale, true);
@@ -233,7 +236,7 @@ fn draw_page(
         };
         let Some(r) = Rect::from_xywh(x, y, ew.max(1.0), eh.max(1.0)) else { continue };
         match &e.kind {
-            ElementKind::MapFrame { shape, grid, extent_of, extent_color, extent_width, .. } => {
+            ElementKind::MapFrame { shape, grid, extent_of, extent_color, extent_width, exclude, .. } => {
                 let Some(&(_, mi, cam, fw, fh)) = frame(e.id) else {
                     placeholder(target, r, "Missing map", ppp);
                     continue;
@@ -242,7 +245,7 @@ fn draw_page(
                 // A frame larger than the page budget is drawn at a lower resolution and scaled up.
                 let fppp = ppp.min((MAX_PIXELS / (fw * fh).max(1.0)).sqrt()).max(0.01);
                 let view = View { width: fw, height: fh, pixels_per_point: fppp, camera: cam, sky: false };
-                let Some(mut frame_pm) = frame_canvas(map, cam, fw, fh, fppp, target.is_recording(), pending) else {
+                let Some(mut frame_pm) = frame_canvas(map, exclude, cam, fw, fh, fppp, target.is_recording(), pending) else {
                     if frame_requires_complete(map, &view) {
                         return None;
                     }
@@ -254,7 +257,7 @@ fn draw_page(
                 let too_large = frame_pm.overflowed() || page_cost.saturating_add(frame_pm.recorded_cost()) > crate::vector::max_cost();
                 if frame_pm.is_recording()
                     && too_large
-                    && let Some(pixels) = frame_canvas(map, cam, fw, fh, fppp, false, pending)
+                    && let Some(pixels) = frame_canvas(map, exclude, cam, fw, fh, fppp, false, pending)
                 {
                     frame_pm = pixels;
                     if let Some(list) = record.as_deref_mut() {
@@ -336,6 +339,8 @@ fn draw_page(
                 {
                     let drawn = (!*all_classes).then(|| shown.iter().find(|(id, _)| id == f).map(|(_, v)| v.as_slice()).unwrap_or(&[]));
                     let scale = map.ground_res_at(&cam) / rustgis_geom::PIXEL_M;
+                    // (Nor the layers its frame doesn't draw.)
+                    let exclude = &*layout.legend_exclude(*f, exclude);
                     wait_for_tile_legends(map, scale, exclude);
                     let opts = LegendOptions { hide_other: *hide_other, exclude, scale, look };
                     legend(target, r, map, (title, *columns), drawn, opts, ppp);
@@ -344,7 +349,7 @@ fn draw_page(
             ElementKind::Colorbar { frame: f, layer, title, orientation, ticks, tick_side, reverse } => {
                 let scale = frame(*f)
                     .and_then(|fr| maps.get(fr.1))
-                    .and_then(|m| rustgis_map::layout::colorbar_layer(m, layer.as_deref()))
+                    .and_then(|m| rustgis_map::layout::colorbar_layer(m, layer.as_deref(), layout.frame_exclude(*f)))
                     .and_then(|l| l.raster.as_ref())
                     .and_then(rustgis_map::layout::color_scale);
                 match scale {
@@ -494,17 +499,71 @@ fn draw_page(
 /// A map frame's map, `w` × `h` points at `ppp` pixels a point, labels and attribution included:
 /// what a frame shows before its grid, indicator and outline. It waits for the map's tiles, as a
 /// page needs them all.
-pub fn frame_map(map: &mut Map, camera: rustgis_map::Camera, w: f64, h: f64, ppp: f64) -> Option<Pixmap> {
-    frame_canvas(map, camera, w, h, ppp, false, &mut false).map(Canvas::into_pixmap)
+pub fn frame_map(map: &mut Map, exclude: &[String], camera: rustgis_map::Camera, w: f64, h: f64, ppp: f64) -> Option<Pixmap> {
+    frame_canvas(map, exclude, camera, w, h, ppp, false, &mut false).map(Canvas::into_pixmap)
+}
+
+/// A map with the layers a frame leaves out (`exclude`, by name: its web layers too) hidden, and
+/// shown again when this is dropped: the map draws, and syncs what it streams, as the frame
+/// shows it, and is left as it was.
+struct Without<'a> {
+    map: &'a mut Map,
+    layers: Vec<usize>,
+    tiles: Vec<usize>,
+}
+
+impl<'a> Without<'a> {
+    fn new(map: &'a mut Map, exclude: &[String]) -> Self {
+        let out = |name: &str| exclude.iter().any(|x| x.eq_ignore_ascii_case(name));
+        let (mut layers, mut tiles) = (Vec::new(), Vec::new());
+        if !exclude.is_empty() {
+            for (i, l) in map.layers.iter_mut().enumerate().filter(|(_, l)| l.visible && out(&l.name)) {
+                l.visible = false;
+                layers.push(i);
+            }
+            for (i, t) in map.tiles.iter_mut().enumerate().filter(|(_, t)| t.visible && out(&t.name)) {
+                t.visible = false;
+                tiles.push(i);
+            }
+        }
+        Without { map, layers, tiles }
+    }
+}
+
+impl Drop for Without<'_> {
+    fn drop(&mut self) {
+        for &i in &self.layers {
+            if let Some(l) = self.map.layers.get_mut(i) {
+                l.visible = true;
+            }
+        }
+        for &i in &self.tiles {
+            if let Some(t) = self.map.tiles.get_mut(i) {
+                t.visible = true;
+            }
+        }
+    }
 }
 
 /// [`frame_map`] on a canvas: one that records (see [`crate::canvas`]) when `record` and the
 /// frame can be kept as vectors (flat, north up, without view effects), else its pixels.
 /// `pending` is set when some of its tiles, or a read of its streamed layers or rasters, were
 /// still on their way (in the browser, which doesn't wait for them).
-fn frame_canvas(map: &mut Map, camera: rustgis_map::Camera, w: f64, h: f64, ppp: f64, record: bool, pending: &mut bool) -> Option<Canvas> {
+#[allow(clippy::too_many_arguments)]
+fn frame_canvas(
+    map: &mut Map,
+    exclude: &[String],
+    camera: rustgis_map::Camera,
+    w: f64,
+    h: f64,
+    ppp: f64,
+    record: bool,
+    pending: &mut bool,
+) -> Option<Canvas> {
     let view = View { width: w, height: h, pixels_per_point: ppp, camera, sky: false };
-    let img = if record { crate::render_complete_recorded(map, &view) } else { crate::render_complete(map, &view) }?;
+    let shown = Without::new(map, exclude);
+    let img = if record { crate::render_complete_recorded(&mut *shown.map, &view) } else { crate::render_complete(&mut *shown.map, &view) }?;
+    drop(shown);
     *pending |= img.tiles_pending || img.data_pending;
     Some(finish_frame(img, ppp))
 }
@@ -512,9 +571,10 @@ fn frame_canvas(map: &mut Map, camera: rustgis_map::Camera, w: f64, h: f64, ppp:
 /// [`frame_map`] without waiting for tiles still on their way, for a preview drawn while the
 /// interface waits: a pan's preview, whose size is more than the frame's for the overscan slid
 /// under the pointer.
-pub fn frame_map_preview(map: &mut Map, camera: rustgis_map::Camera, w: f64, h: f64, ppp: f64) -> Option<Pixmap> {
+pub fn frame_map_preview(map: &mut Map, exclude: &[String], camera: rustgis_map::Camera, w: f64, h: f64, ppp: f64) -> Option<Pixmap> {
     let view = View { width: w, height: h, pixels_per_point: ppp, camera, sky: false };
-    crate::render(map, &view).map(|img| finish_frame(img, ppp).into_pixmap())
+    let shown = Without::new(map, exclude);
+    crate::render(&mut *shown.map, &view).map(|img| finish_frame(img, ppp).into_pixmap())
 }
 
 /// A rendered frame map with its labels and attribution drawn on it: on its recording when it
@@ -2156,7 +2216,7 @@ pub fn legends_pending(layout: &Layout, maps: &[Map]) -> bool {
         };
         let Some(m) = maps.iter().find(|m| m.name.eq_ignore_ascii_case(map)) else { return false };
         let cam = frame_camera(m, *center, *scale, *bearing, *pitch);
-        tile_legends_pending(m, m.ground_res_at(&cam) / rustgis_geom::PIXEL_M, exclude)
+        tile_legends_pending(m, m.ground_res_at(&cam) / rustgis_geom::PIXEL_M, &layout.legend_exclude(*frame, exclude))
     })
 }
 
@@ -4055,6 +4115,7 @@ mod tests {
                 extent_width: rustgis_map::layout::INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch: 0.0,
+                exclude: Vec::new(),
             },
         );
         let rect = if orientation == Orientation::Vertical { (10.0, 10.0, 20.0, 80.0) } else { (10.0, 10.0, 80.0, 20.0) };
@@ -4092,11 +4153,79 @@ mod tests {
             extent_width: width,
             bearing: 0.0,
             pitch: 0.0,
+            exclude: Vec::new(),
         };
         let mut l = Layout::new("Layout", 100.0, 100.0);
         let main = l.add("Main", (60.0, 60.0, 30.0, 30.0), frame(Coord::new(20.0, 10.0), 5e7, None));
         l.add("Inset", (5.0, 5.0, 50.0, 50.0), frame(Coord::new(0.0, 0.0), 2e8, Some(main)));
         render(&l, &mut [map], 96.0, &PageInfo::default()).unwrap()
+    }
+
+    /// A map frame draws its map without the layers it leaves out, by name whatever its case, and
+    /// its legend lists what it draws; the map itself, and another frame showing it, keep them.
+    #[test]
+    fn a_map_frame_leaves_out_the_layers_it_is_told_to() {
+        use rustgis_data::{Dataset, Geometry};
+        let (land, detail) = (Rgba::rgb(0x20, 0xA0, 0x20), Rgba::rgb(0x20, 0x20, 0xE0));
+        let mut map = Map::new("m");
+        map.basemap = rustgis_map::Basemap::Blank;
+        map.graticule = false;
+        for (name, half, color) in [("Land", 60.0, land), ("Detail", 20.0, detail)] {
+            let mut ds = Dataset::new(name, GeometryType::Polygon, vec![]);
+            let ring = [(-half, -half), (half, -half), (half, half), (-half, half), (-half, -half)].map(|(x, y)| Coord::new(x, y)).to_vec();
+            ds.push(Some(Geometry::Polygon(vec![vec![ring]])), vec![]);
+            let id = map.add_dataset(ds);
+            if let Some(l) = map.layers.iter_mut().find(|l| l.id == id) {
+                let mut symbol = rustgis_map::Symbol::default_for(GeometryType::Polygon, 0);
+                (symbol.fill, symbol.stroke_width) = (color, 0.0);
+                l.renderer = rustgis_map::Renderer::Single(symbol);
+            }
+        }
+        let frame = |exclude: &[&str]| ElementKind::MapFrame {
+            map: "m".into(),
+            center: Coord::new(0.0, 0.0),
+            scale: 2e8,
+            shape: FrameShape::Rectangle,
+            grid: None,
+            extent_of: None,
+            extent_color: rustgis_map::layout::INDICATOR_COLOR,
+            extent_width: rustgis_map::layout::INDICATOR_WIDTH,
+            bearing: 0.0,
+            pitch: 0.0,
+            exclude: exclude.iter().map(|n| n.to_string()).collect(),
+        };
+        let mut l = Layout::new("Layout", 200.0, 120.0);
+        // The locator at 5–55 mm, as `inset_pixels` reads; the main frame beside it.
+        let locator = l.add("Locator", (5.0, 5.0, 50.0, 50.0), frame(&["DETAIL", "Gone"]));
+        l.add("Main", (60.0, 5.0, 50.0, 50.0), frame(&[]));
+        let mut maps = [map];
+        let pm = render(&l, &mut maps, 96.0, &PageInfo::default()).unwrap();
+        let main_pixels = |c: Rgba| {
+            let k = PT_PER_MM;
+            let near = |p: (u8, u8, u8)| p.0.abs_diff(c.r()) < 40 && p.1.abs_diff(c.g()) < 40 && p.2.abs_diff(c.b()) < 40;
+            ((5.0 * k) as u32..(55.0 * k) as u32)
+                .flat_map(|y| ((60.0 * k) as u32..(110.0 * k) as u32).map(move |x| (x, y)))
+                .filter(|&(x, y)| near(rgb(&pm, x, y)))
+                .count()
+        };
+        assert!(inset_pixels(&pm, land) > 1000, "the locator draws the land");
+        assert_eq!(inset_pixels(&pm, detail), 0, "and not the layer it leaves out");
+        assert!(main_pixels(detail) > 100 && main_pixels(land) > 1000, "the other frame draws both");
+        // The map is as it was: both layers shown.
+        assert!(maps[0].layers.iter().all(|l| l.visible));
+        // A legend of the locator lists what it draws; one of the main frame, both layers.
+        assert_eq!(&*l.legend_exclude(locator, &["Land".to_string()]), ["Land", "DETAIL", "Gone"]);
+        assert_eq!(l.frame_exclude(locator), ["DETAIL", "Gone"]);
+        assert!(l.frame_exclude(99).is_empty());
+        // A pan's preview is the frame's too.
+        let cam = frame_camera(&maps[0], Coord::new(0.0, 0.0), 2e8, 0.0, 0.0);
+        let near = |pm: &Pixmap, c: Rgba| {
+            pm.pixels().iter().filter(|p| p.red().abs_diff(c.r()) < 40 && p.green().abs_diff(c.g()) < 40 && p.blue().abs_diff(c.b()) < 40).count()
+        };
+        let whole = frame_map_preview(&mut maps[0], &[], cam, 140.0, 140.0, 1.0).unwrap();
+        let without = frame_map_preview(&mut maps[0], &["detail".to_string()], cam, 140.0, 140.0, 1.0).unwrap();
+        assert!(near(&whole, detail) > 100 && near(&without, detail) == 0 && near(&without, land) > 1000);
+        assert!(maps[0].layers.iter().all(|l| l.visible));
     }
 
     /// Pixels inside the inset (5–55 mm) close to `c`.
@@ -4273,6 +4402,7 @@ mod tests {
                 extent_width: rustgis_map::layout::INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch: 0.0,
+                exclude: Vec::new(),
             },
         );
         let kind = ElementKind::Colorbar {
@@ -4396,6 +4526,7 @@ mod tests {
                 extent_width: rustgis_map::layout::INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch: 0.0,
+                exclude: Vec::new(),
             },
         );
         render(&l, &mut maps, 96.0, &PageInfo::default()).unwrap()
@@ -4435,6 +4566,7 @@ mod tests {
                 extent_width: rustgis_map::layout::INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch: 0.0,
+                exclude: Vec::new(),
             },
         );
         render(&l, &mut maps, 96.0, &PageInfo::default()).unwrap()
@@ -5026,6 +5158,7 @@ mod tests {
                 extent_width: rustgis_map::layout::INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch: 0.0,
+                exclude: Vec::new(),
             },
         );
         let (crimson, navy) = (Rgba::rgb(0xD0, 0x10, 0x10), Rgba::rgb(0x10, 0x10, 0xD0));

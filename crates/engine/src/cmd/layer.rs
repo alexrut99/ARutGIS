@@ -4606,7 +4606,8 @@ fn add_sample(s: &mut Session, p: &Value) -> CmdResult {
     Ok(json!({"layer": id}))
 }
 
-/// Legends that leave out layer `old` of the active map, in the frames that show it, follow it:
+/// Legends that leave out layer `old` of the active map, in the frames that show it, and those
+/// frames themselves when they leave it out, follow it:
 /// to its new name, or (`None`, the layer deleted) by dropping it, so a later layer of that name
 /// isn't left out unasked. Called once the layer is renamed or gone: while another layer still
 /// bears `old` (names may repeat), the legends keep it for that one. Renamed onto the name of
@@ -4622,6 +4623,26 @@ pub(crate) fn legends_follow_layer(s: &mut Session, old: &str, new: Option<&str>
     }
     let shared = new.is_some_and(|n| named(s, n) > 1);
     let map = s.map().name.clone();
+    let follow = |exclude: &mut Vec<String>| match new {
+        // Another layer the legend lists bears the new name: carrying the exclusion
+        // over would take that one out too, so the renamed layer is listed with it.
+        Some(n) if shared && !exclude.iter().any(|x| x.eq_ignore_ascii_case(n)) => {
+            exclude.retain(|x| !x.eq_ignore_ascii_case(old));
+        }
+        Some(n) => {
+            exclude.iter_mut().filter(|x| x.eq_ignore_ascii_case(old)).for_each(|x| *x = n.to_string());
+            // Once each, should the new name have been left out already.
+            let mut seen: Vec<String> = Vec::new();
+            exclude.retain(|x| {
+                let first = !seen.iter().any(|y| y.eq_ignore_ascii_case(x));
+                if first {
+                    seen.push(x.clone());
+                }
+                first
+            });
+        }
+        None => exclude.retain(|x| !x.eq_ignore_ascii_case(old)),
+    };
     for layout in &mut s.project.layouts {
         let frames: Vec<u32> = layout
             .elements
@@ -4640,26 +4661,13 @@ pub(crate) fn legends_follow_layer(s: &mut Session, old: &str, new: Option<&str>
                     Some(_) => {}
                     None => look.forget(old),
                 }
-                match new {
-                    // Another layer the legend lists bears the new name: carrying the exclusion
-                    // over would take that one out too, so the renamed layer is listed with it.
-                    Some(n) if shared && !exclude.iter().any(|x| x.eq_ignore_ascii_case(n)) => {
-                        exclude.retain(|x| !x.eq_ignore_ascii_case(old));
-                    }
-                    Some(n) => {
-                        exclude.iter_mut().filter(|x| x.eq_ignore_ascii_case(old)).for_each(|x| *x = n.to_string());
-                        // Once each, should the new name have been left out already.
-                        let mut seen: Vec<String> = Vec::new();
-                        exclude.retain(|x| {
-                            let first = !seen.iter().any(|y| y.eq_ignore_ascii_case(x));
-                            if first {
-                                seen.push(x.clone());
-                            }
-                            first
-                        });
-                    }
-                    None => exclude.retain(|x| !x.eq_ignore_ascii_case(old)),
-                }
+                follow(exclude);
+            }
+            // The frames that leave the layer out follow it as their legends do.
+            if let rustgis_map::layout::ElementKind::MapFrame { exclude, .. } = &mut e.kind
+                && frames.contains(&e.id)
+            {
+                follow(exclude);
             }
         }
     }
