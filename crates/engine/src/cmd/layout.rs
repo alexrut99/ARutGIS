@@ -174,12 +174,8 @@ pub fn commands() -> Vec<C> {
         C::new("layout.save", "Save Layout File", "Publish › Save As", |s, p| {
             let path = ps(p, "path").ok_or("path is required")?;
             let l = active(s, p)?.clone();
-            let mut file = serde_json::to_value(&l).map_err(|e| e.to_string())?;
-            // A layout an older RustGIS would lose something of says so: a reader checks it.
-            if let (Some(o), true) = (file.as_object_mut(), l.format() > rustgis_map::layout::PLAIN_FORMAT) {
-                o.insert("format".into(), json!(l.format()));
-            }
-            let text = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
+            // A layout an older RustGIS would lose something of is written so that one refuses it.
+            let text = l.to_file().map_err(|e| e.to_string())?;
             rustgis_data::io::write_atomic(Path::new(path), text.as_bytes()).map_err(|e| format!("{path}: {e}"))?;
             Ok(json!({"path": path}))
         }).inputs(object_inputs).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files))
@@ -4677,7 +4673,7 @@ pub(crate) fn import(s: &mut Session, text: &str) -> CmdResult {
     }
     // One saved by a newer RustGIS is refused, not read without what this version doesn't know.
     crate::project::check_format(text, "layout")?;
-    let mut l: Layout = serde_json::from_str(text).map_err(|e| format!("not a RustGIS layout: {e}"))?;
+    let mut l = Layout::from_file(text).map_err(|e| format!("not a RustGIS layout: {e}"))?;
     // Refused before anything is said of it.
     if s.project.layouts.len() >= crate::project::MAX_LAYOUTS {
         return Err(format!("a project holds at most {} layouts; remove one first", crate::project::MAX_LAYOUTS));

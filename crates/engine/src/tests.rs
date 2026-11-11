@@ -27418,7 +27418,8 @@ fn map_frames_leave_layers_out() {
     let back = crate::Project::from_json(&text).unwrap();
     assert_eq!(back.layouts[0].frame_exclude(frame), ["Rivers", "Cities"]);
     // The frame's legend lists what the frame draws: its sizes are those without the layers.
-    let legend = s.project.layouts[0].elements.iter().find(|e| matches!(e.kind, rustgis_map::layout::ElementKind::Legend { .. })).unwrap().id;
+    let legend =
+        s.project.layouts[0].elements.iter().find(|e| matches!(e.kind, rustgis_map::layout::ElementKind::Legend { .. })).unwrap().id;
     let listed = |s: &mut Session| {
         let own = match s.project.layouts[0].element(legend).map(|e| &e.kind) {
             Some(rustgis_map::layout::ElementKind::Legend { exclude, .. }) => exclude.clone(),
@@ -27437,13 +27438,18 @@ fn map_frames_leave_layers_out() {
     s.run("map.addTiles", &json!({"url": "https://maps.example.org/wms/{bbox-epsg-3857}", "name": "Soils", "overlay": true})).unwrap();
     s.run("layout.update", &json!({"element": frame, "exclude": ["soils", "cities"]})).unwrap();
     assert_eq!(left_out(&s), ["Soils", "Cities"]);
-    // A layout file says its format, and one of a newer format than this version reads is refused.
+    // A layout file says its format and holds the layout one level down, where a version that
+    // doesn't look at the format finds none; one of a newer format than this version reads is
+    // refused.
     let dir = std::env::temp_dir().join(format!("rustgis-frame-layers-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("sheet.rgislayout");
     s.run("layout.save", &json!({"path": file.display().to_string()})).unwrap();
     let mut saved: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(saved["format"], json!(2));
+    assert_eq!(saved["layout"]["name"], json!(s.project.layouts[0].name));
+    assert!(saved["width"].as_str().is_some_and(|why| why.contains("0.6.2")), "{saved}");
+    assert!(saved.get("elements").is_none());
     let imported = s.run("layout.import", &json!({"path": file.display().to_string()})).unwrap()["layout"].as_u64().unwrap() as usize;
     assert_eq!(s.project.layouts[imported].frame_exclude(frame), ["Soils", "Cities"]);
     saved["format"] = json!(3);

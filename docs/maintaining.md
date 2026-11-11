@@ -71,7 +71,9 @@ same files. New and changed code follows these rules; not every existing reader 
   (`Project::format_written`), and `project::FORMAT` is the newest this version reads:
   - 1: everything up to ARutGIS 0.6.1.
   - 2 (ARutGIS 0.6.2): a layout's map frame leaves layers of its map out (`exclude`). A layout
-    file with one says `"format": 2` too.
+    file with one says `"format": 2` too. Versions before 0.6.2 read a layout file without
+    looking at its format, so such a file holds its layout one level down (`Layout::to_file`):
+    they find no layout in it and refuse it.
 - Where a change allows it, reading a new version ships at least one release before anything
   writes it.
 - RustGIS releases, file formats, the plugin ABI and the GeoLibre runner protocol are versioned

@@ -3532,7 +3532,7 @@ impl RustGisApp {
                 let li = self.session.active_layout.ok_or("open a layout first")?;
                 let l = self.session.project.layouts.get(li).cloned().ok_or("open a layout first")?;
                 if self.services.download.is_some() {
-                    let text = serde_json::to_string_pretty(&l).map_err(|e| e.to_string())?;
+                    let text = l.to_file().map_err(|e| e.to_string())?;
                     self.download(&format!("{}.rgislayout", l.name), text.into_bytes());
                 } else if let Some(path) = dialogs::pick_save(&format!("{}.rgislayout", l.name), &["rgislayout"], tl!("RustGIS layout")) {
                     return self.run("layout.save", json!({"layout": li, "path": path}));

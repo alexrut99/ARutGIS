@@ -562,7 +562,8 @@ fn frame_canvas(
 ) -> Option<Canvas> {
     let view = View { width: w, height: h, pixels_per_point: ppp, camera, sky: false };
     let shown = Without::new(map, exclude);
-    let img = if record { crate::render_complete_recorded(&mut *shown.map, &view) } else { crate::render_complete(&mut *shown.map, &view) }?;
+    let img =
+        if record { crate::render_complete_recorded(&mut *shown.map, &view) } else { crate::render_complete(&mut *shown.map, &view) }?;
     drop(shown);
     *pending |= img.tiles_pending || img.data_pending;
     Some(finish_frame(img, ppp))
@@ -4220,7 +4221,10 @@ mod tests {
         // A pan's preview is the frame's too.
         let cam = frame_camera(&maps[0], Coord::new(0.0, 0.0), 2e8, 0.0, 0.0);
         let near = |pm: &Pixmap, c: Rgba| {
-            pm.pixels().iter().filter(|p| p.red().abs_diff(c.r()) < 40 && p.green().abs_diff(c.g()) < 40 && p.blue().abs_diff(c.b()) < 40).count()
+            pm.pixels()
+                .iter()
+                .filter(|p| p.red().abs_diff(c.r()) < 40 && p.green().abs_diff(c.g()) < 40 && p.blue().abs_diff(c.b()) < 40)
+                .count()
         };
         let whole = frame_map_preview(&mut maps[0], &[], cam, 140.0, 140.0, 1.0).unwrap();
         let without = frame_map_preview(&mut maps[0], &["detail".to_string()], cam, 140.0, 140.0, 1.0).unwrap();
