@@ -67,7 +67,13 @@ same files. New and changed code follows these rules; not every existing reader 
 - An older RustGIS refuses a file or setting newer than it understands, or keeps it unchanged. It
   doesn't save it again without what it couldn't read.
 - A format's version goes up only when a file uses something an older reader would lose or
-  misread.
+  misread. A project is written as the oldest format that keeps all it holds
+  (`Project::format_written`), and `project::FORMAT` is the newest this version reads:
+  - 1: everything up to ARutGIS 0.6.1.
+  - 2 (ARutGIS 0.6.2): a layout's map frame leaves layers of its map out (`exclude`). A layout
+    file with one says `"format": 2` too. Versions before 0.6.2 read a layout file without
+    looking at its format, so such a file holds its layout one level down (`Layout::to_file`):
+    they find no layout in it and refuse it.
 - Where a change allows it, reading a new version ships at least one release before anything
   writes it.
 - RustGIS releases, file formats, the plugin ABI and the GeoLibre runner protocol are versioned

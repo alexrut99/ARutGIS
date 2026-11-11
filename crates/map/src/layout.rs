@@ -845,6 +845,19 @@ fn is_left(a: &TextAlign) -> bool {
 /// The most layers a legend leaves out.
 pub const MAX_LEGEND_EXCLUDED: usize = 1000;
 
+/// The most layers a map frame leaves out.
+pub const MAX_FRAME_EXCLUDED: usize = 1000;
+
+/// The saved format of a layout, and of a project, that uses nothing an older RustGIS would lose.
+pub const PLAIN_FORMAT: u32 = 1;
+
+/// The saved format of a layout with a map frame that leaves layers out, and of its project.
+pub const FRAME_LAYERS_FORMAT: u32 = 2;
+
+/// What a RustGIS older than 0.6.2 says of a layout file it would lose something of (see
+/// [`Layout::to_file`]).
+const NEEDS_NEWER: &str = "this layout needs ARutGIS 0.6.2 or later: update ARutGIS to open it";
+
 /// Which way a line element runs across its box.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LineDir {
@@ -1885,6 +1898,11 @@ pub enum ElementKind {
         bearing: f64,
         #[serde(default, skip_serializing_if = "is_zero")]
         pitch: f64,
+        /// Layers of the map this frame doesn't draw, by name (its web layers too): a locator
+        /// without the map's detail. A layout with any is saved as [`FRAME_LAYERS_FORMAT`], which
+        /// an older RustGIS refuses rather than draw every layer and save the layout without them.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        exclude: Vec<String>,
     },
     NorthArrow {
         frame: u32,
@@ -2445,6 +2463,71 @@ impl Layout {
         self.elements.iter_mut().find(|e| e.id == id)
     }
 
+    /// The saved format the layout needs: [`PLAIN_FORMAT`] unless it uses what only a newer
+    /// reader keeps.
+    pub fn format(&self) -> u32 {
+        let leaves_out = |e: &Element| matches!(&e.kind, ElementKind::MapFrame { exclude, .. } if !exclude.is_empty());
+        if self.elements.iter().any(leaves_out) { FRAME_LAYERS_FORMAT } else { PLAIN_FORMAT }
+    }
+
+    /// The text of a layout file (`.rgislayout`).
+    ///
+    /// A layout an older RustGIS would lose something of ([`Layout::format`]) is written one
+    /// level down, as `{"format", "layout", "width"}`. RustGIS before 0.6.2 reads a layout file
+    /// without looking at its format: it would draw the layers a frame leaves out and save the
+    /// layout without the choice. Written this way it finds no layout at the top and refuses the
+    /// file, giving `width` (a sentence where it expects a number) as its reason.
+    pub fn to_file(&self) -> serde_json::Result<String> {
+        #[derive(Serialize)]
+        struct Nested<'a> {
+            format: u32,
+            layout: &'a Layout,
+            width: &'static str,
+        }
+        match self.format() {
+            PLAIN_FORMAT => serde_json::to_string_pretty(self),
+            format => serde_json::to_string_pretty(&Nested { format, layout: self, width: NEEDS_NEWER }),
+        }
+    }
+
+    /// The layout in a layout file's text, either way [`Layout::to_file`] writes one. Whether
+    /// this version reads the file's format is the caller's to check first.
+    pub fn from_file(text: &str) -> serde_json::Result<Layout> {
+        #[derive(Deserialize)]
+        struct Head {
+            #[serde(default)]
+            layout: Option<serde::de::IgnoredAny>,
+        }
+        #[derive(Deserialize)]
+        struct Nested {
+            layout: Layout,
+        }
+        if text.trim_start().starts_with('{') && serde_json::from_str::<Head>(text)?.layout.is_some() {
+            return Ok(serde_json::from_str::<Nested>(text)?.layout);
+        }
+        serde_json::from_str(text)
+    }
+
+    /// The layers map frame `frame` doesn't draw, by name.
+    pub fn frame_exclude(&self, frame: u32) -> &[String] {
+        match self.element(frame).map(|e| &e.kind) {
+            Some(ElementKind::MapFrame { exclude, .. }) => exclude,
+            _ => &[],
+        }
+    }
+
+    /// What a legend of map frame `frame` leaves out: its own `exclude`, and the layers its frame
+    /// doesn't draw (a legend lists what its frame shows).
+    pub fn legend_exclude<'a>(&'a self, frame: u32, exclude: &'a [String]) -> std::borrow::Cow<'a, [String]> {
+        let hidden = self.frame_exclude(frame);
+        if hidden.is_empty() {
+            return exclude.into();
+        }
+        let mut all = exclude.to_vec();
+        all.extend(hidden.iter().filter(|h| !exclude.iter().any(|x| x.eq_ignore_ascii_case(h))).cloned());
+        all.into()
+    }
+
     /// The first map frame.
     pub fn first_frame(&self) -> Option<u32> {
         self.elements.iter().find(|e| matches!(e.kind, ElementKind::MapFrame { .. })).map(|e| e.id)
@@ -2717,7 +2800,10 @@ impl Layout {
             e.name = e.name.chars().take(200).collect();
             e.rotation = if e.kind.turns() { normalize_rotation(e.rotation) } else { 0.0 };
             match &mut e.kind {
-                ElementKind::MapFrame { center, scale, shape, grid, bearing, pitch, extent_width, .. } => {
+                ElementKind::MapFrame { center, scale, shape, grid, bearing, pitch, extent_width, exclude, .. } => {
+                    // (Names stay whole, as a legend's do.)
+                    cut |= exclude.len() > MAX_FRAME_EXCLUDED;
+                    exclude.truncate(MAX_FRAME_EXCLUDED);
                     *scale = finite_or(*scale, 50_000_000.0).clamp(MIN_FRAME_SCALE, MAX_FRAME_SCALE);
                     *extent_width = finite_or(*extent_width, INDICATOR_WIDTH).clamp(MIN_INDICATOR_WIDTH, MAX_INDICATOR_WIDTH);
                     *bearing = crate::camera::normalize_bearing(*bearing);
@@ -2963,11 +3049,12 @@ pub const MAX_COLORBAR_VALUES: usize = 64;
 /// Colours sampled along a continuous colorbar.
 const RAMP_SAMPLES: usize = 256;
 
-/// The raster layer a colorbar shows: `layer` by name, or the top visible raster of the map.
-pub fn colorbar_layer<'a>(map: &'a Map, layer: Option<&str>) -> Option<&'a Layer> {
+/// The raster layer a colorbar shows: `layer` by name, or the top visible raster of the map that
+/// its frame draws (one not among the layers `left_out` of the frame).
+pub fn colorbar_layer<'a>(map: &'a Map, layer: Option<&str>, left_out: &[String]) -> Option<&'a Layer> {
     match layer {
         Some(n) => map.layer_by_name(n).filter(|l| l.is_raster()),
-        None => map.layers.iter().find(|l| l.visible && l.is_raster()),
+        None => map.layers.iter().find(|l| l.visible && l.is_raster() && !left_out.iter().any(|n| n.eq_ignore_ascii_case(&l.name))),
     }
 }
 
@@ -3088,6 +3175,59 @@ mod tests {
         assert!(r.2.is_finite() && r.3.is_finite() && r.2 > 0.0);
     }
 
+    /// A map frame's left-out layers are saved only when it has some, and a layout with any is
+    /// of the format an older reader refuses; a layout without stays as every reader takes it.
+    #[test]
+    fn a_frame_leaving_layers_out_is_saved_as_a_newer_format() {
+        let frame = |exclude: Vec<String>| ElementKind::MapFrame {
+            map: "Map".into(),
+            center: Coord::new(0.0, 0.0),
+            scale: 1e8,
+            shape: FrameShape::Rectangle,
+            grid: None,
+            extent_of: None,
+            extent_color: INDICATOR_COLOR,
+            extent_width: INDICATOR_WIDTH,
+            bearing: 0.0,
+            pitch: 0.0,
+            exclude,
+        };
+        let mut l = Layout::new("Layout", 297.0, 210.0);
+        let whole = l.add("Map Frame", (10.0, 10.0, 200.0, 150.0), frame(Vec::new()));
+        assert_eq!(l.format(), PLAIN_FORMAT);
+        let saved = serde_json::to_string(&l).unwrap();
+        assert!(!saved.contains("exclude"), "{saved}");
+        // Its file is the layout itself, as every version wrote one.
+        let file = l.to_file().unwrap();
+        assert_eq!(serde_json::from_str::<Layout>(&file).unwrap(), l);
+        assert_eq!(Layout::from_file(&file).unwrap(), l);
+        let locator = l.add("Locator", (220.0, 10.0, 60.0, 60.0), frame(vec!["Parcels".into(), "Roads".into()]));
+        assert_eq!(l.format(), FRAME_LAYERS_FORMAT);
+        let again: Layout = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
+        assert_eq!(again, l);
+        assert_eq!(again.frame_exclude(locator), ["Parcels", "Roads"]);
+        assert!(again.frame_exclude(whole).is_empty());
+        // Its file is one a reader that doesn't look at a format (RustGIS before 0.6.2 read the
+        // text as a layout, as here) refuses, saying why; this version reads it whole.
+        let file = l.to_file().unwrap();
+        let older = serde_json::from_str::<Layout>(&file).unwrap_err().to_string();
+        assert!(older.contains("this layout needs ARutGIS 0.6.2 or later"), "{older}");
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&file).unwrap()["format"], 2);
+        assert_eq!(Layout::from_file(&file).unwrap(), l);
+        assert!(Layout::from_file(r#"{"format": 2, "layout": {"name": "half"}}"#).is_err());
+        // A legend leaves out its own layers and its frame's, each once.
+        let own = ["roads".to_string(), "Lakes".to_string()];
+        assert_eq!(&*l.legend_exclude(locator, &own), ["roads", "Lakes", "Parcels"]);
+        assert_eq!(&*l.legend_exclude(whole, &own), own);
+        // More names than a frame leaves out are cut on reading, and said.
+        if let Some(ElementKind::MapFrame { exclude, .. }) = l.element_mut(locator).map(|e| &mut e.kind) {
+            *exclude = (0..=MAX_FRAME_EXCLUDED).map(|i| format!("Layer {i}")).collect();
+        }
+        assert!(!l.clamp().is_empty());
+        assert_eq!(l.frame_exclude(locator).len(), MAX_FRAME_EXCLUDED);
+        assert!(l.clamp().is_empty(), "nothing more to repair");
+    }
+
     #[test]
     fn elements_add_hit_and_remove_with_surrounds() {
         let mut l = Layout::new("Layout", 297.0, 210.0);
@@ -3105,6 +3245,7 @@ mod tests {
                 extent_width: INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch: 0.0,
+                exclude: Vec::new(),
             },
         );
         let n = l.add("North Arrow", (215.0, 10.0, 15.0, 20.0), ElementKind::north_arrow(f));

@@ -208,7 +208,9 @@ fn file_compatibility_resaves_declare_the_current_writer() -> Result<(), String>
     assert_eq!(s.project.format, 0, "the loaded version is available independently");
     let (text, _) = s.project.saved_text(None)?;
     let saved: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    assert_eq!(saved["format"], json!(rustgis_engine::project::FORMAT));
+    // (The oldest format that keeps all the project holds: it uses nothing newer.)
+    let written = rustgis_engine::map::layout::PLAIN_FORMAT;
+    assert_eq!(saved["format"], json!(written));
     for kind in ["template", "projectPackage"] {
         let (_, bytes) = rustgis_engine::cmd::items::item_bytes(&mut s, kind, &json!({}))?;
         let text = if kind == "projectPackage" {
@@ -217,7 +219,7 @@ fn file_compatibility_resaves_declare_the_current_writer() -> Result<(), String>
             String::from_utf8(bytes).map_err(|e| e.to_string())?
         };
         let saved: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-        assert_eq!(saved["format"], json!(rustgis_engine::project::FORMAT), "{kind}");
+        assert_eq!(saved["format"], json!(written), "{kind}");
     }
     Ok(())
 }

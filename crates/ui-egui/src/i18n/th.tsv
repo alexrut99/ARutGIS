@@ -4523,6 +4523,7 @@ Names and postcodes: Department of Provincial Administration, via OpenGISData-Th
 1 more class isn't listed: the list's limit doesn't change how it's drawn	ยังมีอีก 1 คลาสที่ไม่ได้แสดงในรายการ: ขีดจำกัดของรายการไม่มีผลต่อการวาด
 A new GeoPackage	GeoPackage ใหม่
 A new table in a GeoPackage	ตารางใหม่ใน GeoPackage
+A project with layers left out of a map frame opens in ARutGIS 0.6.2 and later.	โปรเจกต์ที่ซ่อนชั้นข้อมูลในกรอบแผนที่ต้องเปิดด้วย ARutGIS 0.6.2 ขึ้นไป
 A small chart of several numeric fields, drawn on each feature over its symbol	แผนภูมิขนาดเล็กของฟิลด์ตัวเลขหลายฟิลด์ วาดบนแต่ละฟีเจอร์ทับสัญลักษณ์ของฟีเจอร์นั้น
 A streamed layer needs Load All Features first	ชั้นข้อมูลแบบสตรีมต้องใช้ "โหลดฟีเจอร์ทั้งหมด" ก่อน
 A table replaced in a GeoPackage	ตารางที่ถูกแทนที่ใน GeoPackage
@@ -4814,3 +4815,4 @@ Zone Fields	ฟิลด์โซน
 ＋ Add field	＋ เพิ่มฟิลด์
 Wrap Text to the Element's Width	ตัดบรรทัดให้พอดีความกว้างของกรอบ
 Breaks each line wider than the element between its words, so the text stays within the element's sides	ตัดบรรทัดที่กว้างกว่ากรอบตรงระหว่างคำ ข้อความจึงไม่ล้นออกนอกกรอบ
+Draw this layer in this map frame. The map, and other frames showing it, keep the layer either way.	วาดชั้นข้อมูลนี้ในกรอบแผนที่นี้ ตัวแผนที่และกรอบอื่นที่แสดงแผนที่เดียวกันยังมีชั้นข้อมูลนี้ตามเดิม

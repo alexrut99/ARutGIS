@@ -53,9 +53,12 @@ pub fn open_command(path: &str) -> &'static str {
         "layer.addData"
     }
 }
-/// Saved-document compatibility version, independent of the RustGIS release version.
-/// Advance it when an older reader would lose meaningful saved information on resaving.
-pub const FORMAT: u32 = 1;
+/// Saved-document compatibility version, independent of the RustGIS release version: the newest
+/// this version reads. Advance it when an older reader would lose meaningful saved information
+/// on resaving. A project is written as the oldest format that keeps all it holds
+/// ([`Project::format_written`]), so an older RustGIS still opens the ones that use nothing new:
+/// 2 only when a layout's map frame leaves layers of its map out.
+pub const FORMAT: u32 = rustgis_map::layout::FRAME_LAYERS_FORMAT;
 /// Largest project file read or saved in the browser, or on a computer whose memory isn't known
 /// (512 MiB): the floor of [`max_bytes`].
 pub const BYTES_FLOOR: u64 = 512 << 20;
@@ -312,13 +315,17 @@ pub(crate) fn public_login_params(value: &serde_json::Value) -> Option<serde_jso
     (public != *value).then_some(public)
 }
 
+// (Derived as its own remote type, so the format written is read from the project as it is
+// serialized, whichever path serializes it: see the `Serialize` impl below.)
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct Project {
     /// Read-time adjustments (labels, diagrams, layouts), consumed by the session and never saved.
     #[serde(skip)]
     pub(crate) read_notices: Vec<(ReadPart, String)>,
-    /// The format read from disk; serialization always declares the current writer's format.
-    #[serde(default = "format", serialize_with = "write_format")]
+    /// The format read from disk; serialization always declares what the current writer's
+    /// payload needs ([`Project::format_written`]).
+    #[serde(default = "format", getter = "Project::format_written")]
     pub format: u32,
     pub name: String,
     pub maps: Vec<Map>,
@@ -616,10 +623,28 @@ fn format() -> u32 {
     FORMAT
 }
 
-/// Every project serialization, including templates and packages, describes the current
-/// writer's payload rather than retaining the version of the file originally opened.
-fn write_format<S: serde::Serializer>(_: &u32, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_u32(FORMAT)
+impl Project {
+    /// The format the project is written as. Every project serialization, including templates
+    /// and packages, describes the current writer's payload rather than retaining the version of
+    /// the file originally opened: the oldest format that keeps all the project holds, so one
+    /// that uses nothing newer is still opened by an older RustGIS, and one that does is refused
+    /// by it rather than saved again without what it couldn't read.
+    pub fn format_written(&self) -> u32 {
+        let plain = rustgis_map::layout::PLAIN_FORMAT;
+        self.layouts.iter().map(rustgis_map::layout::Layout::format).fold(plain, u32::max)
+    }
+}
+
+impl Serialize for Project {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        Project::serialize(self, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Project {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Project::deserialize(deserializer)
+    }
 }
 
 impl Default for Project {

@@ -1436,6 +1436,7 @@ pub(crate) mod tests {
                 extent_width: INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch: 0.0,
+                exclude: Vec::new(),
             },
         );
         let info = crate::layout::PageInfo::default();
