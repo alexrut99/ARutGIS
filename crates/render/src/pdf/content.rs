@@ -239,10 +239,46 @@ impl Writer<'_> {
     /// Sets a run of glyphs in the document's Type 3 fonts, each at its pen position.
     fn glyphs(&mut self, out: &mut Vec<u8>, st: &mut State, run: &GlyphRun) {
         let mut placed = Vec::with_capacity(run.glyphs.len());
+        // The glyphs' characters, in order, are the text as it was written:
+        // - A SARA AM (ำ) is drawn in two glyphs, a ring over the consonant and an AA after it (a
+        //   tone mark between them): the ring is drawn with the AA, as one glyph that stands for
+        //   the vowel.
+        // - A mark set on another (a tone mark over a vowel, neither with any width) is drawn
+        //   with it, as one glyph that stands for the two: readers that take two glyphs at one
+        //   place for one drawn twice would part them from their word.
+        let none = crate::text::NO_CHAR;
+        let font = run.font;
+        let widthless = |g: &crate::vector::Glyph| g.ch != none && ab_glyph::Font::h_advance_unscaled(font, g.id) == 0.0;
+        let ems = |from: &crate::vector::Glyph, g: &crate::vector::Glyph| (g.id, (g.x - from.x) / run.size, (from.y - g.y) / run.size);
+        let mut ring: Option<&crate::vector::Glyph> = None;
+        // The mark placed last, when another may still be drawn with it.
+        let mut mark: Option<&crate::vector::Glyph> = None;
+        let place = |placed: &mut Vec<_>, fonts: &mut Fonts, doc: &mut Doc, g: &crate::vector::Glyph, also, with| {
+            let p = fonts.place(doc, font, g.id, (g.ch, also), -g.y / run.size, with);
+            placed.extend(p.map(|p| (g.x, p, g.ch == none)));
+        };
         for g in &run.glyphs {
-            if let Some(p) = self.fonts.place(self.doc, run.font, g.id, g.ch) {
-                placed.push((g.x, p));
+            if g.ch == none {
+                if let Some(alone) = ring.replace(g) {
+                    place(&mut placed, self.fonts, self.doc, alone, none, None);
+                }
+                continue;
             }
+            if let Some(under) = mark.take().filter(|_| widthless(g)) {
+                // The two as one, in place of the first alone.
+                placed.pop();
+                place(&mut placed, self.fonts, self.doc, under, g.ch, Some(ems(under, g)));
+                continue;
+            }
+            let with = if g.ch == '\u{0E33}' { ring.take().map(|r| ems(g, r)) } else { None };
+            let before = placed.len();
+            place(&mut placed, self.fonts, self.doc, g, none, with);
+            if placed.len() > before && widthless(g) {
+                mark = Some(g);
+            }
+        }
+        if let Some(alone) = ring {
+            place(&mut placed, self.fonts, self.doc, alone, none, None);
         }
         if placed.is_empty() {
             return;
@@ -254,19 +290,30 @@ impl Writer<'_> {
         write_matrix(out, run.transform.pre_scale(1.0, -1.0));
         out.extend_from_slice(b" Tm\n");
         let size = run.size;
-        let (mut font, mut pen) = (None, 0.0f32);
-        for (x, p) in placed {
+        // `open`: a TJ array is being written.
+        let (mut font, mut pen, mut open) = (None, 0.0f32, false);
+        for (x, p, silent) in placed {
+            if open && (font != Some(p.font) || silent) {
+                out.extend_from_slice(b"] TJ\n");
+                open = false;
+            }
             if font != Some(p.font) {
-                if font.is_some() {
-                    out.extend_from_slice(b"] TJ\n");
-                }
                 if !self.res.fonts.contains(&p.font) {
                     self.res.fonts.push(p.font);
                 }
                 let _ = write!(out, "/T{} ", p.font);
                 num(out, size, 3);
-                out.extend_from_slice(b" Tf\n[");
+                out.extend_from_slice(b" Tf\n");
                 font = Some(p.font);
+            }
+            // A glyph that stands for no character (a SARA AM's ring) is marked as having no
+            // text, so copying and searching give the text as it was written.
+            if silent {
+                out.extend_from_slice(b"/Span <</ActualText <FEFF>>> BDC\n");
+            }
+            if !open {
+                out.push(b'[');
+                open = true;
             }
             // TJ moves back by thousandths of the em: from where the pen is to the glyph's place.
             let shift = (pen - x) / size * 1000.0;
@@ -275,8 +322,15 @@ impl Writer<'_> {
             }
             let _ = write!(out, "<{:02X}>", p.code);
             pen = x + p.advance * size;
+            if silent {
+                out.extend_from_slice(b"] TJ\nEMC\n");
+                open = false;
+            }
         }
-        out.extend_from_slice(b"] TJ\nET\n");
+        if open {
+            out.extend_from_slice(b"] TJ\n");
+        }
+        out.extend_from_slice(b"ET\n");
     }
 
     /// Places a picture: an image object (with its alpha as a soft mask) drawn where it lies.
@@ -628,7 +682,7 @@ mod tests {
         let (mut glyphs, mut x) = (Vec::new(), 0.0);
         for ch in "Shelby County".chars() {
             let id = font.glyph_id(ch);
-            glyphs.push(Glyph { id, x, ch });
+            glyphs.push(Glyph { id, x, y: 0.0, ch });
             x += font.h_advance_unscaled(id) / font.units_per_em().unwrap() * 24.0;
         }
         d.glyphs(GlyphRun {
@@ -721,13 +775,34 @@ mod tests {
         // V set 5 px further than A's advance (at a 20 px em, 250 thousandths).
         let x = font.h_advance_unscaled(a) / upm * 20.0 + 5.0;
         let mut d = Drawing::new(100.0, 100.0);
-        let glyphs = vec![Glyph { id: a, x: 0.0, ch: 'A' }, Glyph { id: v, x, ch: 'V' }];
+        let glyphs = vec![Glyph { id: a, x: 0.0, y: 0.0, ch: 'A' }, Glyph { id: v, x, y: 0.0, ch: 'V' }];
         d.glyphs(GlyphRun { font, size: 20.0, color: Color::BLACK, transform: Transform::from_translate(10.0, 50.0), glyphs });
         let objs = objects(&write(&[Page::drawing(d, 10.0, 10.0)], ""));
         let content = objs.iter().map(|o| String::from_utf8_lossy(&o.1).into_owned()).find(|c| c.contains("TJ")).unwrap();
         assert!(content.contains("1 0 0 -1 10 50 Tm\n") && content.contains("[<00>-250<01>] TJ"), "{content}");
         let cmap = objs.iter().map(|o| String::from_utf8_lossy(&o.1).into_owned()).find(|c| c.contains("beginbfchar")).unwrap();
         assert!(cmap.contains("<00> <0041>") && cmap.contains("<01> <0056>"));
+    }
+
+    /// Thai text in a PDF reads back as it was written: every glyph of a line is set on one
+    /// baseline in one run, a tone mark over a vowel is one glyph with it that stands for the
+    /// two, and a SARA AM's ring is drawn with its AA as one glyph that stands for the vowel.
+    #[test]
+    fn thai_text_maps_back_to_its_characters_in_order() {
+        let mut canvas = crate::canvas::Canvas::recording(400, 100).unwrap();
+        let face = crate::text::Face { family: crate::families::find("Sarabun"), ..Default::default() };
+        crate::text::styled_at(&mut canvas, "ที่น้ำ", 10.0, 50.0, 40.0, rustgis_map::Rgba::rgb(0, 0, 0), face, 0.0);
+        let objs = objects(&write(&[Page::drawing(canvas.into_drawing().unwrap(), 10.0, 10.0)], ""));
+        let text = |o: &(String, Vec<u8>)| String::from_utf8_lossy(&o.1).into_owned();
+        let content = objs.iter().map(text).find(|c| c.contains("TJ")).unwrap();
+        assert_eq!((content.matches("BT\n").count(), content.matches(" Tm\n").count()), (1, 1), "one run on one baseline: {content}");
+        assert!(!content.contains("ActualText"), "{content}");
+        let cmap = objs.iter().map(text).find(|c| c.contains("beginbfchar")).unwrap();
+        // ท, ี + ่ as one, น, ้ (alone: the ring is between it and the AA), the ring and AA as ำ.
+        for entry in ["<0E17>", "<0E350E48>", "<0E19>", "<0E49>", "<0E33>"] {
+            assert_eq!(cmap.matches(&format!("> {entry}\n")).count(), 1, "{entry} in {cmap}");
+        }
+        assert!(!cmap.contains("200B") && !cmap.contains("<0E4D>") && !cmap.contains("<0E32>"), "{cmap}");
     }
 
     #[test]

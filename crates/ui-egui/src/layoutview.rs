@@ -2979,6 +2979,15 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
         if settled.letter_spacing {
             update(app, json!({"letterSpacing": ls}));
         }
+        // The lines wider than the element broken between words (Thai words too): the breaks are
+        // put in the text, as Shift+Enter puts them.
+        if ui
+            .button(tl!("Wrap Text to the Element's Width"))
+            .on_hover_text(tl!("Breaks each line wider than the element between its words, so the text stays within the element's sides"))
+            .clicked()
+        {
+            update(app, json!({"wrapText": true}));
+        }
         if settled.font {
             // A named family with its fallback (#762), else the generic one.
             let font = match &named {

@@ -4,7 +4,7 @@ members = ["crates/*", "apps/*", "xtask"]
 default-members = ["crates/*", "apps/rustgis", "apps/rustgis-cli", "xtask"]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.90"
@@ -44,6 +44,8 @@ geographiclib-rs = { version = "0.2", default-features = false }
 a5 = "1"
 shapefile = { version = "0.9", features = ["encoding_rs", "yore"] }
 encoding_rs = "0.8"
+# Where lines may break in Thai, Lao, Khmer and Burmese, written without spaces between words.
+icu_segmenter = "2.3"
 csv = "1"
 tiny-skia = "0.12"
 # GPU map backend: vertex data shared with wgpu in ui-egui (derive only; unsafe stays forbidden).

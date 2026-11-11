@@ -27,6 +27,7 @@ pub mod io;
 pub mod kml;
 pub mod landxml;
 pub mod lidar;
+pub mod linebreak;
 pub mod login_address;
 pub mod mapinfo;
 pub mod mbtiles;
@@ -582,7 +583,8 @@ impl Dataset {
         let mut v: Vec<(value::ClassText, usize)> = drawn.into_iter().map(|(t, n)| (value::ClassText::new(t), n)).collect();
         let by_number = value::ClassText::numeric(v.iter().map(|(t, _)| t));
         let order = |a: &(value::ClassText, usize), b: &(value::ClassText, usize)| {
-            if by_number { a.0.cmp(&b.0) } else { a.0.text().cmp(b.0.text()) }
+            // (Text in the order it is read in: Thai as its dictionary has it.)
+            if by_number { a.0.cmp(&b.0) } else { value::text_cmp(a.0.text(), b.0.text()) }
         };
         // Only the first `limit` need sorting: the rest are set apart in linear time.
         if limit < v.len() {
@@ -668,6 +670,16 @@ mod tests {
         assert_eq!(d.unique_values(0, &[], 10), ["9", "10", "100", "<Null>"]);
         assert_eq!(d.unique_values(1, &[], 10), ["-1", "2.5", "10", "<Null>"]);
         assert_eq!(d.unique_values(2, &[], 10), ["10", "9", "<Null>", "A", "b"], "text keeps its order");
+        // Thai text is in its dictionary's order, and the first values are the first of that
+        // order, not of the bytes' (where a word written with a leading vowel is after the rest).
+        let mut thai = Dataset::new("t", GeometryType::Point, vec![Field::new("t", FieldType::Text)]);
+        for t in ["ตาก", "เชียงใหม่", "กระบี่", "แพร่"] {
+            thai.push(point(), vec![Value::Text(t.into())]);
+        }
+        assert_eq!(thai.unique_values(0, &[], 10), ["กระบี่", "เชียงใหม่", "ตาก", "แพร่"]);
+        let (first, past) = thai.unique_values_counted(0, &[], 2);
+        assert_eq!(first, ["กระบี่", "เชียงใหม่"]);
+        assert_eq!(past, value::PastClasses { features: 2, by_number: false });
         // The first two are the two smallest, and the features past them are counted.
         let (first, past) = d.unique_values_counted(0, &[], 2);
         assert_eq!(first, ["9", "10"]);

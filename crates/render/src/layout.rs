@@ -3005,6 +3005,53 @@ pub fn line_pitch_mm(size: f64) -> f64 {
     size.clamp(2.0, 400.0) * 1.33 * 1.25 * 25.4 / 96.0
 }
 
+/// The face a text element is drawn in, for [`wrap_text`]: as the element's own fields.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TextFace<'a> {
+    pub bold: bool,
+    pub italic: bool,
+    pub serif: bool,
+    /// An installed family by name, drawn in the sans or serif where it isn't installed.
+    pub font_name: Option<&'a str>,
+    /// In points.
+    pub letter_spacing: f64,
+    /// Centred or right-aligned, where a line is placed by the ink it draws. A left-aligned line
+    /// is drawn from the element's left edge, so it is measured from there: with the spaces it
+    /// is indented by.
+    pub aligned: bool,
+}
+
+/// `s` with each line wider than a text element `width_mm` wide broken between its words, as
+/// the element draws it at `size` points in `face`: at spaces and dashes, and between the words
+/// of Thai and the other scripts written without spaces ([`text::wrap_by`]), into lines of about
+/// the same length. Lines the text has stay lines, a line that fits is as it was, and a word
+/// wider than the element keeps a line of its own. Dynamic text is measured as it is written,
+/// not as it is filled in.
+pub fn wrap_text(s: &str, width_mm: f64, size: f64, face: TextFace<'_>) -> String {
+    let family = face.font_name.and_then(crate::families::find_ready);
+    let drawn = text::Face { bold: face.bold, italic: face.italic, serif: face.serif, family };
+    let px = size.clamp(2.0, 400.0) as f32 * 1.33;
+    let width = (width_mm * rustgis_map::layout::PT_PER_MM) as f32;
+    wrapped_lines(s, width, px, drawn, face.letter_spacing as f32 * 1.33, face.aligned).join("\n")
+}
+
+/// [`wrap_text`]'s lines: `width`, the size `px` and `spacing` in the same units. Every line and
+/// every word of the text is in them, however long it is: the text is kept as it is broken, so
+/// the most lines and characters a page draws don't bound it. A line is measured as
+/// [`text_block`] places it: by its ink when `aligned` (centred or to the right), else from the
+/// left edge it is drawn from, its indentation included.
+fn wrapped_lines(s: &str, width: f32, px: f32, face: text::Face, spacing: f32, aligned: bool) -> Vec<String> {
+    let lines = s.split('\n').map(|line| line.strip_suffix('\r').unwrap_or(line));
+    if !(width.is_finite() && width > 0.0) {
+        return lines.map(str::to_string).collect();
+    }
+    let ink = |t: &str| {
+        let (left, right) = text::styled_extent(t, px, face, spacing);
+        if aligned { (right - left).max(0.0) } else { right.max(0.0) }
+    };
+    lines.flat_map(|line| text::wrap_whole_by(line, width, ink)).collect()
+}
+
 /// Text in an element: lines split at `\n` from the top, each placed by the style's alignment. A
 /// centred or right-aligned line wider than the element runs out past its left edge, as a
 /// left-aligned one runs past its right.
@@ -3180,6 +3227,67 @@ mod tests {
         assert!(frame.clip.is_some());
         assert!(frame.items.iter().filter(|i| matches!(i, Item::Fill { .. })).count() > 50);
         assert!(!frame.items.iter().any(|i| matches!(i, Item::Image(_))));
+    }
+
+    /// Wrapping a text element's text breaks the lines wider than the element between words
+    /// (Thai ones too, in a face that draws them), keeping the lines the text has.
+    #[test]
+    fn wrapping_text_breaks_its_long_lines_between_words() {
+        let face = text::Face { family: crate::families::find("Sarabun"), ..text::Face::default() };
+        let title = "แผนที่แสดงพื้นที่เสี่ยงภัยน้ำท่วมในเขตอำเภอเมืองเชียงใหม่";
+        let (px, width) = (16.0, 200.0);
+        let ink = |t: &str| {
+            let (l, r) = text::styled_extent(t, px, face, 0.0);
+            r - l
+        };
+        assert!(ink(title) > width, "the title is wider than the element: {}", ink(title));
+        let lines = wrapped_lines(&format!("{title}\nShort"), width, px, face, 0.0, false);
+        assert!(lines.len() > 2 && lines.last().is_some_and(|l| l == "Short"), "{lines:?}");
+        assert!(lines.iter().all(|l| ink(l) <= width), "{lines:?}");
+        assert_eq!(lines[..lines.len() - 1].concat(), title, "nothing is added or lost where Thai breaks");
+        let english = "The quick brown fox jumps over the lazy dog";
+        let lines = wrapped_lines(english, 120.0, px, face, 0.0, false);
+        assert!(lines.len() > 1 && lines.join(" ") == english, "{lines:?}");
+        // A width that is none wraps nothing; the text is as the element 50 mm wide draws it.
+        assert_eq!(wrapped_lines("a b", f32::NAN, px, face, 0.0, false), ["a b"]);
+        let sarabun = TextFace { font_name: Some("Sarabun"), ..TextFace::default() };
+        let wrapped = wrap_text(&format!("{title}\nShort"), 50.0, 12.0, sarabun);
+        assert!(
+            wrapped.lines().count() > 2 && wrapped.ends_with("\nShort") && wrapped.replace('\n', "") == format!("{title}Short"),
+            "{wrapped}"
+        );
+        assert_eq!(wrap_text("Short", 50.0, 12.0, sarabun), "Short");
+        // Wrapped again, text that fits is as it was.
+        assert_eq!(wrap_text(&wrapped, 50.0, 12.0, sarabun), wrapped);
+        // The text is kept as it is broken, so all of it is: a line longer than a label's 2000
+        // characters, more lines than a page draws, and the empty lines it ends with.
+        let long = format!("{}END", "word ".repeat(600));
+        let lines = wrapped_lines(&long, 120.0, px, face, 0.0, false);
+        assert!(lines.len() > 200 && lines.join(" ") == long, "{} lines", lines.len());
+        let many = "a\n".repeat(300);
+        assert_eq!(wrap_text(&many, 50.0, 12.0, sarabun), many);
+        assert_eq!(wrap_text("a b\r\nc\n\n", 50.0, 12.0, sarabun), "a b\nc\n\n");
+        // Only the breaks are new: indentation and spaces typed twice stay, in the lines broken
+        // too, and each break at a space takes one space, so the text reads back as typed.
+        let spaced = "  A  B   CCCCCCCCCCCCCCCCCCCC -  DDDDDDDDDDDDDDDDDDDD/EEEEEEEEEEEEEEEEEEEE  ";
+        let lines = wrapped_lines(spaced, 150.0, px, face, 0.0, false);
+        assert!(lines.len() >= 3 && lines[0].starts_with("  A  B"), "{lines:?}");
+        assert!(lines.last().is_some_and(|l| l.ends_with("EEEE  ")), "{lines:?}");
+        let rejoined = lines.iter().enumerate().fold(String::new(), |mut all, (i, l)| {
+            // (A line that ended at the slash was broken there without a space.)
+            if i > 0 && !all.ends_with('/') {
+                all.push(' ');
+            }
+            all + l
+        });
+        assert_eq!(rejoined, spaced, "{lines:?}");
+        assert_eq!(wrapped_lines("  A  B CCCCCCCCCC", 60.0, px, face, 0.0, false), ["  A  B", "CCCCCCCCCC"]);
+        // A left-aligned line is drawn from the element's edge, so its indentation takes width:
+        // a line whose letters alone fit is broken when its indent puts them past the edge.
+        let (_, lettered) = text::styled_extent("AAAA BBBB", px, face, 0.0);
+        let indented = format!("{}AAAA BBBB", " ".repeat(12));
+        assert_eq!(wrapped_lines(&indented, lettered + 2.0, px, face, 0.0, true), [indented.as_str()], "by its ink it fits");
+        assert_eq!(wrapped_lines(&indented, lettered + 2.0, px, face, 0.0, false), [format!("{}AAAA", " ".repeat(12)), "BBBB".to_string()]);
     }
 
     #[test]

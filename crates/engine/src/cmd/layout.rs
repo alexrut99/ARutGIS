@@ -96,7 +96,7 @@ pub fn commands() -> Vec<C> {
             r##"{"layout"?, "kind": "northArrow"|"scaleBar"|"legend"|"colorbar"|"text"|"dynamicText"|"picture"|"table"|"chart"|"rectangle" (a neatline framing the page unless any of x, y, w, h is given)|"ellipse"|"circle"|"line"|"arrow"|"extentIndicator"|"grid", "frame"?: element id (default: the first map frame), "of"?: frame id (extentIndicator, which also takes "color" and "width" in points, default red and 2), "text"?, "size"?, "color"?: "#RRGGBB"|"#RRGGBBAA" (text, dynamicText, line, arrow, rectangle, ellipse, circle: its outline; extentIndicator; grid; scaleBar; refused for other kinds), "bold"?: bool (text), "italic"?: bool, "align"?: "left"|"center"|"right", "letterSpacing"?: points, -5 to 50 (text, dynamicText), "font"?: "sans"|"serif"|an installed font family's name, as labels.fonts lists them (text, dynamicText, northArrow, scaleBar; a family not installed here is drawn in its fallback, and a serif where none is installed in the sans, with a warning; refused for other kinds), "fallback"?: "sans"|"serif" (a named font's, where it isn't installed; default its own class, else sans), "title"?: legend title (default "Legend"), "allClasses"?: bool (legend: every class, not only those the frame draws), "hideOther"?: bool (legend: leave out <all other values>), "exclude"?: [layer names] (legend: layers it leaves out though the map draws them), "titleType"?, "layerType"?, "labelType"?: {size: points (0 the default), color: "#RRGGBB" ("" dark grey), bold, italic, font, fallback as for a text} (legend: the type of its title, of its layers' names and of its classes' labels), "patchWidth"?, "patchHeight"?: points (0 the default: 16 across, sized to the row down), "linePatch"?: "zigzag"|"straight"|"curve", "areaPatch"?: "rectangle"|"rounded"|"circle"|"natural", "rowSpacing"?: points added under each row, "layerNames"?: {layer name: the name the legend shows ("" its own)}, "classLabels"?: {layer name: {class label: the label the legend shows ("" its own)}} (legend; the layer and its symbology are left as they are), "layerTypes"?: {layer name: {size, color, bold, italic, font, fallback} (null: the legend's)}, "classTypes"?: {layer name: {class label: {size, color, …} (null: the legend's)}} (legend: one layer's name or one class's label in a type of its own, starting from the one it is shown in), "columns"?: 1..3 (legend: the columns its rows are laid in; default 1), "orientation"?: "horizontal"|"vertical" (colorbar), "ticks"?: 2..21 (colorbar: labelled values, ends included), "tickSide"?: "below"|"above"|"right"|"left" (colorbar), "reverse"?: bool (colorbar: high values first), "fill"?: "#RRGGBBAA" (rectangle, ellipse, circle, northArrow; scaleBar: its light parts (the alternating bars' light divisions, a hollow bar), default white; refused for other kinds), "width"?: outline width in points (rectangle, ellipse, circle; 0 for none) or line width in points (line, grid), "radius"?: mm, 0 to 50 (rectangle: rounded corners), "dir"?: "horizontal"|"vertical"|"falling"|"rising" (line), "head"?: "none"|"end"|"start"|"both" (line; default "end" for an arrow), "angle"?: degrees anticlockwise from pointing right, centred on the page unless x or y is given (line, arrow; it sets the box and the direction, so w, h and dir are not used with it), "length"?: mm (line, arrow), "image"?: base64, "path"?: picture file, "layer"?: (table, chart; colorbar: a raster layer, default the top visible one), "field"?, "label"?, "rows"?, "step"?: degrees, or a measured grid's units (metres) (0 picks one), "type"?: "graticule" (latitudes and longitudes, default) | "measured" (eastings and northings in a projected system, as ArcGIS Pro's measured grid), "crs"?: a measured grid's coordinate system: EPSG:25832, WKT or a PROJ string ("" or none: the map's when projected, else the UTM zone at the frame's centre), "short"?: bool (a measured grid's labels as their kilometres' last two digits, 43 for 543000), "outside"?: bool (grid: the labels outside the frame, as ArcGIS prints them; default inside it), "labels"?: bool, "style"?: "lines"|"ticks"|"linesAndTicks" (grid) or "classic"|"compass"|"triangle"|"star"|"needle"|"circle"|"simple"|"chevron"|"block"|"rose" (northArrow) or "alternating"|"doubleAlternating"|"hollow"|"stepped"|"line"|"lineDown"|"lineCross"|"ruler" (scaleBar), "tickLength"?: mm, "format"?: "decimal"|"dms", "hemisphere"?: bool (N/S/E/W rather than a sign), "edges"?: ["top","bottom","left","right"] (labelled edges), "labelOrientation"?: "horizontal"|"vertical", "labelFont"?: {size: points (0 for 8), color ("" dark grey), bold, italic, font, fallback} (grid labels' type), "halo"?: true|false|"auto"|"#RRGGBBAA" (grid labels; auto: white inside the frame, none outside), "labelOffset"?: mm (grid labels moved off the frame's edge), "edgeOrientations"?: {top, bottom, left, right: "horizontal"|"vertical"} (grid labels by edge; null: the sides as labelOrientation), "emphasis"?: bool (measured grid: the kilometres' figures large, the rest small, as topographic maps print them), "fullCorners"?: bool (measured grid: the labels nearest the corners whole), "suffix"?: "none"|"letter"|"metres" (measured grid: E/N or mE/mN after whole values), "minorTicks"?: 0..10 (grid: each step split into parts marked along the edges), "labelEvery"?: 1..10 (grid: every nth line labelled), "decimals"?: 0..6 | null (grid labels; null as many as the step needs), "dmsParts"?: "auto"|"degrees"|"minutes"|"seconds" (graticule labels in dms), "thousands"?: bool (measured grid: 543,000), "dash"?: "solid"|"dashed"|"dotted" (grid lines), "second"?: {grid options} | true | false (a second grid over the frame, with options of its own; a new one labels the top and right), "off"?: bool (grid; options not given keep the grid's), "outline"?: "#RRGGBB" (northArrow, or a rectangle's, ellipse's or circle's outline instead of color; refused for other kinds), "units"?: "auto"|"kilometers"|"meters"|"miles"|"feet"|"nauticalMiles", "divisions"?: 1..10, "subdivisions"?: 0..10 (the first division split), "division"?: each division's length in the units (metres when auto; 0 a round one that fits), "unitLabel"?: "abbreviation" (km) | "name" (Kilometers) | "thaiAbbreviation" (กม.) | "thai" (กิโลเมตร) | "custom" | "none", "unitText"?: the unit as typed (sets unitLabel custom), "unitPlace"?: "afterLabel"|"afterBar"|"above"|"below", "numbers"?: "above"|"below"|"ends"|"none", "altColor"?: the light parts, as "fill" (ARutGIS 0.5's name for it), "barHeight"?: points (0 sized to the element) (scaleBar, whose "color" is its lines, dark parts and labels, default #222222), "textSize"?: points (0 sized to the element), "textColor"?: "#RRGGBB" ("" the element's own) (northArrow letter, scaleBar numbers and unit, which take bold, italic, font and fallback as a text does; label is a north arrow's letter, default N, empty for none), "x"?, "y"?, "w"?, "h"?: mm}"##,
         ),
         C::new("layout.update", "Element Properties", "Publish › Element", update).inputs(update_inputs).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files)).params(
-            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line, rectangle, ellipse: its outline; scaleBar: its lines, dark divisions and labels; refused for other elements), "bold"?, "italic"?, "align"?, "letterSpacing"?, "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, northArrow, scaleBar, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "exclude"?: [layer names] (legend; [] lists every layer again), "titleType"?, "layerType"?, "labelType"?, "patchWidth"?, "patchHeight"?, "linePatch"?, "areaPatch"?, "rowSpacing"?, "layerNames"?, "classLabels"?, "layerTypes"?, "classTypes"? (legend, as in layout.addElement; the types given change only what they name, and the texts and types by layer or class given are merged with those set), "columns"?: 1..3 (legend), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse, and a scaleBar's fill; refused for other elements; for a rectangle or ellipse, color sets it when outline is not given; a scaleBar's fill is the alternating bar's light divisions), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"?, "subdivisions"?, "division"?, "unitLabel"?, "unitText"?, "unitPlace"?, "numbers"?, "altColor"? (as "fill"), "barHeight"? (scaleBar; color its dark parts), "textSize"?, "textColor"? (northArrow, scaleBar: as in layout.addElement, with bold, italic, font, fallback), "label"?: a north arrow's letter ("" for none), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster), "field"?, "rows"?}"##,
+            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line, rectangle, ellipse: its outline; scaleBar: its lines, dark divisions and labels; refused for other elements), "bold"?, "italic"?, "align"?, "letterSpacing"?, "wrapText"?: true (text: breaks each line wider than the element between its words, Thai ones too, as the element is after this call's other changes; the line breaks are kept in the text), "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, northArrow, scaleBar, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "exclude"?: [layer names] (legend; [] lists every layer again), "titleType"?, "layerType"?, "labelType"?, "patchWidth"?, "patchHeight"?, "linePatch"?, "areaPatch"?, "rowSpacing"?, "layerNames"?, "classLabels"?, "layerTypes"?, "classTypes"? (legend, as in layout.addElement; the types given change only what they name, and the texts and types by layer or class given are merged with those set), "columns"?: 1..3 (legend), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse, and a scaleBar's fill; refused for other elements; for a rectangle or ellipse, color sets it when outline is not given; a scaleBar's fill is the alternating bar's light divisions), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"?, "subdivisions"?, "division"?, "unitLabel"?, "unitText"?, "unitPlace"?, "numbers"?, "altColor"? (as "fill"), "barHeight"? (scaleBar; color its dark parts), "textSize"?, "textColor"? (northArrow, scaleBar: as in layout.addElement, with bold, italic, font, fallback), "label"?: a north arrow's letter ("" for none), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster), "field"?, "rows"?}"##,
         ),
         C::new("layout.guides", "Guides", "Publish › Page Setup", guides).inputs(object_inputs).roles(&[]).effects(crate::policy::Effects::NONE).params(
             r#"{"layout"?, "x"?: [mm] (vertical guides, from the page's left edge), "y"?: [mm] (horizontal guides, from its top edge), "clear"?: bool (remove every guide first)}"#,
@@ -690,8 +690,15 @@ fn thai_standard(s: &mut Session, p: &Value, l: &mut Layout) -> Result<(), Strin
     l.add("Inner Neatline", (m2, m2, w - 2.0 * m2, h - 2.0 * m2), pub_box(clear, ink, 0.5));
     let (x0, y0) = (m2 + 4.0 * k, m2 + 3.0 * k);
     let (iw, ih) = (w - 2.0 * (m2 + 4.0 * k), h - 2.0 * (m2 + 3.0 * k));
-    let title_h = 11.0 * k;
-    l.add("Title", (x0, y0, iw, title_h), thai_text(title, 20.0 * k, true, TextAlign::Center));
+    // A title longer than the sheet is wide is broken into lines between its words (Thai has no
+    // spaces to break at), and the map starts below them (below three at most: a longer title
+    // runs on under them).
+    let title_size = 20.0 * k;
+    let face = rustgis_render::layout::TextFace { bold: true, font_name: Some(THAI_FONT), aligned: true, ..Default::default() };
+    let title = rustgis_render::layout::wrap_text(&title, iw, title_size, face);
+    let title_lines = title.lines().count().clamp(1, 3);
+    let title_h = 11.0 * k + (title_lines - 1) as f64 * rustgis_render::layout::line_pitch_mm(title_size);
+    l.add("Title", (x0, y0, iw, title_h), thai_text(title, title_size, true, TextAlign::Center));
     let top = y0 + title_h + 2.0 * k;
     let bottom = y0 + ih;
     // Room round the map for its grid's labels.
@@ -3350,6 +3357,19 @@ pub(crate) fn text_style(p: &Value, italic: bool, align: TextAlign, spacing: f64
     Ok((italic, align, spacing))
 }
 
+/// The most characters a text element holds.
+const MAX_TEXT_CHARS: usize = 5000;
+
+/// Whether `p` asks for a text element's text to be wrapped (`wrapText`): not when not given; one
+/// given but not true or false is an error.
+fn wrap_text_given(p: &Value) -> Result<bool, String> {
+    match p.get("wrapText") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(v)) => Ok(*v),
+        Some(_) => Err("wrapText must be true or false".into()),
+    }
+}
+
 /// What a `font` given for an element that isn't a text is told.
 const ONLY_TEXT_FONT: &str = "only text elements, north arrows and scale bars take a font or a fallback";
 
@@ -3999,6 +4019,11 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
         Some(_) => Some(color(p, "color", Rgba::rgb(0, 0, 0))?),
         None => None,
     };
+    // Wrapping is a text's: checked, and refused elsewhere, before anything changes.
+    let wrap_text = wrap_text_given(p)?;
+    if wrap_text && !matches!(s.project.layouts.get(li).and_then(|l| l.element(id)).map(|e| &e.kind), Some(ElementKind::Text { .. })) {
+        return Err("only text elements wrap their text".into());
+    }
     // A text element's italic, alignment and spacing, checked before anything changes.
     let new_text_style = match s.project.layouts.get(li).and_then(|l| l.element(id)).map(|e| &e.kind) {
         Some(ElementKind::Text { italic, align, letter_spacing, font, font_name, .. }) => {
@@ -4060,6 +4085,10 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
     }
     let l = active(s, p)?;
     let e = l.element_mut(id).ok_or_else(|| format!("no element {id}"))?;
+    // Text is wrapped after the call's other changes, and may then be too long to keep: the
+    // element is put back as it was, so the call changes nothing.
+    let unwrapped = wrap_text.then(|| e.clone());
+    let mut wrapped_too_long = false;
     if let Some(r) = rotation {
         e.rotation = normalize_rotation(r);
     }
@@ -4109,7 +4138,7 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
                 (*italic, *align, *letter_spacing, *font, *font_name) = (i, a, l, f, n);
             }
             if let Some(t) = ps(p, "text") {
-                *text = t.chars().take(5000).collect();
+                *text = t.chars().take(MAX_TEXT_CHARS).collect();
             }
             if let Some(v) = num("size", *rustgis_map::graphics::FONT_SIZE.start(), *rustgis_map::graphics::FONT_SIZE.end()) {
                 *size = v;
@@ -4119,6 +4148,25 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             }
             if let Some(v) = b(p, "bold") {
                 *bold = v;
+            }
+            // Last, so the text is broken as it is now drawn: in its new size, face and width.
+            if wrap_text {
+                let face = rustgis_render::layout::TextFace {
+                    bold: *bold,
+                    italic: *italic,
+                    serif: *font == FontFamily::Serif,
+                    font_name: font_name.as_deref(),
+                    letter_spacing: *letter_spacing,
+                    aligned: *align != TextAlign::Left,
+                };
+                // Breaking between Thai words adds a character at each break. Text a break
+                // would take past the most an element holds is refused, never cut short.
+                let wrapped = rustgis_render::layout::wrap_text(text, e.w, *size, face);
+                if wrapped.chars().count() > MAX_TEXT_CHARS {
+                    wrapped_too_long = true;
+                } else {
+                    *text = wrapped;
+                }
             }
         }
         ElementKind::Legend { title, all_classes, hide_other, exclude, look, columns, .. } => {
@@ -4205,6 +4253,12 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             }
         }
         _ => {}
+    }
+    if wrapped_too_long {
+        if let Some(before) = unwrapped {
+            *e = before;
+        }
+        return Err(format!("the text broken into lines is longer than the {MAX_TEXT_CHARS} characters a text holds: nothing was changed"));
     }
     // A legend in columns is told again when its box or what it lists changes; a move changes neither.
     let in_columns = matches!(&e.kind, ElementKind::Legend { columns, .. } if *columns > 1);

@@ -1445,9 +1445,11 @@ pub fn csv_columns(text: &str, delimiter: Option<u8>) -> Result<Columns> {
 
 /// The text of a delimited file from its bytes, and the note to report when it wasn't UTF-8.
 /// UTF-8 is read as it is. A UTF-16 byte-order mark (Excel's "Unicode text") is read as UTF-16.
-/// Other bytes are read as Windows-1252, the code page most Latin-1 files use: Latin-1's
-/// characters, plus quotes and dashes in 0x80–0x9F. Many public sources still publish CSV in it
-/// (Brazil's DATASUS, INEP and TSE among them). Bytes with a NUL in them aren't text.
+/// Bytes that read as Thai are read as Windows-874 (TIS-620), which Excel's "CSV (Comma
+/// delimited)" writes on a Thai Windows computer. Other bytes are read as Windows-1252, the code
+/// page most Latin-1 files use: Latin-1's characters, plus quotes and dashes in 0x80–0x9F. Many
+/// public sources still publish CSV in it (Brazil's DATASUS, INEP and TSE among them). Bytes
+/// with a NUL in them aren't text.
 pub fn delimited_text<'a>(file_name: &str, bytes: &'a [u8]) -> Result<(std::borrow::Cow<'a, str>, Option<String>)> {
     if let Ok(text) = std::str::from_utf8(bytes) {
         return Ok((text.into(), None));
@@ -1465,7 +1467,17 @@ pub fn delimited_text<'a>(file_name: &str, bytes: &'a [u8]) -> Result<(std::borr
     }
     // A UTF-8 byte-order mark before a stray Latin-1 byte (Excel's "CSV UTF-8" edited elsewhere)
     // would become "ï»¿" at the start of the first header.
-    let (text, _) = encoding_rs::WINDOWS_1252.decode_without_bom_handling(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes));
+    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    let start = bytes.get(..bytes.len().min(crate::dbf::SAMPLE_BYTES as usize)).unwrap_or(bytes);
+    if crate::dbf::looks_thai(&[start]) {
+        let (text, malformed) = encoding_rs::WINDOWS_874.decode_without_bom_handling(bytes);
+        let mut note = format!("{file_name} isn't UTF-8 text and reads as Thai: it was read as Windows-874 (TIS-620)");
+        if malformed {
+            note.push_str("; bytes that weren't valid in it became the replacement character (U+FFFD)");
+        }
+        return Ok((text, Some(note)));
+    }
+    let (text, _) = encoding_rs::WINDOWS_1252.decode_without_bom_handling(bytes);
     Ok((text, Some(format!("{file_name} isn't UTF-8 text: it was read as Windows-1252 (Latin-1)"))))
 }
 
@@ -3264,6 +3276,14 @@ mod tests {
         odd.push(b'x');
         let (_, rep) = read_bytes("t.csv", &odd).unwrap();
         assert!(rep.messages.iter().any(|m| m.contains("UTF-16") && m.contains("replacement")), "{:?}", rep.messages);
+        // Thai as Excel's "CSV (Comma delimited)" writes it on a Thai Windows computer: Windows-874.
+        // "ชื่อ,E,N\nวัดมหาธาตุ,666200,1589500\nกรุงเทพมหานคร,661500,1587300\n"
+        let thai = b"\xaa\xd7\xe8\xcd,E,N\n\xc7\xd1\xb4\xc1\xcb\xd2\xb8\xd2\xb5\xd8,666200,1589500\n\xa1\xc3\xd8\xa7\xe0\xb7\xbe\xc1\xcb\xd2\xb9\xa4\xc3,661500,1587300\n";
+        let (ds, rep) = read_bytes("wat.csv", thai).unwrap();
+        assert_eq!(ds.fields[0].name, "ชื่อ");
+        assert_eq!(ds.value(0, 0), &Value::Text("วัดมหาธาตุ".into()));
+        assert_eq!(ds.value(1, 0), &Value::Text("กรุงเทพมหานคร".into()));
+        assert!(rep.messages.iter().any(|m| m.contains("wat.csv") && m.contains("Windows-874")), "{:?}", rep.messages);
         // A UTF-8 byte-order mark before a Latin-1 byte doesn't end up in the first header.
         let (ds, _) = read_bytes("t.csv", b"\xef\xbb\xbfnome;n\nS\xe3o;1\n").unwrap();
         assert_eq!((ds.fields[0].name.as_str(), ds.value(0, 0)), ("nome", &Value::Text("São".into())));
