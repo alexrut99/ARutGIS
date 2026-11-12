@@ -19,6 +19,9 @@ pub struct Dialogs {
     pub projection_map: Option<(u64, usize, String)>,
     pub geometry: Option<crate::geometrycalc::Form>,
     pub repair: Option<crate::repairsource::Form>,
+    /// Print's dialog (the desktop app).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub print: Option<crate::printing::Form>,
     pub open: Option<&'static str>,
     pub layer: String,
     /// GeoPackage save/discard targets use IDs because display names can repeat.
@@ -245,6 +248,11 @@ pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
     }
     if which == "repairSource" {
         crate::repairsource::show(app, ctx);
+        return;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if which == "print" {
+        crate::printing::show(app, ctx);
         return;
     }
     let title = match which {

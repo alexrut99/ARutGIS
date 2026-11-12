@@ -337,13 +337,31 @@ fn export_view(
     View { width: w, height: h, pixels_per_point: ppp, camera, sky: false }
 }
 
+/// The map view as it is printed: its shape at 96 points per inch of screen, drawn at `dpi`.
+fn print_view(s: &Session, dpi: f64) -> View {
+    let (vw, vh) = s.view_size;
+    let ppp = if dpi.is_finite() { (dpi / 96.0).clamp(0.5, 6.0) } else { 1.0 };
+    View { width: vw.clamp(16.0, 8000.0), height: vh.clamp(16.0, 8000.0), pixels_per_point: ppp, camera: s.map().camera, sky: false }
+}
+
+/// The size in millimetres of the page [`map_pdf`] and [`map_page_png`] make of the map view.
+pub fn map_page_mm(s: &Session) -> (f64, f64) {
+    let view = print_view(s, 96.0);
+    (view.width * 25.4 / 96.0, view.height * 25.4 / 96.0)
+}
+
+/// The map view as one PNG at `dpi`, the picture of [`map_pdf`]'s page: for a printer that is
+/// sent pictures (Windows).
+pub fn map_page_png(s: &mut Session, dpi: f64) -> Result<Vec<u8>, String> {
+    let view = print_view(s, dpi);
+    fits_pixels(&view, false)?;
+    rustgis_render::render_png(s.map_mut(), &view)
+}
+
 /// The map view on one PDF page (for printing): the page is the view's shape at 96 points per
 /// inch of screen, kept as vectors with what is pixels by nature drawn at `dpi`.
 pub fn map_pdf(s: &mut Session, dpi: f64) -> Result<Vec<u8>, String> {
-    let (vw, vh) = s.view_size;
-    let ppp = (dpi / 96.0).clamp(0.5, 6.0);
-    let view =
-        View { width: vw.clamp(16.0, 8000.0), height: vh.clamp(16.0, 8000.0), pixels_per_point: ppp, camera: s.map().camera, sky: false };
+    let view = print_view(s, dpi);
     let drawing = rustgis_render::render_drawing(s.map_mut(), &view).ok_or("could not draw the map")?;
     let mm = |pt: f64| pt * 25.4 / 96.0;
     let (w, h) = (mm(view.width), mm(view.height));

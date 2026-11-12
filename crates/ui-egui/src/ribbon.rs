@@ -2656,16 +2656,7 @@ fn share_groups(app: &mut RustGisApp, ui: &mut Ui) {
             false,
         );
         col(ui, |ui| {
-            small(
-                ui,
-                app,
-                "print",
-                "Print Map",
-                "Print the map view (through the system's PDF viewer).",
-                "ui.printMap",
-                Value::Null,
-                false,
-            );
+            small(ui, app, "print", "Print Map", "Print the map view.", "ui.printMap", Value::Null, false);
             small(
                 ui,
                 app,
@@ -2855,17 +2846,7 @@ fn share_groups(app: &mut RustGisApp, ui: &mut Ui) {
     });
     group(ui, "Layout", |ui| {
         big(ui, app, "export", "Export\nLayout", "Export the open layout as PDF or PNG.", "ui.exportLayout", Value::Null, false, false);
-        big(
-            ui,
-            app,
-            "print",
-            "Print\nLayout",
-            "Print the open layout (through the system's PDF viewer).",
-            "ui.printLayout",
-            Value::Null,
-            false,
-            false,
-        );
+        big(ui, app, "print", "Print\nLayout", "Print the layout.", "ui.printLayout", Value::Null, false, false);
     });
     group(ui, "Save As", |ui| {
         big(ui, app, "save_as", "Project", "Save the project under a new name.", "ui.saveAs", Value::Null, false, false);

@@ -4570,6 +4570,62 @@ pub fn layout_bytes(s: &mut Session, li: usize, pdf: bool, dpi: f64, all: bool) 
     if pdf { Ok(rustgis_render::pdf::write(&pages, &saved.name)) } else { png.ok_or_else(|| "nothing to draw".to_string()) }
 }
 
+/// Layout `li` as a PNG of each page at `dpi`: every page of a map series when `all`, else the
+/// page it is at. For a printer that is sent pictures (Windows); the layout is left as it was.
+pub fn layout_pngs(s: &mut Session, li: usize, dpi: f64, all: bool) -> Result<Vec<Vec<u8>>, String> {
+    let saved = s.project.layouts.get(li).ok_or("no layout")?.clone();
+    if let Some(note) = named_fonts_unread(&saved) {
+        s.warn(note);
+    }
+    let dpi = if dpi.is_finite() { dpi.clamp(36.0, 600.0) } else { 150.0 };
+    let current = saved.series.as_ref().map_or(0, |sr| sr.page);
+    let info = series_info(s, li, current);
+    let names = if all { series_pages(s, li).filter(|n| n.len() > 1) } else { None };
+    let total = info.as_ref().map_or(1, |i| i.0);
+    let pages: Vec<usize> = match &names {
+        Some(n) => {
+            if n.len() > 500 {
+                s.warn(format!("The map series has {} pages; the first 500 are drawn", n.len()));
+            }
+            (0..n.len().min(500)).collect()
+        }
+        None => vec![current],
+    };
+    let stepping = names.is_some();
+    let mut draw = || -> Result<Vec<Vec<u8>>, String> {
+        let mut out = Vec::new();
+        let mut held = 0usize;
+        for page in &pages {
+            if stepping {
+                series_page(s, &json!({"layout": li, "page": page}))?;
+            }
+            let layout = s.project.layouts.get(li).ok_or("no layout")?;
+            let info = rustgis_render::layout::PageInfo {
+                page: page + 1,
+                pages: total,
+                page_name: match &names {
+                    Some(n) => n.get(*page).cloned().unwrap_or_default(),
+                    None => info.as_ref().map(|i| i.1.clone()).unwrap_or_default(),
+                },
+            };
+            let img = rustgis_render::layout::render(layout, &mut s.project.maps, dpi, &info).ok_or("the page is too large to draw")?;
+            let png = img.encode_png().map_err(|e| e.to_string())?;
+            held = held.saturating_add(png.len());
+            if held > PDF_BUDGET {
+                return Err(format!("the pages passed {} MB at page {}; print fewer pages", PDF_BUDGET >> 20, page + 1));
+            }
+            out.push(png);
+        }
+        Ok(out)
+    };
+    let result = draw();
+    // Stepping through the series moved the frame; put the layout back however that went.
+    if stepping && let Some(cur) = s.project.layouts.get_mut(li) {
+        *cur = saved;
+    }
+    result
+}
+
 /// Says which layout elements, map frames and surrounds (by name), and pages (by number) an export
 /// draws as pictures because their
 /// vectors would pass the size a page's content may come to: one notice for each, with a count.

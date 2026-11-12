@@ -4816,3 +4816,33 @@ Zone Fields	ฟิลด์โซน
 Wrap Text to the Element's Width	ตัดบรรทัดให้พอดีความกว้างของกรอบ
 Breaks each line wider than the element between its words, so the text stays within the element's sides	ตัดบรรทัดที่กว้างกว่ากรอบตรงระหว่างคำ ข้อความจึงไม่ล้นออกนอกกรอบ
 Draw this layer in this map frame. The map, and other frames showing it, keep the layer either way.	วาดชั้นข้อมูลนี้ในกรอบแผนที่นี้ ตัวแผนที่และกรอบอื่นที่แสดงแผนที่เดียวกันยังมีชั้นข้อมูลนี้ตามเดิม
+Printing from here needs Windows PowerShell, which this computer doesn't have. Open as PDF prints from the PDF viewer.	การพิมพ์จากที่นี่ต้องใช้ Windows PowerShell ซึ่งเครื่องนี้ไม่มี กด เปิดเป็น PDF เพื่อพิมพ์จากโปรแกรมดู PDF
+Printing from here needs CUPS (its lp program), which this computer doesn't have. Open as PDF prints from the PDF viewer.	การพิมพ์จากที่นี่ต้องใช้ CUPS (โปรแกรม lp) ซึ่งเครื่องนี้ไม่มี กด เปิดเป็น PDF เพื่อพิมพ์จากโปรแกรมดู PDF
+This computer has no printer named {printer}	เครื่องนี้ไม่มีเครื่องพิมพ์ชื่อ {printer}
+The printer didn't answer in time	เครื่องพิมพ์ไม่ตอบกลับภายในเวลาที่กำหนด
+Printing failed: {error}	พิมพ์ไม่สำเร็จ: {error}
+A page is still on its way to the printer: wait for it.	ยังมีงานที่กำลังส่งไปเครื่องพิมพ์อยู่ กรุณารอให้เสร็จก่อน
+The layout is no longer there	ไม่พบเลย์เอาต์นี้แล้ว
+Choose a printer	เลือกเครื่องพิมพ์
+Sent {name} to {printer}	ส่ง {name} ไปที่ {printer} แล้ว
+{printer} has no paper of the page's size ({size}): the page was printed at its own size on {paper}, so part of it may be cut off. Fit to paper prints the whole page.	{printer} ไม่มีกระดาษขนาดเท่าหน้า ({size}) จึงพิมพ์ขนาดจริงลงบนกระดาษ {paper} บางส่วนของหน้าอาจถูกตัด เลือก พอดีกระดาษ เพื่อพิมพ์ให้ครบทั้งหน้า
+The page is large ({size}), so it was printed at {dpi} dpi rather than 300	หน้ามีขนาดใหญ่ ({size}) จึงพิมพ์ที่ {dpi} dpi แทน 300
+Sending to the printer…	กำลังส่งไปเครื่องพิมพ์…
+Printer	เครื่องพิมพ์
+Looking for printers…	กำลังค้นหาเครื่องพิมพ์…
+No printer found	ไม่พบเครื่องพิมพ์
+Look for the computer's printers again.	ค้นหาเครื่องพิมพ์ของเครื่องนี้อีกครั้ง
+Copies	จำนวนชุด
+Actual size	ขนาดจริง
+At the page's own size, so the map keeps its scale. What falls in the printer's margins isn't printed.	พิมพ์เท่าขนาดของหน้า มาตราส่วนของแผนที่จึงคงเดิม ส่วนที่อยู่ในขอบที่เครื่องพิมพ์พิมพ์ไม่ถึงจะไม่ถูกพิมพ์
+Fit to paper	พอดีกระดาษ
+The whole page, made smaller or larger to fit the paper: the map's scale changes with it.	พิมพ์ทั้งหน้า โดยย่อหรือขยายให้พอดีกระดาษ มาตราส่วนของแผนที่จะเปลี่ยนตาม
+Pages	หน้าที่พิมพ์
+All {n} pages	ทั้ง {n} หน้า
+This page	หน้านี้
+The page is sized to fit the printer's paper, so the map's scale changes.	หน้าจะถูกย่อหรือขยายให้พอดีกระดาษของเครื่องพิมพ์ มาตราส่วนของแผนที่จึงเปลี่ยน
+Put paper of the page's size in the printer: the page is printed at its own size, and the map keeps its scale.	ใส่กระดาษขนาดเท่าหน้าในเครื่องพิมพ์ หน้าจะพิมพ์เท่าขนาดจริง และมาตราส่วนของแผนที่คงเดิม
+The page isn't a standard paper size. At its own size, what doesn't fit the printer's paper is cut off.	หน้านี้ไม่ใช่ขนาดกระดาษมาตรฐาน ถ้าพิมพ์ขนาดจริง ส่วนที่เกินกระดาษของเครื่องพิมพ์จะถูกตัด
+Open as PDF	เปิดเป็น PDF
+Open the page in the system's PDF viewer and print from there, as before.	เปิดหน้าในโปรแกรมดู PDF ของเครื่อง แล้วพิมพ์จากโปรแกรมนั้นเหมือนเดิม
+Print the map view.	พิมพ์มุมมองแผนที่

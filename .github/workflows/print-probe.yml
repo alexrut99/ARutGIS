@@ -1,0 +1,101 @@
+name: Print probe (temporary)
+
+# Runs the Windows print scripts of crates/ui-egui/src/printers.rs on a Windows runner, printing
+# to Microsoft Print to PDF. For the direct-print branch only; removed before it is merged.
+
+on:
+  push:
+    branches: [direct-print]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Print scripts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Printers
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion
+          Get-Service Spooler | Format-List Name, Status, StartType
+          Get-Printer | Format-Table Name, DriverName, PortName
+          $ExecutionContext.SessionState.LanguageMode
+      - name: Run the scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Get-Content -Raw crates/ui-egui/src/printers.rs
+          function Script($name) {
+            $m = [regex]::Match($src, 'const ' + $name + ': &str = r#"(.*?)"#;', 'Singleline')
+            if (-not $m.Success) { throw "no $name" }
+            $m.Groups[1].Value
+          }
+          function Run($script) {
+            $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+            $before = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $out = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -EncodedCommand $enc 2>&1
+            $ErrorActionPreference = $before
+            Write-Host "exit $LASTEXITCODE"
+            foreach ($line in $out) {
+              $text = [string]$line
+              $shown = $text
+              if ($text -match '^(P|D|ERR|PAPER [01]) (\S+)$') {
+                $shown = $Matches[1] + ' ' + [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Matches[2]))
+              }
+              Write-Host "  $shown"
+            }
+            if ($LASTEXITCODE -ne 0) { throw 'the script failed' }
+          }
+          Write-Host '--- list'
+          Run (Script 'WINDOWS_LIST')
+          Add-Type -AssemblyName System.Drawing
+          $dir = Join-Path $env:RUNNER_TEMP 'print job'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          foreach ($n in 1, 2) {
+            $bmp = New-Object System.Drawing.Bitmap 1169, 827
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.Clear([System.Drawing.Color]::White)
+            $g.FillRectangle([System.Drawing.Brushes]::Firebrick, 0, 0, 100, 100)
+            $g.FillRectangle([System.Drawing.Brushes]::SteelBlue, 1069, 727, 100, 100)
+            $g.DrawRectangle([System.Drawing.Pens]::Black, 0, 0, 1168, 826)
+            $g.Dispose()
+            $bmp.Save((Join-Path $dir ('page-{0:d4}.png' -f $n)), [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Dispose()
+          }
+          $env:RUSTGIS_PRINT_DIR = $dir
+          $env:RUSTGIS_PRINT_PAGES = '2'
+          $env:RUSTGIS_PRINT_WIDTH = '1169'
+          $env:RUSTGIS_PRINT_HEIGHT = '827'
+          $env:RUSTGIS_PRINT_TITLE = 'Probe'
+          $env:RUSTGIS_PRINT_COPIES = '1'
+          $env:RUSTGIS_PRINT_PRINTER = 'Microsoft Print to PDF'
+          foreach ($fit in '0', '1') {
+            $env:RUSTGIS_PRINT_FIT = $fit
+            $env:RUSTGIS_PRINT_FILE = Join-Path $dir "out-$fit.pdf"
+            Write-Host "--- print, fit $fit"
+            Run (Script 'WINDOWS_PRINT')
+            $pdf = Get-Item $env:RUSTGIS_PRINT_FILE
+            Write-Host "  $($pdf.Name): $($pdf.Length) bytes"
+            $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($pdf.FullName))
+            [regex]::Matches($text, '/MediaBox\s*\[[^\]]*\]') | ForEach-Object { Write-Host "  $($_.Value)" }
+            Write-Host "  pages: $([regex]::Matches($text, '/Type\s*/Page[^s]').Count)"
+          }
+          Write-Host '--- a printer that is not there'
+          $env:RUSTGIS_PRINT_PRINTER = 'No such printer'
+          try { Run (Script 'WINDOWS_PRINT') } catch { Write-Host "  (failed, as it should)" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: print-probe-${{ matrix.os }}
+          path: ${{ runner.temp }}/print job/*.pdf
+          if-no-files-found: warn

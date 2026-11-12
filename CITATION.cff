@@ -13,8 +13,8 @@ abstract: >-
 authors:
   - given-names: Anirut
     family-names: Ladawadee
-version: 0.6.2
-date-released: 2026-11-11
+version: 0.6.3
+date-released: 2026-11-13
 repository-code: "https://github.com/alexrut99/ARutGIS"
 url: "https://alexrut99.github.io/ARutGIS/"
 license: Apache-2.0
