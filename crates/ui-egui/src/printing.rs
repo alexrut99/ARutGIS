@@ -187,7 +187,7 @@ fn draw(app: &mut RustGisApp, what: What, all: bool, dpi: f64) -> Result<(std::p
     if drawn.is_empty() {
         return Err("there is no page to print".into());
     }
-    let dir = crate::print_dir()?;
+    let dir = crate::print_job_dir()?;
     for (i, bytes) in drawn.iter().enumerate() {
         let name = if printers::PICTURES { printers::page_name(i + 1) } else { printers::PDF_NAME.to_string() };
         rustgis_engine::data::io::write_atomic(&dir.join(name), bytes).map_err(|e| e.to_string())?;
@@ -426,9 +426,9 @@ pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
     }
     if as_pdf {
         let command = if f.what == What::Map { "ui.printMap" } else { "ui.printLayout" };
-        // The layout the dialog is on, whichever is open now.
+        // The layout the dialog is on, whichever is open now, and the pages chosen in it.
         let params = match f.what {
-            What::Layout(li) => json!({"viewer": true, "layout": li}),
+            What::Layout(li) => json!({"viewer": true, "layout": li, "all": f.all_pages}),
             What::Map => json!({"viewer": true}),
         };
         match app.run(command, params) {
@@ -615,6 +615,53 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
         // A layout that is gone is an error, not a crash.
         assert!(draw(&mut app, What::Layout(7), true, 72.0).is_err());
+    }
+
+    #[test]
+    fn a_page_opened_in_the_viewer_leaves_a_job_s_folder() {
+        // Two kinds of folder, as the viewer's pages and a printer's jobs are: a new one of a
+        // kind removes the earlier ones of that kind and no other.
+        let job = crate::private_dir("rustgis-testjob").unwrap();
+        std::fs::write(job.join(printers::page_name(1)), b"page").unwrap();
+        let first = crate::private_dir("rustgis-test").unwrap();
+        let second = crate::private_dir("rustgis-test").unwrap();
+        assert!(!first.exists() && second.is_dir());
+        assert!(job.join(printers::page_name(1)).is_file(), "the job's page went with the viewer's folder");
+        let _ = std::fs::remove_dir_all(&job);
+        let _ = std::fs::remove_dir_all(&second);
+        // The viewer's own folder is of another kind than a job's.
+        let viewer = crate::print_dir().unwrap();
+        let name = |dir: &std::path::Path| dir.file_name().unwrap().to_string_lossy().into_owned();
+        let pid = std::process::id();
+        assert!(name(&viewer).starts_with(&format!("rustgis-print-{pid}-")), "{}", name(&viewer));
+        assert!(!format!("rustgis-printjob-{pid}-1").starts_with(&format!("rustgis-print-{pid}-")));
+        let _ = std::fs::remove_dir_all(&viewer);
+    }
+
+    #[test]
+    fn the_viewer_s_pdf_has_the_pages_chosen() {
+        use std::sync::{Arc, Mutex};
+        // The web app's download stands in for the viewer: the same pages go to both.
+        let got: Arc<Mutex<Vec<u8>>> = Arc::default();
+        let to = got.clone();
+        let mut app = layout_app().with_services(crate::Services {
+            download: Some(Box::new(move |_, bytes| {
+                *to.lock().unwrap() = bytes;
+                Ok(())
+            })),
+            ..Default::default()
+        });
+        let pages = app.run("layout.series", json!({"layer": "Lakes", "nameField": "name"})).unwrap()["pages"].as_u64().unwrap();
+        assert!(pages > 1);
+        let count = |app: &mut RustGisApp, params: Value| {
+            app.run("ui.printLayout", params).unwrap();
+            let pdf = String::from_utf8_lossy(&got.lock().unwrap()).into_owned();
+            (1..=pages).find(|n| pdf.contains(&format!("/Count {n} "))).unwrap()
+        };
+        assert_eq!(count(&mut app, json!({"viewer": true, "layout": 0, "all": false})), 1);
+        assert_eq!(count(&mut app, json!({"viewer": true, "layout": 0, "all": true})), pages);
+        // Print without the dialog's choice is every page, as it always was.
+        assert_eq!(count(&mut app, json!({"viewer": true})), pages);
     }
 
     #[test]
