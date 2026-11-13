@@ -349,6 +349,12 @@ pub fn status_bar(app: &mut RustGisApp, ui: &mut Ui) {
                     sep(ui, &t);
                     crate::exportjob::status(app, ui, &t);
                 }
+                // A job on its way to a printer.
+                #[cfg(not(target_arch = "wasm32"))]
+                if app.print.sending.is_some() {
+                    sep(ui, &t);
+                    crate::printing::status(app, ui, &t);
+                }
                 // A file read for Add Data, or a layer's features for Load All.
                 #[cfg(not(target_arch = "wasm32"))]
                 if crate::readjob::showing(app) {

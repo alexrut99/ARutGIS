@@ -47,8 +47,10 @@ The layer's opacity is a display setting and isn't applied: the file keeps the t
 than one source, are refused: Export Map to a `.tif` writes what they draw. A style drawing only
 one source's raster tiles is written as those tiles. The web app exports the view with Export Map instead.
 
-**Print Map** opens a PDF of the map view, kept as
-vectors as a layout's PDF is (see Layouts), in the system viewer on desktop; **Capture To
+**Print Map** sends the map view to one of the computer's printers, through the same dialog as
+a layout's Print (see [Layouts](layouts.md)), fitted to the paper unless **Actual size** is
+chosen; its **Open as PDF** opens a PDF of the view, kept as vectors as a layout's PDF is, in the
+system viewer. **Capture To
 Clipboard** copies a map image. **Export To 3D** writes a layer as a Wavefront OBJ or binary STL model
 with polygons extruded by a field (`share.export3d` writes STL when `path` ends in `.stl`). STL
 holds closed solids only: lines and zero-height features are left out, zero-area triangles are

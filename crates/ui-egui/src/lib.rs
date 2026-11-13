@@ -80,6 +80,10 @@ pub enum Landed {
     NotRun(String),
 }
 #[cfg(not(target_arch = "wasm32"))]
+mod printers;
+#[cfg(not(target_arch = "wasm32"))]
+mod printing;
+#[cfg(not(target_arch = "wasm32"))]
 mod relayshot;
 mod repairsource;
 mod reportpane;
@@ -356,12 +360,29 @@ pub struct Services {
     pub arcgis_sign_in: Option<Box<dyn Fn(String, String, Slot<Result<String, String>>)>>,
 }
 
-/// A new private folder for one print job: unique, created fresh (never an existing path) and,
-/// on Unix, readable only by this user. Earlier jobs' folders from this run are removed first.
+/// A new private folder for a page the system's PDF viewer opens. Earlier ones from this run are
+/// removed first (the viewer has its page by the time another is opened), never a folder a
+/// printer is still being sent from ([`print_job_dir`]).
 #[cfg(not(target_arch = "wasm32"))]
-fn print_dir() -> Result<std::path::PathBuf, String> {
+pub(crate) fn print_dir() -> Result<std::path::PathBuf, String> {
+    private_dir("rustgis-print")
+}
+
+/// A new private folder for the pages of one job sent to a printer. One job is sent at a time
+/// and removes its folder when the printer's queue has it, so the earlier ones removed here are
+/// only those a job left behind.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn print_job_dir() -> Result<std::path::PathBuf, String> {
+    private_dir("rustgis-printjob")
+}
+
+/// A new folder in the temporary folder, named `kind`, this run and the time: unique, created
+/// fresh (never an existing path) and, on Unix, readable only by this user. Earlier folders of
+/// the same kind from this run are removed first.
+#[cfg(not(target_arch = "wasm32"))]
+fn private_dir(kind: &str) -> Result<std::path::PathBuf, String> {
     let tmp = std::env::temp_dir();
-    let prefix = format!("rustgis-print-{}-", std::process::id());
+    let prefix = format!("{kind}-{}-", std::process::id());
     if let Ok(rd) = std::fs::read_dir(&tmp) {
         for e in rd.flatten() {
             if e.file_name().to_string_lossy().starts_with(&prefix) && e.file_type().is_ok_and(|t| t.is_dir()) {
@@ -1049,6 +1070,9 @@ pub struct RustGisApp {
     /// An export writing its file on its own thread (see [`exportjob`]).
     #[cfg(not(target_arch = "wasm32"))]
     export_job: Option<exportjob::ExportJob>,
+    /// The job on its way to a printer, and the printer last printed to (see [`printing`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    print: printing::State,
     /// Add Data's and Load All's reads on their own thread, and those waiting (see [`readjob`]).
     #[cfg(not(target_arch = "wasm32"))]
     reads: readjob::Reads,
@@ -1281,6 +1305,8 @@ impl RustGisApp {
             workflow: analysispane::Workflow::default(),
             #[cfg(not(target_arch = "wasm32"))]
             export_job: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            print: printing::State::default(),
             #[cfg(not(target_arch = "wasm32"))]
             reads: readjob::Reads::default(),
             reads_off_frame: false,
@@ -1616,11 +1642,12 @@ impl RustGisApp {
         r
     }
 
-    /// A layout as PDF or PNG bytes, guarded like `Session::run`.
-    fn layout_bytes(&mut self, li: usize, pdf: bool, dpi: f64) -> Result<Vec<u8>, String> {
+    /// A layout as PDF or PNG bytes, guarded like `Session::run`: every page of a map series, or
+    /// with `all` false only the one it is at.
+    fn layout_bytes(&mut self, li: usize, pdf: bool, dpi: f64, all: bool) -> Result<Vec<u8>, String> {
         let session = &mut self.session;
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            rustgis_engine::cmd::layout::layout_bytes(session, li, pdf, dpi, true)
+            rustgis_engine::cmd::layout::layout_bytes(session, li, pdf, dpi, all)
         }))
         .unwrap_or_else(|_| Err("the layout export failed unexpectedly".into()));
         if let Err(e) = &r {
@@ -3468,16 +3495,26 @@ impl RustGisApp {
             }
             // Layouts: export (PDF/PNG/SVG), print, save and import layout files, draw frames.
             "ui.exportLayout" | "ui.printLayout" => {
-                let li = self.session.active_layout.ok_or("open a layout first")?;
-                let name = self.session.project.layouts.get(li).map(|l| l.name.clone()).unwrap_or_default();
                 let print = id == "ui.printLayout";
+                // Print's dialog names the layout it was opened on, whichever is open by now.
+                let named = p.get("layout").and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok()).filter(|_| print);
+                let li = named.or(self.session.active_layout).ok_or("open a layout first")?;
+                let name = self.session.project.layouts.get(li).ok_or("open a layout first")?.name.clone();
                 let pdf_only = print || p.get("format").and_then(Value::as_str) == Some("pdf");
+                // Print's dialog can ask for only the page a map series is at (`"all": false`).
+                let all = !print || p.get("all").and_then(Value::as_bool) != Some(false);
+                // Print opens its dialog (the printer, the copies, the size); `"viewer": true`, the
+                // dialog's Open as PDF, opens the page in the system's PDF viewer instead.
+                #[cfg(not(target_arch = "wasm32"))]
+                if print && self.services.download.is_none() && p.get("viewer").and_then(Value::as_bool) != Some(true) {
+                    return printing::open(self, printing::What::Layout(li));
+                }
                 if self.services.download.is_some() {
-                    let bytes = self.layout_bytes(li, true, if print { 300.0 } else { 150.0 })?;
+                    let bytes = self.layout_bytes(li, true, if print { 300.0 } else { 150.0 }, all)?;
                     self.download(&format!("{name}.pdf"), bytes);
                 } else if print {
-                    // Printing goes through the system's PDF viewer, which owns the printers.
-                    let bytes = self.layout_bytes(li, true, 300.0)?;
+                    // The system's PDF viewer prints it.
+                    let bytes = self.layout_bytes(li, true, 300.0, all)?;
                     let safe: String =
                         name.chars().map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_') { c } else { '_' }).collect();
                     let path = print_dir()?.join(format!("{safe}.pdf"));
@@ -3678,6 +3715,11 @@ impl RustGisApp {
                 }
             }
             "ui.printMap" => {
+                // As Print for a layout: the dialog, or with `"viewer": true` the PDF viewer.
+                #[cfg(not(target_arch = "wasm32"))]
+                if self.services.download.is_none() && p.get("viewer").and_then(Value::as_bool) != Some(true) {
+                    return printing::open(self, printing::What::Map);
+                }
                 let session = &mut self.session;
                 let pdf = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| rustgis_engine::cmd::share::map_pdf(session, 300.0)))
                     .unwrap_or_else(|_| Err("printing failed unexpectedly".into()))
@@ -5400,6 +5442,7 @@ impl RustGisApp {
             | analysispane::land_trend(self)
             | analysispane::land_job(self)
             | exportjob::land(self)
+            | printing::land(self)
             | readjob::land(self)
         {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));

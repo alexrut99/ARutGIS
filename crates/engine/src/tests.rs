@@ -35387,3 +35387,42 @@ fn bundled_ca_roots_are_said_once_a_session() {
     other.say_bundled_roots(true);
     assert_eq!(said(&other), 1);
 }
+
+/// Printing where the printer is sent pictures (Windows): a layout's pages and the map view as
+/// PNGs, a map series page by page, with the layout left as it was.
+#[test]
+fn pages_for_a_printer_that_takes_pictures() {
+    let mut s = world();
+    s.run("layout.new", &json!({"page": "a5", "template": "map"})).unwrap();
+    let one = crate::cmd::layout::layout_pngs(&mut s, 0, 36.0, true).unwrap();
+    assert_eq!(one.len(), 1);
+    // A5 landscape at 36 dpi: 210 × 148 mm is 297 × 209 pixels.
+    let size = |png: &[u8]| rustgis_render::decode_png(png).map(|pm| (pm.width(), pm.height())).unwrap();
+    assert_eq!(size(&one[0]), (297, 209));
+    // A map series over the lakes: every page when asked for all, else the one it is at.
+    let pages = s.run("layout.series", &json!({"layer": "Lakes", "nameField": "name"})).unwrap()["pages"].as_u64().unwrap() as usize;
+    assert!(pages > 5);
+    s.run("layout.seriesPage", &json!({"page": 2})).unwrap();
+    let before = serde_json::to_string(&s.project.layouts[0]).unwrap();
+    let all = crate::cmd::layout::layout_pngs(&mut s, 0, 36.0, true).unwrap();
+    assert_eq!(all.len(), pages);
+    assert!(all.iter().all(|png| size(png) == (297, 209)));
+    // The pages differ (each lake its own), and the third is the one the layout is at.
+    let current = crate::cmd::layout::layout_pngs(&mut s, 0, 36.0, false).unwrap();
+    assert_eq!(current.len(), 1);
+    assert_eq!(current[0], all[2]);
+    assert_ne!(all[0], all[2]);
+    // Stepping through the series left the layout where it was.
+    assert_eq!(serde_json::to_string(&s.project.layouts[0]).unwrap(), before);
+    assert!(crate::cmd::layout::layout_pngs(&mut s, 9, 36.0, true).is_err());
+    assert_eq!(crate::cmd::layout::layout_pngs(&mut s, 0, f64::NAN, false).unwrap().len(), 1);
+    // The map view: its page is the view's shape at 96 points to the inch.
+    s.view_size = (960.0, 480.0);
+    let (w, h) = crate::cmd::share::map_page_mm(&s);
+    assert!((w - 254.0).abs() < 1e-9 && (h - 127.0).abs() < 1e-9, "{w} × {h}");
+    let map = crate::cmd::share::map_page_png(&mut s, 48.0).unwrap();
+    assert_eq!(size(&map), (480, 240));
+    assert!(crate::cmd::share::map_pdf(&mut s, 48.0).unwrap().starts_with(b"%PDF"));
+    // A resolution that isn't a number draws at the screen's, and never panics.
+    assert_eq!(size(&crate::cmd::share::map_page_png(&mut s, f64::NAN).unwrap()), (960, 480));
+}

@@ -408,8 +408,26 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   and line widths can differ from PNG/PDF and can
   change when edited. A picture standing for a whole element is clipped to its box;
   `layout.export` accepts `dpi` and `"allPages": false` for just the current PDF
-  page. **Print** opens the PDF in the system viewer on desktop; **Save Layout File** and
+  page. **Save Layout File** and
   **Import Layout** move layouts between projects (`.rgislayout`).
+- **Print** (the desktop app) sends the layout to one of the computer's printers. Its dialog lists
+  the printers, with the one last printed to (else the system's default) chosen, and takes the
+  number of copies and the size:
+  - **Actual size** (a layout's default) prints the page at its own size, so the map keeps its
+    scale: put paper of the page's size in the printer. What falls in the printer's margins is not
+    printed. On Windows, a printer with no paper of the page's size prints on the paper it is set
+    to, and a notice says so.
+  - **Fit to paper** prints the whole page, made smaller or larger to fit the paper; the map's
+    scale changes with it.
+  - A map series prints **All pages** or **This page**.
+  - **Open as PDF** opens the page in the system's PDF viewer instead, which prints it: the way
+    for a printer option the dialog doesn't have (two sides, a tray), or where the printers can't
+    be reached.
+
+  macOS and Linux print through CUPS (`lp`), which is sent the PDF. Windows is sent each page as
+  a picture at 300 dpi through Windows PowerShell; a page past 60 million pixels (A1 and larger),
+  or past 12,000 pixels a side (8,192 for the map view), goes at a lower resolution, and a notice
+  says which. In the web app, Print downloads the PDF.
 - **Capture To Clipboard** copies an image of the current page at 192 dpi, with any text still being
   typed. A page that would pass 16 million pixels, or 12,000 pixels on a side, is copied at a lower
   dpi, and the notice says so; a page that would need less than 36 dpi is too large to copy, so
