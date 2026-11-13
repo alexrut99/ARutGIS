@@ -425,8 +425,9 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     be reached.
 
   macOS and Linux print through CUPS (`lp`), which is sent the PDF. Windows is sent each page as
-  a picture at 300 dpi through Windows PowerShell; a page past 64 million pixels (A1 and larger)
-  goes at a lower resolution, and a notice says which. In the web app, Print downloads the PDF.
+  a picture at 300 dpi through Windows PowerShell; a page past 60 million pixels (A1 and larger),
+  or past 12,000 pixels a side (8,192 for the map view), goes at a lower resolution, and a notice
+  says which. In the web app, Print downloads the PDF.
 - **Capture To Clipboard** copies an image of the current page at 192 dpi, with any text still being
   typed. A page that would pass 16 million pixels, or 12,000 pixels on a side, is copied at a lower
   dpi, and the notice says so; a page that would need less than 36 dpi is too large to copy, so

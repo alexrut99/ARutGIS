@@ -61,16 +61,27 @@ pub struct State {
 
 /// The resolution pages are drawn at.
 const DPI: f64 = 300.0;
-/// The most pixels a page's picture has: a larger page is drawn at a lower resolution.
-const MAX_PIXELS: f64 = 64_000_000.0;
+/// The most pixels a page's picture has, as the layout renderer draws at most: a larger page is
+/// drawn at a lower resolution.
+const MAX_PIXELS: f64 = 60_000_000.0;
 
-/// The resolution a page's picture is drawn at: [`DPI`], or what keeps it within [`MAX_PIXELS`].
-fn picture_dpi((w, h): (f64, f64)) -> f64 {
-    let square_inches = (w / 25.4) * (h / 25.4);
+/// The most pixels a side the renderer draws of a layout's page, or of the map view.
+fn most_side(what: What) -> f64 {
+    match what {
+        What::Layout(_) => rustgis_engine::render::layout::MAX_SIDE,
+        What::Map => f64::from(rustgis_engine::render::MAX_SIDE),
+    }
+}
+
+/// The resolution a page's picture is drawn at: [`DPI`], or what keeps it within [`MAX_PIXELS`]
+/// and its longer side within `most_side` pixels.
+fn picture_dpi((w, h): (f64, f64), most_side: f64) -> f64 {
+    let (w, h) = (w / 25.4, h / 25.4);
+    let square_inches = w * h;
     if !square_inches.is_finite() || square_inches <= 0.0 {
         return DPI;
     }
-    (MAX_PIXELS / square_inches).sqrt().clamp(36.0, DPI)
+    (MAX_PIXELS / square_inches).sqrt().clamp(36.0, DPI).min(most_side / w.max(h))
 }
 
 /// The name, page size in millimetres and page count (a map series') of what is printed, while
@@ -204,7 +215,7 @@ fn print(app: &mut RustGisApp, f: &Form, ctx: &egui::Context) -> Result<(), Stri
     if f.printer.is_empty() {
         return Err(tl!("Choose a printer").to_string());
     }
-    let dpi = if printers::PICTURES { picture_dpi(page_mm) } else { DPI };
+    let dpi = if printers::PICTURES { picture_dpi(page_mm, most_side(f.what)) } else { DPI };
     let (dir, pages) = draw(app, f.what, f.all_pages, dpi)?;
     let job = Job {
         printer: f.printer.clone(),
@@ -666,14 +677,34 @@ mod tests {
 
     #[test]
     fn a_large_page_s_picture_is_drawn_at_a_lower_resolution() {
-        assert_eq!(picture_dpi((297.0, 210.0)), 300.0);
-        assert_eq!(picture_dpi((420.0, 297.0)), 300.0);
+        let page = most_side(What::Layout(0));
+        assert_eq!(picture_dpi((297.0, 210.0), page), 300.0);
+        assert_eq!(picture_dpi((420.0, 297.0), page), 300.0);
         // A0: 46.8 × 33.1 in. At 300 dpi it would be 139 million pixels.
-        let a0 = picture_dpi((1189.0, 841.0));
-        assert!((190.0..210.0).contains(&a0), "{a0}");
+        let a0 = picture_dpi((1189.0, 841.0), page);
+        assert!((185.0..200.0).contains(&a0), "{a0}");
         assert!((1189.0 / 25.4 * a0) * (841.0 / 25.4 * a0) <= MAX_PIXELS * 1.001);
-        assert_eq!(picture_dpi((f64::NAN, 100.0)), 300.0);
-        assert_eq!(picture_dpi((0.0, 100.0)), 300.0);
+        // A long banner is within the pixels in all, and past the most a side.
+        let banner = picture_dpi((2000.0, 300.0), page);
+        assert!(banner < 153.0 && (2000.0 / 25.4 * banner).round() <= page, "{banner}");
+        assert_eq!(picture_dpi((f64::NAN, 100.0), page), 300.0);
+        assert_eq!(picture_dpi((0.0, 100.0), page), 300.0);
+        // A wide map view: 3000 × 1600 points at 300 dpi would be 9375 pixels across, more than
+        // the map is drawn at. The picture it gets is one the renderer draws.
+        let mut app = RustGisApp::with_sample();
+        app.session.view_size = (3000.0, 1600.0);
+        let mm = rustgis_engine::cmd::share::map_page_mm(&app.session);
+        let dpi = picture_dpi(mm, most_side(What::Map));
+        assert!((260.0..263.0).contains(&dpi), "{dpi}");
+        let png = rustgis_engine::cmd::share::map_page_png(&mut app.session, dpi).unwrap();
+        let pm = rustgis_engine::render::decode_png(&png).unwrap();
+        assert_eq!((pm.width(), pm.height()), (8192, 4369));
+        // The largest view there is has a picture within both limits.
+        app.session.view_size = (9000.0, 9000.0);
+        let mm = rustgis_engine::cmd::share::map_page_mm(&app.session);
+        let dpi = picture_dpi(mm, most_side(What::Map));
+        let side = (mm.0 / 25.4 * dpi).round();
+        assert!(dpi > 90.0 && side <= 8192.0 && side * side <= MAX_PIXELS * 1.001, "{dpi}");
         assert_eq!(size_text((297.0, 210.0)), "297 × 210 mm (A4)");
         assert_eq!(size_text((344.2, 185.4)), "344 × 185 mm");
     }
