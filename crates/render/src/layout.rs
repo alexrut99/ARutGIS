@@ -348,8 +348,10 @@ fn draw_page(
         let (px, py, ew, eh) =
             ((e.x * k - f64::from(bounds.x())) as f32, (e.y * k - f64::from(bounds.y())) as f32, (e.w * k) as f32, (e.h * k) as f32);
         // A turned element is drawn upright on a sheet of its own, with room around it for
-        // outlines and labels outside it, and laid on the page turned about its centre.
-        let turned = e.rotation != 0.0 && e.kind.turns();
+        // outlines and labels outside it, and laid on the page turned about its centre. A text
+        // is turned as its ink reaches instead (below), its two turns as one: a sheet would cut
+        // what overruns the box, or a text's own turn before the element's brought it back.
+        let turned = e.rotation != 0.0 && e.kind.turns() && !matches!(e.kind, ElementKind::Text { .. });
         let pad = if turned {
             match &e.kind {
                 ElementKind::MapFrame { grid, .. } => {
@@ -533,13 +535,13 @@ fn draw_page(
                 let family = font_name.as_deref().and_then(crate::families::find_ready);
                 let face = text::Face { bold: *bold, italic: *italic, serif: *font == rustgis_map::layout::FontFamily::Serif, family };
                 let style = TextStyle { face, align: *align, spacing: *letter_spacing as f32 };
-                if *rotation == 0.0 {
+                // The text's own turn (clockwise, as RustGIS keeps it) and its element's
+                // (anticlockwise, a negative angle to tiny-skia) together, about its centre.
+                let turn = (*rotation - e.rotation) as f32;
+                if turn.rem_euclid(360.0) == 0.0 {
                     text_block(target, r, &s, *size as f32, *color, style, ppp);
                 } else if let Some(area) = text_area(r, &s, *size as f32, style, ppp) {
-                    // (The text's own turn, as RustGIS keeps it; the element's turns `target`.)
-                    draw_turned_box(target, r, *rotation as f32, area, |c, r, k| {
-                        text_block(c, r, &s, *size as f32, *color, style, ppp * k)
-                    });
+                    draw_turned_box(target, r, turn, area, |c, r, k| text_block(c, r, &s, *size as f32, *color, style, ppp * k));
                 }
             }
             ElementKind::Picture { image } => {
@@ -7398,8 +7400,8 @@ Elaboração: RustGIS",
         assert!(x <= bx + 0.5 && y <= by + 0.5 && x + w >= bx + bw - 0.5 && y + h >= by + bh - 0.5, "{:?}", (x, y, w, h));
     }
 
-    /// A turned element recorded for a vector PDF or SVG stays vectors: its text as glyphs and its
-    /// shapes as paths, in a group turned about its centre, not a picture of it.
+    /// A turned element recorded for a vector PDF or SVG stays vectors, not a picture of it: a
+    /// shape as paths in a group turned about its centre, a text as glyphs turned with it.
     #[test]
     fn a_turned_element_stays_vectors_when_recorded() {
         use crate::vector::Item;
@@ -7416,19 +7418,59 @@ Elaboração: RustGIS",
         }
         let (drawing, _) = render_drawing(&layout, &mut [], 96.0, &PageInfo::default()).unwrap();
         let (_, _, items) = drawing.finish();
-        // Each element is a layer of the page (#1815), its turned group inside it.
+        // Each element is a layer of the page (#1815): the shape's turned group inside its own.
         fn inner(items: &[Item]) -> Vec<&crate::vector::Group> {
             items.iter().filter_map(|i| if let Item::Group(g) = i { Some(g) } else { None }).collect()
         }
+        fn all(items: &[Item]) -> Vec<&Item> {
+            items.iter().flat_map(|i| std::iter::once(i).chain(if let Item::Group(g) = i { all(&g.items) } else { Vec::new() })).collect()
+        }
+        let turned = |t: &Transform| t.kx.abs() > 0.3 && t.ky.abs() > 0.3;
+        assert!(!all(&items).iter().any(|i| matches!(i, Item::Image(_))), "no picture");
         let groups: Vec<&crate::vector::Group> =
             inner(&items).into_iter().flat_map(|g| if g.layer.is_some() { inner(&g.items) } else { vec![g] }).collect();
-        assert_eq!(groups.len(), 2, "a group for each turned element, of {} items", items.len());
-        for g in &groups {
-            assert!(g.transform.kx.abs() > 0.3 && g.transform.ky.abs() > 0.3, "turned: {:?}", g.transform);
-            assert!(!g.items.iter().any(|i| matches!(i, Item::Image(_))), "no picture");
+        assert_eq!(groups.len(), 1, "a group for the turned shape, of {} items", items.len());
+        assert!(turned(&groups[0].transform), "turned: {:?}", groups[0].transform);
+        assert!(groups[0].items.iter().any(|i| matches!(i, Item::Fill { .. })), "the bar as a path");
+        // The title's glyphs, Thai and Latin, each run turned as the element is.
+        let runs: Vec<&crate::vector::GlyphRun> =
+            all(&items).into_iter().filter_map(|i| if let Item::Glyphs(g) = i { Some(g) } else { None }).collect();
+        assert!(!runs.is_empty() && runs.iter().all(|g| turned(&g.transform)), "the title as glyphs, turned");
+        // A text turned both ways as far (RustGIS's own turn of a text, clockwise) is level.
+        let e = layout.element_mut(title).unwrap();
+        if let ElementKind::Text { rotation, .. } = &mut e.kind {
+            *rotation = 30.0;
         }
-        assert!(groups.iter().any(|g| g.items.iter().any(|i| matches!(i, Item::Fill { .. }))), "the bar as a path");
-        assert!(groups.iter().any(|g| g.items.iter().any(|i| matches!(i, Item::Glyphs(_)))), "the title as glyphs");
+        let (drawing, _) = render_drawing(&layout, &mut [], 96.0, &PageInfo::default()).unwrap();
+        let (_, _, items) = drawing.finish();
+        let level =
+            all(&items).into_iter().filter_map(|i| if let Item::Glyphs(g) = i { Some(g) } else { None }).all(|g| !turned(&g.transform));
+        assert!(level, "the two turns undo each other");
+    }
+
+    /// A text with a turn of its own and its element's is drawn once, turned by both: all of it,
+    /// where a first turn on a sheet the size of its box would lose its ends (as RustGIS's 80 mm
+    /// line turned a quarter and turned back by the element).
+    #[test]
+    fn a_text_turned_both_ways_is_drawn_whole() {
+        let mut layout = Layout::new("T", 120.0, 60.0);
+        let black = Rgba::rgb(0, 0, 0);
+        let id = layout.add("Line", (20.0, 25.0, 80.0, 10.0), ElementKind::text("MMMMMMMMMM", 20.0, black, true));
+        let info = PageInfo::default();
+        let ink = |layout: &Layout| {
+            let pm = render(layout, &mut [], 96.0, &info).unwrap();
+            pm.pixels().iter().filter(|p| p.red() < 128 && p.alpha() > 0).count()
+        };
+        let level = ink(&layout);
+        assert!(level > 500, "{level}");
+        let e = layout.element_mut(id).unwrap();
+        e.rotation = 90.0;
+        if let ElementKind::Text { rotation, .. } = &mut e.kind {
+            *rotation = 90.0;
+        }
+        assert_eq!(e.turned(), 0.0);
+        assert_eq!(ink(&layout), level, "as much ink as level");
+        assert!(clipped_text(&layout, &[], 96.0, &info).is_empty());
     }
 
     /// A legend's columns take its look: the room between its rows, its patches' width and its
