@@ -273,7 +273,7 @@ fn area_in_square_miles_is_one_per_640_acres() {
 #[test]
 fn invalid_unit_lists_the_property_units() {
     for (kind, property, invalid, valid) in [
-        (GeometryType::Polygon, "area", "sqft", "m2, km2, ha, ac, ft2, mi2"),
+        (GeometryType::Polygon, "area", "sqft", "m2, km2, ha, rai, rai_ngan_wa, ac, ft2, mi2"),
         (GeometryType::Polygon, "perimeter", "m2", "m, km, ft, mi"),
         (GeometryType::Polyline, "length", "m2", "m, km, ft, mi"),
         (GeometryType::Point, "x", "m", "deg, projected"),
