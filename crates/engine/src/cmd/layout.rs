@@ -177,7 +177,7 @@ pub fn commands() -> Vec<C> {
         C::new("layout.save", "Save Layout File", "Publish › Save As", |s, p| {
             let path = ps(p, "path").ok_or("path is required")?;
             let l = active(s, p)?.clone();
-            // A layout an older RustGIS would lose something of is written so that one refuses it.
+            // Written so that a RustGIS older than what the layout may hold refuses it.
             let text = l.to_file().map_err(|e| e.to_string())?;
             rustgis_data::io::write_atomic(Path::new(path), text.as_bytes()).map_err(|e| format!("{path}: {e}"))?;
             Ok(json!({"path": path}))
@@ -6322,7 +6322,10 @@ pub(crate) fn import(s: &mut Session, text: &str) -> CmdResult {
         return Err("the layout file is too large".into());
     }
     // One saved by a newer RustGIS is refused, not read without what this version doesn't know.
-    crate::project::check_format(text, "layout")?;
+    // (ARutGIS's layout files, the layout one level down, count a format of their own; RustGIS's
+    // are the layout itself, of the format its files share.)
+    let newest = if Layout::file_is_nested(text) { rustgis_map::layout::FILE_FORMAT } else { crate::project::READ_FORMAT };
+    crate::project::check_format_up_to(text, "layout", newest)?;
     let mut l = Layout::from_file(text).map_err(|e| format!("not a RustGIS layout: {e}"))?;
     // Refused before anything is said of it.
     if s.project.layouts.len() >= crate::project::MAX_LAYOUTS {

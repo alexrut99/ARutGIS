@@ -193,10 +193,9 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   points that would be a smudge at its scale. The map itself, and other frames showing it, keep
   every layer; the frame's legend lists what the frame draws, and a renamed layer stays left
   out. Scripts give the same with `"exclude": ["Parcels", "Contours"]` on `layout.update`
-  (`[]` draws every layer again). A project or a layout file with layers left out of a frame is
-  saved as format 2: ARutGIS 0.6.2 and later open it, and an older version says to update
-  rather than draw every layer and save the project without the choice. Projects that don't
-  use it are saved as before and open in every version.
+  (`[]` draws every layer again). A project with layers left out of a frame says that it needs
+  a reader that knows the choice (`frame-layers`): RustGIS, which doesn't, refuses it rather
+  than draw every layer and save the project without the choice.
 - **Grids**: the **Grid** section of a frame's properties turns the grid on and sets its
   **Interval** in degrees (**Auto** picks one from the frame's extent), its **Style** (full lines
   across the frame, ticks along its neatline only, or both, with the **Tick length**), its colour
@@ -558,7 +557,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   form GDAL, QGIS, Acrobat and Avenza read), with its map's coordinate system as WKT and its EPSG
   code when it has one, so a reader shows coordinates and measures in it, and GDAL or QGIS open the
   page as a georeferenced raster. It carries coordinates only: no layers and no feature
-  attributes. A tilted frame, one on the globe, and one with a corner off the Earth aren't
+  attributes. A tilted frame, one on the globe, one turned on the page (the element's rotation,
+  which turns the drawn frame and not its map) and one with a corner off the Earth aren't
   georeferenced, and the export says which (in a map series, on which pages when not on all: each
   page moves the frame). Where a frame is drawn over another, only the one on top carries
   coordinates there (none when it isn't georeferenced), so a reader doesn't show the
@@ -579,7 +579,10 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   change when edited. A picture standing for a whole element is clipped to its box;
   `layout.export` accepts `dpi` and `"allPages": false` for just the current PDF
   page. **Save Layout File** and
-  **Import Layout** move layouts between projects (`.rgislayout`).
+  **Import Layout** move layouts between projects (`.rgislayout`). A layout file saved by
+  ARutGIS 0.7.0 or later opens in 0.7.0 or later: an older version says to update rather than
+  read the layout without what it doesn't know (a dashed outline, a legend's own labels).
+  Layout files from older versions, and RustGIS's, open as before.
 - **Print** (the desktop app) sends the layout to one of the computer's printers. Its dialog lists
   the printers, with the one last printed to (else the system's default) chosen, and takes the
   number of copies and the size:

@@ -878,15 +878,17 @@ pub const MAX_LEGEND_EXCLUDED: usize = 1000;
 /// The most layers a map frame leaves out.
 pub const MAX_FRAME_EXCLUDED: usize = 1000;
 
-/// The saved format of a layout, and of a project, that uses nothing an older RustGIS would lose.
-pub const PLAIN_FORMAT: u32 = 1;
-
-/// The saved format of a layout with a map frame that leaves layers out, and of its project.
-pub const FRAME_LAYERS_FORMAT: u32 = 2;
-
-/// What a RustGIS older than 0.6.2 says of a layout file it would lose something of (see
+/// The format a layout file (`.rgislayout`) is written as, from ARutGIS 0.7.0 on, whatever the
+/// layout holds: 0.7.0 saves what older versions don't know (a dashed outline, a legend's own
+/// labels and look, an MGRS grid), which they would read past, and save the layout without.
+/// ARutGIS 0.6.2 and 0.6.3 wrote 2 for a layout with a map frame that leaves layers out and no
+/// format otherwise, and refuse a format past 2; older ones don't look at it (see
 /// [`Layout::to_file`]).
-const NEEDS_NEWER: &str = "this layout needs ARutGIS 0.6.2 or later: update ARutGIS to open it";
+pub const FILE_FORMAT: u32 = 3;
+
+/// What a RustGIS that doesn't look at a layout file's format says of one (see
+/// [`Layout::to_file`]).
+const NEEDS_NEWER: &str = "this layout needs ARutGIS 0.7.0 or later: update ARutGIS to open it";
 
 /// The most layers a legend labels.
 pub const MAX_LEGEND_LABELS: usize = 1000;
@@ -1935,8 +1937,9 @@ pub enum ElementKind {
         #[serde(default, skip_serializing_if = "is_zero")]
         pitch: f64,
         /// Layers of the map this frame doesn't draw, by name (its web layers too): a locator
-        /// without the map's detail. A layout with any is saved as [`FRAME_LAYERS_FORMAT`], which
-        /// an older RustGIS refuses rather than draw every layer and save the layout without them.
+        /// without the map's detail. A project with any requires `frame-layers` of its reader,
+        /// so one that doesn't know them refuses it rather than draw every layer and save the
+        /// layout without them.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         exclude: Vec<String>,
     },
@@ -2565,20 +2568,19 @@ impl Layout {
         self.elements.iter_mut().find(|e| e.id == id)
     }
 
-    /// The saved format the layout needs: [`PLAIN_FORMAT`] unless it uses what only a newer
-    /// reader keeps.
-    pub fn format(&self) -> u32 {
-        let leaves_out = |e: &Element| matches!(&e.kind, ElementKind::MapFrame { exclude, .. } if !exclude.is_empty());
-        if self.elements.iter().any(leaves_out) { FRAME_LAYERS_FORMAT } else { PLAIN_FORMAT }
+    /// Whether a map frame of the layout leaves layers of its map out (`exclude`): what a project
+    /// holding it requires of its reader (`frame-layers`).
+    pub fn leaves_layers_out(&self) -> bool {
+        self.elements.iter().any(|e| matches!(&e.kind, ElementKind::MapFrame { exclude, .. } if !exclude.is_empty()))
     }
 
-    /// The text of a layout file (`.rgislayout`).
+    /// The text of a layout file (`.rgislayout`): `{"format", "layout", "width"}`, the layout one
+    /// level down.
     ///
-    /// A layout an older RustGIS would lose something of ([`Layout::format`]) is written one
-    /// level down, as `{"format", "layout", "width"}`. RustGIS before 0.6.2 reads a layout file
-    /// without looking at its format: it would draw the layers a frame leaves out and save the
-    /// layout without the choice. Written this way it finds no layout at the top and refuses the
-    /// file, giving `width` (a sentence where it expects a number) as its reason.
+    /// ARutGIS 0.6.2 and 0.6.3 refuse a format ([`FILE_FORMAT`]) newer than they read. RustGIS
+    /// before them reads a layout file without looking at its format, and would save the layout
+    /// again without what it didn't know. Written this way it finds no layout at the top and
+    /// refuses the file, giving `width` (a sentence where it expects a number) as its reason.
     pub fn to_file(&self) -> serde_json::Result<String> {
         #[derive(Serialize)]
         struct Nested<'a> {
@@ -2586,28 +2588,33 @@ impl Layout {
             layout: &'a Layout,
             width: &'static str,
         }
-        match self.format() {
-            PLAIN_FORMAT => serde_json::to_string_pretty(self),
-            format => serde_json::to_string_pretty(&Nested { format, layout: self, width: NEEDS_NEWER }),
-        }
+        serde_json::to_string_pretty(&Nested { format: FILE_FORMAT, layout: self, width: NEEDS_NEWER })
     }
 
-    /// The layout in a layout file's text, either way [`Layout::to_file`] writes one. Whether
-    /// this version reads the file's format is the caller's to check first.
+    /// The layout in a layout file's text: one level down, as [`Layout::to_file`] writes it, or
+    /// the layout itself, as RustGIS and ARutGIS before 0.7.0 wrote one. Whether this version
+    /// reads the file's format is the caller's to check first.
     pub fn from_file(text: &str) -> serde_json::Result<Layout> {
+        #[derive(Deserialize)]
+        struct Nested {
+            layout: Layout,
+        }
+        if Self::file_is_nested(text) {
+            return Ok(serde_json::from_str::<Nested>(text)?.layout);
+        }
+        serde_json::from_str(text)
+    }
+
+    /// Whether a layout file's text holds its layout one level down, as [`Layout::to_file`]
+    /// writes it: ARutGIS's own, its format counted as [`FILE_FORMAT`] is. Otherwise it is the
+    /// layout itself, as RustGIS writes one, of the format RustGIS's files share.
+    pub fn file_is_nested(text: &str) -> bool {
         #[derive(Deserialize)]
         struct Head {
             #[serde(default)]
             layout: Option<serde::de::IgnoredAny>,
         }
-        #[derive(Deserialize)]
-        struct Nested {
-            layout: Layout,
-        }
-        if text.trim_start().starts_with('{') && serde_json::from_str::<Head>(text)?.layout.is_some() {
-            return Ok(serde_json::from_str::<Nested>(text)?.layout);
-        }
-        serde_json::from_str(text)
+        text.trim_start().starts_with('{') && serde_json::from_str::<Head>(text).is_ok_and(|h| h.layout.is_some())
     }
 
     /// The layers map frame `frame` doesn't draw, by name.
@@ -3327,7 +3334,7 @@ mod tests {
     /// A map frame's left-out layers are saved only when it has some, and a layout with any is
     /// of the format an older reader refuses; a layout without stays as every reader takes it.
     #[test]
-    fn a_frame_leaving_layers_out_is_saved_as_a_newer_format() {
+    fn a_layout_file_is_one_older_versions_refuse() {
         let frame = |exclude: Vec<String>| ElementKind::MapFrame {
             map: "Map".into(),
             center: Coord::new(0.0, 0.0),
@@ -3343,27 +3350,42 @@ mod tests {
         };
         let mut l = Layout::new("Layout", 297.0, 210.0);
         let whole = l.add("Map Frame", (10.0, 10.0, 200.0, 150.0), frame(Vec::new()));
-        assert_eq!(l.format(), PLAIN_FORMAT);
+        assert!(!l.leaves_layers_out());
         let saved = serde_json::to_string(&l).unwrap();
         assert!(!saved.contains("exclude"), "{saved}");
-        // Its file is the layout itself, as every version wrote one.
-        let file = l.to_file().unwrap();
-        assert_eq!(serde_json::from_str::<Layout>(&file).unwrap(), l);
-        assert_eq!(Layout::from_file(&file).unwrap(), l);
+        // The layout itself, as every version before 0.7.0 wrote one, is read.
+        assert_eq!(Layout::from_file(&saved).unwrap(), l);
+        // Its file says its format and holds it one level down, whatever it holds: a reader that
+        // doesn't look at a format (RustGIS before 0.6.2 read the text as a layout, as here)
+        // refuses it, saying why; this version reads it whole.
+        let refused = |l: &Layout| {
+            let file = l.to_file().unwrap();
+            let older = serde_json::from_str::<Layout>(&file).unwrap_err().to_string();
+            assert!(older.contains("this layout needs ARutGIS 0.7.0 or later"), "{older}");
+            let head: serde_json::Value = serde_json::from_str(&file).unwrap();
+            assert_eq!((head["format"].as_u64(), head.get("elements")), (Some(u64::from(FILE_FORMAT)), None));
+            assert_eq!(&Layout::from_file(&file).unwrap(), l);
+        };
+        refused(&l);
         let locator = l.add("Locator", (220.0, 10.0, 60.0, 60.0), frame(vec!["Parcels".into(), "Roads".into()]));
-        assert_eq!(l.format(), FRAME_LAYERS_FORMAT);
+        assert!(l.leaves_layers_out());
         let again: Layout = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
         assert_eq!(again, l);
         assert_eq!(again.frame_exclude(locator), ["Parcels", "Roads"]);
         assert!(again.frame_exclude(whole).is_empty());
-        // Its file is one a reader that doesn't look at a format (RustGIS before 0.6.2 read the
-        // text as a layout, as here) refuses, saying why; this version reads it whole.
-        let file = l.to_file().unwrap();
-        let older = serde_json::from_str::<Layout>(&file).unwrap_err().to_string();
-        assert!(older.contains("this layout needs ARutGIS 0.6.2 or later"), "{older}");
-        assert_eq!(serde_json::from_str::<serde_json::Value>(&file).unwrap()["format"], 2);
-        assert_eq!(Layout::from_file(&file).unwrap(), l);
+        refused(&l);
+        // One as ARutGIS 0.6.2 and 0.6.3 wrote a layout with such a frame is read too.
+        let earlier = format!(
+            r#"{{"format": 2, "layout": {}, "width": "this layout needs ARutGIS 0.6.2 or later"}}"#,
+            serde_json::to_string(&l).unwrap()
+        );
+        assert_eq!(Layout::from_file(&earlier).unwrap(), l);
         assert!(Layout::from_file(r#"{"format": 2, "layout": {"name": "half"}}"#).is_err());
+        // Which of the two a file is: its format is counted accordingly.
+        assert!(Layout::file_is_nested(&earlier) && Layout::file_is_nested(&l.to_file().unwrap()));
+        assert!(
+            !Layout::file_is_nested(&serde_json::to_string(&l).unwrap()) && !Layout::file_is_nested("[]") && !Layout::file_is_nested("{")
+        );
         // A legend leaves out its own layers and its frame's, each once.
         let own = ["roads".to_string(), "Lakes".to_string()];
         assert_eq!(&*l.legend_exclude(locator, &own), ["roads", "Lakes", "Parcels"]);

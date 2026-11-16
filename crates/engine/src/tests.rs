@@ -9406,7 +9406,10 @@ fn publication_layouts_fit_their_pages() {
     let x = if boxed.x + boxed.w / 2.0 > frame_x_mid(&s, li, frame) { boxed.x - 5.5 } else { boxed.x + boxed.w + 0.5 };
     s.run("layout.update", &json!({"layout": li, "element": arrow, "x": x, "y": boxed.y, "w": 5.0, "h": 5.0})).unwrap();
     let mark = s.notices.len();
-    s.run("layout.update", &json!({"layout": li, "element": scale_text, "text": "Escala aproximada da folha {scale}"})).unwrap();
+    // (A text wide enough in every system's face to carry the box past the arrow: ARutGIS's box
+    // starts wider than RustGIS's by its bar's insets, and Segoe UI and SF set a shorter one
+    // within the half millimetre between them.)
+    s.run("layout.update", &json!({"layout": li, "element": scale_text, "text": "Escala aproximada da folha A4 {scale}"})).unwrap();
     s.run("layout.update", &json!({"layout": li, "element": frame, "scale": 30_000_000.0})).unwrap();
     let after = s.project.layouts[li].element(b).cloned().unwrap();
     assert_eq!((after.x, after.w), (boxed.x, boxed.w), "the box stays");
@@ -37476,23 +37479,39 @@ fn map_frames_leave_layers_out() {
     s.run("map.addTiles", &json!({"url": "https://maps.example.org/wms/{bbox-epsg-3857}", "name": "Soils", "overlay": true})).unwrap();
     s.run("layout.update", &json!({"element": frame, "exclude": ["soils", "cities"]})).unwrap();
     assert_eq!(left_out(&s), ["Soils", "Cities"]);
-    // A layout file says its format and holds the layout one level down, where a version that
-    // doesn't look at the format finds none; one of a newer format than this version reads is
-    // refused.
+    // A layout file says its format (its own, 3 from 0.7.0 on) and holds the layout one level
+    // down, where a version that doesn't look at the format finds none; one of a newer format
+    // than this version reads is refused.
     let dir = std::env::temp_dir().join(format!("rustgis-frame-layers-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("sheet.rgislayout");
     s.run("layout.save", &json!({"path": file.display().to_string()})).unwrap();
     let mut saved: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-    assert_eq!(saved["format"], json!(2));
+    assert_eq!(saved["format"], json!(rustgis_map::layout::FILE_FORMAT));
     assert_eq!(saved["layout"]["name"], json!(s.project.layouts[0].name));
-    assert!(saved["width"].as_str().is_some_and(|why| why.contains("0.6.2")), "{saved}");
+    assert!(saved["width"].as_str().is_some_and(|why| why.contains("0.7.0")), "{saved}");
     assert!(saved.get("elements").is_none());
     let imported = s.run("layout.import", &json!({"path": file.display().to_string()})).unwrap()["layout"].as_u64().unwrap() as usize;
     assert_eq!(s.project.layouts[imported].frame_exclude(frame), ["Soils", "Cities"]);
-    saved["format"] = json!(3);
+    // One as 0.6.2 and 0.6.3 wrote it, of format 2, is read too.
+    saved["format"] = json!(2);
+    let earlier = s.run("layout.import", &json!({"text": saved.to_string()})).unwrap()["layout"].as_u64().unwrap() as usize;
+    assert_eq!(s.project.layouts[earlier].frame_exclude(frame), ["Soils", "Cities"]);
+    let copy = s.project.layouts[earlier].name.clone();
+    s.run("layout.remove", &json!({"name": copy})).unwrap();
+    saved["format"] = json!(4);
     let count = s.project.layouts.len();
     let refused = s.run("layout.import", &json!({"text": saved.to_string()})).unwrap_err();
+    assert!(refused.contains("saved by a newer RustGIS (format 4)"), "{refused}");
+    assert_eq!(s.project.layouts.len(), count);
+    // The layout itself, as RustGIS writes one, is of the format RustGIS's files share: one
+    // that says 3 is from a RustGIS this version doesn't know, and refused too.
+    let mut bare = saved["layout"].clone();
+    s.run("layout.import", &json!({"text": bare.to_string()})).unwrap();
+    let copy = s.project.layouts.last().unwrap().name.clone();
+    s.run("layout.remove", &json!({"name": copy})).unwrap();
+    bare["format"] = json!(3);
+    let refused = s.run("layout.import", &json!({"text": bare.to_string()})).unwrap_err();
     assert!(refused.contains("saved by a newer RustGIS (format 3)"), "{refused}");
     assert_eq!(s.project.layouts.len(), count);
     let copy = s.project.layouts[imported].name.clone();
@@ -37506,13 +37525,15 @@ fn map_frames_leave_layers_out() {
     s.run("layout.update", &json!({"layout": 0, "element": frame, "map": "Second", "exclude": ["LAKES"]})).unwrap();
     assert_eq!(left_out(&s), ["Lakes"]);
     s.run("layout.update", &json!({"layout": 0, "element": frame, "map": "World"})).unwrap();
-    // An empty list draws every layer again: the project and a layout file are as every
-    // RustGIS reads them.
+    // An empty list draws every layer again: the project requires nothing of its reader. A
+    // layout file keeps its format, for what else 0.7.0 saves in one.
     s.run("layout.update", &json!({"layout": 0, "element": frame, "exclude": []})).unwrap();
     assert!(left_out(&s).is_empty());
     assert!(!requires(&mut s));
     s.run("layout.save", &json!({"layout": 0, "path": file.display().to_string()})).unwrap();
-    assert!(!std::fs::read_to_string(&file).unwrap().contains("\"format\""));
+    let plain: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(plain["format"], json!(rustgis_map::layout::FILE_FORMAT));
+    assert!(plain["layout"]["elements"].is_array() && !plain["layout"].to_string().contains("exclude"), "{plain}");
     s.run("map.activate", &json!({"name": "World"})).unwrap();
     assert!(listed(&mut s) > short, "every layer listed again");
     std::fs::remove_dir_all(&dir).ok();
@@ -37710,7 +37731,7 @@ fn legends_label_layers() {
     assert_eq!(cut_notice(&s, 0), 0, "nothing was cut");
     // A layout file with a label longer than a legend keeps is read with it cut, and says so.
     let mut text: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-    let legend = text["elements"].as_array_mut().unwrap().iter_mut().find(|e| e["id"] == json!(id)).unwrap();
+    let legend = text["layout"]["elements"].as_array_mut().unwrap().iter_mut().find(|e| e["id"] == json!(id)).unwrap();
     legend["kind"]["Legend"]["labels"]["Rivers"] = json!("x".repeat(rustgis_map::layout::MAX_LEGEND_LABEL_CHARS + 50));
     let mark = s.notices.len();
     s.run("layout.import", &json!({"text": text.to_string()})).unwrap();
@@ -37721,7 +37742,7 @@ fn legends_label_layers() {
     ));
     // One with two spellings of a layer keeps the first in order, as a command keeps one, and
     // says so.
-    let legend = text["elements"].as_array_mut().unwrap().iter_mut().find(|e| e["id"] == json!(id)).unwrap();
+    let legend = text["layout"]["elements"].as_array_mut().unwrap().iter_mut().find(|e| e["id"] == json!(id)).unwrap();
     legend["kind"]["Legend"]["labels"] = json!({"Rivers": "Rios", "rivers": "rios", "Lakes": "Lagos"});
     let mark = s.notices.len();
     s.run("layout.import", &json!({"text": text.to_string()})).unwrap();
@@ -43687,8 +43708,19 @@ fn a_layout_pdf_georeferences_its_map_frames() {
     // (PDF 1.5 for its layers, #1815.)
     assert!(pdf.starts_with("%PDF-1.5") && !pdf.contains("/VP ["));
     assert!(said.iter().any(|t| t == &format!("The PDF doesn't georeference 1 map frame ({}: it is tilted)", frame.name)), "{said:?}");
-    // A world projection (Winkel Tripel) is written as WKT too.
     s.run("layout.update", &json!({"element": frame.id, "pitch": 0})).unwrap();
+    // Turned on its page (the element's rotation), the frame is drawn turned, which an upright
+    // viewport with its map's north up wouldn't say: left out, and said.
+    s.run("layout.update", &json!({"element": frame.id, "rotation": 30})).unwrap();
+    let (pdf, said) = export(&mut s);
+    assert!(!pdf.contains("/VP ["));
+    assert!(
+        said.iter().any(|t| t == &format!("The PDF doesn't georeference 1 map frame ({}: it is turned on the page)", frame.name)),
+        "{said:?}"
+    );
+    s.run("layout.update", &json!({"element": frame.id, "rotation": 0})).unwrap();
+    assert!(export(&mut s).0.contains("/VP ["), "upright again, it is georeferenced");
+    // A world projection (Winkel Tripel) is written as WKT too.
     s.run("map.projection", &json!({"type": "winkelTripel"})).unwrap();
     let (pdf, said) = export(&mut s);
     assert!(pdf.contains("/GCS << /Type /PROJCS /WKT (PROJCS[") && pdf.contains("PROJECTION[\"Winkel_Tripel\"]"), "{pdf}");
@@ -43876,6 +43908,24 @@ fn a_frame_drawn_over_another_is_cut_out_of_its_viewport() {
         let [vx, vy, vw, vh] = v.rect_mm;
         assert!(vx + vw <= ix + 1e-9 || ix + iw <= vx + 1e-9 || vy + vh <= iy + 1e-9 || iy + ih <= vy + 1e-9, "{:?}", v.rect_mm);
     }
+    // Turned on its page, the inset is left out, which is said, and the box around its turned
+    // corners is cut out of the main map's viewport: none of it gives the main map's places.
+    let inset = s.project.layouts[0].elements.iter_mut().find(|e| e.id == 9_001).unwrap();
+    inset.rotation = 30.0;
+    let (bx, by, bw, bh) = inset.bounds();
+    let turned = rustgis_render::layout::frame_viewports(&s.project.layouts[0], &s.project.maps, 72.0);
+    assert!(!turned.viewports.is_empty() && turned.viewports.iter().all(|v| v.name == frame.name), "{:?}", turned.left_out);
+    assert_eq!(turned.left_out, [(9_001, "Inset".to_string(), "it is turned on the page")]);
+    // (To the page's whole pixels, stretched over its paper: within 0.05 mm of the box here.)
+    for v in &turned.viewports {
+        let [vx, vy, vw, vh] = v.rect_mm;
+        assert!(vx + vw <= bx + 0.05 || bx + bw <= vx + 0.05 || vy + vh <= by + 0.05 || by + bh <= vy + 0.05, "{:?}", v.rect_mm);
+    }
+    // And all of the main map but that box still has its places.
+    let area: f64 = turned.viewports.iter().map(|v| v.rect_mm[2] * v.rect_mm[3]).sum();
+    let whole = frame.w * frame.h - bw * bh;
+    assert!((area - whole).abs() < 0.02 * whole, "{area} {whole}");
+    s.project.layouts[0].elements.iter_mut().find(|e| e.id == 9_001).unwrap().rotation = 0.0;
     // Their box is the frame's own, as it is placed with nothing over it.
     s.project.layouts[0].elements.iter_mut().find(|e| e.id == 9_001).unwrap().visible = false;
     let alone = rustgis_render::layout::frame_viewports(&s.project.layouts[0], &s.project.maps, 72.0);

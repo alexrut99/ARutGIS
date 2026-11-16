@@ -78,9 +78,15 @@ same files. New and changed code follows these rules; not every existing reader 
   - ARutGIS 0.6.2 and 0.6.3 wrote format 2 for a project with such a frame, and 1 otherwise,
     with no `requires`. They open a project ARutGIS 0.7.0 saved without looking at what it
     requires.
-  - A layout file (`.rgislayout`) with such a frame says `"format": 2`. Versions before 0.6.2
-    read a layout file without looking at its format, so such a file holds its layout one level
-    down (`Layout::to_file`): they find no layout in it and refuse it.
+  - A layout file (`.rgislayout`) has a format of its own (`layout::FILE_FORMAT`), read up to
+    it: 3 from ARutGIS 0.7.0 on, whatever the layout holds, since 0.6.3 and older would read past
+    what 0.7.0 saves (a dashed outline, a legend's labels) and save the layout without it. 0.6.2
+    and 0.6.3 wrote 2 for a layout with a frame leaving layers out and no format otherwise, and
+    refuse one past 2. Versions before 0.6.2 read a layout file without looking at its format,
+    so a file holds its layout one level down (`Layout::to_file`): they find no layout in it
+    and refuse it. RustGIS writes the layout itself, with no format: ARutGIS reads that (one
+    that says a format is checked against `READ_FORMAT`, as RustGIS's other files are), and
+    RustGIS refuses ARutGIS's.
 - Where a change allows it, reading a new version ships at least one release before anything
   writes it.
 - A project, map or layer file, a model or a web tool lists in `requires` each capability it needs

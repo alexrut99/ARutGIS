@@ -944,7 +944,8 @@ pub const MAX_CORNER_FIT_MM: f64 = 0.5;
 /// Each visible map frame of `layout` as a PDF viewport ([`crate::pdf::Viewport`]): its place on
 /// the page as a page drawn at `dpi` places it, its corners' latitude and longitude, and its
 /// map's coordinate system as WKT. A frame on the globe or tilted shows no flat map to measure
-/// on, so it is left out, as is one on another body than the Earth, one whose map is missing,
+/// on, so it is left out, as is one turned on its page (an element's `rotation`, which turns the
+/// drawn frame and not its map), one on another body than the Earth, one whose map is missing,
 /// one with a corner off the Earth, one across its projection's edge (the 180° meridian) and one
 /// whose system has no WKT and whose corners alone would misplace it. A frame drawn over another,
 /// left out or not, is cut out of the other's viewport, so that the other's coordinates don't show
@@ -960,11 +961,26 @@ pub fn frame_viewports(layout: &Layout, maps: &[Map], dpi: f64) -> Georeferenced
         .elements
         .iter()
         .filter(|e| e.visible && matches!(e.kind, ElementKind::MapFrame { .. }))
-        // Rounded as `draw_page` rounds them, in single precision, so the box is the drawn one.
-        .map(|e| (e, [f64::from(((e.x * k) as f32).round()) * sx, f64::from(((e.y * k) as f32).round()) * sy, e.w * k * sx, e.h * k * sy]))
+        .map(|e| {
+            // A frame turned on its page (which leaves it out, below) covers the box around its
+            // turned corners, out to whole pixels: what it cuts out of the frames under it.
+            if e.turned() != 0.0 {
+                let (x, y, w, h) = e.bounds();
+                let (x0, y0) = ((x * k).floor() * sx, (y * k).floor() * sy);
+                return (e, [x0, y0, ((x + w) * k).ceil() * sx - x0, ((y + h) * k).ceil() * sy - y0]);
+            }
+            // Rounded as `draw_page` rounds them, in single precision, so the box is the drawn one.
+            (e, [f64::from(((e.x * k) as f32).round()) * sx, f64::from(((e.y * k) as f32).round()) * sy, e.w * k * sx, e.h * k * sy])
+        })
         .collect();
     for (i, (e, placed)) in frames.iter().enumerate() {
         let ElementKind::MapFrame { map, center, scale, bearing, pitch, shape, .. } = &e.kind else { continue };
+        // A viewport is an upright rectangle with its map's north where the frame's camera has
+        // it: one for a frame turned on its page would give the places of the frame unturned.
+        if e.turned() != 0.0 {
+            out.left_out.push((e.id, e.name.clone(), "it is turned on the page"));
+            continue;
+        }
         // A viewport is a rectangle: one for a shaped frame over another would give its places
         // where the page shows the other's map, around the shape. (It still cuts the other.)
         let over =

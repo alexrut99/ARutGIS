@@ -34,7 +34,7 @@ impl Project {
         }
         // A layout's map frame that leaves layers of its map out (ARutGIS): a reader that doesn't
         // know of it would draw them, and save the layout without the choice.
-        if self.layouts.iter().any(|l| l.format() == rustgis_map::layout::FRAME_LAYERS_FORMAT) {
+        if self.layouts.iter().any(rustgis_map::layout::Layout::leaves_layers_out) {
             required.push("frame-layers");
         }
         required

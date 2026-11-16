@@ -1005,6 +1005,12 @@ pub(crate) fn kept_as_written(text: &str, reads_format_2: bool) -> bool {
 /// unless the document requires a capability this RustGIS doesn't know: that refusal names them.
 /// A change an older reader would lose names a capability in `requires` (see [`CAPABILITIES`]).
 pub(crate) fn check_format(text: &str, kind: &str) -> Result<(), String> {
+    check_format_up_to(text, kind, READ_FORMAT)
+}
+
+/// [`check_format`] for a kind of file whose format is its own, read up to `newest`: an ARutGIS
+/// layout file, which has had one of its own since 0.6.2 (`rustgis_map::layout::FILE_FORMAT`).
+pub(crate) fn check_format_up_to(text: &str, kind: &str, newest: u32) -> Result<(), String> {
     let max = max_bytes();
     if text.len() as u64 > max {
         return Err(format!("the {kind} file is too large (maximum {})", limit_said(max)));
@@ -1013,7 +1019,7 @@ pub(crate) fn check_format(text: &str, kind: &str) -> Result<(), String> {
         return Ok(());
     }
     let header: FileFormat = serde_json::from_str(text).map_err(|e| format!("not a RustGIS {kind}: {e}"))?;
-    if header.format > u64::from(READ_FORMAT) {
+    if header.format > u64::from(newest) {
         return Err(format!("this {kind} was saved by a newer RustGIS (format {}). Update RustGIS to open it.", header.format));
     }
     requires_known(&header.requires, kind, "open")
