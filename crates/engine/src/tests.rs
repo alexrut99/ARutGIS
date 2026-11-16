@@ -9406,10 +9406,22 @@ fn publication_layouts_fit_their_pages() {
     let x = if boxed.x + boxed.w / 2.0 > frame_x_mid(&s, li, frame) { boxed.x - 5.5 } else { boxed.x + boxed.w + 0.5 };
     s.run("layout.update", &json!({"layout": li, "element": arrow, "x": x, "y": boxed.y, "w": 5.0, "h": 5.0})).unwrap();
     let mark = s.notices.len();
-    // (A text wide enough in every system's face to carry the box past the arrow: ARutGIS's box
-    // starts wider than RustGIS's by its bar's insets, and Segoe UI and SF set a shorter one
-    // within the half millimetre between them.)
-    s.run("layout.update", &json!({"layout": li, "element": scale_text, "text": "Escala aproximada da folha A4 {scale}"})).unwrap();
+    // (A text as long as this system's face needs: one that carries the box past the half
+    // millimetre to the arrow and stays under the widest box a publication gives. No one text
+    // does in every face, since SF sets a line a fifth shorter than DejaVu Sans does and the box,
+    // as wide as its bar, starts within a fifth of the widest.)
+    let widest = (s.project.layouts[li].element(frame).unwrap().w * 0.3).max(25.0);
+    let ElementKind::Text { size, .. } = s.project.layouts[li].element(scale_text).unwrap().kind else { panic!() };
+    let lined = |text: &str, scale: f64| {
+        let filled = text.replace("{scale}", &crate::render::layout::scale_ratio_text(scale, false));
+        crate::render::report::width_mm(&filled, size as f32, false) + 2.0
+    };
+    let more = " da folha impressa em papel A4";
+    let grows = (0..=more.len())
+        .map(|n| format!("Escala aproximada{} {{scale}}", &more[..n]))
+        .find(|text| lined(text, 1_500_000.0) > boxed.w + 1.0 && lined(text, 30_000_000.0) < widest - 0.5)
+        .expect("a text wider than the box and narrower than the widest one");
+    s.run("layout.update", &json!({"layout": li, "element": scale_text, "text": grows})).unwrap();
     s.run("layout.update", &json!({"layout": li, "element": frame, "scale": 30_000_000.0})).unwrap();
     let after = s.project.layouts[li].element(b).cloned().unwrap();
     assert_eq!((after.x, after.w), (boxed.x, boxed.w), "the box stays");
