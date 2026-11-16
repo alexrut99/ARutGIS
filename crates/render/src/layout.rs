@@ -169,17 +169,25 @@ pub fn clipped_text(layout: &Layout, maps: &[Map], dpi: f64, info: &PageInfo) ->
                         serif: *font == rustgis_map::layout::FontFamily::Serif,
                         family: font_name.as_deref().and_then(crate::families::find_ready),
                     };
-                    (expand(t, layout, info, first), *size as f32, face, *align, *letter_spacing as f32, *rotation as f32, false)
+                    let size = (*size as f32).clamp(2.0, 400.0);
+                    (expand(t, layout, info, first), size, face, *align, *letter_spacing as f32, *rotation as f32, None)
                 }
-                ElementKind::Legend { title, frame, .. } => {
+                // A legend's title in the type its look sets, as [`legend_pieces`] places it and
+                // [`legend_text`] draws it.
+                ElementKind::Legend { title, frame, look, .. } if look.title.color.is_none_or(|c| c.a() > 0) => {
                     let ElementKind::MapFrame { map, .. } = &layout.element(*frame)?.kind else { return None };
                     map_index(maps, map)?;
-                    (title.clone(), 12.0, text::Face { bold: true, ..Default::default() }, TextAlign::Left, 0.0, 0.0, true)
+                    let t = &look.title;
+                    let face = if plain_type(t) { text::Face { bold: t.bold, ..Default::default() } } else { label_face(t) };
+                    (title.clone(), type_size(t, TITLE_PT), face, TextAlign::Left, 0.0, 0.0, Some(look))
                 }
                 _ => return None,
             };
-            let px = size.clamp(2.0, 400.0) * 1.33 * ppp;
-            let mut cy = r.y() + if title { LEGEND_ROW * ppp / 2.0 } else { px * 0.6 };
+            let px = size * 1.33 * ppp;
+            let mut cy = r.y() + title.map_or(px * 0.6, |look| (title_row(look) - LEGEND_ROW * 0.3) * ppp / 2.0);
+            // (A title in a type of its own starts its ink at the legend's left edge.)
+            let from_ink = title.is_some_and(|look| !plain_type(&look.title));
+            let title = title.is_some();
             // As the page draws it: the element's own turn (anticlockwise, a negative angle to
             // tiny-skia), and a text's on top of it, about the same centre.
             let rotation = rotation - if e.kind.turns() { e.rotation as f32 } else { 0.0 };
@@ -194,6 +202,7 @@ pub fn clipped_text(layout: &Layout, maps: &[Map], dpi: f64, info: &PageInfo) ->
                         return true;
                     }
                     let left = match align {
+                        TextAlign::Left if from_ink => r.x() - ink.left(),
                         TextAlign::Left => r.x(),
                         TextAlign::Center => r.x() + (r.width() - ink.width()) / 2.0 - ink.left(),
                         TextAlign::Right => r.right() - ink.width() - ink.left(),
@@ -4312,6 +4321,29 @@ mod tests {
             },
         );
         assert_eq!(clipped_text(&l, &[Map::new("m")], 96.0, &info), vec![(legend, "Legend".into())]);
+        // The title is measured in the type the legend's look gives it: from where its 12
+        // points fit on the page, a large one runs off it, and one drawn in no colour isn't ink.
+        l.element_mut(legend).unwrap().x = 60.0;
+        assert!(clipped_text(&l, &[Map::new("m")], 96.0, &info).is_empty(), "the title fits at its own size");
+        let title_type = |l: &mut Layout, size: f64, color: Option<Rgba>, italic: bool| {
+            if let Some(ElementKind::Legend { look, .. }) = l.element_mut(legend).map(|e| &mut e.kind) {
+                (look.title.size, look.title.color, look.title.italic) = (size, color, italic);
+            }
+        };
+        for italic in [false, true] {
+            title_type(&mut l, 30.0, None, italic);
+            assert_eq!(clipped_text(&l, &[Map::new("m")], 96.0, &info), vec![(legend, "Legend".into())], "a large title, italic {italic}");
+        }
+        title_type(&mut l, 30.0, Some(Rgba::new(0, 0, 0, 0)), false);
+        assert!(clipped_text(&l, &[Map::new("m")], 96.0, &info).is_empty(), "a title in no colour");
+        // Its ink is where its row, taller for a larger title, puts it: near the page's foot its
+        // 12 points fit, and a larger one's line is under the page.
+        title_type(&mut l, 0.0, None, false);
+        let e = l.element_mut(legend).unwrap();
+        (e.x, e.y) = (10.0, 84.0);
+        assert!(clipped_text(&l, &[Map::new("m")], 96.0, &info).is_empty(), "the title's own row is on the page");
+        title_type(&mut l, 24.0, None, false);
+        assert_eq!(clipped_text(&l, &[Map::new("m")], 96.0, &info).len(), 1, "a larger title's row is under it");
     }
 
     /// No layer labelled: every layer under its name.
