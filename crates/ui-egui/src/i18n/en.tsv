@@ -89,3 +89,9 @@ RustGIS field package	ARutGIS field package
 RustGIS is closing	ARutGIS is closing
 The saved thread setting “{value}” isn't a number from 1 to 1024; RustGIS uses the default.	The saved thread setting “{value}” isn't a number from 1 to 1024; ARutGIS uses the default.
 Turn on or off the optional parts of RustGIS, such as Imagery.	Turn on or off the optional parts of ARutGIS, such as Imagery.
+{n} installed plugins couldn't be read (from a newer RustGIS, or damaged): they aren't loaded, and are kept as they were.	{n} installed plugins couldn't be read (from a newer ARutGIS, or damaged): they aren't loaded, and are kept as they were.
+{name} {version} needs RustGIS {min} or newer; this is {this}.	{name} {version} needs ARutGIS {min} or newer; this is {this}.
+Your settings couldn't be read ({error}), so RustGIS is using its defaults.	Your settings couldn't be read ({error}), so ARutGIS is using its defaults.
+Your settings couldn't be read, so RustGIS started new ones. The old settings file was kept as {path}.	Your settings couldn't be read, so ARutGIS started new ones. The old settings file was kept as {path}.
+The desktop interface is on until RustGIS is started again.	The desktop interface is on until ARutGIS is started again.
+Projects and JSON data (RustGIS, GeoLibre)	Projects and JSON data (ARutGIS, GeoLibre)

@@ -5271,3 +5271,9 @@ You choose where the project is saved next.	คุณจะได้เลือ
 … {n} more characters not shown	… อีก {n} อักขระที่ไม่ได้แสดง
 ● {n}  {lon}°, {lat}°  ·  pixel {col}, {row}	● {n} {lon}°, {lat}° · พิกเซล {col}, {row}
 ● {n}  {v}	● {n} {v}
+{n} installed plugins couldn't be read (from a newer RustGIS, or damaged): they aren't loaded, and are kept as they were.	อ่านปลั๊กอินที่ติดตั้งไว้ {n} รายการไม่ได้ (มาจาก ARutGIS รุ่นใหม่กว่า หรือเสียหาย): จึงไม่ถูกโหลด และคงไว้ตามเดิม
+{name} {version} needs RustGIS {min} or newer; this is {this}.	{name} {version} ต้องใช้ ARutGIS {min} ขึ้นไป รุ่นนี้คือ {this}
+Your settings couldn't be read ({error}), so RustGIS is using its defaults.	อ่านการตั้งค่าของคุณไม่ได้ ({error}) ARutGIS จึงใช้ค่าเริ่มต้น
+Your settings couldn't be read, so RustGIS started new ones. The old settings file was kept as {path}.	อ่านการตั้งค่าของคุณไม่ได้ ARutGIS จึงเริ่มการตั้งค่าใหม่ ไฟล์การตั้งค่าเดิมเก็บไว้ที่ {path}
+The desktop interface is on until RustGIS is started again.	หน้าจอแบบเดสก์ท็อปจะเปิดอยู่จนกว่าจะเริ่ม ARutGIS ใหม่
+Projects and JSON data (RustGIS, GeoLibre)	โปรเจกต์และข้อมูล JSON (ARutGIS, GeoLibre)
