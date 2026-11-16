@@ -80,3 +80,12 @@ not a RustGIS project	not a ARutGIS project
 the map isn't on screen in RustGIS (a layout or the catalog is shown), so it was drawn offscreen	the map isn't on screen in ARutGIS (a layout or the catalog is shown), so it was drawn offscreen
 {name} is not a text file: RustGIS opens GeoJSON, CSV, GeoTIFF and .rgis here	{name} is not a text file: ARutGIS opens GeoJSON, CSV, GeoTIFF and .rgis here
 {n} layer address(es) were saved without their keys, tokens or passwords: after RustGIS closes, add those layers again to give them	{n} layer address(es) were saved without their keys, tokens or passwords: after ARutGIS closes, add those layers again to give them
+Extensions are optional parts of RustGIS: nothing to download. Turn one off to hide its tab and commands.	Extensions are optional parts of ARutGIS: nothing to download. Turn one off to hide its tab and commands.
+Needs RustGIS {min}	Needs ARutGIS {min}
+Not a RustGIS project	Not a ARutGIS project
+Not on a phone: these tools run as a program of their own, which a phone can't run. Use them in RustGIS on a computer.	Not on a phone: these tools run as a program of their own, which a phone can't run. Use them in ARutGIS on a computer.
+Plugins can't be installed on iOS: Apple doesn't let an app download code that adds to what it does. Use them in RustGIS on a computer or in the browser.	Plugins can't be installed on iOS: Apple doesn't let an app download code that adds to what it does. Use them in ARutGIS on a computer or in the browser.
+RustGIS field package	ARutGIS field package
+RustGIS is closing	ARutGIS is closing
+The saved thread setting “{value}” isn't a number from 1 to 1024; RustGIS uses the default.	The saved thread setting “{value}” isn't a number from 1 to 1024; ARutGIS uses the default.
+Turn on or off the optional parts of RustGIS, such as Imagery.	Turn on or off the optional parts of ARutGIS, such as Imagery.

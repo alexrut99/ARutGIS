@@ -110,7 +110,7 @@ impl Read {
             if self.forbidden > 0 {
                 return Some(Err(crate::i18n::fmt(
                     "{url}: access denied (HTTP 403) to {count} of the slice’s chunks",
-                    &[("url", &self.root), ("count", &self.forbidden.to_string())],
+                    &[("url", &rustgis_engine::sources::address_in_message(&self.root)), ("count", &self.forbidden.to_string())],
                 )));
             }
             let name = self.params.get("name").and_then(Value::as_str).unwrap_or("Zarr");
@@ -121,7 +121,10 @@ impl Read {
             );
         }
         if self.got.is_empty() && self.forbidden > 0 {
-            return Some(Err(crate::i18n::fmt("{url}: access denied (HTTP 403)", &[("url", &self.root)])));
+            return Some(Err(crate::i18n::fmt(
+                "{url}: access denied (HTTP 403)",
+                &[("url", &rustgis_engine::sources::address_in_message(&self.root))],
+            )));
         }
         self.forbidden = 0;
         let docs = std::mem::take(&mut self.got).into_iter().collect::<Vec<_>>();
@@ -167,7 +170,7 @@ pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
             Err(e) => {
                 app.session.download_failed(id);
                 rustgis_engine::cmd::geolibre::discard_pending(&mut app.session, &params);
-                app.session.notify(crate::i18n::fmt("{url}: {e}", &[("url", &url), ("e", &e)]), true);
+                app.session.notify(rustgis_engine::sources::message_with_address(&url, &e), true);
             }
         }
     }
@@ -177,7 +180,6 @@ pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -248,7 +250,7 @@ mod tests {
         let mut metadata = metadata();
         metadata["metadata"]["value/.zarray"]["chunks"] = json!([1, 2]);
         let store = zarr::parse_store(&[(".zmetadata".into(), metadata.to_string().into_bytes())]).unwrap();
-        let plan = zarr::plan(&store, &zarr::Selection { variable: "value".into(), index: Vec::new() }).unwrap();
+        let plan = zarr::plan(&store, &zarr::Selection { variable: "value".into(), index: Vec::new(), window: None }).unwrap();
         let mut read = reader(vec![("value/1.0", Err("HTTP 403".into()))]);
         for (key, values) in [("value/0.0", vec![1.0f64, 2.0]), ("lat/0", vec![0.5, 1.5]), ("lon/0", vec![0.5, 1.5])] {
             read.got.insert(key.into(), values.iter().flat_map(|v| v.to_le_bytes()).collect());
@@ -262,7 +264,7 @@ mod tests {
         let mut metadata = metadata();
         metadata["metadata"]["value/.zarray"]["chunks"] = json!([1, 2]);
         let store = zarr::parse_store(&[(".zmetadata".into(), metadata.to_string().into_bytes())]).unwrap();
-        let plan = zarr::plan(&store, &zarr::Selection { variable: "value".into(), index: Vec::new() }).unwrap();
+        let plan = zarr::plan(&store, &zarr::Selection { variable: "value".into(), index: Vec::new(), window: None }).unwrap();
         let mut read = reader(vec![("value/1.0", Err("HTTP 404".into()))]);
         for (key, values) in [("value/0.0", vec![1.0f64, 2.0]), ("lat/0", vec![0.5, 1.5]), ("lon/0", vec![0.5, 1.5])] {
             read.got.insert(key.into(), values.iter().flat_map(|v| v.to_le_bytes()).collect());
@@ -275,7 +277,7 @@ mod tests {
     fn geolibre_zarr_completion_replaces_reserved_layer_after_map_switch() {
         let metadata = metadata();
         let store = zarr::parse_store(&[(".zmetadata".into(), metadata.to_string().into_bytes())]).unwrap();
-        let plan = zarr::plan(&store, &zarr::Selection { variable: "value".into(), index: Vec::new() }).unwrap();
+        let plan = zarr::plan(&store, &zarr::Selection { variable: "value".into(), index: Vec::new(), window: None }).unwrap();
         let mut got = HashMap::new();
         for (key, values) in [("value/0.0", vec![1.0f64, 2.0, 3.0, 4.0]), ("lat/0", vec![0.5, 1.5]), ("lon/0", vec![0.5, 1.5])] {
             got.insert(key.into(), values.iter().flat_map(|v| v.to_le_bytes()).collect());

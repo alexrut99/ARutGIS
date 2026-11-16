@@ -88,6 +88,135 @@ pub(crate) fn request_key(root: &str, position: usize) -> String {
     format!("{root}/{position}")
 }
 
+/// A relay message paused at an admitted standalone archive command. Batch positions and
+/// one-use permits remain owned here; no suffix entry runs until the actual command lands.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct ArchiveBatch {
+    server: Server,
+    scope: Scope,
+    permits: Vec<(String, Permit)>,
+    request: String,
+    messages: std::vec::IntoIter<Value>,
+    position: usize,
+    batch: bool,
+    replies: Vec<Value>,
+    pending: Option<(Value, tools::CommandCompletion)>,
+    ahead: Option<rustgis_engine::cmd::reads::ReadAhead>,
+    /// Successful explicit selections in the current uninterrupted execution segment.
+    picked: bool,
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) enum ArchiveStep {
+    Done(Option<String>, bool),
+    Read(Box<ArchiveBatch>),
+}
+#[cfg(not(target_arch = "wasm32"))]
+impl ArchiveBatch {
+    pub(crate) fn take_read(&mut self) -> Option<rustgis_engine::cmd::reads::ReadAhead> {
+        self.ahead.take()
+    }
+    pub(crate) fn picked(&self) -> bool {
+        self.picked
+    }
+    /// The command's reply reports changes made from the moment it actually runs, not from its
+    /// admission: the queue may run user work or other reads first.
+    pub(crate) fn begin_landing(&mut self, s: &Session) {
+        if let Some((_, completion)) = &mut self.pending {
+            *completion = tools::CommandCompletion::capture(s);
+        }
+    }
+    pub(crate) fn finish(mut self, s: &mut Session, result: Result<Value, String>) -> ArchiveStep {
+        self.finish_pending(s, result);
+        self.advance(s)
+    }
+    /// A changed project or map invalidates the suffix, not the command's actual result; so does
+    /// the app closing. Complete every remaining request with `remaining` as its error, without
+    /// dispatching even a read-only tool.
+    pub(crate) fn cancel_remaining(mut self, s: &mut Session, result: Result<Value, String>, remaining: &str) -> ArchiveStep {
+        self.finish_pending(s, result);
+        for msg in self.messages.by_ref() {
+            match request_identity(&msg) {
+                Ok(Some((_, id))) => {
+                    self.replies.push(error_value(&id, -32000, remaining));
+                }
+                Ok(None) => {}
+                Err(reply) => self.replies.push(reply),
+            }
+        }
+        self.done()
+    }
+    fn finish_pending(&mut self, s: &mut Session, result: Result<Value, String>) {
+        self.picked = false;
+        if let Some((id, completion)) = self.pending.take() {
+            self.replies.push(archive_reply(id, completion.finish(s, result)));
+        }
+    }
+    fn advance(mut self, s: &mut Session) -> ArchiveStep {
+        while let Some(msg) = self.messages.next() {
+            let request = request_key(&self.request, self.position);
+            self.position += 1;
+            let archive = (|| {
+                let id = msg.get("id")?;
+                if !matches!(id, Value::String(_) | Value::Number(_)) || msg.get("method").and_then(Value::as_str) != Some("tools/call") {
+                    return None;
+                }
+                let (name, args) = tool_request(msg.get("params")?).ok()?;
+                if name != "run_command"
+                    || !matches!(
+                        args.get("command").and_then(Value::as_str).map(str::trim),
+                        Some("map.reloadTiles" | "map.repairTiles" | "table.statistics")
+                    )
+                {
+                    return None;
+                }
+                Some((id.clone(), ToolCall { id: request.clone(), name: name.into(), args }))
+            })();
+            if let Some((id, call)) = archive {
+                let permit = self.permits.iter().position(|(key, _)| key == &request).map(|i| self.permits.remove(i).1);
+                let completion = tools::CommandCompletion::capture(s);
+                let admitted = tools::policy_call(&call)
+                    .and_then(|call| call.ok_or_else(|| "missing archive adapter".to_string()))
+                    .and_then(|call| s.start_scoped_archive_read(self.scope.clone(), &call, permit));
+                match admitted {
+                    Ok(ahead) => {
+                        self.pending = Some((id, completion));
+                        self.ahead = Some(ahead);
+                        return ArchiveStep::Read(Box::new(self));
+                    }
+                    Err(error) => self.replies.push(archive_reply(id, completion.finish(s, Err(error)))),
+                }
+            } else if let Some(reply) = self.server.handle_value(s, &msg, &self.scope, &mut self.permits, &request) {
+                if reply.get("error").is_none() && reply.pointer("/result/isError") == Some(&Value::Bool(false)) {
+                    self.picked |= msg.get("params").is_some_and(|params| {
+                        let Some(name) = params.get("name").and_then(Value::as_str) else { return false };
+                        params.get("arguments").is_some_and(|args| tools::selects_layer(name, args))
+                    });
+                }
+                self.replies.push(reply);
+            }
+        }
+        self.done()
+    }
+    fn done(mut self) -> ArchiveStep {
+        let reply = if self.replies.is_empty() {
+            None
+        } else if self.batch {
+            Some(Value::Array(self.replies).to_string())
+        } else {
+            self.replies.pop().map(|reply| reply.to_string())
+        };
+        ArchiveStep::Done(reply, self.picked)
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn archive_reply(id: Value, result: Result<String, String>) -> Value {
+    let (text, failed) = match result {
+        Ok(text) => (text, false),
+        Err(error) => (error, true),
+    };
+    json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":text}],"isError":failed}})
+}
+
 impl Server {
     /// A server with the built-in skills. `rustgis-cli mcp` and the desktop's relay replace them
     /// with the skills switched on (`skills::installed`): the user's, the plugins' and shared ones.
@@ -99,6 +228,38 @@ impl Server {
     /// a response.
     pub fn handle(&self, s: &mut Session, message: &str) -> Option<String> {
         self.handle_scoped(s, message, self.scope(s), Vec::new(), "")
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    /// Desktop relay ingress; direct archive and column-statistics commands pause. Scripts and other transports
+    /// retain their synchronous contract, and malformed messages keep normal JSON-RPC handling.
+    pub(crate) fn start_archive_batch(
+        self,
+        s: &mut Session,
+        message: &str,
+        scope: Scope,
+        permits: Vec<(String, Permit)>,
+        request: &str,
+    ) -> ArchiveStep {
+        let parsed = serde_json::from_str::<Value>(message);
+        let (messages, batch) = match parsed {
+            Ok(Value::Array(batch)) if !batch.is_empty() && batch.len() <= MAX_BATCH => (batch, true),
+            Ok(msg) if !msg.is_array() => (vec![msg], false),
+            _ => return ArchiveStep::Done(self.handle_scoped(s, message, scope, permits, request), false),
+        };
+        ArchiveBatch {
+            server: self,
+            scope,
+            permits,
+            request: request.into(),
+            messages: messages.into_iter(),
+            position: 0,
+            batch,
+            replies: Vec::new(),
+            pending: None,
+            ahead: None,
+            picked: false,
+        }
+        .advance(s)
     }
     /// Named relay/file-bridge ingress; permits are engine plans stored when approval was shown.
     pub(crate) fn handle_scoped(
@@ -145,22 +306,12 @@ impl Server {
         permits: &mut Vec<(String, Permit)>,
         request: &str,
     ) -> Option<Value> {
-        let Some(obj) = msg.as_object() else {
-            return Some(error_value(&Value::Null, INVALID_REQUEST, "expected a JSON-RPC object"));
+        let (method, id) = match request_identity(msg) {
+            Ok(Some(request)) => request,
+            Ok(None) => return None,
+            Err(reply) => return Some(reply),
         };
-        let id = obj.get("id").cloned();
-        let Some(method) = obj.get("method").and_then(Value::as_str) else {
-            // A response to a request of ours (we send none), or junk.
-            return id
-                .filter(|_| !obj.contains_key("result") && !obj.contains_key("error"))
-                .map(|id| error_value(&id, INVALID_REQUEST, "expected a method"));
-        };
-        // Notifications (no id) get no reply.
-        let id = id?;
-        if !matches!(id, Value::String(_) | Value::Number(_)) {
-            return Some(error_value(&Value::Null, INVALID_REQUEST, "id must be a string or a number"));
-        }
-        let params = obj.get("params").cloned().unwrap_or(Value::Null);
+        let params = msg.get("params").cloned().unwrap_or(Value::Null);
         Some(match self.call(s, method, &params, scope, permits, request) {
             Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
             Err((code, message)) => error_value(&id, code, &message),
@@ -432,13 +583,7 @@ pub fn snapshot_wait(a: &Value) -> f64 {
 
 /// A `snapshot` drawn offscreen at `max_width` in the view's shape, with `note` saying why when it
 /// was asked of the screen.
-pub fn render_snapshot(s: &mut Session, a: &Value, note: Option<&str>) -> Result<Value, String> {
-    render_snapshot_with(s, a, note, None)
-}
 pub(crate) fn render_snapshot_checked(s: &mut Session, a: &Value, note: Option<&str>, scope: &Scope) -> Result<Value, String> {
-    render_snapshot_with(s, a, note, Some(scope))
-}
-fn render_snapshot_with(s: &mut Session, a: &Value, note: Option<&str>, scope: Option<&Scope>) -> Result<Value, String> {
     let asked = a.get("max_width").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(1024.0).clamp(64.0, MAX_VIEW);
     // The view's shape, so the image shows what the window does: a very tall view is narrowed
     // to fit rather than squashed.
@@ -449,17 +594,13 @@ fn render_snapshot_with(s: &mut Session, a: &Value, note: Option<&str>, scope: O
     let png = rustgis_engine::cmd::share::map_png(s, Some(width), Some(height), None)?;
     // Tiles still on their way are missing from it.
     let settled = rustgis_engine::render::rustgis_tiles::cache::in_flight() == 0;
-    snapshot_result_with(s, &png, "render", settled, a, note, scope)
+    snapshot_result_checked(s, &png, "render", settled, a, note, scope)
 }
 
-/// A `snapshot` result: the image, and the view it shows as JSON. `mode` is how it was made
-/// (`screen` or `render`) and `settled` whether drawing had finished. Saves the PNG to
-/// `save_path` when the arguments name one (the caller checked the server allows it).
-pub fn snapshot_result(s: &mut Session, png: &[u8], mode: &str, settled: bool, a: &Value, note: Option<&str>) -> Result<Value, String> {
-    snapshot_result_with(s, png, mode, settled, a, note, None)
-}
-/// Formats a delivered screenshot inside its already resumed initiating scope.
-#[cfg(not(target_arch = "wasm32"))]
+/// A `snapshot` result, formatted inside its already resumed initiating scope: the image, and the
+/// view it shows as JSON. `mode` is how it was made (`screen` or `render`) and `settled` whether
+/// drawing had finished. Saves the PNG to `save_path` when the arguments name one, checking the
+/// scope still allows writing files at that moment.
 pub(crate) fn snapshot_result_checked(
     s: &mut Session,
     png: &[u8],
@@ -469,27 +610,11 @@ pub(crate) fn snapshot_result_checked(
     note: Option<&str>,
     scope: &Scope,
 ) -> Result<Value, String> {
-    snapshot_result_with(s, png, mode, settled, a, note, Some(scope))
-}
-/// Checks late save authority and acquires metadata through inherited dispatch.
-fn snapshot_result_with(
-    s: &mut Session,
-    png: &[u8],
-    mode: &str,
-    settled: bool,
-    a: &Value,
-    note: Option<&str>,
-    scope: Option<&Scope>,
-) -> Result<Value, String> {
     use base64::Engine;
-    if let Some(scope) = scope {
-        scope.check_live(Effects::NONE)?;
-    }
+    scope.check_live(Effects::NONE)?;
     let saved = match save_path(a) {
         Some(path) => {
-            if let Some(scope) = scope {
-                scope.check_live(Effects::NONE.with(rustgis_engine::policy::Effect::Files))?;
-            }
+            scope.check_live(Effects::NONE.with(rustgis_engine::policy::Effect::Files))?;
             std::fs::write(path, png).map_err(|e| format!("could not save the snapshot to '{path}': {e}"))?;
             Some(path)
         }
@@ -537,9 +662,30 @@ pub fn expects_reply(message: &str) -> bool {
     }
 }
 
+/// Applies JSON-RPC identity rules without executing a request.
+fn request_identity(msg: &Value) -> Result<Option<(&str, Value)>, Value> {
+    let Some(obj) = msg.as_object() else {
+        return Err(error_value(&Value::Null, INVALID_REQUEST, "expected a JSON-RPC object"));
+    };
+    let id = obj.get("id").cloned();
+    let Some(method) = obj.get("method").and_then(Value::as_str) else {
+        // A response to a request of ours (we send none), or junk.
+        return match id.filter(|_| !obj.contains_key("result") && !obj.contains_key("error")) {
+            Some(id) => Err(error_value(&id, INVALID_REQUEST, "expected a method")),
+            None => Ok(None),
+        };
+    };
+    // Notifications (no id) get no reply.
+    let Some(id) = id else { return Ok(None) };
+    if !matches!(id, Value::String(_) | Value::Number(_)) {
+        return Err(error_value(&Value::Null, INVALID_REQUEST, "id must be a string or a number"));
+    }
+    Ok(Some((method, id)))
+}
+
 /// Projects generated RPC error text while retaining the exact correlation id and code.
 fn error_value(id: &Value, code: i64, message: &str) -> Value {
-    let message = rustgis_engine::render::rustgis_tiles::logins::scrub_error(message);
+    let message = rustgis_engine::sources::scrub_s3_wrappers(&rustgis_engine::render::rustgis_tiles::logins::scrub_error(message));
     json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
 }
 

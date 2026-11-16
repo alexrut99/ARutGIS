@@ -4846,3 +4846,428 @@ The page isn't a standard paper size. At its own size, what doesn't fit the prin
 Open as PDF	เปิดเป็น PDF
 Open the page in the system's PDF viewer and print from there, as before.	เปิดหน้าในโปรแกรมดู PDF ของเครื่อง แล้วพิมพ์จากโปรแกรมนั้นเหมือนเดิม
 Print the map view.	พิมพ์มุมมองแผนที่
+'{date}' isn't a date: write it as YYYY-MM-DD	'{date}' ไม่ใช่วันที่: เขียนเป็น YYYY-MM-DD
+'{size}' isn't a cell size: give a number	'{size}' ไม่ใช่ขนาดเซลล์: ใส่ตัวเลข
+(changed on disk)	(เปลี่ยนบนดิสก์)
+(edits not published)	(การแก้ไขยังไม่ได้เผยแพร่)
+(edits not published, changed on disk)	(การแก้ไขยังไม่ได้เผยแพร่ และเปลี่ยนบนดิสก์)
+-74.006 · 74°0′22″W	-74.006 · 74°0′22″W
+18TWL8395907350 · 18north 583959 4507351	18TWL8395907350 · 18north 583959 4507351
+40.7128 · 40°42′46″N	40.7128 · 40°42′46″N
+A drawing never says its coordinate system: its coordinates are read in this one. Leave it blank to keep them as they are.	ไฟล์แบบร่างไม่บอกระบบพิกัดของตัวเอง: พิกัดในไฟล์จะอ่านในระบบนี้ เว้นว่างไว้เพื่อคงพิกัดตามเดิม
+A field package opens on a computer or a phone, which have a folder for its basemaps: open it there. Bring Back (Data › Offline) takes its edits into the project here.	แพ็กเกจภาคสนามเปิดได้บนคอมพิวเตอร์หรือโทรศัพท์ ซึ่งมีโฟลเดอร์เก็บแผนที่ฐานของแพ็กเกจ: เปิดที่นั่น คำสั่ง นำกลับ (ข้อมูล › ออฟไลน์) จะนำการแก้ไขเข้ามาในโปรเจกต์ที่นี่
+A light from the side opposite the sun that lightens the slopes turned toward it, from 0 (none) to 1	แสงจากด้านตรงข้ามดวงอาทิตย์ที่ทำให้ลาดเขาด้านที่หันเข้าหาแสงสว่างขึ้น ตั้งแต่ 0 (ไม่มี) ถึง 1
+A line or polygon can't cross the 180° meridian: draw it in two parts, one on each side	เส้นหรือรูปหลายเหลี่ยมข้ามเส้นเมริเดียน 180° ไม่ได้: วาดเป็นสองส่วน ฝั่งละส่วน
+A named endpoint you can reuse. Passwords and keys last for this session unless you choose to remember them on this computer; the connection itself never keeps them.	ปลายทางที่ตั้งชื่อไว้ ใช้ซ้ำได้ รหัสผ่านและคีย์จะอยู่เฉพาะเซสชันนี้ เว้นแต่คุณเลือกให้จำไว้บนคอมพิวเตอร์เครื่องนี้ ตัวการเชื่อมต่อเองไม่เก็บไว้
+A projected system such as EPSG:32616, or EPSG:4326 for degrees	ระบบพิกัดแบบฉาย เช่น EPSG:32616 หรือ EPSG:4326 สำหรับองศา
+a raster layer has no definition query or time binding: the Query and Time tabs are a feature layer's	ชั้นข้อมูลแรสเตอร์ไม่มีคิวรีกำหนดขอบเขตหรือการผูกเวลา: แท็บคิวรีและเวลาเป็นของชั้นข้อมูลฟีเจอร์
+A search area holds at most {n} shapes: Clear it to start again	พื้นที่ค้นหามีรูปร่างได้มากที่สุด {n} รูป: กดล้างเพื่อเริ่มใหม่
+A WGS 84 UTM zone for MGRS labels, by its EPSG code (32632); empty: the map's when it is one, else the zone at the frame's centre.	โซน UTM ของ WGS 84 สำหรับป้าย MGRS ระบุด้วยรหัส EPSG (32632) เว้นว่าง: ใช้ของแผนที่เมื่อแผนที่อยู่ในโซน UTM มิฉะนั้นใช้โซนที่จุดกึ่งกลางกรอบ
+Add a raster of two or more bands first, such as a Landsat or Sentinel-2 scene.	เพิ่มแรสเตอร์ที่มีสองแบนด์ขึ้นไปก่อน เช่น ภาพ Landsat หรือ Sentinel-2
+Add Circle	เพิ่มวงกลม
+Add more with plugins:	เพิ่มได้อีกด้วยปลั๊กอิน:
+Add Rotated Box	เพิ่มกล่องหมุน
+Add Satellite Embeddings over Time	เพิ่ม Satellite Embeddings ตามเวลา
+Add years	เพิ่มปี
+Added Fixture	เพิ่ม Fixture แล้ว
+Adding {name}…	กำลังเพิ่ม {name}…
+All years, on the time slider	ทุกปี บนแถบเลื่อนเวลา
+an enqueued add is not a success	การเพิ่มที่เข้าคิวไว้ยังไม่ถือว่าสำเร็จ
+An EPSG code, WKT or a PROJ string; empty: the map's own when it is projected, else the UTM zone at the view's centre	รหัส EPSG, WKT หรือสตริง PROJ เว้นว่าง: ใช้ระบบของแผนที่เมื่อเป็นแบบฉาย มิฉะนั้นใช้โซน UTM ที่จุดกึ่งกลางมุมมอง
+Angle (°)	มุม (°)
+Animated GIF or PNG frames (zip)	GIF เคลื่อนไหว หรือเฟรม PNG (zip)
+Another project is open now: open the dialog again from its table.	ตอนนี้เปิดโปรเจกต์อื่นอยู่: เปิดหน้าต่างนี้อีกครั้งจากตารางของโปรเจกต์นั้น
+API key in the query	คีย์ API ในคิวรี
+API's own order	ลำดับของ API เอง
+Argentina	อาร์เจนตินา
+Automatic ({n})	อัตโนมัติ ({n})
+Band {n}: {name}	แบนด์ {n}: {name}
+Band {n}: {name}, {wavelength} nm	แบนด์ {n}: {name}, {wavelength} นาโนเมตร
+Bands 1–{n}	แบนด์ 1–{n}
+Bangladesh	บังกลาเทศ
+Base	ฐาน
+Base (m)	ฐาน (ม.)
+Between cells (bilinear)	ระหว่างเซลล์ (ไบลิเนียร์)
+Borders at 1:110m, a small download (about 250 KB)	เส้นเขตแดนที่ 1:110 ล้าน ไฟล์ดาวน์โหลดขนาดเล็ก (ประมาณ 250 KB)
+Bound to the time slider	ผูกกับแถบเลื่อนเวลา
+Box Construction	การสร้างกล่อง
+Brazil	บราซิล
+Bring a field package's edits and photos back to the offline area it was made from.	นำการแก้ไขและรูปถ่ายของแพ็กเกจภาคสนามกลับมายังพื้นที่ออฟไลน์ที่ใช้สร้างแพ็กเกจ
+Bring Back	นำกลับ
+Bring Back Edits	นำการแก้ไขกลับ
+Cancelled	ยกเลิกแล้ว
+Cast shadows	ทอดเงา
+cell size	ขนาดเซลล์
+Census Bureau's public server	เซิร์ฟเวอร์สาธารณะของ Census Bureau
+Center X	จุดศูนย์กลาง X
+Center Y	จุดศูนย์กลาง Y
+Changed on disk: the file may have changed since it was read. Add it again to see the change; Source File State checks it.	เปลี่ยนบนดิสก์: ไฟล์อาจเปลี่ยนไปหลังจากที่อ่านมา เพิ่มไฟล์อีกครั้งเพื่อดูการเปลี่ยนแปลง คำสั่ง Source File State ใช้ตรวจสอบได้
+Chart every band at points on the map, and compare them.	ทำกราฟทุกแบนด์ที่จุดบนแผนที่ และเปรียบเทียบกัน
+Choose a DXF drawing, then set its coordinate system and whether its blocks are drawn.	เลือกไฟล์แบบร่าง DXF แล้วตั้งระบบพิกัด และเลือกว่าจะวาดบล็อกหรือไม่
+Choose a field from the list: the previous choice is missing or shadowed by an earlier field with the same name ignoring case.	เลือกฟิลด์จากรายการ: ตัวเลือกเดิมหายไป หรือถูกบังโดยฟิลด์ก่อนหน้าที่ชื่อเหมือนกันเมื่อไม่สนตัวพิมพ์เล็กใหญ่
+choose a folder	เลือกโฟลเดอร์
+Choose a position within the supported map and construction grid.	เลือกตำแหน่งภายในแผนที่และกริดการสร้างที่รองรับ
+Choose where to save {name}.	เลือกที่บันทึก {name}
+Choose…	เลือก…
+Choosing a file isn't available here on Android yet.	การเลือกไฟล์ยังใช้ไม่ได้ที่นี่บน Android
+Choosing a file isn't available here on iOS yet.	การเลือกไฟล์ยังใช้ไม่ได้ที่นี่บน iOS
+Choosing a folder isn't available on Android yet.	การเลือกโฟลเดอร์ยังใช้ไม่ได้บน Android
+Choosing a folder isn't available on iOS yet.	การเลือกโฟลเดอร์ยังใช้ไม่ได้บน iOS
+Circle Construction	การสร้างวงกลม
+Clear Coordinate System	ล้างระบบพิกัด
+Click the map · Esc cancels	คลิกบนแผนที่ · Esc ยกเลิก
+Click the map · Esc to stop	คลิกบนแผนที่ · Esc เพื่อหยุด
+Close the current dialog before reloading a layer with pending edits.	ปิดหน้าต่างที่เปิดอยู่ก่อนโหลดชั้นข้อมูลที่มีการแก้ไขค้างอยู่ใหม่
+Column Statistics	สถิติของคอลัมน์
+Constant ({m} m)	ค่าคงที่ ({m} ม.)
+Convert Field to Dates	แปลงฟิลด์เป็นวันที่
+Coordinates in {format}. Click to switch: decimal degrees, DMS, UTM, MGRS. UTM and MGRS are grids of the Earth, read in UPS north of 84° N and south of 80° S.	พิกัดในรูปแบบ {format} คลิกเพื่อสลับ: องศาทศนิยม, DMS, UTM, MGRS โดย UTM และ MGRS เป็นกริดของโลก ซึ่งอ่านเป็น UPS ทางเหนือของ 84° เหนือ และทางใต้ของ 80° ใต้
+Could not start service discovery: {error}	เริ่มค้นหาบริการไม่ได้: {error}
+Couldn't download the {view} worldview ({error}); the map keeps the {current} borders	ดาวน์โหลดมุมมองพรมแดนแบบ {view} ไม่ได้ ({error}) แผนที่ยังใช้เส้นเขตแดนแบบ {current}
+Couldn't start reading: {e}	เริ่มอ่านไม่ได้: {e}
+Couldn't start the search: {e}	เริ่มค้นหาไม่ได้: {e}
+Credit: {credit}	เครดิต: {credit}
+Current extent	ขอบเขตปัจจุบัน
+Date and time	วันที่และเวลา
+Date field	ฟิลด์วันที่
+DateTime	วันที่และเวลา
+Degrees as decimals or degrees, minutes and seconds.	องศาแบบทศนิยม หรือองศา ลิปดา ฟิลิปดา
+Degrees as decimals or degrees, minutes and seconds; or a UTM or MGRS reference in place of both.	องศาแบบทศนิยม หรือองศา ลิปดา ฟิลิปดา หรือใส่พิกัดอ้างอิง UTM หรือ MGRS แทนทั้งสองค่า
+degrees, as the cell size is in degrees	องศา เพราะขนาดเซลล์เป็นองศา
+Delete Box	ลบกล่อง
+Delete Circle	ลบวงกลม
+Delete Selected Box	ลบกล่องที่เลือก
+Delete Selected Circle	ลบวงกลมที่เลือก
+Depth priority	ลำดับตามความลึก
+Detail	รายละเอียด
+Details of the selected layer, on the Source tab of its properties.	รายละเอียดของชั้นข้อมูลที่เลือก อยู่ในแท็บแหล่งข้อมูลของคุณสมบัติชั้นข้อมูล
+Disable Extension	ปิดส่วนขยาย
+Discard Edits and Reload	ทิ้งการแก้ไขแล้วโหลดใหม่
+Done.	เสร็จแล้ว
+Download offered: {name}	เสนอให้ดาวน์โหลด: {name}
+Download offered: {name}. The browser doesn't say whether it saved the file.	เสนอให้ดาวน์โหลด: {name} เบราว์เซอร์ไม่ได้บอกว่าบันทึกไฟล์แล้วหรือไม่
+Drag a box on the map · Esc cancels	ลากกรอบบนแผนที่ · Esc ยกเลิก
+Drag a box on the map · Esc to stop	ลากกรอบบนแผนที่ · Esc เพื่อหยุด
+Drag a new box or click one created in this session. Other polygons use Edit Vertices.	ลากกล่องใหม่ หรือคลิกกล่องที่สร้างในเซสชันนี้ รูปหลายเหลี่ยมอื่นใช้ แก้ไขจุดยอด
+Drag a new circle or click one created in this session. Other polygons use Edit Vertices.	ลากวงกลมใหม่ หรือคลิกวงกลมที่สร้างในเซสชันนี้ รูปหลายเหลี่ยมอื่นใช้ แก้ไขจุดยอด
+Drag from centre to edge to draw. Drag inside to move; drag the radius handle to resize. Ctrl/Cmd+drag draws over existing features. Space or middle-drag pans; releasing Space keeps this tool.	ลากจากจุดศูนย์กลางไปที่ขอบเพื่อวาด ลากด้านในเพื่อย้าย ลากจุดจับรัศมีเพื่อปรับขนาด Ctrl/Cmd+ลาก วาดทับฟีเจอร์ที่มีอยู่ Space หรือลากด้วยปุ่มกลางเพื่อเลื่อนแผนที่ ปล่อย Space แล้วยังใช้เครื่องมือนี้ต่อ
+Drag to draw. Drag the paddle to rotate. Shift snaps angles; Ctrl/Cmd+drag draws over existing boxes. Space or middle-drag pans; releasing Space keeps this tool.	ลากเพื่อวาด ลากด้ามหมุนเพื่อหมุน Shift ล็อกมุม Ctrl/Cmd+ลาก วาดทับกล่องที่มีอยู่ Space หรือลากด้วยปุ่มกลางเพื่อเลื่อนแผนที่ ปล่อย Space แล้วยังใช้เครื่องมือนี้ต่อ
+Draw boxes; drag the paddle to rotate, corners to resize. Space or middle-drag pans.	วาดกล่อง ลากด้ามหมุนเพื่อหมุน ลากมุมเพื่อปรับขนาด Space หรือลากด้วยปุ่มกลางเพื่อเลื่อนแผนที่
+Draw circle features from centre to edge; drag the radius handle to resize. Space or middle-drag pans.	วาดฟีเจอร์วงกลมจากจุดศูนย์กลางไปที่ขอบ ลากจุดจับรัศมีเพื่อปรับขนาด Space หรือลากด้วยปุ่มกลางเพื่อเลื่อนแผนที่
+Draw every feature.	วาดทุกฟีเจอร์
+Draw extent	วาดขอบเขต
+Draw line	วาดเส้น
+Draw point	วาดจุด
+Draw polygon	วาดรูปหลายเหลี่ยม
+DXF drawing	ไฟล์แบบร่าง DXF
+DXF picker request is no longer available	คำขอเลือกไฟล์ DXF ใช้ไม่ได้แล้ว
+DXF picker request limit reached	คำขอเลือกไฟล์ DXF ถึงขีดจำกัดแล้ว
+DXF…	DXF…
+Each 100 km square named with its grid zone designation (32T MT), and the lines by their kilometres' last two digits. The grid is in a WGS 84 UTM zone: the one given, else the map's, else the one at the frame's centre.	ตั้งชื่อจัตุรัส 100 กม. แต่ละช่องด้วยรหัสโซนกริด (32T MT) และกำกับเส้นด้วยเลขสองหลักท้ายของกิโลเมตร กริดอยู่ในโซน UTM ของ WGS 84: โซนที่ระบุ มิฉะนั้นของแผนที่ มิฉะนั้นโซนที่จุดกึ่งกลางกรอบ
+Each click on the map adds a point, until you click this again.	แต่ละคลิกบนแผนที่จะเพิ่มหนึ่งจุด จนกว่าจะคลิกปุ่มนี้อีกครั้ง
+Edit Box Dimensions	แก้ไขขนาดกล่อง
+Edit Circle Dimensions	แก้ไขขนาดวงกลม
+Edits not published	การแก้ไขยังไม่ได้เผยแพร่
+Egypt	อียิปต์
+Embedded sessions open peer project JSON only	เซสชันแบบฝังเปิดได้เฉพาะ JSON โปรเจกต์จากเพียร์
+Embedded sessions receive projects from the host page	เซสชันแบบฝังรับโปรเจกต์จากหน้าเว็บที่ฝังไว้
+Enable Extension	เปิดส่วนขยาย
+Enter a valid query parameter name before testing this connection.	ใส่ชื่อพารามิเตอร์คิวรีที่ถูกต้องก่อนทดสอบการเชื่อมต่อนี้
+Enter the password or key for this connection. Remember on this computer is optional.	ใส่รหัสผ่านหรือคีย์ของการเชื่อมต่อนี้ จะเลือกจำไว้บนคอมพิวเตอร์เครื่องนี้หรือไม่ก็ได้
+EPSG:32616	EPSG:32616
+EPSG:3857	EPSG:3857
+Export and print the layout's map frames to PDF with their coordinates, so PDF readers can locate and measure in them.	ส่งออกและพิมพ์กรอบแผนที่ของเลย์เอาต์เป็น PDF พร้อมพิกัด เพื่อให้โปรแกรมอ่าน PDF ระบุตำแหน่งและวัดระยะในกรอบได้
+Export Orbit	ส่งออกภาพโคจรรอบ
+Export Orbit takes an object of parameters	ส่งออกภาพโคจรรอบ รับพารามิเตอร์เป็นออบเจ็กต์
+Export Orbit…	ส่งออกภาพโคจรรอบ…
+exporting an orbit needs the desktop app	การส่งออกภาพโคจรรอบต้องใช้แอปเดสก์ท็อป
+Extensions	ส่วนขยาย
+Extensions are optional parts of RustGIS: nothing to download. Turn one off to hide its tab and commands.	ส่วนขยายคือส่วนเสริมที่เลือกใช้ได้ของ ARutGIS: ไม่ต้องดาวน์โหลดอะไร ปิดส่วนขยายเพื่อซ่อนแท็บและคำสั่งของมัน
+Extensions…	ส่วนขยาย…
+Extrusion Base	ฐานของการยกรูปทรง
+F2	F2
+Fields, numbers, 'text', + - * / % ^, || to join text, comparisons, CASE and functions such as round(), upper(), if() or scale_linear(). Applies to every row of the table.	ฟิลด์ ตัวเลข 'ข้อความ' + - * / % ^ ใช้ || ต่อข้อความ การเปรียบเทียบ CASE และฟังก์ชัน เช่น round(), upper(), if() หรือ scale_linear() ใช้กับทุกแถวของตาราง
+Fill in: {fields}	กรอก: {fields}
+Fill light	แสงเสริม
+Find each tile's file of every year; Add years shows them as one layer that follows the time slider	หาไฟล์ของแต่ละไทล์ในทุกปี ปุ่ม เพิ่มปี จะแสดงเป็นชั้นข้อมูลเดียวที่ตามแถบเลื่อนเวลา
+Fixture	Fixture
+Folders reload only when you choose Reload Data; they are not watched.	โฟลเดอร์จะโหลดใหม่เมื่อคุณเลือก โหลดข้อมูลใหม่ เท่านั้น ไม่มีการเฝ้าดูโฟลเดอร์
+Forget Saved Login	ลืมข้อมูลเข้าสู่ระบบที่บันทึกไว้
+Fr	ศ
+Frame time	เวลาต่อเฟรม
+Frame time (ms, GIF)	เวลาต่อเฟรม (มิลลิวินาที, GIF)
+Frames	เฟรม
+Functions ▾	ฟังก์ชัน ▾
+Geocoding cancelled; no layer was added.	ยกเลิกการแปลงที่อยู่เป็นพิกัดแล้ว ไม่ได้เพิ่มชั้นข้อมูล
+Geocoding…	กำลังแปลงที่อยู่เป็นพิกัด…
+Georeference PDF	ใส่พิกัดใน PDF
+Germany	เยอรมนี
+given up during its read: its project was closed, or more than 64 downloads started after it	เลิกอ่านกลางคัน: โปรเจกต์ของมันถูกปิด หรือมีการดาวน์โหลดเริ่มหลังจากมันมากกว่า 64 รายการ
+Graticule options	ตัวเลือกเส้นกริดพิกัดภูมิศาสตร์
+Greece	กรีซ
+Grid pixels; angle clockwise from grid right.	พิกเซลของกริด มุมวัดตามเข็มนาฬิกาจากด้านขวาของกริด
+Ground	พื้นดิน
+Ground heights	ความสูงของพื้นดิน
+Height (points)	ความสูง (พอยต์)
+Higher draws on top of lower, whatever the layer order	ค่าสูงกว่าวาดทับค่าต่ำกว่า ไม่ว่าลำดับชั้นข้อมูลจะเป็นอย่างไร
+How dark the shadows the terrain casts are, from 0 (none) to 1, for the sun set above	ความเข้มของเงาที่ภูมิประเทศทอด ตั้งแต่ 0 (ไม่มี) ถึง 1 สำหรับดวงอาทิตย์ที่ตั้งไว้ด้านบน
+How far the label sits from the line, to the text's nearest edge; 0 is on the line.	ระยะที่ป้ายชื่ออยู่ห่างจากเส้น วัดถึงขอบข้อความด้านที่ใกล้ที่สุด 0 คืออยู่บนเส้น
+How much the sky each cell sees, over the terrain around it, scales its ambient light, from 0 (not at all) to 1	ปริมาณท้องฟ้าที่แต่ละเซลล์มองเห็นเหนือภูมิประเทศรอบตัว ปรับแสงโดยรอบของเซลล์มากน้อยเพียงใด ตั้งแต่ 0 (ไม่ปรับเลย) ถึง 1
+How the ground between the observer and a cell is read: the cell each point falls in, or between the cells' centres. Between cells is an estimate too, but closer on ground that bulges, a hill seen from its top, where the nearest cell can hide cells just inside the horizon.	วิธีอ่านพื้นดินระหว่างผู้สังเกตกับเซลล์: ใช้เซลล์ที่แต่ละจุดตกอยู่ หรือใช้ค่าระหว่างจุดกึ่งกลางของเซลล์ ค่าระหว่างเซลล์ก็เป็นค่าประมาณเช่นกัน แต่ใกล้เคียงกว่าบนพื้นดินที่นูน เช่นเนินที่มองจากยอด ซึ่งเซลล์ที่ใกล้ที่สุดอาจบังเซลล์ที่อยู่ในขอบฟ้าพอดี
+Import block contents	นำเข้าเนื้อหาของบล็อก
+Import DXF	นำเข้า DXF
+Import DXF…	นำเข้า DXF…
+In the coordinate system's units, or degrees without one	ในหน่วยของระบบพิกัด หรือองศาเมื่อไม่มีระบบพิกัด
+In the web app, give a CORS-enabled proxy server; direct Census access needs the desktop app or CLI.	ในเว็บแอป ให้ระบุพร็อกซีเซิร์ฟเวอร์ที่เปิด CORS การเข้าถึง Census โดยตรงต้องใช้แอปเดสก์ท็อปหรือ CLI
+India	อินเดีย
+Indonesia	อินโดนีเซีย
+Inserts: {inserts}; updates: {updates}; deletes: {deletes}.	เพิ่ม: {inserts} แก้ไข: {updates} ลบ: {deletes}
+Invalid DXF picker request	คำขอเลือกไฟล์ DXF ไม่ถูกต้อง
+Israel	อิสราเอล
+It stopped without an answer: see the notices.	หยุดโดยไม่มีคำตอบ: ดูที่การแจ้งเตือน
+Italy	อิตาลี
+its data or pending edits changed; confirm Reload Data again	ข้อมูลหรือการแก้ไขที่ค้างอยู่เปลี่ยนไป ยืนยัน โหลดข้อมูลใหม่ อีกครั้ง
+its data source changed	แหล่งข้อมูลเปลี่ยนไป
+its tile archive changed or was removed	ไฟล์ไทล์ถูกเปลี่ยนหรือถูกลบ
+Japan	ญี่ปุ่น
+JAXA Earth's catalog couldn't be read: {why}	อ่านแค็ตตาล็อกของ JAXA Earth ไม่ได้: {why}
+JAXA Earth: {cubes} cubes from its catalog; {left} of its {datasets} datasets are left out (hover for why)	JAXA Earth: {cubes} คิวบ์จากแค็ตตาล็อก ชุดข้อมูล {left} จาก {datasets} ชุดถูกละไว้ (ชี้เมาส์เพื่อดูเหตุผล)
+JAXA Earth: {n} of its catalog's texts are cut or not read (hover for which)	JAXA Earth: ข้อความในแค็ตตาล็อก {n} รายการถูกตัดหรือไม่ได้อ่าน (ชี้เมาส์เพื่อดูว่ารายการใด)
+JAXA Earth: {n} of its cubes have the id of one of the list's own and are left out (hover for which)	JAXA Earth: คิวบ์ {n} รายการมีรหัสซ้ำกับรายการของลิสต์เองและถูกละไว้ (ชี้เมาส์เพื่อดูว่ารายการใด)
+JAXA's terms	ข้อกำหนดของ JAXA
+Layer Properties	คุณสมบัติชั้นข้อมูล
+Layer Properties Pane	แผงคุณสมบัติชั้นข้อมูล
+Layer Properties · {layer}	คุณสมบัติชั้นข้อมูล · {layer}
+Layer: {layer} · Feature {feature}	ชั้นข้อมูล: {layer} · ฟีเจอร์ {feature}
+Least cloud first	เมฆน้อยที่สุดก่อน
+Licence	สัญญาอนุญาต
+Load file…	โหลดไฟล์…
+Logged out. Log in explicitly to use this connection again.	ออกจากระบบแล้ว เข้าสู่ระบบเองอีกครั้งเพื่อใช้การเชื่อมต่อนี้
+Making the search area…	กำลังสร้างพื้นที่ค้นหา…
+Manually reread this archive from disk without changing its presentation. Undo cannot restore overwritten file contents.	อ่านไฟล์นี้จากดิสก์ใหม่ด้วยตนเองโดยไม่เปลี่ยนการแสดงผล การเลิกทำไม่สามารถกู้เนื้อหาไฟล์ที่ถูกเขียนทับได้
+Measured grid's coordinate system	ระบบพิกัดของกริดวัดระยะ
+Messages	ข้อความแจ้ง
+MGRS labels	ป้าย MGRS
+Mo	จ
+Morocco	โมร็อกโก
+Names keep up to 200 characters.	ชื่อเก็บได้สูงสุด 200 อักขระ
+Natural Earth's 1:10m borders with every island, a larger download (about 3 MB, 10 MB unpacked)	เส้นเขตแดน 1:10 ล้านของ Natural Earth พร้อมทุกเกาะ ไฟล์ดาวน์โหลดขนาดใหญ่กว่า (ประมาณ 3 MB, 10 MB เมื่อแตกไฟล์)
+Nearest cell	เซลล์ที่ใกล้ที่สุด
+Needs RustGIS {min}	ต้องใช้ ARutGIS {min}
+Nepal	เนปาล
+Netherlands	เนเธอร์แลนด์
+Newest first	ใหม่สุดก่อน
+Next month	เดือนถัดไป
+no data	ไม่มีข้อมูล
+No saved login for this connection. Enter it again.	ไม่มีข้อมูลเข้าสู่ระบบที่บันทึกไว้สำหรับการเชื่อมต่อนี้ ใส่อีกครั้ง
+no such table	ไม่มีตารางนั้น
+north of 84° N and south of 80° S the grid is UPS, which has no zone number: write north 2000000 2444268, south 2000000 1555732, or polar MGRS such as Z AM 00000 44268	ทางเหนือของ 84° เหนือ และทางใต้ของ 80° ใต้ กริดเป็น UPS ซึ่งไม่มีเลขโซน: เขียนเป็น north 2000000 2444268, south 2000000 1555732 หรือ MGRS ขั้วโลก เช่น Z AM 00000 44268
+Not a number: {fields}	ไม่ใช่ตัวเลข: {fields}
+Not a RustGIS project	ไม่ใช่โปรเจกต์ ARutGIS
+Not available for {platform}	ใช้ไม่ได้บน {platform}
+Not bound	ไม่ได้ผูก
+Not on a phone: these tools run as a program of their own, which a phone can't run. Use them in RustGIS on a computer.	ใช้ไม่ได้บนโทรศัพท์: เครื่องมือเหล่านี้ทำงานเป็นโปรแกรมแยกต่างหาก ซึ่งโทรศัพท์รันไม่ได้ ใช้ใน ARutGIS บนคอมพิวเตอร์
+Now: the map's own, else the UTM zone at the centre	ตอนนี้: ระบบของแผนที่เอง มิฉะนั้นโซน UTM ที่จุดกึ่งกลาง
+Now: {crs}	ตอนนี้: {crs}
+Oldest first	เก่าสุดก่อน
+On its own tab, {tab}.	อยู่ในแท็บของตัวเอง {tab}
+On the Plugins tab.	อยู่ในแท็บปลั๊กอิน
+Only the features matching this clause draw. Ctrl+Enter applies it.	วาดเฉพาะฟีเจอร์ที่ตรงกับเงื่อนไขนี้ Ctrl+Enter เพื่อใช้
+Only the features whose date falls in the slider's window draw	วาดเฉพาะฟีเจอร์ที่วันที่อยู่ในช่วงของแถบเลื่อน
+Only the first {kept} of the {given} nodes the plugin gave are shown: a tree holds at most {kept}.	แสดงเฉพาะ {kept} โหนดแรกจาก {given} โหนดที่ปลั๊กอินให้มา: ต้นไม้หนึ่งมีได้มากที่สุด {kept} โหนด
+open a file	เปิดไฟล์
+Open Messages	เปิดข้อความแจ้ง
+Open the {tab} tab	เปิดแท็บ {tab}
+Or grid reference	หรือพิกัดอ้างอิงกริด
+Original	ต้นฉบับ
+Original grid pixels. A circle may appear elliptical in the map projection.	พิกเซลของกริดต้นฉบับ วงกลมอาจดูเป็นวงรีในเส้นโครงแผนที่
+Package for\nthe Field	แพ็กเกจ\nภาคสนาม
+Package for the Field	แพ็กเกจสำหรับภาคสนาม
+Pakistan	ปากีสถาน
+Palestine	ปาเลสไตน์
+Parameter name	ชื่อพารามิเตอร์
+Pick a date	เลือกวันที่
+Pick Points	เลือกจุด
+Pick points on the map, or click a pixel with Explore and press Spectral Profile in its pop-up, to chart every band there.	เลือกจุดบนแผนที่ หรือคลิกพิกเซลด้วยเครื่องมือสำรวจแล้วกด Spectral Profile ในป๊อปอัป เพื่อทำกราฟทุกแบนด์ที่จุดนั้น
+Picture unavailable: not a picture	แสดงรูปภาพไม่ได้: ไม่ใช่รูปภาพ
+Picture unavailable: pictures aren't fetched from this computer or the local network	แสดงรูปภาพไม่ได้: ไม่ดึงรูปภาพจากคอมพิวเตอร์เครื่องนี้หรือเครือข่ายภายใน
+Picture unavailable: that address is never fetched	แสดงรูปภาพไม่ได้: ที่อยู่นั้นไม่ถูกดึงข้อมูลในทุกกรณี
+Picture unavailable: {format} pictures aren't supported	แสดงรูปภาพไม่ได้: ไม่รองรับรูปภาพ {format}
+Picture unavailable: {reason}	แสดงรูปภาพไม่ได้: {reason}
+Picture unavailable: {w} × {h} pixels is larger than {max} × {max}	แสดงรูปภาพไม่ได้: {w} × {h} พิกเซล ใหญ่กว่า {max} × {max}
+plugin is required	ต้องระบุปลั๊กอิน
+Plugins can't be installed on iOS: Apple doesn't let an app download code that adds to what it does. Use them in RustGIS on a computer or in the browser.	ติดตั้งปลั๊กอินบน iOS ไม่ได้: Apple ไม่อนุญาตให้แอปดาวน์โหลดโค้ดที่เพิ่มความสามารถของแอป ใช้ปลั๊กอินใน ARutGIS บนคอมพิวเตอร์หรือในเบราว์เซอร์
+Plugins › Extensions	ปลั๊กอิน › ส่วนขยาย
+Poland	โปแลนด์
+Portugal	โปรตุเกส
+Previous month	เดือนก่อนหน้า
+projected system (EPSG:32616), or degrees	ระบบพิกัดแบบฉาย (EPSG:32616) หรือองศา
+Properties…	คุณสมบัติ…
+Publish to Source	เผยแพร่ไปยังแหล่งข้อมูล
+Query	คิวรี
+Radius	รัศมี
+Rasters: {system}, cell size {cells}	แรสเตอร์: {system} ขนาดเซลล์ {cells}
+Read the selected layer's local source again. Folders reload only when you choose Reload Data; they are not watched. Undo restores in-memory data and configuration, not overwritten files or historical streamed contents.	อ่านแหล่งข้อมูลในเครื่องของชั้นข้อมูลที่เลือกอีกครั้ง โฟลเดอร์จะโหลดใหม่เมื่อคุณเลือก โหลดข้อมูลใหม่ เท่านั้น ไม่มีการเฝ้าดูโฟลเดอร์ การเลิกทำกู้ข้อมูลในหน่วยความจำและการตั้งค่าได้ แต่กู้ไฟล์ที่ถูกเขียนทับหรือเนื้อหาที่สตรีมไว้ก่อนหน้าไม่ได้
+Reading dates…	กำลังอ่านวันที่…
+Reading JAXA Earth's catalog…	กำลังอ่านแค็ตตาล็อกของ JAXA Earth…
+Reading {what}…	กำลังอ่าน {what}…
+Reading…	กำลังอ่าน…
+Reload\nData	โหลด\nข้อมูลใหม่
+Reload Data	โหลดข้อมูลใหม่
+Reload Data from local files requires the desktop app.	การโหลดข้อมูลใหม่จากไฟล์ในเครื่องต้องใช้แอปเดสก์ท็อป
+Reload Tile Archive	โหลดไฟล์ไทล์ใหม่
+Reload {name} and discard its pending edits?	โหลด {name} ใหม่และทิ้งการแก้ไขที่ค้างอยู่หรือไม่
+Restore Fill	คืนสีพื้น
+Restore polygon fills hidden by No Fill, keeping their colors and outlines.	คืนสีพื้นของรูปหลายเหลี่ยมที่ถูกซ่อนด้วย ไม่มีสีพื้น โดยคงสีและเส้นขอบไว้
+Result	ผลลัพธ์
+Rock on steep slopes	หินบนลาดชัน
+Rotated\nBox	กล่อง\nหมุน
+Rotated Box	กล่องหมุน
+Russia	รัสเซีย
+RustGIS field package	แพ็กเกจภาคสนามของ ARutGIS
+RustGIS is closing	ARutGIS กำลังปิด
+Sa	ส
+Satellite Embedding Change	การเปลี่ยนแปลงของ Satellite Embedding
+Satellite Embedding Similarity	ความคล้ายของ Satellite Embedding
+Saudi Arabia	ซาอุดีอาระเบีย
+save a file	บันทึกไฟล์
+Save the data in view, with the map's MBTiles and PMTiles basemaps, as a field package to open on a phone.	บันทึกข้อมูลที่เห็นอยู่ พร้อมแผนที่ฐาน MBTiles และ PMTiles ของแผนที่ เป็นแพ็กเกจภาคสนามสำหรับเปิดบนโทรศัพท์
+Saved and exported boxes are ordinary polygons. Box construction is kept only in this session.	กล่องที่บันทึกและส่งออกเป็นรูปหลายเหลี่ยมธรรมดา ข้อมูลการสร้างกล่องเก็บไว้เฉพาะในเซสชันนี้
+Saved and exported circles are polygon approximations. Centre and radius are kept only in this session. New drags use a tolerance of 0.25 grid units or radius/10000, whichever is larger, before projection.	วงกลมที่บันทึกและส่งออกเป็นรูปหลายเหลี่ยมโดยประมาณ จุดศูนย์กลางและรัศมีเก็บไว้เฉพาะในเซสชันนี้ การลากใหม่ใช้ค่าคลาดเคลื่อน 0.25 หน่วยกริด หรือรัศมี/10000 แล้วแต่ค่าใดมากกว่า ก่อนการฉายแผนที่
+Saved arrangements of publication layouts left out: {count} (not usable by this version, a second name for one kept, or past the limit of 20). They are kept with the preferences.	การจัดวางเลย์เอาต์สิ่งพิมพ์ที่บันทึกไว้ซึ่งถูกละไว้: {count} (รุ่นนี้ใช้ไม่ได้ เป็นชื่อที่สองของรายการที่เก็บไว้แล้ว หรือเกินขีดจำกัด 20 รายการ) ยังเก็บไว้กับค่ากำหนด
+Saved arrangements of publication layouts passed over under a name saved or removed now are dropped: {count}.	การจัดวางเลย์เอาต์สิ่งพิมพ์ที่บันทึกไว้ซึ่งถูกข้ามไป ภายใต้ชื่อที่เพิ่งบันทึกหรือลบตอนนี้ ถูกทิ้งแล้ว: {count}
+Saved login	ข้อมูลเข้าสู่ระบบที่บันทึกไว้
+Saved login unavailable	ใช้ข้อมูลเข้าสู่ระบบที่บันทึกไว้ไม่ได้
+Saved on this computer	บันทึกไว้บนคอมพิวเตอร์เครื่องนี้
+Saving to a file of your choice isn't available here on Android yet.	การบันทึกเป็นไฟล์ที่คุณเลือกยังใช้ไม่ได้ที่นี่บน Android
+Saving to a file of your choice isn't available here on iOS yet.	การบันทึกเป็นไฟล์ที่คุณเลือกยังใช้ไม่ได้ที่นี่บน iOS
+Search area	พื้นที่ค้นหา
+Search area: {points} point, {lines} line and {polygons} polygon part(s)	พื้นที่ค้นหา: จุด {points} เส้น {lines} และรูปหลายเหลี่ยม {polygons} ส่วน
+Search candidates not shown: {n} (limit {limit}).	ผลการค้นหาที่ไม่ได้แสดง: {n} (จำกัด {limit})
+Search only items in these dates	ค้นหาเฉพาะรายการในช่วงวันที่เหล่านี้
+Search results: U.S. Census Bureau (address ranges)	ผลการค้นหา: U.S. Census Bureau (ช่วงเลขที่อยู่)
+Searching all {total} layers…	กำลังค้นหาทั้ง {total} ชั้นข้อมูล…
+Select a box created in this session.	เลือกกล่องที่สร้างในเซสชันนี้
+Select a circle created in this session.	เลือกวงกลมที่สร้างในเซสชันนี้
+Select a layer linked to a local file or folder, or an editable GeoPackage layer.	เลือกชั้นข้อมูลที่เชื่อมกับไฟล์หรือโฟลเดอร์ในเครื่อง หรือชั้นข้อมูล GeoPackage ที่แก้ไขได้
+Selected features	ฟีเจอร์ที่เลือก
+Service discovery was cancelled	ยกเลิกการค้นหาบริการแล้ว
+Set Coordinate System	ตั้งระบบพิกัด
+Show legend in Layers	แสดงคำอธิบายสัญลักษณ์ในชั้นข้อมูล
+Show no data	แสดงค่าไม่มีข้อมูล
+Show or hide the graticule over the basemap: latitudes and longitudes, a measured grid or the UTM zones.	แสดงหรือซ่อนเส้นกริดพิกัดภูมิศาสตร์บนแผนที่ฐาน: ละติจูดและลองจิจูด กริดวัดระยะ หรือโซน UTM
+Show the bands picked of every year on the time slider, read in place as the map needs them	แสดงแบนด์ที่เลือกของทุกปีบนแถบเลื่อนเวลา โดยอ่านจากต้นทางตามที่แผนที่ต้องใช้
+Show the selected layer's settings in one place.	แสดงการตั้งค่าของชั้นข้อมูลที่เลือกไว้ในที่เดียว
+Showing {n} items ({f} catalog links were refused)	แสดง {n} รายการ (ลิงก์แค็ตตาล็อก {f} ลิงก์ถูกปฏิเสธ)
+Showing {n} items ({s} catalog links were skipped)	แสดง {n} รายการ (ลิงก์แค็ตตาล็อก {s} ลิงก์ถูกข้าม)
+Simplified	แบบย่อ
+Size, bands, statistics and coordinate system, on the Source tab of the raster's properties.	ขนาด แบนด์ สถิติ และระบบพิกัด อยู่ในแท็บแหล่งข้อมูลของคุณสมบัติแรสเตอร์
+Sky visibility	การมองเห็นท้องฟ้า
+Slope (degrees), aspect, hillshade, NDVI, band math, thresholds.	ความชัน (องศา) ทิศลาด ฮิลเชด NDVI การคำนวณแบนด์ ค่าขีดแบ่ง
+Slope (degrees), hillshade, NDVI and more.	ความชัน (องศา) ฮิลเชด NDVI และอื่น ๆ
+Slope is in degrees (0–90), not percent.	ความชันเป็นองศา (0–90) ไม่ใช่เปอร์เซ็นต์
+Sort by	เรียงตาม
+Source File State	สถานะไฟล์ต้นทาง
+South Korea	เกาหลีใต้
+Spain	สเปน
+Spectral profile	โปรไฟล์เชิงสเปกตรัม
+SQL queries run through DuckDB, a program a phone can't run: open this project on a computer to query it.	คิวรี SQL ทำงานผ่าน DuckDB ซึ่งเป็นโปรแกรมที่โทรศัพท์รันไม่ได้: เปิดโปรเจกต์นี้บนคอมพิวเตอร์เพื่อคิวรี
+STAC Search Area	พื้นที่ค้นหา STAC
+Stop this download; nothing is added	หยุดการดาวน์โหลดนี้ ไม่มีอะไรถูกเพิ่ม
+Street addresses only; positions are calculated along address ranges.	เฉพาะที่อยู่ตามถนน ตำแหน่งคำนวณตามช่วงเลขที่อยู่
+Su	อา
+Sweden	สวีเดน
+Taiwan	ไต้หวัน
+Take this point off	เอาจุดนี้ออก
+Th	พฤ
+The API changed while the search area was being made: press Find Items to search it	API เปลี่ยนไประหว่างที่กำลังสร้างพื้นที่ค้นหา: กด ค้นหารายการ เพื่อค้นหา
+The API did not sort them by {sort}: they are in its own order	API ไม่ได้เรียงตาม {sort}: รายการอยู่ในลำดับของ API เอง
+The background worker could not start ({error}). Retry the command.	ตัวทำงานเบื้องหลังเริ่มไม่ได้ ({error}) ลองสั่งคำสั่งอีกครั้ง
+The basemap now shows the {view} worldview; the project's Countries layer keeps its borders	ตอนนี้แผนที่ฐานแสดงมุมมองพรมแดนแบบ {view} ชั้นข้อมูล Countries ของโปรเจกต์ยังคงเส้นเขตแดนเดิม
+the browser runs everything on one thread	เบราว์เซอร์รันทุกอย่างบนเธรดเดียว
+The collection's own licence wasn't read: {why}	ไม่ได้อ่านสัญญาอนุญาตของคอลเลกชันเอง: {why}
+The constant base: used where no field is chosen, or the field holds no number.	ฐานค่าคงที่: ใช้เมื่อไม่ได้เลือกฟิลด์ หรือฟิลด์ไม่มีตัวเลข
+The distance to widen by is a number, 0 or more	ระยะที่จะขยายเป็นตัวเลข 0 ขึ้นไป
+The first {n} of them are listed; the filter searches all of them.	แสดง {n} รายการแรก ตัวกรองค้นหาในทุกรายการ
+the hash stopped	การแฮชหยุดลง
+the images' projected system, else degrees	ระบบพิกัดแบบฉายของภาพ มิฉะนั้นองศา
+The key is added to each request to this address as this parameter. It is never saved in the connection or project.	คีย์จะถูกเพิ่มในทุกคำขอไปยังที่อยู่นี้เป็นพารามิเตอร์นี้ ไม่มีการบันทึกคีย์ไว้ในการเชื่อมต่อหรือโปรเจกต์
+the layer's projected system, else degrees	ระบบพิกัดแบบฉายของชั้นข้อมูล มิฉะนั้นองศา
+The login is available for this session but was not remembered on this computer.	ข้อมูลเข้าสู่ระบบใช้ได้ในเซสชันนี้ แต่ไม่ได้จำไว้บนคอมพิวเตอร์เครื่องนี้
+The map's UTM zone, else the frame's	โซน UTM ของแผนที่ มิฉะนั้นของกรอบ
+The most cloud cover is a number from 0 to 100	เมฆปกคลุมมากที่สุดเป็นตัวเลขตั้งแต่ 0 ถึง 100
+The most threads a tool, a raster read or a map drawing uses: fewer keep cores free for other work.	จำนวนเธรดมากที่สุดที่เครื่องมือ การอ่านแรสเตอร์ หรือการวาดแผนที่ใช้: ใช้น้อยลงจะเหลือคอร์ไว้ให้งานอื่น
+The next page link was refused: it points where this search may not read, so only this page is loaded.	ลิงก์หน้าถัดไปถูกปฏิเสธ: ลิงก์ชี้ไปยังที่ที่การค้นหานี้อ่านไม่ได้ จึงโหลดเฉพาะหน้านี้
+The order by {sort} could not be checked: it is the API's own order	ตรวจสอบการเรียงตาม {sort} ไม่ได้: รายการอยู่ในลำดับของ API เอง
+The plugins installed in this browser can't be read, so this change isn't remembered: fix or remove "plugins_web" in the browser's saved preferences.	อ่านปลั๊กอินที่ติดตั้งในเบราว์เซอร์นี้ไม่ได้ การเปลี่ยนแปลงนี้จึงไม่ถูกจำไว้: แก้ไขหรือลบ "plugins_web" ในค่ากำหนดที่เบราว์เซอร์บันทึกไว้
+The plugins installed in this browser couldn't be read (they aren't a JSON list): none is loaded, and plugins installed or removed now aren't remembered.	อ่านปลั๊กอินที่ติดตั้งในเบราว์เซอร์นี้ไม่ได้ (ไม่ใช่รายการ JSON): ไม่มีปลั๊กอินใดถูกโหลด และปลั๊กอินที่ติดตั้งหรือลบตอนนี้จะไม่ถูกจำไว้
+The project, map, layer or data source changed. Reopen Reload Data for the intended layer.	โปรเจกต์ แผนที่ ชั้นข้อมูล หรือแหล่งข้อมูลเปลี่ยนไป เปิด โหลดข้อมูลใหม่ อีกครั้งสำหรับชั้นข้อมูลที่ต้องการ
+The saved arrangements of publication layouts can't be read: they are left as they are, and arrangements saved now last only until the app closes.	อ่านการจัดวางเลย์เอาต์สิ่งพิมพ์ที่บันทึกไว้ไม่ได้: จะคงไว้ตามเดิม และการจัดวางที่บันทึกตอนนี้จะอยู่จนกว่าจะปิดแอปเท่านั้น
+The saved login could not be forgotten. The connection was not changed.	ลืมข้อมูลเข้าสู่ระบบที่บันทึกไว้ไม่ได้ การเชื่อมต่อไม่ถูกเปลี่ยน
+The saved login could not be used. Enter it again.	ใช้ข้อมูลเข้าสู่ระบบที่บันทึกไว้ไม่ได้ ใส่อีกครั้ง
+The saved login is unavailable. Enter it for this session.	ข้อมูลเข้าสู่ระบบที่บันทึกไว้ใช้ไม่ได้ ใส่สำหรับเซสชันนี้
+The saved login was forgotten; a login in this session keeps working.	ลืมข้อมูลเข้าสู่ระบบที่บันทึกไว้แล้ว การเข้าสู่ระบบในเซสชันนี้ยังใช้ได้ต่อ
+The saved thread setting “{value}” isn't a number from 1 to 1024; RustGIS uses the default.	ค่าเธรดที่บันทึกไว้ “{value}” ไม่ใช่ตัวเลขตั้งแต่ 1 ถึง 1024 ARutGIS จึงใช้ค่าเริ่มต้น
+The saved worldview '{code}' isn't one this version knows, so it is ignored until you choose one	มุมมองพรมแดนที่บันทึกไว้ '{code}' ไม่ใช่แบบที่รุ่นนี้รู้จัก จึงไม่ใช้จนกว่าคุณจะเลือกแบบใหม่
+The saved worldview detail '{code}' isn't one this version knows; simplified borders are used	ระดับรายละเอียดของมุมมองพรมแดนที่บันทึกไว้ '{code}' ไม่ใช่แบบที่รุ่นนี้รู้จัก จึงใช้เส้นเขตแดนแบบย่อ
+The search area has no point, line or polygon to search with	พื้นที่ค้นหาไม่มีจุด เส้น หรือรูปหลายเหลี่ยมให้ใช้ค้นหา
+The search area is still loading: search when it has finished	พื้นที่ค้นหายังโหลดอยู่: ค้นหาเมื่อโหลดเสร็จ
+the selected features	ฟีเจอร์ที่เลือก
+The service test requires a credential-free HTTP or HTTPS address at the connection's origin.	การทดสอบบริการต้องใช้ที่อยู่ HTTP หรือ HTTPS ที่ไม่มีข้อมูลเข้าสู่ระบบ ณ ต้นทางของการเชื่อมต่อ
+The service test requires a valid web-service connection and login.	การทดสอบบริการต้องใช้การเชื่อมต่อบริการเว็บและการเข้าสู่ระบบที่ถูกต้อง
+The slider's span, step and playback are on View › Time.	ช่วง ขั้น และการเล่นของแถบเลื่อนอยู่ที่ มุมมอง › เวลา
+the tool's own	ของเครื่องมือเอง
+the tool's own; {d}	ของเครื่องมือเอง; {d}
+the web app	เว็บแอป
+This connection is logged out. Log in explicitly to use it again.	การเชื่อมต่อนี้ออกจากระบบแล้ว เข้าสู่ระบบเองอีกครั้งเพื่อใช้งาน
+This layer has edits its file doesn't have yet. Publish to Source writes them to the file.	ชั้นข้อมูลนี้มีการแก้ไขที่ไฟล์ยังไม่มี คำสั่ง เผยแพร่ไปยังแหล่งข้อมูล จะเขียนการแก้ไขลงไฟล์
+This layer has edits its file doesn't have, and the file changed on disk since it was read. Publish to Source refuses rather than overwrite that change; Export Features keeps the edits in a new file.	ชั้นข้อมูลนี้มีการแก้ไขที่ไฟล์ยังไม่มี และไฟล์เปลี่ยนบนดิสก์หลังจากที่อ่านมา คำสั่ง เผยแพร่ไปยังแหล่งข้อมูล จะปฏิเสธแทนที่จะเขียนทับการเปลี่ยนแปลงนั้น ส่วน ส่งออกฟีเจอร์ จะเก็บการแก้ไขไว้ในไฟล์ใหม่
+This layer has edits its file doesn't have. Publish to Source can't write them until the file is back as it was read; Export Features keeps them in a new file.	ชั้นข้อมูลนี้มีการแก้ไขที่ไฟล์ยังไม่มี คำสั่ง เผยแพร่ไปยังแหล่งข้อมูล จะเขียนไม่ได้จนกว่าไฟล์จะกลับเป็นเหมือนตอนที่อ่านมา ส่วน ส่งออกฟีเจอร์ จะเก็บการแก้ไขไว้ในไฟล์ใหม่
+This layer has pending edits. Confirm Discard Edits and Reload first.	ชั้นข้อมูลนี้มีการแก้ไขค้างอยู่ ยืนยัน ทิ้งการแก้ไขแล้วโหลดใหม่ ก่อน
+Threads	เธรด
+timeout: service page	หมดเวลา: หน้าของบริการ
+Tints steep ground toward a rock colour before the light shades it, by the ground's own slope	ย้อมพื้นที่ลาดชันให้เป็นสีหินก่อนที่แสงจะแรเงา ตามความชันของพื้นดินเอง
+Tolerance	ค่าคลาดเคลื่อน
+Too many DXF pickers are open; close one before choosing another drawing	เปิดตัวเลือกไฟล์ DXF มากเกินไป ปิดหนึ่งรายการก่อนเลือกไฟล์แบบร่างอื่น
+Top raster with a colour scale, not drawn by classes	แรสเตอร์บนสุดที่มีสเกลสี ซึ่งไม่ได้วาดตามคลาส
+Try again	ลองอีกครั้ง
+Tu	อ
+Turkey	ตุรกี
+Turn	การหมุน
+Turn (degrees)	การหมุน (องศา)
+Turn editing on and choose a loaded polygon layer in a flat Earth map.	เปิดการแก้ไขและเลือกชั้นข้อมูลรูปหลายเหลี่ยมที่โหลดแล้วในแผนที่โลกแบบราบ
+Turn editing on and select a loaded polygon layer in a flat Earth map.	เปิดการแก้ไขและเลือกชั้นข้อมูลรูปหลายเหลี่ยมที่โหลดแล้วในแผนที่โลกแบบราบ
+Turn off for collections without eo:cloud_cover	ปิดไว้สำหรับคอลเลกชันที่ไม่มี eo:cloud_cover
+Turn on or off the optional parts of RustGIS, such as Imagery.	เปิดหรือปิดส่วนเสริมที่เลือกใช้ได้ของ ARutGIS เช่น ภาพถ่าย
+Turns a table's addresses into points: each row's address fields are joined with commas (such as street, city, country) and looked up. OpenStreetMap's public Nominatim and Photon take up to 100 addresses a run, one a second; Census (U.S. street addresses) takes up to 10,000, one a second; PDOK and a server of your own take more.	แปลงที่อยู่ในตารางเป็นจุด: ฟิลด์ที่อยู่ของแต่ละแถวจะถูกต่อกันด้วยจุลภาค (เช่น ถนน เมือง ประเทศ) แล้วนำไปค้นหา Nominatim และ Photon สาธารณะของ OpenStreetMap รับได้ครั้งละไม่เกิน 100 ที่อยู่ ที่อยู่ละหนึ่งวินาที Census (ที่อยู่ตามถนนในสหรัฐฯ) รับได้ไม่เกิน 10,000 ที่อยู่ ที่อยู่ละหนึ่งวินาที ส่วน PDOK และเซิร์ฟเวอร์ของคุณเองรับได้มากกว่า
+Turns the view about its centre, keeping its scale and pitch, and writes a frame a step: a .gif loops, a .zip holds the frames as PNGs.	หมุนมุมมองรอบจุดกึ่งกลาง โดยคงมาตราส่วนและมุมก้มไว้ และเขียนหนึ่งเฟรมต่อหนึ่งขั้น: ไฟล์ .gif เล่นวนซ้ำ ไฟล์ .zip เก็บเฟรมเป็น PNG
+Type the password or key to remember it on this computer.	พิมพ์รหัสผ่านหรือคีย์เพื่อจำไว้บนคอมพิวเตอร์เครื่องนี้
+Type the password or key, or leave it blank to use this connection's session or saved login, then Save.	พิมพ์รหัสผ่านหรือคีย์ หรือเว้นว่างไว้เพื่อใช้การเข้าสู่ระบบของเซสชันหรือที่บันทึกไว้ของการเชื่อมต่อนี้ แล้วกดบันทึก
+U.S. Census (addresses)	U.S. Census (ที่อยู่)
+Ukraine	ยูเครน
+Undo restores in-memory data and configuration, not overwritten files or historical streamed contents.	การเลิกทำกู้ข้อมูลในหน่วยความจำและการตั้งค่าได้ แต่กู้ไฟล์ที่ถูกเขียนทับหรือเนื้อหาที่สตรีมไว้ก่อนหน้าไม่ได้
+United Kingdom	สหราชอาณาจักร
+unknown tab: give general, source, display, query or time	ไม่รู้จักแท็บ: ระบุ general, source, display, query หรือ time
+Up to {n} points are compared: the oldest one was taken off.	เปรียบเทียบได้สูงสุด {n} จุด: จุดที่เก่าที่สุดถูกเอาออก
+Update Circle	อัปเดตวงกลม
+Update Rotated Box	อัปเดตกล่องหมุน
+Use System	ใช้ของระบบ
+Variables ▾	ตัวแปร ▾
+Vietnam	เวียดนาม
+Wavelength {from}–{to} nm	ความยาวคลื่น {from}–{to} นาโนเมตร
+Wavelength {nm} nm	ความยาวคลื่น {nm} นาโนเมตร
+We	พ
+Web Mercator grid metres, not ground metres.	เมตรของกริด Web Mercator ไม่ใช่เมตรบนพื้นดิน
+What the graticule draws: latitudes and longitudes, a measured grid or the UTM zones.	สิ่งที่เส้นกริดพิกัดภูมิศาสตร์วาด: ละติจูดและลองจิจูด กริดวัดระยะ หรือโซน UTM
+What the walls stand on: the ground, a field or the constant Base (m).	สิ่งที่ผนังตั้งอยู่: พื้นดิน ฟิลด์ หรือค่าคงที่ ฐาน (ม.)
+Whether the Layers pane lists the layer's classes	แผงชั้นข้อมูลแสดงรายการคลาสของชั้นข้อมูลหรือไม่
+Whether the Select tool picks this layer's features on the map	เครื่องมือเลือกจะเลือกฟีเจอร์ของชั้นข้อมูลนี้บนแผนที่หรือไม่
+Widen points and lines by ({unit})	ขยายจุดและเส้นออก ({unit})
+Width (points)	ความกว้าง (พอยต์)
+Write a turn of the view about its centre as an animated GIF or PNG frames.	เขียนการหมุนมุมมองรอบจุดกึ่งกลางเป็น GIF เคลื่อนไหวหรือเฟรม PNG
+X-API-Key	X-API-Key
+You choose where the project is saved next.	คุณจะได้เลือกที่บันทึกโปรเจกต์ในขั้นถัดไป
+{name} has no package for {platform}. It is available for: {platforms}.	{name} ไม่มีแพ็กเกจสำหรับ {platform} มีให้ใช้สำหรับ: {platforms}
+… {n} more characters not shown	… อีก {n} อักขระที่ไม่ได้แสดง
+● {n}  {lon}°, {lat}°  ·  pixel {col}, {row}	● {n} {lon}°, {lat}° · พิกเซล {col}, {row}
+● {n}  {v}	● {n} {v}

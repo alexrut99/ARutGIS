@@ -121,7 +121,7 @@ fn read_depth(r: Node, layer: &str, style: &mut Style, report: &mut Report, dept
 }
 
 /// A renderer's classifying attribute as a field: `name` or `"name"`; `None` for an expression.
-fn field_name(attr: &str) -> Option<String> {
+pub(super) fn field_name(attr: &str) -> Option<String> {
     let a = attr.trim();
     let unquoted = a.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(a);
     (!unquoted.is_empty() && !unquoted.contains('"') && (a.starts_with('"') || unquoted.chars().all(|c| c.is_alphanumeric() || c == '_')))
@@ -546,7 +546,6 @@ const MAX_RULES_READ: usize = MAX_CLASSES * 2;
 /// top. A rule under an else rule takes only what the else rule does (`else_of`, the sibling
 /// sets of the else rules above). Bounded in depth and number: the rules left out are counted in
 /// `left`.
-#[allow(clippy::too_many_arguments)]
 fn flatten<'a, 'i>(
     node: Node<'a, 'i>,
     filters: Vec<String>,

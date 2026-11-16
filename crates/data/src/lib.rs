@@ -5,9 +5,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod address;
+pub mod citygml;
 pub mod cityjson;
 mod citymodel;
 pub mod color;
+pub mod date;
+pub mod date_format;
 mod dbf;
 pub mod diagnostics;
 pub mod dirs;
@@ -36,6 +39,8 @@ pub mod ogc;
 pub mod osm;
 pub mod photo;
 pub mod progress;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod publish;
 pub mod query;
 pub mod raster;
 pub mod s3_address;
@@ -44,6 +49,8 @@ pub mod sheets;
 pub mod source;
 pub mod source_layers;
 pub mod sqlite;
+pub mod sync;
+pub mod threads;
 pub mod time;
 pub mod topojson;
 pub mod value;
@@ -51,11 +58,30 @@ pub mod wkb;
 pub mod xml;
 pub mod zip;
 
-pub use geometry::{Geometry, GeometryType, Measure, VertexId};
+pub use date::{Date, DateTime};
+pub use geometry::{Geometry, GeometryType, Measure, VertexId, ambiguous_area_message, pole_loop_count, pole_loop_message};
 pub use rustgis_geom::{Coord, Extent};
 pub use value::{Field, FieldType, Value};
 
 use serde::{Deserialize, Serialize};
+
+/// Whether this build runs other programs: GDAL's (for the formats read through it), DuckDB (SQL
+/// queries and DuckDB databases) and the `geolibre` runner. Not in the browser, which runs none,
+/// nor on a phone (Android, iOS), whose apps can't start them (#1902): there, what would run one
+/// says so (see [`no_programs_here`]) instead of asking for an install that can't be made.
+pub const RUNS_PROGRAMS: bool = !cfg!(any(target_arch = "wasm32", target_os = "android", target_os = "ios"));
+
+/// What runs RustGIS where [`RUNS_PROGRAMS`] is false, for a message that says a program can't run
+/// there: "a phone" or "the browser". Empty where programs run.
+pub fn no_programs_here() -> &'static str {
+    if RUNS_PROGRAMS {
+        ""
+    } else if cfg!(target_arch = "wasm32") {
+        "the browser"
+    } else {
+        "a phone"
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum DataError {
@@ -127,7 +153,6 @@ impl DataError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod secret_redaction_tests {
     use super::*;
 
@@ -172,6 +197,7 @@ mod secret_redaction_tests {
 
 /// One row: an optional geometry and one value per field.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Feature {
     pub id: u64,
     pub geometry: Option<Geometry>,
@@ -293,6 +319,17 @@ impl Serialize for Features {
     }
 }
 
+/// Features are saved as a list of [`Feature`]s.
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Features {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Features".into()
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        <Vec<Feature>>::json_schema(generator)
+    }
+}
+
 impl<'de> Deserialize<'de> for Features {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Features, D::Error> {
         Vec::<Feature>::deserialize(d).map(Features::from)
@@ -327,6 +364,28 @@ pub struct Dataset {
     /// so they aren't saved: the source is read again instead.
     #[serde(skip)]
     pub windowed: bool,
+}
+
+impl Dataset {
+    /// How many of its values a saved project holds as null, not as they are: numbers that aren't
+    /// finite (NaN, infinity), which JSON can't write ([`Value`]'s `Serialize`). Zero for a window
+    /// onto a source, whose rows aren't saved.
+    pub fn unsaved_numbers(&self) -> usize {
+        if self.windowed {
+            return 0;
+        }
+        self.features.iter().flat_map(|f| &f.attrs).filter(|v| v.is_non_finite()).count()
+    }
+
+    /// How many of its features have a coordinate that isn't a number (NaN, infinity), which a
+    /// saved project would hold as null and couldn't open again ([`Geometry::is_finite`], #1985).
+    /// Zero for a window onto a source, whose rows aren't saved.
+    pub fn unsaved_coordinates(&self) -> usize {
+        if self.windowed {
+            return 0;
+        }
+        self.features.iter().filter(|f| f.geometry.as_ref().is_some_and(|g| !g.is_finite())).count()
+    }
 }
 
 impl Serialize for Dataset {
@@ -364,6 +423,16 @@ impl Serialize for Dataset {
 pub struct ReadReport {
     pub skipped: usize,
     pub messages: Vec<String>,
+    /// The files read and the rows read from them, when the read recorded them
+    /// ([`sync::FileSync::around`]): what a layer kept in the project compares with its source
+    /// before writing edits back.
+    pub synced: Option<sync::Synced>,
+    /// What a read of a source says of values in date fields that weren't dates
+    /// ([`source::unread_dates_note`]), also in `messages`: for a caller that says only this.
+    pub unread_dates: Option<String>,
+    /// What it says of date-times it rounded to the microsecond ([`source::rounded_dates_note`]),
+    /// also in `messages`.
+    pub rounded_dates: Option<String>,
 }
 
 /// What a read says when it drops Z or M values (see [`Dataset::zm_dropped`]): from `features` of
@@ -408,6 +477,8 @@ fn layer_list(names: &[&str]) -> String {
 ///   body's name ([`raster::Crs::is_planetary`]).
 /// - Coordinates that aren't longitude/latitude (beyond ±180.5° or ±90.5°, as the readers check),
 ///   which an export writes as if they were.
+/// - Latitudes beyond 85.05° north or south, which an export in Web Mercator writes at 85.05°,
+///   where it ends ([`rustgis_geom::lonlat_to_merc`]).
 pub fn export_notes<'a>(
     layers: impl IntoIterator<Item = (&'a Dataset, rustgis_geom::Extent)>,
     target: &str,
@@ -471,7 +542,88 @@ pub fn export_notes<'a>(
             layer_list(&names)
         )),
     }
+    if crs == raster::Crs::WebMercator {
+        notes.extend(web_mercator_note(&layers, target));
+    }
     notes
+}
+
+/// What an export in Web Mercator says of the layers it writes past 85.05° north or south, where
+/// Web Mercator ends: [`rustgis_geom::lonlat_to_merc`] writes a latitude beyond (an infinite one
+/// too) at 85.05°. The vertices moved are counted from a layer's features, those the file holds:
+/// a Shapefile target (`.shp`, or zipped to `.zip`, as the exports name it) holds only geometry of
+/// the layer's kind, and of it only parts it can draw ([`io::shapefile_vertices`]). A missing
+/// coordinate, or an infinite longitude, isn't counted: it can't be projected, so the export
+/// refuses it. A layer whose features are only a window onto its source (`windowed`) has its
+/// extent tell instead, without a count; as a source can declare a wider extent than its data's,
+/// that notice says only that the extent reaches beyond. A streamed layer written a chunk at a
+/// time comes with no features, and its export counts them as it writes them
+/// ([`export::Exported::beyond_web_mercator`], said by [`web_mercator_moved_note`]). The count is
+/// one pass over the coordinates, without a Cancel point, as the other notices' passes are.
+fn web_mercator_note(layers: &[(&Dataset, rustgis_geom::Extent)], target: &str) -> Option<String> {
+    use rustgis_geom::MAX_LAT;
+    let shapefile = std::path::Path::new(target)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("shp") || e.eq_ignore_ascii_case("zip"));
+    let beyond: Vec<(&str, Option<usize>)> = layers
+        .iter()
+        .filter_map(|(ds, e)| {
+            let mut moved = 0usize;
+            if !ds.windowed {
+                let mut count = |c: Coord| moved += usize::from(c.x.is_finite() && c.y.abs() > MAX_LAT);
+                for g in ds.features.iter().filter_map(|f| f.geometry.as_ref()) {
+                    if shapefile {
+                        crate::io::shapefile_vertices(g, ds.geometry_type, &mut count);
+                    } else {
+                        g.for_each_coord(&mut count);
+                    }
+                }
+            }
+            let past = ds.windowed && !e.is_empty() && (e.min_y < -MAX_LAT || e.max_y > MAX_LAT);
+            if moved > 0 { Some((ds.name.as_str(), Some(moved))) } else { past.then_some((ds.name.as_str(), None)) }
+        })
+        .collect();
+    web_mercator_said(&beyond, target)
+}
+
+/// What an export in Web Mercator written a chunk at a time says of the `moved` vertices of
+/// `layer` it wrote at 85.05° north or south, where Web Mercator ends, as it counted them
+/// ([`export::Exported::beyond_web_mercator`]): as [`export_notes`] says it of a layer it has
+/// whole. `None` for none.
+pub fn web_mercator_moved_note(target: &str, layer: &str, moved: usize) -> Option<String> {
+    if moved == 0 {
+        return None;
+    }
+    web_mercator_said(&[(layer, Some(moved))], target)
+}
+
+/// The 85.05° notice for the layers `beyond` (each with its count of vertices moved, or `None`
+/// when only its extent tells), or `None` for none. Layers counted and layers told by their
+/// extent are said in one notice, each in its own clause, so neither hides the other.
+fn web_mercator_said(beyond: &[(&str, Option<usize>)], target: &str) -> Option<String> {
+    let counted: Vec<&str> = beyond.iter().filter(|(_, n)| n.is_some()).map(|(name, _)| *name).collect();
+    let total: usize = beyond.iter().filter_map(|(_, n)| *n).sum();
+    let extents: Vec<&str> = beyond.iter().filter(|(_, n)| n.is_none()).map(|(name, _)| *name).collect();
+    let mut said = Vec::new();
+    match (counted.as_slice(), total) {
+        ([], _) => {}
+        (_, 1) => said.push(format!("1 vertex of {} is beyond 85.05° north or south, and written at 85.05°", counted.join(", "))),
+        ([one], n) => said.push(format!("{n} vertices of {one} are beyond 85.05° north or south, and written at 85.05°")),
+        (_, n) => said.push(format!("{n} vertices of {} are beyond 85.05° north or south, and written at 85.05°", layer_list(&counted))),
+    }
+    match extents.as_slice() {
+        [] => {}
+        [one] => said.push(format!("the extent of {one} reaches beyond 85.05° north or south, and what lies beyond is written at 85.05°")),
+        _ => said.push(format!(
+            "the extents of {} reach beyond 85.05° north or south, and what lies beyond is written at 85.05°",
+            layer_list(&extents)
+        )),
+    }
+    if said.is_empty() {
+        return None;
+    }
+    Some(format!("{target}: {}, where Web Mercator ends", said.join("; ")))
 }
 
 /// Why exporting `ds` in `crs` would write other data than the layer's: a layer on another body

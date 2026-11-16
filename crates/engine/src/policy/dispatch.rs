@@ -102,16 +102,70 @@ impl Session {
             })
         })
     }
-    /// Admits a file read before its picker, freezes Load All's selector, and seals its owner.
+    /// Admits a file read before its picker, freezes a layer selector, and seals its owner.
     pub(crate) fn start_read(&mut self, command: &str, params: &Value) -> Result<crate::cmd::reads::ReadAhead, String> {
         if self.depth > 0 || !self.policy.nodes.is_empty() || self.policy.cursor.is_some() {
             return Err("background reads can only start before handler dispatch".into());
         }
-        if !matches!(command, "layer.addData" | "layer.loadAll" | "model.run" | "script.run") {
-            return Err("only Add Data, Load All, models and scripts can prepare background work".into());
+        self.capture_read(command, params)
+    }
+    /// Admits one standalone archive or column-statistics command before dispatch, retaining its original
+    /// scope and one-use approval through the worker and landing. Composite/handler capture
+    /// remains forbidden, including when an approval cursor is already active.
+    pub fn start_scoped_archive_read(
+        &mut self,
+        scope: Scope,
+        call: &Call,
+        permit: Option<Permit>,
+    ) -> Result<crate::cmd::reads::ReadAhead, String> {
+        if self.depth > 0 || !self.policy.nodes.is_empty() || self.policy.cursor.is_some() || !self.policy.scopes.is_empty() {
+            return Err("background reads can only start before handler dispatch".into());
+        }
+        let CallKind::Command { id, params } = &call.kind else {
+            return Err("only standalone archive or column-statistics commands can prepare a scoped read".into());
+        };
+        if !matches!(id.as_str(), "map.reloadTiles" | "map.repairTiles" | "table.statistics") {
+            return Err("only standalone archive or column-statistics commands can prepare a scoped read".into());
+        }
+        let capture = |s: &mut Session| s.capture_read(id, params);
+        match permit {
+            Some(p) => {
+                if p.request != call.request {
+                    return Err("this approval belongs to another request".into());
+                }
+                self.run_plan_with(scope, p.plan, call, capture)
+            }
+            None => self.with_scope(scope, capture)?,
+        }
+    }
+    /// Private pre-handler capture shared by native reads and the exact scoped archive entry.
+    fn capture_read(&mut self, command: &str, params: &Value) -> Result<crate::cmd::reads::ReadAhead, String> {
+        if !matches!(
+            command,
+            "layer.addData"
+                | "layer.loadAll"
+                | "layer.reloadData"
+                | "layer.repairSource"
+                | "labels.convert"
+                | "model.run"
+                | "script.run"
+                | "map.reloadTiles"
+                | "map.repairTiles"
+                | "topology.validate"
+                | "service.layers"
+                | "service.add"
+                | "source.syncState"
+                | "table.statistics"
+        ) && crate::cmd::edit::table_edit_in_background(command).is_none()
+        {
+            return Err("only Add Data, Load All, Repair/Reload Data, Convert To Annotation, models, scripts, tile archives, service reads, topology, Source File State and Column Statistics prepare background work".into());
         }
         let mut params = params.as_object().cloned().ok_or("read parameters must be an object")?;
-        if command == "layer.loadAll" {
+        if matches!(
+            command,
+            "layer.loadAll" | "layer.reloadData" | "layer.repairSource" | "labels.convert" | "source.syncState" | "table.statistics"
+        ) || (command == "edit.convertField" && params.get("table").is_none_or(Value::is_null))
+        {
             let id = self.layer_id(&Value::Object(params.clone()))?;
             params.insert("layer".into(), json!(id));
         }
@@ -159,7 +213,13 @@ impl Session {
                         }
                         s.check_read_command(&op)?;
                         s.read_ahead = ready;
-                        s.invoke(op, Txn::Own)
+                        let result = s.invoke(op, Txn::Own);
+                        if result.is_ok()
+                            && let Some(source) = crate::sources::added_by(command, &params)
+                        {
+                            s.note_source(source);
+                        }
+                        result
                     })?
                 })
             })
@@ -170,7 +230,7 @@ impl Session {
             Err(panic) => std::panic::resume_unwind(panic),
         }
     }
-    /// Preserves ordinary command conditions for the admitted read's explicit layer selector.
+    /// Preserves ordinary command conditions for the admitted read's layer or table selector.
     fn check_read_command(&mut self, op: &Authorized<CommandOp>) -> Result<(), String> {
         let CommandOp::Registered { spec, params } = op.op() else { return Err("not a registered read command".into()) };
         let named = self.layer_id(params).ok();
@@ -178,12 +238,12 @@ impl Session {
         if named.is_some() {
             self.active_layer = named;
         }
-        let blocked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.enabled)(self))).unwrap_or(Some("unavailable"));
+        let (blocked, table) = self.check_conditions(spec, params);
         self.active_layer = active;
-        if let Some(why) = blocked {
+        if let Some(why) = blocked.unwrap_or(Some("unavailable")) {
             return Err(format!("{}: {why}", spec.label));
         }
-        if let Some(why) = self.streamed_edit(spec.id, spec.mutates, spec.label, named.or(active)) {
+        if let Some(why) = self.streamed_edit(spec.id, spec.mutates, spec.label, if table.is_some() { None } else { named.or(active) }) {
             return Err(why);
         }
         Ok(())
@@ -252,6 +312,14 @@ impl Session {
     pub(crate) fn policy_user(&self) -> bool {
         self.policy.scopes.last().is_none_or(|s| matches!(s.kind, Kind::User))
     }
+    /// Whether the active scope may exercise reserved connection/account authority.
+    pub(crate) fn policy_allows_reserved(&self) -> bool {
+        match &self.scope().kind {
+            Kind::User | Kind::Agent { access: super::AgentAccess::Full, .. } => true,
+            Kind::Assistant => self.policy.nodes.last().is_some_and(|n| n.effects.contains(super::Effect::Reserved)),
+            Kind::Peer | Kind::Agent { .. } | Kind::Item { .. } | Kind::Plugin { .. } => false,
+        }
+    }
     /// Inherits the current named scope; absence is the documented trusted native convention.
     fn scope(&self) -> Scope {
         self.policy.scopes.last().cloned().unwrap_or_else(Scope::user)
@@ -276,6 +344,20 @@ impl Session {
             Ok(r) => Ok(r),
             Err(p) => std::panic::resume_unwind(p),
         }
+    }
+    /// Runs what a session plugin's program asks between its commands with the plugin's own
+    /// authority, as its commands run: the exact load, still current, narrowing the scope the app
+    /// is in (none at the frame's root, the trusted native convention).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn as_session_plugin<T>(
+        &mut self,
+        plugin: Arc<rustgis_plugins::Plugin>,
+        f: impl FnOnce(&mut Session) -> T,
+    ) -> Result<T, String> {
+        if !rustgis_plugins::is_current(&plugin) {
+            return Err("the plugin was disabled, updated or removed".into());
+        }
+        self.narrowed(Narrow::Plugin(super::plan::PluginPin(plugin)), f)
     }
     /// Intersects nested plugin/item authority with its initiating scope.
     pub(crate) fn narrowed<T>(&mut self, to: Narrow, f: impl FnOnce(&mut Session) -> T) -> Result<T, String> {
@@ -631,6 +713,28 @@ impl Session {
     }
     /// Resolves the command once or retrieves a restricted owner-only completion token.
     pub(crate) fn authorize(&mut self, id: &str, params: &Value) -> Result<Authorized<CommandOp>, String> {
+        // Every way in (a background raster or export, a read ahead, a completion) refuses a
+        // command of an extension that is off, as `Session::run` does: the one asked for, and
+        // the one a completion finishes.
+        if let Some(why) = self.extensions().blocks(id) {
+            // Only its own completion may release the raster, as `finish_raster` does.
+            if let Some(run) = params.get("ran").and_then(Value::as_u64)
+                && let Some(c) = self.raster_results.iter().find(|(n, _)| *n == run).and_then(|(_, m)| m.continuation.as_ref())
+                && c.node.id() == id
+                && self.check_delivery_owner(c).is_ok()
+            {
+                self.raster_results.retain(|(n, _)| *n != run);
+            }
+            return Err(why);
+        }
+        let op = self.authorize_unchecked(id, params)?;
+        if let Some(why) = self.extensions().blocks(op.node.id()) {
+            return Err(why);
+        }
+        Ok(op)
+    }
+    /// [`Self::authorize`] before the extension check.
+    fn authorize_unchecked(&mut self, id: &str, params: &Value) -> Result<Authorized<CommandOp>, String> {
         if let Some(id_of_run) = params.get("ran").and_then(Value::as_u64)
             && let Some(c) = self.raster_results.iter().find(|(n, _)| *n == id_of_run).and_then(|(_, m)| m.continuation.clone())
         {
@@ -768,6 +872,12 @@ impl Session {
             .ok_or("no pending raster with that id")?;
         if !self.policy.scopes.is_empty() {
             self.continuation_owner(&c)?;
+        }
+        // A run whose extension was turned off while it ran is never finished: its raster is
+        // let go here rather than kept to no end.
+        if let Some(why) = self.extensions().blocks(c.node.id()) {
+            self.raster_results.retain(|(n, _)| *n != id);
+            return Err(why);
         }
         let mut params = params.clone();
         params.as_object_mut().ok_or("raster completion parameters must be an object")?.insert("ran".into(), json!(id));

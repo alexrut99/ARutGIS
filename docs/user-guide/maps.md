@@ -11,7 +11,15 @@ For selecting, grouping, reordering and copying layers between maps, see
 Drag to pan and scroll to zoom; ++home++ (or **Full Extent**) shows all the data. **Home › Navigate**
 has fixed zoom steps, **Previous** and **Next** extents, **Bookmarks** (the World Atlas has World,
 Europe, Africa, Americas and East Asia), and **Locate**: **By Coordinates…** pans to a longitude
-and latitude; **By Place or Address…** finds a place or address with a geocoder. **New Bookmark…**
+(X) and latitude (Y), each in decimal degrees or degrees, minutes and seconds (`-74.006` or
+`74°0'22"W`; `40.7128` or `40°42'46"N`; an N or S in the longitude is refused, not swapped), or on
+the Earth's map to a UTM or MGRS grid reference in place of both (`18north 583959 4507351`,
+`18TWL8395907350`). `map.goToXY` takes the same: `lon` and `lat` as numbers or text, or a
+`position` read as the search box reads it, latitude first; two bare numbers there are said back
+as the latitude and longitude they were read as. A reference that names no place says why; an
+MGRS reference coarser than a meter (`18TWL`) goes to the center of its square and says so.
+**By Place or Address…** finds a place or address with a geocoder.
+**New Bookmark…**
 saves the current view under a name, with an optional description of the place. The Bookmarks menu
 removes a bookmark with the button beside it, and exports or imports them as a `.rgisbookmarks`
 file. Imported bookmarks show the same place on a map in another projection; places that projection
@@ -40,7 +48,9 @@ tile layers whose capabilities advertise geographic bounds, including WMS. WMS 1
 bounds and WMS 1.1 latitude/longitude bounds are inherited from parent layers when needed and
 saved with the project. Re-add a service layer saved by an older version to retain its bounds.
 Tile layers without known bounds (such as plain XYZ/TMS or MVT templates, styles and MBTiles
-archives) have no **Zoom To Layer** action unless bounds were supplied when adding them.
+archives) have no **Zoom To Layer** action unless bounds were supplied when adding them. A zoom to a
+place the map's projection doesn't reach (wholly past Web Mercator's 85°, say) doesn't move the
+view to it, and says so.
 
 **Rotating and tilting the map.** Drag with the right mouse button, or hold ++ctrl++ and drag
 with the Pan tool, to turn the map about the centre of the view (to the right turns it clockwise)
@@ -72,8 +82,11 @@ back about the centre of view, so the horizon comes into sight past the curve of
 
 **Terrain** gives a tilted map relief, as MapLibre's terrain does: the map is draped over the
 ground's heights, labels and point markers stand on it, and nearer slopes hide what lies behind
-them. The heights come from a DEM raster layer of the project (heights in metres; the layer can
-stay hidden) or from elevation tiles: Terrarium (`terrarium`, as the free
+them. While the map moves, the relief is laid on a coarse grid, to keep up; once it settles, and
+in exported maps, on a grid four times finer each way, so a ridge's outline follows the ridge
+(the settled map fades in over the moving one in a quarter of a second). The heights come from a
+DEM raster layer of the project (heights in metres; the layer can stay hidden) or from elevation
+tiles: Terrarium (`terrarium`, as the free
 `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`) or Mapbox
 Terrain-RGB (`mapbox`, also MapTiler's). **View › Scene › Terrain** turns it on from the active
 layer (make the DEM the active layer first) and off again; a notice names the layer and says to
@@ -84,10 +97,83 @@ no terrain is on, or `{"tiles": "https://…/{z}/{x}/{y}.png", "encoding": "terr
 maps; a flat (untilted) view, the globe and other projections stay flat, extruded layers are
 not lifted onto the relief yet, and identify and selection still pick on the flat ground.
 
+A **block diagram** cuts the relief to a box, as geomorphology and soil science figures do:
+`map.terrain` with `"block": {}` draws only the ground inside the DEM layer's extent (for a DEM
+in a projection such as UTM, a north-up box between its corners, close to the largest inside
+it for one turned a little; one turned a lot can leave a sliver past its edges), with the map's sky and fog
+around it, and the box's sides facing the eye as walls from the ground's profile down to a flat
+base. `"extent": [xmin, ymin, xmax, ymax]` gives another box, in the map's units (Web Mercator
+metres, at least 10 a side, not all within ±180 by ±90; needed over elevation tiles, which have no extent of their own; a box
+in degrees, off the world or off the DEM is refused, and the result gives the box cut to as
+numbers, or `"layer"` while the DEM's data isn't read); `"depth"` puts the base
+that many metres below the lowest ground in the box (ground with no height, drawn at 0, counts as 0; default half the box's relief, at least
+100 m; both are stretched by the exaggeration), and `"walls": "#RRGGBB"` colours the walls
+(default `#C8B89A`, a sandy brown). The walls are lit by the way they face the light, as extruded
+walls are, darker toward their foot, and outlined. Left out, the block stays as it was;
+`"block": false` takes it off. It shows in the settled view and in exported maps (over elevation tiles, the walls once the
+box's tiles are read); while the map
+moves the ground is drawn whole, and labels, markers and extruded features outside the box still
+draw (hide those layers, or clip them to the box). The walls are schematic: say so in the
+figure's caption.
+
+`"walls": {"color": "#C8B89A", "layer": "Geology"}` colours the walls by a polygon layer, such as
+a geology or soil map: along each wall, the colour the layer's symbology gives the polygon under
+the box's edge at that point (its Unique Values or Graduated Colors classes, so the legend
+matches; the topmost polygon where they overlap, among the features its definition query keeps;
+a fill colour partly transparent is laid over `color`). The contacts go straight down to the base,
+outlined: only where they cross the box's edge comes from the map, and the walls show no dip or
+thickness. Off every polygon, and in a polygon with no solid fill (hatches and other patterns
+aren't drawn on walls yet), the walls are `color`. The layer may be hidden, so the walls can
+show geology while the ground shows soils. It must be a polygon layer that holds all its
+features (not one read a view at a time), with a name of its own; it follows the layer's renames,
+and when it is removed, or a project opens without it, the walls are `color` (said) until a
+polygon layer of that name comes back. A plain `"walls": "#RRGGBB"` takes the layer off.
+
+**Water** on the terrain lies flat: `map.terrain` with `{"water": {"layer": "Lakes"}}` names a
+polygon layer of water bodies, and inside each polygon the ground is level, at the lowest height
+of the DEM along its shore, instead of rising and falling with a surface model that is noisy or
+stepped over water (Copernicus GLO-30 is one). `"level": "field"` takes each polygon's level
+(metres) from a numeric field instead; a row with no value there keeps its shore's. Each part of
+a multipolygon is a water body of its own. A polygon whose shore lies off the DEM, with no level
+given, stays on the ground, and a notice says how many. Shores are read every half DEM cell, up
+to about 4 million heights in all (and one a ring); when the water layer's shores together are
+longer, all of them are read at one wider step, and a notice says how
+many polygons were. A layer read a view at a time (in chunks, by range) can't be the water. `{"water": false}` takes the water off;
+left out (or `null`), it stays as it was. The water layer is kept by name, follows its renames, and can stay
+hidden; its own symbology still draws it. Rivers stay lines. Over elevation tiles, the levels are
+read again until the tiles along the shores have come. A Shaded Relief layer draws the water's
+cells at their level with the even light of flat ground, flat or tilted: no hillshade, cast
+shadow, sky, fill light or rock on the water, so a semi-transparent water fill over it shows one
+tone. The relief's ramp colours them at the water's level.
+
 <figure markdown="span">
   ![Mount Rainier in USGS imagery draped over Terrarium elevation tiles, tilted 65°](https://assets.rustgis.app/images/terrain.webp)
   <figcaption>Mount Rainier: USGS imagery draped over Terrarium elevation tiles.</figcaption>
 </figure>
+
+**Export Orbit** (`map.exportOrbit`, on desktop) writes a turn of the view about its centre as an
+animation: a tilted map with relief reads best when it moves. It turns the bearing by `"turn"`
+degrees (default 360, once round; negative turns the other way) over `"frames"` frames (default
+60), keeping the centre, the scale and the pitch, and draws each frame as Export Map draws the
+view, at `"width"` × `"height"` points (default 640 × 400) and `"dpi"` (default 96). A path
+ending in `.gif` gives an animated GIF that loops, each frame shown for `"speed"` milliseconds
+(default 50; a GIF keeps times to the hundredth of a second, so 55 shows as 50 or 60); one ending in `.zip` gives the frames as PNGs (`frame_0001.png`…), to build a video
+with another tool, since a GIF's 256 colours can band a smooth relief. A turn of 360° stops one
+step short of where it began, so the loop has no frame twice; a part of a turn ends on its last
+bearing. The light of a shaded relief stays with the ground, not the camera. The frames are drawn
+from a copy of the map, so the view doesn't move. The frames count against a limit of 300 million
+pixels in all (170 frames at 1600 × 1100, say), and a size past it is refused.
+
+In the desktop app, **View › Scene › Export Orbit…** opens a dialog with the frames, the turn,
+the size and a GIF's frame time (an empty box keeps the default); **Export…** checks them and
+only then asks where to write the file. The frames are then drawn in the background, so the window stays free: the status bar
+shows the export, how many frames it has drawn, and **Cancel**, which stops it between frames
+and writes nothing. From a script or the command line the command runs to its end before it
+answers:
+
+```bash
+rustgis-cli run --cmd 'project.open={"path":"massif.rgis"}' --cmd 'map.setPitch={"pitch":60}' --cmd 'map.exportOrbit={"path":"massif.gif","frames":72,"width":800,"height":500}'
+```
 
 MapLibre map links carry a view in their address, as
 `#zoom/latitude/longitude/bearing/pitch` (`https://…/#15.5/40.7484/-73.9857/30/60`). **Go To Map
@@ -108,7 +194,8 @@ down, or delete it. Bookmark edits run `bookmark.*` commands and undo with ++ctr
 **Home › Navigate › Locate › By Place or Address…** (`map.findPlace`) looks up a place or an
 address by name with OpenStreetMap's [Nominatim](https://nominatim.org) (or a
 [Photon](https://photon.komoot.io) server, PDOK's
-[Locatieserver](data.md#geocoding-addresses) for Dutch addresses and places, or a geocoder of your
+[Locatieserver](data.md#geocoding-addresses) for Dutch addresses and places, the U.S. Census
+Bureau for U.S. street addresses (desktop/CLI, or a CORS-enabled proxy on the web), or a geocoder of your
 own given by its address) and zooms to the one picked. The search goes to that server over the network; see
 [Geocoding addresses](data.md#geocoding-addresses) for whole tables.
 
@@ -129,9 +216,9 @@ rustgis-cli run --sample --cmd 'map.search={"query":"Tokyo","go":true}'
 
 **Right-click the map** for a menu about that place. Its first row shows the place in the status
 bar's coordinate format (latitude and longitude as `40.712800, -74.006000` for decimal degrees);
-click it to copy it. North of 84° N and south of 80° S, where UTM and MGRS have no zone, and on
-the map of another body than the Earth, it shows and copies the latitude and longitude, and its
-hover text says why. Below it, **Copy As GeoJSON**
+click it to copy it. North of 84° N and south of 80° S it gives the polar grid, UPS (see
+[Coordinate readouts](#coordinate-readouts)). On the map of another body than the Earth it shows
+and copies the latitude and longitude, and its hover text says why. Below it, **Copy As GeoJSON**
 copies the place as a point feature, **Center Map Here** and **Zoom In Here** move the view, and **Directions To Here** and
 **Directions From Here** open the [Directions](#directions) pane. **Quick Analysis** runs a tool
 at the place: a buffer of 500 m, 1 km or 5 km (¼, 1 or 5 miles when the Directions pane is set
@@ -158,15 +245,21 @@ UTM states the hemisphere, as GeographicLib's `GeoConvert -u -l` writes it, not 
 in plain UTM a letter after the zone is commonly read as the hemisphere, so `38S` (band S, 32° N
 to 40° N) would be taken for the southern hemisphere, 10,000 km away. Latitude bands are MGRS's.
 UTM and MGRS are on WGS 84, with the zone exceptions for southern Norway (32V) and Svalbard (31X,
-33X, 35X and 37X), and cover 80° S to 84° N. Nearer the poles they would need the Universal Polar
-Stereographic grid, which RustGIS doesn't have: there the readout shows *No UTM here* (or
-*No MGRS here*) rather than a wrong reference, and so it does on the map of another body than
-the Earth, where degrees still read. Scripts set the format with
+33X, 35X and 37X), and cover 80° S up to 84° N. North of 84° N and south of 80° S the readouts
+use the Universal Polar Stereographic grid (UPS), as NGA defines it (NGA.SIG.0012): the UTM
+readout gives the zone spelled out and the easting and northing rounded to the meter,
+`north 2077146 1562481`, as GeographicLib writes it, and the MGRS readout gives the polar
+reference, which has no zone number: a letter for the half (Y for western longitudes and Z for
+eastern ones in the north, A and B in the south, with the 0° and 180° meridians in Z and B),
+the 100 km square and the digits, truncated, `Z AC 77146 62481`. 84° N itself is UPS, 80° S
+itself is UTM. On the map of another body than the Earth the readout shows *No UTM here*
+(or *No MGRS here*) rather than a wrong reference, and degrees still read. Scripts set the format with
 `ui.coordinateFormat={"format":"utm"}` (`decimal`, `dms`, `utm` or `mgrs`); without `format`
 it steps to the next one. A saved format this version doesn't know, say from a newer RustGIS,
 reads as decimal degrees with a notice, and stays saved until you pick a format.
 
-The [search box](#navigating) takes the same grid references, in any case:
+The [search box](#navigating) takes the same grid references, in any case (polar references have
+their own rules, below):
 
 - **MGRS** with or without spaces: `33UWR2156621996`, `33U WR 21566 21996`, `33UWR 2156 2199`,
   or a 100 km square alone, `33UWR`; a zone below 10 with or without its leading zero (`04QFJ`,
@@ -181,12 +274,33 @@ The [search box](#navigating) takes the same grid references, in any case:
   `S` after the zone is always band S (32° N to 40° N), as in `11S 384629 3768405` (Los
   Angeles); with a northing outside band S it could mean the southern hemisphere, so it finds
   nothing: write `south` instead.
+- **UPS and polar MGRS**, north of 84° N and south of 80° S, which have no zone number: UPS as
+  the readout writes it, `north 2077146 1562481` or `south 2096454 1452981`, or with the half's
+  letter, `Z 2077146 1562481` or `Y, 1735147, 2243078`. Polar MGRS has no zone number, so three
+  letters and a few digits look like a word or a code (`ATL`, `Bay 12`, the flight `BAW1234`);
+  search reads one only as a reference is written: as the readout writes it, with a space after
+  the half's letter and the square in capitals, then no digits or two equal groups (`Z AC`,
+  `Z AC 77 62`, `Z AC 77146 62481`; `A ST 12` is an address), as
+  one word with at least six digits (`ZAC7714662481`, 100 m or finer), or in capitals before
+  two equal groups of at least three digits (`ZAC 771 624`, `ZAC 77146 62481`). A UPS position
+  (`north 2077146 1562481`, `Z 2077146 1562481`) and a reference written exactly as the readout
+  writes it (`Z AC 77146 62481`) are plainly places. Any
+  other polar text may also be a name or a code, so the attribute tables are still searched,
+  their hits come before the polar place, and **Search places** is still offered; with room
+  for one hit (`limit: 1`), a matching feature is the hit. A UTM zone's position past 84° N or
+  80° S, or a polar letter after a zone number (`38ZMB`), finds nothing and the list says how UPS
+  is written.
 
 A reference that doesn't exist (square letters the zone doesn't use, a northing or a square
 outside the band, an odd number of digits, a place outside the zone) finds nothing rather than a
-place somewhere else, and the list says why; `map.search` returns the reason as `gridError`. A
-100 km square written with spaces, such as `5 Ave` or `4K TV`, is as likely ordinary text, so one
-that names no square gives no reason; written as one word, `38TMJ`, it does. On the map of
+place somewhere else, and the list says why; `map.search` returns the reason as `gridError`, and
+adds `"coordinateMayBeText": true` when a polar place among its hits may as well be a name or a
+code. A 100 km square written with spaces, such as `5 Ave`, `4K TV` or `A TO`, is as likely
+ordinary text, so one that names no square gives no reason; written as one word, `38TMJ`, it does. Polar
+MGRS written compactly (`ZDA1234512345`) may be a code too, so one that names no place gives no
+reason either; written as the readout writes it (`Z DA 12345 12345`), it does. A UPS position
+after `n` or `s` may be a State Plane pair (`N 1350000 1350000`), so it gives no reason; after
+`north`, `south` or the half's letter (`Y 2392768 1607232`), it does. On the map of
 another body, grid references find nothing.
 
 ### Directions
@@ -279,8 +393,43 @@ Ocean, Atlas, Blank), which need no network, and web tile layers over them:
   A style's root `center`, `zoom`, `bearing` and `pitch` say where it opens: `map.addTiles` with
   `"view": true` takes the map there once the style has loaded.
 
+Present PMTiles metadata must be complete, decodable and a JSON object; malformed metadata or a
+stored metadata section over **16 MiB** refuses ordinary loading, repair and reload rather than
+silently losing credits or source-layer information. RustGIS's PMTiles writer enforces the same
+metadata limit. This is not a limit on the archive's total size; absent metadata remains supported.
+MBTiles metadata names and values must be text: unreadable or NULL metadata cells also produce an
+error rather than being silently skipped. Native MBTiles loading, repair and reload refuse more
+than **1,000 metadata rows** rather than silently omitting later rows.
+
 HTTPS tiles use [platform certificate trust](data.md#https-certificates) on desktop and the
 command line, including private CAs trusted by the operating system. The web app uses the browser.
+
+Tile addresses are checked after filling their placeholders, before cached bytes or network
+requests are used. In the native app, a document on the internet cannot select a local
+destination IP. Explicitly selected self-hosted servers remain supported, including ordinary
+hostnames resolved by local DNS, with local fallback when the same hostname also returns
+public addresses. Native fetchers filter the resolved IPs before connecting,
+using the supplying document's actual connection reach. Native requests refuse
+link-local and unspecified addresses, including those represented by IPv4-mapped IPv6
+addresses or the well-known NAT64 prefix. Public IPv4 destinations under that prefix can pass.
+Document redirects also change the base for relative references.
+IPv4 decoding covers mapped addresses and the well-known `64:ff9b::/96` prefix. It does not
+inspect destinations behind 6to4 tunnels or custom translation gateways, including the
+[RFC 8215](https://www.rfc-editor.org/rfc/rfc8215#section-5) `64:ff9b:1::/48` prefix, whose
+translation is network-specific. Such routes can hide a private or link-local IPv4 destination
+behind a public-looking IPv6 address; restrictions on those routes require network firewall policy.
+Native redirects are checked at each hop. In the web app, use the final service address:
+tile, style, TileJSON and sprite redirects, including HTTP-to-HTTPS upgrades and CDN hops,
+are refused because the browser hides their destinations from the app. The same browser
+transport refuses redirects for downloads, fonts, archive range reads and HEAD requests for
+file metadata; see
+[network downloads](data.md#network-downloads).
+The web app checks the URL's spelling and normalized address, but cannot inspect resolved IPs.
+A public-looking hostname can reach a private or link-local server if the browser permits it;
+DNS resolution, local-network permissions and certificate trust are controlled by the browser.
+Native tile and document requests, and file downloads through **From URL…**,
+connect directly without an environment HTTP proxy, so a proxy cannot resolve destinations
+beyond these checks. See [network downloads](data.md#network-downloads) if your network requires a proxy.
 
 The gallery's **Web Basemaps** need no API key: the OpenFreeMap vector maps (Liberty, Bright,
 Positron, Dark, Fiord) and USGS Imagery. Choosing one replaces the other web basemaps; tick
@@ -315,6 +464,66 @@ alone, whichever it is (a WMS layer too). Tiles are not
 selectable or editable; a tile not yet loaded may need another click once it arrives.
 **Reload** in the Basemap gallery (`map.reloadWebLayers`) clears cached tiles and styles and
 fetches them again.
+
+### Reloading a local tile archive (desktop)
+
+After changing a PMTiles or MBTiles file on disk,
+right-click its row in Layers and choose **Reload Data** (**Reload Tile Archive** in Command
+Search). CLI, Python, MCP and the Assistant use
+`map.reloadTiles={"index":0}`; `"name"` or catalog `"id"` can select the archive instead.
+No replacement path is accepted. The desktop app also watches the archive (and an MBTiles file's
+`-wal` and `-journal`) and marks its row **(changed on disk)** with a notification offering
+**Reload Data**; see [Changed on disk](index.md#reload-data). RustGIS doesn't reload it until you choose.
+Reload rereads that archive's metadata and tiles without clearing other archives or web layers.
+The layer keeps its name, visibility, opacity, blend, drawing order, source-layer visibility,
+style and other presentation settings; the map's view stays where it is. Undo cannot restore
+file contents that another program has overwritten.
+
+On the desktop, menu actions and direct attached MCP `run_command` calls validate reload and
+repair on a background worker; the status bar shows the work and **Cancel**. Only one read runs
+at a time. If its project, map, archive or presentation changes before it lands, the result is
+left unapplied: retry on the intended target. A paused attached batch also rejects its remaining
+commands if the project or selected map changes. Notebook cells, task steps, scripts (the Script
+pane and attached MCP `run`) and file-bridge scripts validate inline on the window thread, without
+reload status or cancellation during validation.
+Cancelling MBTiles validation also interrupts SQLite queries used to infer missing zoom metadata.
+It cannot preempt a filesystem operation blocked inside the operating system.
+
+Approval binds the selected archive's owning map, stack position and source route, not just its
+name or index. Retargeting or reordering it requires reviewing the operation again.
+
+Each operation observes file size and modification time before validation, checks them again
+after validation and immediately before applying the result, and rejects observable changes.
+It also checks file identity and change time where the platform exposes them, plus MBTiles
+`-wal` and `-journal` existence and revisions (not the reader-coordination `-shm` file).
+Metadata that cannot be read is an error, not permission to apply an unchecked result.
+These checks are not an immutable snapshot: a rewrite that leaves the same observations, or a
+write after the final check, may escape detection. Finish writing before reloading or repairing.
+If an archive is reloaded during a map or layout export, the export refuses a mixed-version
+result. Wait for the reload to finish and retry the export.
+
+Reload first checks that the file can be read. If it is missing, unreadable or invalid, a notice
+explains the failure and the existing layer and retained cached data are left unchanged.
+Finish writing or restore the file, then choose **Reload Data** again. If the file has moved,
+choose **Repair Data Source…** instead and select its new location. Repair also checks the
+replacement before changing the source; cancelling or choosing an unreadable or invalid archive
+leaves the existing source and layer unchanged, so you can retry with a valid file.
+
+Validation reads one size-bounded raster sample from a fresh MBTiles connection and decodes it
+before dropping retained caches. PMTiles validation checks all reachable index directories, not
+every tile payload. It allows at most **64 MiB stored and 64 MiB decoded index bytes**, **1,048,576
+index entries**, **4,096 unique directories** (including the root), and **four leaf levels**;
+each stored directory read is limited to **16 MiB**. An invalid index or an exceeded validation
+budget is an explicit error without eviction, even if an unusually large index is otherwise valid.
+Validation also refuses a stored tile range over **16 MiB**, or one outside the header's declared
+tile-data section (including a zero-length section with nonempty tile entries). Ordinary loading
+can still draw other tiles from such an archive; reload and repair require the replacement's
+entire index to pass these checks before changing the source or dropping cached data.
+
+Neither action is available for local archives in the web app, or for remote tile services.
+On Windows, an open MBTiles file may not be replaceable while RustGIS holds it open: reload
+does not bypass that operating-system restriction. Close RustGIS before replacing the file,
+then reopen the project, or write to a different path and use **Repair Data Source…**.
 
 **Source layers.** A vector PMTiles or MBTiles archive lists its source layers (the
 `vector_layers` its metadata names: `water`, `roads`, `pois`…) under its row in the Layers pane:
@@ -387,13 +596,30 @@ taking other bodies' basemaps off) and `map.bodies`.
 
 ### Worldview
 
-The world outline and the World Atlas sample's countries come in two worldviews: Natural
-Earth's default borders, and China's (Natural Earth's China point of view: Taiwan, Aksai Chin
-and South Tibet are part of China). RustGIS picks China's when the system's time zone is
-mainland China's (such as `Asia/Shanghai`) or its first locale is `zh-CN`; nothing is looked up
-over the network. Choose one in **Settings › Language › Worldview**, set `RUSTGIS_WORLDVIEW`
-(`default` or `china`), or pass `--worldview` to `rustgis-cli`. An untouched sample project
-switches its countries at once; others keep the layer they have.
+The world outline and the World Atlas sample's countries show Natural Earth's default (de facto)
+borders, which are built in, or the borders as one of 31 countries sees them: Natural Earth's
+[points of view](https://www.naturalearthdata.com/blog/admin-0-countries-point-of-views/), from
+Argentina to Vietnam. Choose one in **Settings › Language › Worldview**, set `RUSTGIS_WORLDVIEW`
+to its code (such as `chn`, `ind` or `usa`), or pass `--worldview` to `rustgis-cli`.
+
+A point of view isn't part of the app: it is downloaded from
+[source.coop](https://source.coop/opengeos/data/rustgis/worldviews) when you choose it, and the
+desktop app and the command line keep it in the cache folder, so it is downloaded once; the web
+app downloads it again in each session. **Detail**, at the top of the same menu, sets how much:
+
+- **Simplified** (the default): borders at 1:110m, like the built-in ones; about 250 KB.
+- **Original**: Natural Earth's 1:10m borders with every island and territory; a 3 MB download,
+  10 MB once unpacked, so maps with it draw more slowly. On a flat Web Mercator map the
+  basemap's land outline is drawn simplified to within a pixel at each zoom, which keeps most of
+  that cost away from it; the globe and other projections draw it in full. With the default
+  worldview, this downloads the detailed version of the built-in borders.
+
+`rustgis-cli` takes `--worldview-detail original`. The map keeps the borders it shows until the
+download arrives, and says so if it fails. Until
+you choose one, RustGIS shows China's view when the system's time zone is mainland China's
+(such as `Asia/Shanghai`) or its first locale is `zh-CN`, downloading it the same way, and the
+default borders everywhere else. Your choice is kept for the next start. An untouched sample
+project switches its countries when the new borders arrive; others keep the layer they have.
 
 ## Projections
 
@@ -402,8 +628,12 @@ projection, and clicking the coordinate system in the status bar opens the **Coo
 System** dialog, which also takes a projected EPSG code (such as `3035`, `32633` for UTM zone
 33N or `2056` for Switzerland) or an ESRI code, the one `.prj` files and ArcGIS name (such as
 `ESRI:102033` for South America Albers Equal Area Conic, or `ESRI:54030` for World Robinson). A
-code whose projection method or datum grid RustGIS can't use (Laborde such as `8441`, or a NAD27
-code that needs a grid) is refused with the reason, rather than drawn in another projection.
+code whose projection method RustGIS can't compute is refused with the reason, rather than drawn
+in another projection. Projections and datum transformations are computed by
+[terrio-crs](https://github.com/opengeos/terrio), as PROJ 9.8 computes them. Datum shift grids
+aren't used yet, neither those installed for PROJ nor downloaded: a datum whose most accurate
+transformation needs one takes the next PROJ lists (a NAD27 code: NAD27 to WGS 84 (4), about
+10 m), and says so once.
 RustGIS supports a subset of Esri's projected systems, checked against
 PROJ at representative points; unsupported codes such as World Miller (`ESRI:54003`) and the
 two-point oblique Mercators (`ESRI:53025`, `ESRI:54025`) are refused as unknown codes. The presets:
@@ -488,7 +718,26 @@ with twilight), **Weather** (haze, fog, rain, snow), **Visual Effect** (vignette
 Effect** (tilt-shift blur, film grain) and **Postprocessing** (brightness, contrast, saturation,
 sepia). The **Color Vision** simulator shows the map as people with protanopia, deuteranopia,
 tritanopia or achromatopsia see it (on screen only; exports are untouched). **View › Display ›
-Graticule** (`map.graticule`) draws latitude and longitude lines over the basemap.
+Graticule** (`map.graticule`) draws a graticule over the basemap; its arrow picks the type, and
+picking one shows it:
+
+- **Latitude and Longitude** (the default): parallels and meridians, more of them as you zoom in.
+- **Measured Grid**: eastings and northings in a projected coordinate system, at a round interval
+  that suits the scale (about eight lines across the view), as a layout's measured grid draws them.
+  The system is the one typed under **Measured grid's coordinate system** (an EPSG code such as
+  `2056`, WKT or a PROJ string; `"crs"` in the command); left empty, it is the map's own when the
+  map is projected, else the WGS 84 UTM zone at the centre of the view. A system that can't be read
+  or is geographic is refused, with a message naming it.
+- **UTM Zones**: the WGS 84 UTM zones and their latitude bands (C to X, 80° S to 84° N), with
+  southern Norway's and Svalbard's wider zones. Once no more than eight zone-and-band areas are in
+  view, each also gets its own eastings and northings, at the same interval in all of them and
+  cut at the zone's edges.
+
+The grids have no labels on the map; the status bar reads coordinates in UTM or MGRS. Like the
+latitudes and longitudes, they aren't drawn on the copies of the world a flat map shows past
+±180°. The type and system are saved with the map; a project whose measured grid names a system
+this version can't use (one in degrees, or a PROJ string the web app can't read) opens without it,
+and says so.
 
 **Global** shows a globe; **Local** a flat view centred where you are (azimuthal equidistant;
 not in the web app, which doesn't include that projection).
@@ -511,4 +760,10 @@ GPU Rendering is off by default and remembered across sessions (`ui.map.gpu` is 
 simulation stay on the CPU, and exports are unaffected. A rotated or tilted map uses the GPU
 only when every visible layer can be drawn there: tiles, rasters, terrain, transparency,
 masking, swipe, blending, aggregation, graphics, stacked strokes, fills or labels with icons keep it
-on the CPU. Extrusions use the GPU only on a tilted map.
+on the CPU. Extrusions use the GPU only on a tilted map. In the desktop app, if the graphics
+card runs out of memory (a card with 2 GB at a large window size, with other programs using it
+too), the map switches to the CPU, with a notice, instead of the app closing; clicking **CPU**
+in the status bar tries the GPU again, as does the next start (the setting stays on); errors
+that follow from running out in the same moment aren't said on their own. Any other error the
+graphics card reports is said once, as the map (or, with the map on the CPU, the window) may
+then be drawn wrongly; so is running out of memory with the map already on the CPU.

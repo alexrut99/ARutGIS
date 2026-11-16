@@ -26,10 +26,11 @@ fn need_presentation(s: &Session) -> Option<&'static str> {
 pub fn commands() -> Vec<C> {
     vec![
         C::new("presentation.new", "New Presentation", "Publish › Presentation", |s, p| {
-            let name = unique_name(s, ps(p, "name").unwrap_or("Presentation"));
+            let given = super::within("name", "a presentation's name", ps(p, "name").unwrap_or("Presentation").trim(), 200)?;
+            let title = page_title(ps(p, "title").unwrap_or(&s.project.name))?;
+            let (name, cut) = unique_name(s, "New Presentation", "the name given", &given);
             let mut pres = Presentation { name: name.clone(), ..Presentation::default() };
             // A title page to start from.
-            let title: String = ps(p, "title").unwrap_or(&s.project.name).chars().take(MAX_TITLE).collect();
             pres.pages.push(Page {
                 title,
                 kind: PageKind::Blank { text: String::new(), background: Rgba::rgb(0x1F, 0x3A, 0x5F) },
@@ -42,14 +43,18 @@ pub fn commands() -> Vec<C> {
             s.project.presentations.push(pres);
             let i = s.project.presentations.len() - 1;
             s.active_presentation = Some(i);
+            if let Some(cut) = cut {
+                s.notify(cut, false);
+            }
             Ok(json!({"presentation": i, "name": name}))
         }).roles(&[]).effects(crate::policy::Effects::NONE)
         .params(r#"{"name"?, "title"?: the title page's text}"#),
         C::new("presentation.import", "Import Presentation", "Publish › Presentation", |s, p| {
             let text = super::items::read_text(p)?;
             let mut pres: Presentation = serde_json::from_str(&text).map_err(|e| format!("not a RustGIS presentation: {e}"))?;
-            pres.clamp();
-            pres.name = unique_name(s, &pres.name);
+            let repairs = pres.clamp();
+            let (name, cut) = unique_name(s, "Import Presentation", "the name from the file", &pres.name);
+            pres.name = name;
             let name = pres.name.clone();
             if s.project.presentations.len() >= crate::project::MAX_ITEMS {
                 return Err(format!("a project holds at most {} presentations", crate::project::MAX_ITEMS));
@@ -57,6 +62,12 @@ pub fn commands() -> Vec<C> {
             s.project.presentations.push(pres);
             let i = s.project.presentations.len() - 1;
             s.active_presentation = Some(i);
+            for notice in crate::project::content_notices(repairs, &name) {
+                s.notify_text(notice, false);
+            }
+            if let Some(cut) = cut {
+                s.notify(cut, false);
+            }
             Ok(json!({"presentation": i, "name": name}))
         }).roles(&[crate::ParamRole { key: "text", role: crate::Role::Document(crate::Document::Presentation) }]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files))
         .params(r#"{"path"?: "*.rgispres", "text"?: presentation JSON, "data"?: base64 file}"#),
@@ -86,38 +97,45 @@ pub fn commands() -> Vec<C> {
             // Turned and tilted as the view is (a tilted view shows its terrain), unless given.
             let bearing = rustgis_map::camera::normalize_bearing(f(p, "bearing").unwrap_or(map.camera.bearing));
             let pitch = rustgis_map::camera::normalize_pitch(f(p, "pitch").unwrap_or(map.camera.pitch));
-            let title = ps(p, "title").unwrap_or(&name).to_string();
+            let title = page_title(ps(p, "title").unwrap_or(&name))?;
             add_page(s, p, title, PageKind::Map { map: name, center, width_m, bearing, pitch })
         }).inputs(map_page_inputs).roles(&[]).effects(crate::policy::Effects::NONE)
         .when(need_presentation)
         .params(r#"{"presentation"?, "map"?: name (default: the active map, at its current view), "lon"?, "lat"?, "widthM"?: ground width shown (m), "bearing"?: degrees clockwise from north, "pitch"?: tilt in degrees (0 to 85; both default to the view's), "title"?, "at"?: page index}"#),
         C::new("presentation.blankPage", "Blank Page", "Publish › Page", |s, p| {
             let background = super::layout::color(p, "background", Rgba::rgb(0xFF, 0xFF, 0xFF))?;
-            let text: String = ps(p, "text").unwrap_or("").chars().take(MAX_TEXT).collect();
-            add_page(s, p, ps(p, "title").unwrap_or("").to_string(), PageKind::Blank { text, background })
+            let text = super::within("text", "a page's text", ps(p, "text").unwrap_or(""), MAX_TEXT)?;
+            add_page(s, p, page_title(ps(p, "title").unwrap_or(""))?, PageKind::Blank { text, background })
         }).inputs(object_inputs).roles(&[]).effects(crate::policy::Effects::NONE)
         .when(need_presentation)
         .params(r##"{"presentation"?, "title"?, "text"?, "background"?: "#RRGGBB"|"#RRGGBBAA", "at"?}"##),
         C::new("presentation.imagePage", "Image Page", "Publish › Page", |s, p| {
+            // The texts are checked before the picture is read.
+            let title = page_title(ps(p, "title").unwrap_or(""))?;
+            let caption = super::within("caption", "a page's caption", ps(p, "caption").unwrap_or(""), MAX_CAPTION)?;
             // A picture opened in the browser arrives as base64 `data`.
             let image = match ps(p, "data") {
                 Some(d) => super::graphics::picture(&json!({"image": d}))?,
                 None => super::graphics::picture(p)?,
             };
-            let caption: String = ps(p, "caption").unwrap_or("").chars().take(MAX_CAPTION).collect();
-            add_page(s, p, ps(p, "title").unwrap_or("").to_string(), PageKind::Image { image, caption })
+            add_page(s, p, title, PageKind::Image { image, caption })
         }).inputs(object_inputs).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files))
         .when(need_presentation)
         .params(r#"{"presentation"?, "path"?: PNG/JPEG file, "image"?: base64, "data"?: base64, "title"?, "caption"?, "at"?}"#),
         C::new("presentation.videoPage", "Video Page", "Publish › Page", |s, p| {
-            let source: String = ps(p, "source").map(str::trim).filter(|v| !v.is_empty()).ok_or("source is required (a video file or URL)")?.chars().take(MAX_SOURCE).collect();
+            let source = ps(p, "source").map(str::trim).filter(|v| !v.is_empty()).ok_or("source is required (a video file or URL)")?;
+            let source = super::within("source", "a video page's source", source, MAX_SOURCE)?;
+            // The texts are checked before the poster is read.
+            let title = match ps(p, "title") {
+                Some(t) => page_title(t)?,
+                None => video_label(&source),
+            };
+            let caption = super::within("caption", "a page's caption", ps(p, "caption").unwrap_or(""), MAX_CAPTION)?;
             let poster = match (ps(p, "poster"), ps(p, "posterImage")) {
                 (Some(path), _) => Some(super::graphics::picture(&json!({"path": path}))?),
                 (None, Some(b64)) => Some(super::graphics::picture(&json!({"image": b64}))?),
                 (None, None) => None,
             };
-            let caption: String = ps(p, "caption").unwrap_or("").chars().take(MAX_CAPTION).collect();
-            let title = ps(p, "title").map(str::to_string).unwrap_or_else(|| video_label(&source));
             add_page(s, p, title, PageKind::Video { source, poster, caption })
         }).inputs(object_inputs).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files))
         .when(need_presentation)
@@ -134,16 +152,19 @@ pub fn commands() -> Vec<C> {
         .when(need_presentation)
         .params(r#"{"presentation"?, "page": index}"#),
         C::new("presentation.save", "Presentation File", "Publish › Save As", |s, p| {
+            let written = s.notice_mark();
             let path = ps(p, "path").ok_or("path is required")?;
             let i = index(s, p)?;
             let bytes = presentation_file(s, i)?;
             rustgis_data::io::write_atomic(Path::new(path), &bytes).map_err(|e| format!("{path}: {e}"))?;
+            s.retain_written_notices(written);
             Ok(json!({"path": path}))
         }).inputs(object_inputs).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files))
         .view()
         .when(need_presentation)
         .params(r#"{"presentation"?, "path": "*.rgispres"}"#),
         C::new("presentation.export", "Export Presentation", "Publish › Output", |s, p| {
+            let written = s.notice_mark();
             let path = ps(p, "path").ok_or("path is required")?.to_string();
             let i = index(s, p)?;
             let dpi = f(p, "dpi").unwrap_or(120.0).clamp(48.0, 300.0);
@@ -159,6 +180,7 @@ pub fn commands() -> Vec<C> {
             };
             let (bytes, pages) = export_bytes(s, i, format, dpi)?;
             rustgis_data::io::write_atomic(Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))?;
+            s.retain_written_notices(written);
             Ok(json!({"path": path, "pages": pages, "bytes": bytes.len()}))
         }).inputs(export_inputs).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files))
         .view()
@@ -223,19 +245,21 @@ fn page_of(input: &impl super::InputSource, p: &Value) -> Result<(usize, usize),
     Ok((i, k))
 }
 
-fn unique_name(s: &Session, base: &str) -> String {
-    let base: String = base.trim().chars().take(200).collect();
-    let base = if base.is_empty() { "Presentation".to_string() } else { base };
+/// A presentation's name told apart by a number (see [`super::numbered_saying`]), with the notice to
+/// give when the number cuts it.
+fn unique_name(s: &Session, command: &str, whose: &str, base: &str) -> (String, Option<String>) {
+    let base = base.trim();
+    let base = if base.is_empty() { "Presentation" } else { base };
     let taken = |n: &str| s.project.presentations.iter().any(|r| r.name.eq_ignore_ascii_case(n));
-    let mut name = base.clone();
-    let mut k = 1;
-    while taken(&name) {
-        k += 1;
-        name = format!("{base} {k}");
-    }
-    name
+    super::numbered_saying(command, "a presentation", whose, base, 200, taken)
 }
 
+/// A page's title of at most [`MAX_TITLE`] characters. A longer one is refused, not cut.
+fn page_title(title: &str) -> Result<String, String> {
+    super::within("title", "a page's title", title, MAX_TITLE)
+}
+
+/// Adds a page titled `title`. The caller has checked it against [`MAX_TITLE`].
 fn add_page(s: &mut Session, p: &Value, title: String, kind: PageKind) -> CmdResult {
     let i = index(s, p)?;
     let pres = s.project.presentations.get_mut(i).ok_or("no presentation")?;
@@ -243,7 +267,7 @@ fn add_page(s: &mut Session, p: &Value, title: String, kind: PageKind) -> CmdRes
         return Err(format!("presentations hold at most {MAX_PAGES} pages"));
     }
     let at = p.get("at").and_then(Value::as_u64).and_then(|k| usize::try_from(k).ok()).unwrap_or(pres.pages.len()).min(pres.pages.len());
-    pres.pages.insert(at, Page { title: title.chars().take(MAX_TITLE).collect(), kind, notes: String::new(), seconds: 5.0 });
+    pres.pages.insert(at, Page { title, kind, notes: String::new(), seconds: 5.0 });
     Ok(json!({"presentation": i, "page": at, "pages": pres.pages.len()}))
 }
 
@@ -253,30 +277,36 @@ fn update_page(s: &mut Session, p: &Value) -> CmdResult {
         Some(_) => Some(super::layout::color(p, "background", Rgba::rgb(0xFF, 0xFF, 0xFF))?),
         None => None,
     };
+    // A text over its limit is refused, not cut, before the page changes.
+    let checked = |k: &str, of: &str, limit: usize| ps(p, k).map(|t| super::within(k, of, t, limit)).transpose();
+    let new_title = checked("title", "a page's title", MAX_TITLE)?;
+    let new_notes = checked("notes", "a page's notes", MAX_TEXT)?;
+    let new_text = checked("text", "a page's text", MAX_TEXT)?;
+    let new_caption = checked("caption", "a page's caption", MAX_CAPTION)?;
     let pres = s.project.presentations.get_mut(i).ok_or("no presentation")?;
     let n = pres.pages.len();
     let page = pres.pages.get_mut(k).ok_or("no page")?;
-    if let Some(t) = ps(p, "title") {
-        page.title = t.chars().take(MAX_TITLE).collect();
+    if let Some(t) = new_title {
+        page.title = t;
     }
-    if let Some(t) = ps(p, "notes") {
-        page.notes = t.chars().take(MAX_TEXT).collect();
+    if let Some(t) = new_notes {
+        page.notes = t;
     }
     if let Some(v) = f(p, "seconds") {
         page.seconds = v.clamp(0.5, 3600.0);
     }
     match &mut page.kind {
         PageKind::Blank { text, background: bg } => {
-            if let Some(t) = ps(p, "text") {
-                *text = t.chars().take(MAX_TEXT).collect();
+            if let Some(t) = new_text {
+                *text = t;
             }
             if let Some(c) = background {
                 *bg = c;
             }
         }
         PageKind::Image { caption, .. } | PageKind::Video { caption, .. } => {
-            if let Some(t) = ps(p, "caption") {
-                *caption = t.chars().take(MAX_CAPTION).collect();
+            if let Some(t) = new_caption {
+                *caption = t;
             }
         }
         PageKind::Map { .. } => {}
@@ -312,7 +342,7 @@ pub fn page_layout(s: &Session, pres: &Presentation, page: &Page) -> Layout {
             l.add(
                 "Background",
                 (0.0, 0.0, w, h),
-                ElementKind::Rectangle { fill: *background, outline: *background, width: 0.0, radius: 0.0 },
+                ElementKind::Rectangle { fill: *background, outline: *background, width: 0.0, radius: 0.0, dash: None },
             );
             // Light text on dark pages.
             let lum = 0.299 * background.r() as f64 + 0.587 * background.g() as f64 + 0.114 * background.b() as f64;
@@ -380,7 +410,7 @@ pub fn page_layout(s: &Session, pres: &Presentation, page: &Page) -> Layout {
             }
             let (bw, bh) = (w - 2.0 * m, h - top - m - h * 0.08);
             let bg = Rgba::rgb(0x11, 0x18, 0x27);
-            l.add("Video", (m, top, bw, bh), ElementKind::Rectangle { fill: bg, outline: bg, width: 0.0, radius: 0.0 });
+            l.add("Video", (m, top, bw, bh), ElementKind::Rectangle { fill: bg, outline: bg, width: 0.0, radius: 0.0, dash: None });
             l.add(
                 "Play",
                 (m + bw * 0.3, top + bh / 2.0 - 6.0, bw * 0.4, 12.0),
@@ -401,7 +431,7 @@ pub fn draw_page(s: &mut Session, i: usize, k: usize, dpi: f64) -> Result<rustgi
     let page = pres.pages.get(k).ok_or_else(|| format!("no page {k}"))?;
     let layout = page_layout(s, pres, page);
     let info = rustgis_render::layout::PageInfo { page: k + 1, pages: n, page_name: page.title.clone() };
-    rustgis_render::layout::render(&layout, &mut s.project.maps, dpi, &info).ok_or_else(|| "the page is too large to draw".to_string())
+    rustgis_render::layout::render(&layout, &mut s.project.maps, dpi, &info)
 }
 
 /// Page `k` of presentation `i` as a vector PDF page at `dpi` (see
@@ -418,8 +448,7 @@ fn pdf_page(
     let page = pres.pages.get(k).ok_or_else(|| format!("no page {k}"))?;
     let layout = page_layout(s, pres, page);
     let info = rustgis_render::layout::PageInfo { page: k + 1, pages: n, page_name: page.title.clone() };
-    let (drawing, pictured) =
-        rustgis_render::layout::render_drawing(&layout, &mut s.project.maps, dpi, &info).ok_or("the page is too large to draw")?;
+    let (drawing, pictured) = rustgis_render::layout::render_drawing(&layout, &mut s.project.maps, dpi, &info)?;
     Ok((rustgis_render::pdf::Page::drawing(drawing, width, height), pictured))
 }
 
@@ -442,6 +471,20 @@ pub(crate) fn playable(source: &str) -> &str {
 /// The presentation as a PDF, a self-contained HTML slideshow or a PNG of its first page, and
 /// the number of pages written.
 pub fn export_bytes(s: &mut Session, i: usize, format: &str, dpi: f64) -> Result<(Vec<u8>, usize), String> {
+    let revision = |s: &Session| {
+        rustgis_render::archive_revisions(s.project.presentations.get(i).into_iter().flat_map(|p| {
+            p.pages
+                .iter()
+                .take(if format == "png" { 1 } else { usize::MAX })
+                .filter_map(|page| if let PageKind::Map { map, .. } = &page.kind { Some(page_map(s, map)) } else { None })
+        }))
+    };
+    let before = revision(s);
+    let result = super::share::saying_shadows(s, "The presentation", |s| export_bytes_inner(s, i, format, dpi));
+    before.finish_revision(revision(s), Some(result), "could not draw the presentation")?
+}
+
+fn export_bytes_inner(s: &mut Session, i: usize, format: &str, dpi: f64) -> Result<(Vec<u8>, usize), String> {
     // Only the size and name are copied: the pages can hold many megabytes of pictures, so each
     // is read in place after it's drawn.
     let (name, width, height, n) =

@@ -3,7 +3,7 @@
 //! Queries run off the frame (a thread); DuckDB is a desktop program, so the web app says so.
 
 // The web app shows the pane's explanation only: what runs queries is the desktop's.
-#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
+#![cfg_attr(target_arch = "wasm32", expect(dead_code, unused_imports, reason = "the browser shows the explanation only"))]
 
 use egui::{RichText, Ui};
 use serde_json::{Value, json};
@@ -281,8 +281,9 @@ fn completions(word: &str, names: &[(String, String)]) -> Vec<String> {
 }
 
 /// Whether `events` press Ctrl+Enter (⌘+Enter) to run the query: once a press, not again for each
-/// repeat of a key held down (#845), as the Script pane runs.
-fn run_pressed(events: &[egui::Event]) -> bool {
+/// repeat of a key held down (#845), as the Script pane runs. The Layer Properties pane's Query tab
+/// applies its clause with it too.
+pub(crate) fn run_pressed(events: &[egui::Event]) -> bool {
     events.iter().any(|e| {
         matches!(e, egui::Event::Key { key: egui::Key::Enter, pressed: true, repeat: false, modifiers, .. }
             if modifiers.matches_logically(egui::Modifiers::COMMAND))
@@ -309,6 +310,14 @@ fn body(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                 "SQL queries run through DuckDB, a program the desktop app calls: open this project in the desktop app to query it."
             ))
             .weak(),
+        );
+        return;
+    }
+    // A phone's apps can't start another program (#1902).
+    if !rustgis_engine::data::RUNS_PROGRAMS {
+        ui.label(
+            RichText::new(tl!("SQL queries run through DuckDB, a program a phone can't run: open this project on a computer to query it."))
+                .weak(),
         );
         return;
     }

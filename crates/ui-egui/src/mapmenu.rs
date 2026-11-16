@@ -52,9 +52,9 @@ fn lat_lon(c: Coord) -> String {
 }
 
 /// The coordinate row: the text it shows and copies, in the readout's format, and whether it fell
-/// back from it. Decimal degrees are `lat, lon` ([`lat_lon`]); north of 84° N or south of 80° S,
-/// and on another body's map (`earth` false), UTM and MGRS fall back to them (and the row's hover
-/// text says why).
+/// back from it. Decimal degrees are `lat, lon` ([`lat_lon`]); north of 84° N and south of 80° S
+/// UTM and MGRS give UPS (`north …`, `Z …`); on another body's map (`earth` false) they fall back
+/// to latitude and longitude (and the row's hover text says why).
 fn coordinate_row(c: Coord, f: CoordReadout, earth: bool) -> (String, bool) {
     match f {
         CoordReadout::Decimal => (lat_lon(c), false),
@@ -72,7 +72,7 @@ fn point_geojson(c: Coord) -> String {
 }
 
 /// A longitude within ±180 (a view can run past the antimeridian).
-fn wrap_lon(lon: f64) -> f64 {
+pub(crate) fn wrap_lon(lon: f64) -> f64 {
     (lon + 180.0).rem_euclid(360.0) - 180.0
 }
 
@@ -129,11 +129,6 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, c: Coord) {
             "Copy coordinates to the clipboard. {format} is a grid of the Earth, so latitude and longitude are copied",
             &[("format", format.label())],
         )
-    } else if fell_back {
-        i18n::fmt(
-            "Copy coordinates to the clipboard. No {format} here: outside the UTM zones (80° S to 84° N), so latitude and longitude are copied",
-            &[("format", format.label())],
-        )
     } else {
         tl!("Copy coordinates to the clipboard").to_string()
     };
@@ -187,6 +182,16 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, c: Coord) {
     }
 }
 
+/// A viewshed of `radius` metres from `c` on `dem`, reading the ground as the Workflows pane's
+/// Ground heights says (`bilinear`): the pane its progress shows in.
+fn viewshed_here(bilinear: bool, dem: &str, c: Coord, radius: f64, name: &str) -> serde_json::Value {
+    let mut p = json!({"layer": dem, "lon": c.x, "lat": c.y, "radius": radius, "name": name});
+    if bilinear {
+        p["heights"] = json!("bilinear");
+    }
+    p
+}
+
 /// Quick Analysis: the Buffer tool at a few distances, a viewshed and a line of sight on an
 /// elevation raster in the map, and the Buffer tool's own pane.
 fn quick_analysis(app: &mut RustGisApp, ui: &mut Ui, c: Coord) {
@@ -212,7 +217,7 @@ fn quick_analysis(app: &mut RustGisApp, ui: &mut Ui, c: Coord) {
         {
             let name = i18n::fmt("Viewshed {radius}", &[("radius", &radius)]);
             // In the background on the desktop, its progress and Cancel in the Workflows pane.
-            let p = json!({"layer": dem, "lon": c.x, "lat": c.y, "radius": r, "name": name});
+            let p = viewshed_here(app.workflow.bilinear, dem, c, r, &name);
             crate::analysispane::run_elsewhere(app, "visibility", "analysis.viewshed", p);
             ui.close();
         }
@@ -241,6 +246,16 @@ fn quick_analysis(app: &mut RustGisApp, ui: &mut Ui, c: Coord) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Viewshed N km Here reads the ground between cells when the Workflows pane, where its
+    /// progress shows, is set to.
+    #[test]
+    fn a_viewshed_here_reads_the_ground_as_the_workflows_pane_says() {
+        let c = Coord::new(8.5, 47.4);
+        let nearest = viewshed_here(false, "dem", c, 2000.0, "Viewshed 2 km");
+        assert_eq!(nearest, json!({"layer": "dem", "lon": 8.5, "lat": 47.4, "radius": 2000.0, "name": "Viewshed 2 km"}));
+        assert_eq!(viewshed_here(true, "dem", c, 2000.0, "Viewshed 2 km")["heights"], json!("bilinear"));
+    }
 
     /// A place on a world copy reaches the commands within ±180 (they refuse it otherwise), and
     /// a failed action shows in the status bar instead of doing nothing.
@@ -288,11 +303,15 @@ mod tests {
                 assert!((at.x - q.x).abs() < 1e-4 && (at.y - q.y).abs() < 1e-4, "{text} {at:?}");
             }
         }
-        // Where UTM has no zone, the row falls back to latitude and longitude (and says so).
+        // Where UTM has no zone, the row gives UPS (`north …`, `Z …`), which reads back too.
         let pole = Coord::new(10.0, 86.0);
         for f in [CoordReadout::Utm, CoordReadout::Mgrs] {
-            assert_eq!(coordinate_row(pole, f, true), ("86.000000, 10.000000".into(), true), "{f:?}");
-            // On another body's map as well: UTM and MGRS are the Earth's grids.
+            let (text, fell_back) = coordinate_row(pole, f, true);
+            assert!(!fell_back && (text.starts_with("north ") || text.starts_with("Z ")), "{f:?}: {text}");
+            let at = rustgis_engine::cmd::search::read_grid_reference(&text).unwrap_or_else(|e| panic!("{text}: {e}"));
+            assert!((at.x - pole.x).abs() < 1e-3 && (at.y - pole.y).abs() < 1e-4, "{text} {at:?}");
+            // On another body's map the row falls back to latitude and longitude (and says so):
+            // UTM, MGRS and UPS are the Earth's grids.
             assert_eq!(coordinate_row(p, f, false), ("33.300000, 44.400000".into(), true), "{f:?}");
         }
         assert!(!coordinate_row(pole, CoordReadout::Dms, true).1);

@@ -100,6 +100,21 @@ Rules shared by all of them:
 - **Comparing numbers and text.** A number and text that reads as a number compare as numbers
   (`'12' = 12` is true). Two texts compare as text, ignoring letter case, even when both read
   as numbers (`name = 'paris'` matches `Paris`; `'10' < '9'`; `LIKE` ignores case too).
+- **Comparing dates.** A date or date-time field compares with text that is a full ISO 8601
+  date (`issued >= '2026-01-01'`, `seen < '2026-03-05T08:00Z'`) as a date. A date is its
+  midnight, so `seen = '2026-03-05'` matches midnight only: use a range for the whole day.
+  Date-times with different offsets compare by instant, and one without a zone as if it were
+  UTC; a date is its UTC midnight, so `2026-03-05T01:00+02:00` (2026-03-04 at 23:00 UTC) falls
+  before `'2026-03-05'`. Converting that date-time into a date field keeps the day it shows,
+  2026-03-05. Text that isn't a full date (`'2026'`) compares as text, against the date's ISO text.
+  A date compares only with text or another date: against a number (`issued >= 20260101`,
+  `issued > year`, arithmetic) it's an error, so put the date in quotes, as `YYYY-MM-DD`. A
+  date written without dashes in quotes (`issued >= '20260101'`) is an error too; one that
+  comes from a function or a text field (`coalesce('20260101')`, a `YYYYMMDD` column) compares
+  as text, so write dates with dashes. Use `||` to join text.
+  Arithmetic on a date is an error for now, also on one reached through `coalesce`, `nullif`,
+  `if` or `CASE` (`coalesce(issued) + 1`), and so are the number functions (`abs`, `round`,
+  `min`, …) given a date.
 - **Arithmetic** reads text as a number when it is one (`'12' + 1` is 13). `+` joins text that
   isn't (`name + ' km'`); `-`, `*`, `/` on such text give null.
 - **Nulls.** Arithmetic with a null gives null. A comparison with a null is *unknown*: it
@@ -148,6 +163,20 @@ the layer's coordinate system (with the same
 full-turn edge, such as a globe-wide band, counts its whole parallels there too). On a feature with no geometry, or coordinates that aren't
 longitudes and latitudes, they are null. Measuring another kind of layer (`$area` on lines), or a
 unit that isn't one of those, is an error.
+An area expression is also refused if the layer contains a ring through both poles
+whose winding exceeds one whole surface. The error counts the affected rings and features;
+it does not store an impossible area or silently replace it with null. Perimeter expressions,
+ordinary polar caps and whole-world rectangles still work. Attribute rules check only the edited rows, so an unrelated ambiguous feature does not block a clean-row edit. Geometry edits that would invalidate a saved area filter, symbol or label expression are refused and rolled back.
+
+Saved display expressions are checked against the layer’s fields separately from current area values. When an opened project or refreshed layer contains an ambiguous area, the affected features’ area values are unavailable and a counted notice explains this; the expressions are retained and clean features still evaluate normally. Attribute-only edits can retain that existing geometry; new or changed geometry must pass the display check. Area constraints also guard archive restoration. An unrelated field deletion does not discard a valid area expression or rule, and source repair still checks its fields. Unique Values validates the rows kept by the definition query. Streamed display expressions report affected features once per installed window, with a count scoped to the decoded window. Interactive streamed area queries retain clean matches and report unavailable areas among decoded features, including rows their query omits. Full-resolution streamed exports still stop at the first ambiguous decoded chunk and state the scope of that count.
+
+Report filters are retained when a report is imported or fitted to another layer with the
+required fields. Building a report whose filter uses an ambiguous area returns a counted error
+instead of dropping the filter and listing every record.
+
+Live expression editors check fields and syntax while typing, so a retained area clause does
+not claim that clean features have lost their labels. **Check** and **Apply** still validate
+the data and report an ambiguous area.
 
 ## Limits
 
@@ -160,6 +189,28 @@ matches nothing. A `LIKE` that would take more than about 16 million steps to ma
 text against a pattern of many `%`s) is unknown.
 
 ## Calculate Field
+
+Calculate Field fills an existing field; it does not create one. If the target field is missing,
+the error points to **Add Field** (`edit.addField`): create the field first, then calculate it.
+
+As the expression is typed, a list under the cursor suggests what can go there: the fields
+(quoted when their name needs it: `"Pop Est"`), the functions, the variables and the keywords
+that start with what's typed, each with its help beside (a function's signature, description
+and example; a field's type). Ctrl+Space opens it with nothing typed (on macOS, where Ctrl+Space
+may switch the input source, type the first letter instead). ↑/↓ move through it, Enter
+or Tab take the highlighted item (Enter doesn't calculate while the list is open) and Escape
+closes it. Inside a quoted field name (`"Pop`) only fields are suggested. A function taken from
+the list comes with its brackets, the cursor inside them (after them when it takes no arguments).
+
+A `(` typed closes itself, the cursor inside, unless text follows it or it's in a text or a field
+name; so does a `'` or `"` where a value can start (at the start, after a space, `(`, `,` or an
+operator). A `)` typed before a `)` steps over it, as does a quote typed before the one that ends
+its text or name, and Backspace in an empty `()`, `''` or `""` deletes both. Pasting adds nothing.
+
+Inside a function's brackets, its signature floats by the cursor while no list is open, with the
+argument being typed marked (`round(x[, places])`) and what the function gives. A list that
+opens hides it, and it comes back when the list closes; Escape with no list open closes it until
+the cursor leaves that call.
 
 A number goes into a number field as it is: a decimal field keeps every digit of `1 / 3` (a
 whole number past 2^53 becomes the nearest decimal, as a decimal field holds it). A whole-number

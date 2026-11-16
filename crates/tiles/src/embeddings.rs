@@ -13,9 +13,13 @@
 //!   ([`pca_colors`]).
 //! - Tessera (Cambridge): 128 values a 10 m pixel, in a Zarr store of UTM zones read in place
 //!   (see [`tessera`]).
+//! - OlmoEarth v1.3 (Ai2): 128 values a 10 m pixel, in a Zarr store laid out like Tessera's
+//!   (see [`olmoearth`]).
 //!
 //! Nothing here waits on the network: searches and reads take a callback (the app's, off the
 //! frame), with blocking forms for the command line.
+
+use std::collections::BTreeMap;
 
 use rustgis_data::source::{Batch, Request, parquet::Vectors};
 use rustgis_data::{Dataset, Feature, Field, FieldType, Geometry, GeometryType, Value};
@@ -24,6 +28,7 @@ use serde_json::{Value as Json, json};
 
 use crate::cog::Look;
 
+pub mod olmoearth;
 pub mod tessera;
 
 /// What a dataset in the catalog is and what RustGIS does with it.
@@ -52,7 +57,7 @@ pub struct EmbeddingDataset {
 }
 
 /// The datasets, in the order they are listed.
-pub const DATASETS: [EmbeddingDataset; 6] = [
+pub const DATASETS: [EmbeddingDataset; 7] = [
     EmbeddingDataset {
         id: "alphaearth",
         name: "AlphaEarth Foundations (Google Satellite Embedding)",
@@ -81,6 +86,21 @@ pub const DATASETS: [EmbeddingDataset; 6] = [
         license: "",
         data_url: "https://registry.opendata.aws/tessera/",
         paper_url: "https://arxiv.org/abs/2506.20380",
+        search: true,
+    },
+    EmbeddingDataset {
+        id: "olmoearth",
+        name: "OlmoEarth v1.3",
+        provider: "Ai2",
+        model: "OlmoEarth-v1.3-Base",
+        kind: "pixel",
+        resolution: "10 m",
+        dimensions: 128,
+        years: Some((2017, 2025)),
+        coverage: "Global (UTM zones)",
+        license: olmoearth::LICENSE,
+        data_url: "https://source.coop/olmoearth/olmoearth-v1-3-embeddings",
+        paper_url: "https://allenai.org/blog/olmoearth-v1-3",
         search: true,
     },
     EmbeddingDataset {
@@ -258,21 +278,21 @@ fn year_of(t: i64) -> i32 {
         _ => t,
     };
     let days = ms.div_euclid(86_400_000);
-    // Howard Hinnant's civil_from_days.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
+    let (y, _, _) = rustgis_data::date::civil_from_days(days);
     i32::try_from(y).unwrap_or(0)
 }
 
 /// The tiles of a year in what the index read, nearest the box's centre first (at most
 /// [`MAX_TILES`]).
 pub fn aef_tiles(fields: &[Field], batch: &Batch, year: i32, bbox: [f64; 4]) -> Vec<Tile> {
+    let mut out = aef_rows(fields, batch, bbox, |y| y == year);
+    out.dedup_by(|a, b| a.1.url == b.1.url);
+    out.into_iter().take(MAX_TILES).map(|(_, t)| t).collect()
+}
+
+/// Every tile of the years `keep` takes in what the index read, each titled with its own year,
+/// with its squared distance from the box's centre, nearest first.
+fn aef_rows(fields: &[Field], batch: &Batch, bbox: [f64; 4], keep: impl Fn(i32) -> bool) -> Vec<(f64, Tile)> {
     let col = |n: &str| fields.iter().position(|f| f.name == n);
     let (href, epsg, date, id) = (col(AEF_HREF), col("proj:epsg"), col("datetime"), col("id"));
     let text = |f: &Feature, c: Option<usize>| c.and_then(|c| f.attrs.get(c)).map(|v| v.to_string()).unwrap_or_default();
@@ -281,12 +301,12 @@ pub fn aef_tiles(fields: &[Field], batch: &Batch, year: i32, bbox: [f64; 4]) -> 
         .features
         .iter()
         .filter_map(|f| {
-            let y = date.and_then(|c| f.attrs.get(c)).and_then(|v| match v {
+            let year = date.and_then(|c| f.attrs.get(c)).and_then(|v| match v {
                 Value::Int(t) => Some(year_of(*t)),
                 Value::Text(t) => t.get(..4).and_then(|y| y.parse().ok()),
                 _ => None,
             })?;
-            if y != year {
+            if !keep(year) {
                 return None;
             }
             let url = https(&text(f, href));
@@ -327,8 +347,106 @@ pub fn aef_tiles(fields: &[Field], batch: &Batch, year: i32, bbox: [f64; 4]) -> 
         })
         .collect();
     out.sort_by(|a, b| a.0.total_cmp(&b.0));
-    out.dedup_by(|a, b| a.1.url == b.1.url);
-    out.into_iter().take(MAX_TILES).map(|(_, t)| t).collect()
+    out
+}
+
+/// One AlphaEarth tile over the years. Each year's export names its files afresh (a prefix of
+/// its own: `xdwdu82ch9yffuj03-0000008192-0000000000.tiff` in 2017,
+/// `x1i7lpngfblt9wshv-0000008192-0000000000.tiff` in 2024), so a tile's years are matched by
+/// place: its coordinate system and footprint.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Series {
+    /// The tile as a card shows it: its latest year's footprint, titled with its years.
+    pub tile: Tile,
+    /// Each year's file.
+    pub years: BTreeMap<i32, String>,
+}
+
+/// What a search over the years found.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SeriesFound {
+    /// The tiles, nearest the box's centre first (at most [`MAX_TILES`]).
+    pub series: Vec<Series>,
+    /// Tiles past [`MAX_TILES`], left out.
+    pub dropped: usize,
+    /// Rows left out because their tile already had another file that year.
+    pub duplicates: usize,
+    /// Whether the index was read whole for the box.
+    pub complete: bool,
+}
+
+/// How far apart (degrees, about 10 m) two years' footprint corners may be and still be one
+/// tile's: far above the noise of the index's coordinates, far below a tile's 82 km, so no
+/// rounding boundary splits a tile in two.
+const SAME_PLACE: f64 = 1e-4;
+
+/// Whether two rows are one tile's: the same coordinate system, and footprints whose corners
+/// agree to [`SAME_PLACE`].
+fn same_place(a: &Tile, b: &Tile) -> bool {
+    fn crs(t: &Tile) -> &str {
+        t.detail.split(" · ").next().unwrap_or("")
+    }
+    a.bbox.iter().zip(b.bbox.iter()).all(|(x, y)| (x - y).abs() <= SAME_PLACE) && crs(a) == crs(b)
+}
+
+/// The tiles of the years `first` to `last` in what the index read, each with its file a year,
+/// nearest the box's centre first.
+pub fn aef_series(fields: &[Field], batch: &Batch, (first, last): (i32, i32), bbox: [f64; 4]) -> SeriesFound {
+    let mut found = SeriesFound { complete: batch.complete, ..Default::default() };
+    // Each tile's place as first seen: matched against, so a tile's latest footprint taking over
+    // its card doesn't move what later rows are matched to. A read holds at most MAX_INDEX_ROWS
+    // rows, so comparing each with the tiles so far is cheap.
+    let mut places: Vec<Tile> = Vec::new();
+    for (_, t) in aef_rows(fields, batch, bbox, |y| (first..=last).contains(&y)) {
+        let Some(year) = t.year else { continue };
+        let i = match places.iter().position(|p| same_place(p, &t)) {
+            Some(i) => i,
+            None => {
+                places.push(t.clone());
+                found.series.push(Series { tile: t.clone(), years: BTreeMap::new() });
+                found.series.len() - 1
+            }
+        };
+        let Some(s) = found.series.get_mut(i) else { continue };
+        match s.years.get(&year) {
+            Some(u) if *u != t.url => found.duplicates += 1,
+            Some(_) => {}
+            None => {
+                if s.tile.year.is_none_or(|y| year > y) {
+                    s.tile = t.clone();
+                }
+                s.years.insert(year, t.url);
+            }
+        }
+    }
+    for s in &mut found.series {
+        let (a, z) = (s.years.keys().next().copied().unwrap_or(first), s.years.keys().next_back().copied().unwrap_or(last));
+        let zone = s.tile.title.split(" · ").nth(1).map(|z| format!(" · {z}")).unwrap_or_default();
+        let crs = s.tile.detail.split(" · ").next().unwrap_or("").to_string();
+        s.tile.title = if a == z { format!("AlphaEarth {a}{zone}") } else { format!("AlphaEarth {a}–{z}{zone}") };
+        s.tile.detail = format!("{crs} · 64 bands · 10 m · {} of {} years", s.years.len(), last - first + 1);
+        s.tile.year = None;
+    }
+    found.dropped = found.series.len().saturating_sub(MAX_TILES);
+    found.series.truncate(MAX_TILES);
+    found
+}
+
+/// The first moment of a year, in milliseconds since 1970 (UTC): a time slider's step for it.
+pub fn year_start_ms(year: i32) -> f64 {
+    let days = rustgis_data::date::days_from_civil(i64::from(year), 1, 1);
+    days as f64 * 86_400_000.0
+}
+
+/// An AlphaEarth file's place, as a layer's name gives it: its UTM zone's folder and its tile's
+/// row and column (`23S 0000008192-0000000000` from `…/2024/23S/x1i7…-0000008192-0000000000.tiff`).
+pub fn aef_place(url: &str) -> Option<String> {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let mut parts = path.rsplit('/');
+    let file = parts.next()?.trim_end_matches(".tiff").trim_end_matches(".tif");
+    let zone = parts.next().filter(|z| !z.is_empty())?;
+    let (_, place) = file.split_once('-')?;
+    Some(format!("{zone} {place}"))
 }
 
 /// What a search found: the tiles, and whether the index was read whole for the box (a box
@@ -362,6 +480,30 @@ pub fn search_aef_blocking(bbox: [f64; 4], year: i32) -> Result<Found, String> {
     let (fields, batch) =
         rustgis_data::source::query_url_blocking(AEF_INDEX, vec![AEF_HREF.into()], aef_request(bbox)).map_err(|e| e.to_string())?;
     Ok((aef_tiles(&fields, &batch, year, bbox), batch.complete))
+}
+
+/// Finds AlphaEarth's tiles in a box over the years `first` to `last`, each with its file a year:
+/// the same one read of the index as [`search_aef`] (its rows hold every year).
+pub fn search_aef_series(bbox: [f64; 4], years: (i32, i32), done: Box<dyn FnOnce(Result<SeriesFound, String>) + Send>) {
+    let bbox = match check_bbox(bbox) {
+        Ok(b) => b,
+        Err(e) => return done(Err(e)),
+    };
+    rustgis_data::source::query_url(
+        AEF_INDEX,
+        vec![AEF_HREF.into()],
+        aef_request(bbox),
+        Box::new(move |r| done(r.map(|(fields, batch)| aef_series(&fields, &batch, years, bbox)).map_err(|e| e.to_string()))),
+    );
+}
+
+/// [`search_aef_series`], waiting for it (the command line).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn search_aef_series_blocking(bbox: [f64; 4], years: (i32, i32)) -> Result<SeriesFound, String> {
+    let bbox = check_bbox(bbox)?;
+    let (fields, batch) =
+        rustgis_data::source::query_url_blocking(AEF_INDEX, vec![AEF_HREF.into()], aef_request(bbox)).map_err(|e| e.to_string())?;
+    Ok(aef_series(&fields, &batch, years, bbox))
 }
 
 // Earth Index.
@@ -710,8 +852,8 @@ mod tests {
 
     #[test]
     fn catalog() {
-        assert_eq!(DATASETS.len(), 6);
-        assert_eq!(DATASETS.iter().filter(|d| d.search).count(), 3);
+        assert_eq!(DATASETS.len(), 7);
+        assert_eq!(DATASETS.iter().filter(|d| d.search).count(), 4);
         assert_eq!(dataset("alphaearth").map(|d| d.dimensions), Some(64));
         assert!(dataset("nope").is_none());
         assert_eq!(dataset("earth-index").unwrap().to_json()["years"], json!([2024]));
@@ -782,6 +924,8 @@ mod tests {
             matched: 4,
             complete: true,
             skipped: 0,
+            unread_dates: Vec::new(),
+            rounded_dates: Vec::new(),
         };
         let t = aef_tiles(&fields, &batch, 2021, [-123.0, 40.0, -122.0, 41.0]);
         assert_eq!(t.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), vec!["near", "far"]);
@@ -799,6 +943,70 @@ mod tests {
         assert_eq!(fc["features"].as_array().map(Vec::len), Some(2));
         // Nothing usable: nothing found, never a panic.
         assert!(aef_tiles(&[], &batch, 2021, [0.0, 0.0, 1.0, 1.0]).is_empty());
+    }
+
+    /// A tile's years are matched by place, not by name (each year's export names its files
+    /// afresh); another place is another tile, a second file for a tile's year is counted.
+    #[test]
+    fn index_rows_to_series() {
+        let fields = vec![
+            Field::new("id", FieldType::Text),
+            Field::new("datetime", FieldType::Integer),
+            Field::new(AEF_HREF, FieldType::Text),
+            Field::new("proj:epsg", FieldType::Text),
+        ];
+        let row = |x: f64, year: i32, href: &str| Feature {
+            id: 1,
+            geometry: Some(Geometry::Polygon(vec![vec![vec![
+                Coord::new(x, -21.0),
+                Coord::new(x + 0.8, -21.0),
+                Coord::new(x + 0.8, -20.7),
+                Coord::new(x, -20.7),
+                Coord::new(x, -21.0),
+            ]]])),
+            attrs: vec![
+                Value::Text("1".into()),
+                Value::Int(year_start_ms(year) as i64),
+                Value::Text(href.into()),
+                Value::Text("EPSG:32723".into()),
+            ],
+        };
+        let base = "s3://us-west-2.opendata.source.coop/tge-labs/aef/v1/annual";
+        let batch = Batch {
+            features: vec![
+                // A footprint a hair off another year's, across a 1e-5° rounding boundary: the
+                // same tile still.
+                row(-43.400_005_1, 2024, &format!("{base}/2024/23S/xb-0000008192-0000000000.tiff")),
+                row(-43.4, 2017, &format!("{base}/2017/23S/xa-0000008192-0000000000.tiff")),
+                row(-43.4, 2025, &format!("{base}/2025/23S/xc-0000008192-0000000000.tiff")),
+                // The same tile and year twice: the first kept, the other counted.
+                row(-43.4, 2025, &format!("{base}/2025/23S/xd-0000008192-0000000000.tiff")),
+                // Another place; and a year outside those asked for.
+                row(-44.2, 2020, &format!("{base}/2020/23S/xe-0000000000-0000000000.tiff")),
+                row(-43.4, 2016, &format!("{base}/2016/23S/xf-0000008192-0000000000.tiff")),
+            ],
+            matched: 6,
+            complete: false,
+            skipped: 0,
+            unread_dates: Vec::new(),
+            rounded_dates: Vec::new(),
+        };
+        let f = aef_series(&fields, &batch, (2017, 2025), [-43.0, -20.9, -42.9, -20.8]);
+        assert_eq!((f.series.len(), f.duplicates, f.dropped, f.complete), (2, 1, 0, false));
+        let s = &f.series[0];
+        assert_eq!(s.years.keys().copied().collect::<Vec<_>>(), vec![2017, 2024, 2025]);
+        assert_eq!(s.years[&2025], "https://data.source.coop/tge-labs/aef/v1/annual/2025/23S/xc-0000008192-0000000000.tiff");
+        assert_eq!((s.tile.title.as_str(), s.tile.year), ("AlphaEarth 2017–2025 · UTM 23S", None));
+        assert_eq!(s.tile.detail, "EPSG:32723 · 64 bands · 10 m · 3 of 9 years");
+        assert_eq!(s.tile.id, "xc-0000008192-0000000000", "the latest year's file stands for the tile");
+        assert_eq!(f.series[1].tile.title, "AlphaEarth 2020 · UTM 23S");
+        assert_eq!(aef_place(&s.years[&2017]).as_deref(), Some("23S 0000008192-0000000000"));
+        assert_eq!(aef_place("https://h/x.tiff#bands=1"), None);
+        assert_eq!(year_start_ms(1970), 0.0);
+        assert_eq!(year_start_ms(2017), 1_483_228_800_000.0);
+        assert_eq!(year_start_ms(2024), 1_704_067_200_000.0);
+        assert_eq!(year_of(year_start_ms(2000) as i64), 2000);
+        assert_eq!(aef_series(&[], &batch, (2017, 2025), [0.0, 0.0, 1.0, 1.0]).series, Vec::new());
     }
 
     #[test]

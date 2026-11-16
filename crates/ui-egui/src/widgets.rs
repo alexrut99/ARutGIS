@@ -136,6 +136,88 @@ pub fn text_w(ui: &Ui, s: &str, font: egui::FontId) -> f32 {
     ui.ctx().fonts_mut(|f| f.layout_no_wrap(s.to_string(), font, egui::Color32::WHITE).size().x)
 }
 
+/// One tab in [`tabs`]: its label and hover text as interface keys ([`tl!`](crate::tl) translates
+/// them), its icon's name (empty for none), and the value choosing it sets.
+pub(crate) struct Tab<T> {
+    pub(crate) label: &'static str,
+    pub(crate) icon: &'static str,
+    pub(crate) hover: Option<&'static str>,
+    pub(crate) value: T,
+}
+
+/// A row of tabs drawn as the ribbon's: the chosen one open onto the pane below with its accent
+/// bar, a base line and a hover fill; as the pane narrows, each tab drops its icon, then its name
+/// (the icon alone, its hover text — or its name — on hover). `current` becomes the chosen tab's
+/// value; returns whether it changed.
+pub(crate) fn tabs<T: Copy + PartialEq>(ui: &mut Ui, t: &Tokens, id: egui::Id, current: &mut T, tabs: &[Tab<T>]) -> bool {
+    let font = |on: bool| if on { semibold(12.5) } else { regular(12.5) };
+    let (pad, icon, gap, h) = (8.0, 16.0, 5.0, 30.0);
+    // Measured in the chosen tab's font, so the tabs don't move as another is chosen.
+    let text: Vec<f32> = tabs.iter().map(|tab| text_w(ui, tl!(tab.label), semibold(12.5))).collect();
+    let room = ui.available_width() - 2.0 * (tabs.len() as f32 - 1.0);
+    // A tab's room besides its name, with or without its icon.
+    let extra = |icons: bool| 2.0 * pad + if icons { icon + gap } else { 0.0 };
+    let fits = |icons: bool| text.iter().map(|w| w + extra(icons)).sum::<f32>() <= room;
+    let (icons, names) = if fits(true) {
+        (true, true)
+    } else if fits(false) {
+        (false, true)
+    } else {
+        (true, false)
+    };
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::hover());
+    let base = row.max.y - 0.5;
+    ui.painter().hline(row.x_range(), base, Stroke::new(1.0, t.border));
+    let mut x = row.min.x;
+    let mut changed = false;
+    for (tab, w) in tabs.iter().zip(text) {
+        let shown = tl!(tab.label);
+        let on = tab.value == *current;
+        let w = if names { extra(icons) + w } else { 36.0 };
+        let r = Rect::from_min_size(pos2(x, row.min.y), vec2(w, h));
+        x = r.max.x + 2.0;
+        let mut resp = ui.interact(r, id.with(tab.label), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, shown));
+        let p = ui.painter();
+        let body = Rect::from_min_max(pos2(r.min.x, r.min.y + 3.0), r.max);
+        let round = CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 };
+        if on {
+            p.rect_filled(body, round, t.pane);
+            p.rect_stroke(body, round, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+            // Open onto the pane: the line under the tabs stops at the chosen one.
+            p.rect_filled(Rect::from_min_max(pos2(r.min.x + 1.0, base - 1.0), pos2(r.max.x - 1.0, row.max.y + 1.0)), 0.0, t.pane);
+            p.rect_filled(
+                Rect::from_min_max(pos2(r.min.x + 8.0, r.max.y - 3.0), pos2(r.max.x - 8.0, r.max.y - 1.0)),
+                CornerRadius::same(1),
+                t.accent,
+            );
+        } else if resp.hovered() {
+            p.rect_filled(body.shrink2(vec2(1.0, 2.0)), CornerRadius::same(5), t.hover);
+        }
+        let cy = body.center().y - 1.0;
+        if !names {
+            icons::paint(p, Rect::from_center_size(pos2(r.center().x, cy), vec2(icon, icon)), tab.icon, t.icon, t.accent);
+            resp = resp.on_hover_text(tab.hover.map_or(shown, |h| tl!(h)));
+        } else {
+            let mut tx = r.min.x + pad;
+            if icons {
+                icons::paint(p, Rect::from_min_size(pos2(tx, cy - icon / 2.0), vec2(icon, icon)), tab.icon, t.icon, t.accent);
+                tx += icon + gap;
+            }
+            let ink = if on { t.text } else { t.text_dim };
+            p.text(pos2(tx, cy), Align2::LEFT_CENTER, shown, font(on), ink);
+            if let Some(hover) = tab.hover {
+                resp = resp.on_hover_text(tl!(hover));
+            }
+        }
+        if resp.clicked() && *current != tab.value {
+            *current = tab.value;
+            changed = true;
+        }
+    }
+    changed
+}
+
 /// The shortcut of a command run without parameters (`⌘S` on a Mac, as egui reads the keys,
 /// `Ctrl+S` elsewhere), or empty for none.
 pub fn shortcut_text(ctx: &egui::Context, app: &RustGisApp, id: &str) -> String {
@@ -144,6 +226,9 @@ pub fn shortcut_text(ctx: &egui::Context, app: &RustGisApp, id: &str) -> String 
 
 /// Whether a command exists and is enabled now.
 pub fn enabled(app: &RustGisApp, id: &str) -> bool {
+    if matches!(id, "ui.reloadData" | "layer.reloadData") {
+        return why_disabled(app, id).is_none();
+    }
     match app.session.registry.get(id) {
         Some(s) => (s.enabled)(&app.session).is_none(),
         None => id.starts_with("ui.") || rustgis_engine::plugins::command(id).is_some(),
@@ -151,14 +236,29 @@ pub fn enabled(app: &RustGisApp, id: &str) -> bool {
 }
 
 pub fn why_disabled(app: &RustGisApp, id: &str) -> Option<&'static str> {
+    if matches!(id, "ui.reloadData" | "layer.reloadData") {
+        #[cfg(not(target_arch = "wasm32"))]
+        return app
+            .session
+            .active_layer
+            .and_then(|layer| app.session.map().layer(layer))
+            .is_none_or(|layer| !crate::reloaddata::supported(layer))
+            .then_some(tl_raw!("Select a layer linked to a local file or folder, or an editable GeoPackage layer."));
+        #[cfg(target_arch = "wasm32")]
+        return Some(tl_raw!("Reload Data from local files requires the desktop app."));
+    }
     app.session.registry.get(id).and_then(|s| (s.enabled)(&app.session))
 }
 
 /// A rich tooltip: title (with the shortcut of `id` with `params`), description and why it's
 /// disabled.
 pub fn tooltip(app: &RustGisApp, resp: Response, title: &str, desc: &str, id: &str, params: &Value) -> Response {
+    tooltip_for(app, resp, title, desc, id, params, why_disabled(app, id))
+}
+
+/// [`tooltip`], saying `why` the command is unavailable (as [`small_for`] judged it).
+fn tooltip_for(app: &RustGisApp, resp: Response, title: &str, desc: &str, id: &str, params: &Value, why: Option<&str>) -> Response {
     let sc = crate::keymap::shortcut_text(&resp.ctx, app, id, params);
-    let why = why_disabled(app, id);
     let contents = |ui: &mut Ui| {
         ui.set_max_width(280.0);
         // Callers pass text that is already translated.
@@ -271,6 +371,45 @@ pub fn big_split_menu(
     menu_enabled: bool,
     menu: impl FnOnce(&mut Ui, &mut RustGisApp),
 ) -> (Response, Response) {
+    let close = egui::PopupCloseBehavior::CloseOnClick;
+    big_split_menu_with(ui, app, icon, label, desc, id, params, checked, menu_label, menu_desc, menu_enabled, close, menu)
+}
+
+/// A [`big_split_menu`] whose menu holds editable controls (a text box): clicks inside keep it
+/// open, as in [`big_form_menu`]; its action buttons close it themselves (`ui.close()`).
+pub fn big_split_form_menu(
+    ui: &mut Ui,
+    app: &mut RustGisApp,
+    icon: &str,
+    label: &str,
+    desc: &str,
+    id: &str,
+    params: Value,
+    checked: bool,
+    menu_label: &str,
+    menu_desc: &str,
+    menu_enabled: bool,
+    menu: impl FnOnce(&mut Ui, &mut RustGisApp),
+) -> (Response, Response) {
+    let close = egui::PopupCloseBehavior::CloseOnClickOutside;
+    big_split_menu_with(ui, app, icon, label, desc, id, params, checked, menu_label, menu_desc, menu_enabled, close, menu)
+}
+
+fn big_split_menu_with(
+    ui: &mut Ui,
+    app: &mut RustGisApp,
+    icon: &str,
+    label: &str,
+    desc: &str,
+    id: &str,
+    params: Value,
+    checked: bool,
+    menu_label: &str,
+    menu_desc: &str,
+    menu_enabled: bool,
+    close: egui::PopupCloseBehavior,
+    menu: impl FnOnce(&mut Ui, &mut RustGisApp),
+) -> (Response, Response) {
     let (label, desc, menu_label, menu_desc) = (tl!(label), tl!(desc), tl!(menu_label), tl!(menu_desc));
     let t = Tokens::get(ui.ctx());
     let w = (label.split('\n').map(|l| text_w(ui, l, regular(11.5))).fold(0.0, f32::max) + 14.0).max(50.0);
@@ -310,7 +449,7 @@ pub fn big_split_menu(
     if primary.clicked() {
         let _ = app.run_by_user(id, params);
     }
-    egui::Popup::menu(&arrow).show(|ui| {
+    egui::Popup::menu(&arrow).close_behavior(close).show(|ui| {
         ui.set_min_width(200.0);
         menu(ui, app);
     });
@@ -319,11 +458,44 @@ pub fn big_split_menu(
 
 /// A small button: 18 px icon with an optional label.
 pub fn small(ui: &mut Ui, app: &mut RustGisApp, icon: &str, label: &str, desc: &str, id: &str, params: Value, checked: bool) -> Response {
+    let on = enabled(app, id);
+    let why = if on { None } else { why_disabled(app, id) };
+    small_button(ui, app, icon, label, desc, id, params, checked, on, why)
+}
+
+/// [`small`] for a command whose parameters name what it acts on (a standalone table), unavailable
+/// for the reason `why`, as [`rustgis_engine::Session::why_blocked`] judged it with them.
+pub fn small_for(
+    ui: &mut Ui,
+    app: &mut RustGisApp,
+    icon: &str,
+    label: &str,
+    desc: &str,
+    id: &str,
+    params: Value,
+    why: Option<&'static str>,
+) -> Response {
+    small_button(ui, app, icon, label, desc, id, params, false, why.is_none(), why)
+}
+
+/// The small button [`small`] and [`small_for`] draw: `on` says whether it runs `id` when
+/// clicked, `why` why it doesn't, in its tooltip.
+fn small_button(
+    ui: &mut Ui,
+    app: &mut RustGisApp,
+    icon: &str,
+    label: &str,
+    desc: &str,
+    id: &str,
+    params: Value,
+    checked: bool,
+    on: bool,
+    why: Option<&str>,
+) -> Response {
     let (label, desc) = (tl!(label), tl!(desc));
     let t = Tokens::get(ui.ctx());
     let tw = if label.is_empty() { 0.0 } else { text_w(ui, label, regular(11.5)) + 8.0 };
     let (r, resp) = ui.allocate_exact_size(vec2(26.0 + tw, 22.0), Sense::click());
-    let on = enabled(app, id);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, on, if label.is_empty() { desc } else { label }));
     bg(ui, r, &resp, checked, &t);
     let ic = Rect::from_center_size(pos2(r.min.x + 13.0, r.center().y), vec2(18.0, 18.0));
@@ -339,7 +511,7 @@ pub fn small(ui: &mut Ui, app: &mut RustGisApp, icon: &str, label: &str, desc: &
         );
     }
     let title = if label.is_empty() { desc } else { label };
-    let resp = tooltip(app, resp, title, if label.is_empty() { "" } else { desc }, id, &params);
+    let resp = tooltip_for(app, resp, title, if label.is_empty() { "" } else { desc }, id, &params, why);
     crate::showme::ring(ui, app, r, id, &params);
     if resp.clicked() && on {
         let _ = app.run_by_user(id, params);
@@ -669,7 +841,6 @@ pub fn color_button(ui: &mut Ui, color: &mut egui::Color32) -> Response {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use egui_kittest::kittest::Queryable;
 

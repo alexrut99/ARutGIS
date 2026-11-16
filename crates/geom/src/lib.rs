@@ -1,5 +1,5 @@
 //! L0: coordinates, extents, the Web Mercator projection, geodesic measurement, map scale, and
-//! UTM and MGRS coordinates ([`utm`]).
+//! UTM and MGRS coordinates ([`utm`]), and UPS for the polar areas ([`ups`]).
 //!
 //! Everything here is plain math with no I/O. Longitude/latitude are WGS 84 degrees; projected
 //! coordinates are Web Mercator meters (EPSG:3857), which [`lonlat_to_plane`] continues beyond
@@ -7,14 +7,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod body;
-pub mod eqc;
-pub mod sinusoidal;
 pub mod triangulate;
+pub mod ups;
 pub mod utm;
 
 pub use body::{BODIES, Body};
-pub use eqc::EquidistantCylindrical;
-pub use sinusoidal::Sinusoidal;
+pub use ups::{Ups, format_ups, from_ups, parse_ups, to_ups};
 pub use utm::{GridError, Mgrs, Utm, format_mgrs, format_utm, parse_mgrs, parse_utm, to_mgrs, to_utm};
 
 use std::sync::LazyLock;
@@ -108,6 +106,7 @@ pub fn distance_unit_metres(unit: &str) -> Option<f64> {
 
 /// A 2-D coordinate.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Coord {
     pub x: f64,
     pub y: f64,
@@ -124,6 +123,7 @@ impl Coord {
 
 /// An axis-aligned rectangle. An "empty" extent has `min > max`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Extent {
     pub min_x: f64,
     pub min_y: f64,
@@ -483,6 +483,56 @@ pub fn wgs84_length_m(pts: &[Coord]) -> f64 {
         .sum()
 }
 
+/// Whether a ring through both poles winds beyond one complete surface.
+///
+/// Such a ring has no single enclosed region: closing its winding at either pole gives areas a
+/// whole globe apart. The whole-world rectangle remains valid. Roundoff within 64 ulps of the
+/// complete surface is not an extra winding.
+pub fn ring_area_is_ambiguous(ring: &[Coord]) -> bool {
+    if !ring.iter().all(|c| c.is_finite() && c.y.abs() <= 90.0)
+        || !ring.iter().any(|c| at_pole(c.y) && c.y > 0.0)
+        || !ring.iter().any(|c| at_pole(c.y) && c.y < 0.0)
+    {
+        return false;
+    }
+    let steps = ring_lon_steps(ring);
+    let full = steps.iter().any(|&(_, full)| full);
+    let sphere_surface = 4.0 * std::f64::consts::PI * EARTH_RADIUS_M * EARTH_RADIUS_M;
+    let wgs84_surface = 2.0 * std::f64::consts::PI * WGS84_A * WGS84_A * authalic_q(90.0);
+    let beyond = |area: f64, surface: f64| area > surface * (1.0 + 64.0 * f64::EPSILON);
+    beyond(sphere_ring_area_m2(ring, steps.iter().map(|&(d, _)| d), full), sphere_surface)
+        || (full && beyond(authalic_ring_area_m2(ring), wgs84_surface))
+}
+
+/// How many times a lon/lat ring that never reaches a pole winds around one: each step of
+/// longitude taken the short way round (within ±180°; an edge of exactly a whole turn as [`ring_lon_steps`]
+/// reads it), summed, in whole turns. A ring cut at ±180° and closed along the pole, the form
+/// RustGIS takes for a polygon around a pole, reaches the pole and gives 0; so does any ring whose
+/// steps cancel. A loop such as a parallel written all the way round (`[0, 80]`, `[30, 80]`, …,
+/// `[330, 80]`) gives ±1, and the analysis plane, which reads longitude and latitude as x and y,
+/// sees it as a line with no area. 0 for a ring with fewer than three vertices or a coordinate
+/// that isn't a longitude and latitude.
+pub fn ring_pole_turns(ring: &[Coord]) -> i64 {
+    if ring.len() < 3 || !ring.iter().all(|c| c.is_finite() && c.y.abs() <= 90.0) || ring.iter().any(|c| at_pole(c.y)) {
+        return 0;
+    }
+    let short = |d: f64| if d.abs() > 180.0 { wrap_lon(d) } else { d };
+    let edges = || ring.iter().zip(ring.iter().cycle().skip(1));
+    // Every step goes the short way round, however far it was written; only an edge of exactly a
+    // whole turn may be one (a seam at ±180° is not), which [`ring_lon_steps`] decides. Most rings
+    // have none, and are summed without building a list.
+    let whole = |d: f64| (d.abs() - 360.0).abs() <= NEAR_DEG;
+    let total: f64 = if edges().any(|(a, b)| whole(b.x - a.x)) {
+        let read = ring_lon_steps(ring);
+        edges().enumerate().map(|(i, (a, b))| if whole(b.x - a.x) { read.get(i).map_or(0.0, |&(d, _)| d) } else { short(b.x - a.x) }).sum()
+    } else {
+        edges().map(|(a, b)| short(b.x - a.x)).sum()
+    };
+    let turns = (total / 360.0).round();
+    // A ring's steps are finite, so its turns are too; a loop winds at most once per vertex.
+    if turns.is_finite() && turns.abs() <= ring.len() as f64 { turns as i64 } else { 0 }
+}
+
 /// The perimeter (metres) and the unsigned enclosed area (square metres) of a lon/lat ring on the
 /// WGS 84 ellipsoid. The ring is closed along a geodesic to its first point, whatever its winding,
 /// so the perimeter and area come from one pass over the ring, not two. A ring gives the
@@ -491,6 +541,7 @@ pub fn wgs84_length_m(pts: &[Coord]) -> f64 {
 /// measured on the ellipsoid by its edges' paths in longitude and latitude, each full turn a whole
 /// parallel); reversing the ring gives the same magnitude. An edge along the ±180° meridian (a
 /// polygon split at the antimeridian) is a seam, measured as the meridian it runs along.
+/// An ambiguous winding ([`ring_area_is_ambiguous`]) has NaN area and keeps its perimeter.
 pub fn wgs84_ring_perimeter_area_m2(ring: &[Coord]) -> (f64, f64) {
     // A broken vertex is no place: NaN, never a plausible number (see [`haversine_m`]).
     if !ring.iter().all(|c| c.is_finite()) {
@@ -517,7 +568,7 @@ pub fn wgs84_ring_perimeter_area_m2(ring: &[Coord]) -> (f64, f64) {
             .zip(&steps)
             .map(|((p, r), &(dlon, full))| if full { wgs84_parallel_m((p.y + r.y) / 2.0, dlon) } else { wgs84_distance_m(*p, *r) })
             .sum();
-        return (perimeter, authalic_ring_area_m2(ring));
+        return (perimeter, if ring_area_is_ambiguous(ring) { f64::NAN } else { authalic_ring_area_m2(ring) });
     }
     let mut polygon = PolygonArea::new(&WGS84, Winding::Clockwise);
     for c in ring {
@@ -531,7 +582,16 @@ pub fn wgs84_ring_perimeter_area_m2(ring: &[Coord]) -> (f64, f64) {
     let sphere = sphere_ring_area_m2(ring, steps.iter().map(|&(d, _)| d), false);
     // Compare a sphere area with its own hemisphere; the ellipsoid's hemisphere differs.
     let hemisphere = 2.0 * std::f64::consts::PI * EARTH_RADIUS_M * EARTH_RADIUS_M;
-    (perimeter, if sphere > hemisphere { WGS84_AREA_M2 - area } else { area })
+    (
+        perimeter,
+        if ring_area_is_ambiguous(ring) {
+            f64::NAN
+        } else if sphere > hemisphere {
+            WGS84_AREA_M2 - area
+        } else {
+            area
+        },
+    )
 }
 
 /// The length (metres) of `dlon_deg` degrees of longitude along the WGS 84 parallel at `lat_deg`:
@@ -542,7 +602,7 @@ fn wgs84_parallel_m(lat_deg: f64, dlon_deg: f64) -> f64 {
     WGS84_A / (1.0 - WGS84_E2 * s * s).sqrt() * c.abs() * dlon_deg.to_radians().abs()
 }
 
-/// Coordinates closer than this (degrees, about 11 m, half a unit in the fourth decimal) are on one
+/// Coordinates closer than this (degrees, about 11 m, one unit in the fourth decimal) are on one
 /// parallel or meridian, for [`ring_lon_steps`]: a band written with coordinates rounded to four
 /// decimals or more keeps its full turns.
 const NEAR_DEG: f64 = 1e-4;
@@ -719,8 +779,7 @@ fn authalic_ring_area_m2(ring: &[Coord]) -> f64 {
     let q_pole = authalic_q(90.0);
     let rq2 = a * a * q_pole / 2.0;
     let sin_xi = |lat: f64| authalic_q(lat) / q_pole;
-    let mut total = 0.0;
-    for ((p, r), (dlon, _)) in ring.iter().zip(ring.iter().cycle().skip(1)).zip(ring_lon_steps(ring)) {
+    let terms = ring.iter().zip(ring.iter().cycle().skip(1)).zip(ring_lon_steps(ring)).map(|((p, r), (dlon, _))| {
         let dlat = r.y - p.y;
         // An edge to or from a pole runs along a meridian ([`pole_sine`]); sin ξ is ±1 there too.
         let mean = if let Some(s) = pole_sine(p.y, r.y) {
@@ -736,9 +795,9 @@ fn authalic_ring_area_m2(ring: &[Coord]) -> f64 {
             }
             sum / (3.0 * N as f64)
         };
-        total += dlon.to_radians() * mean;
-    }
-    (total * rq2).abs()
+        dlon.to_radians() * mean
+    });
+    (compensated_sum(terms) * rq2).abs()
 }
 
 /// Surface area 2πa²(1 + (1 − e²) atanh(e) / e) for WGS 84 (square metres).
@@ -799,9 +858,13 @@ impl Aeqd {
 /// Area of a lon/lat ring on the sphere (square metres, always positive).
 ///
 /// Uses the spherical-excess approximation from Chamberlain & Duquette (JPL, 2007).
+/// Returns NaN for an ambiguous winding ([`ring_area_is_ambiguous`]).
 pub fn geodesic_ring_area_m2(ring: &[Coord]) -> f64 {
     if ring.len() < 3 {
         return 0.0;
+    }
+    if ring_area_is_ambiguous(ring) {
+        return f64::NAN;
     }
     // An edge that jumps across the antimeridian (179° to -179°) is a short hop east, not 358°
     // west. A full turn (-180° to 180° along a parallel, as a world-wide rectangle has) is kept as
@@ -828,19 +891,27 @@ fn sphere_ring_area_m2(ring: &[Coord], steps: impl Iterator<Item = f64>, full: b
         return 0.0;
     }
     let sin = |c: &Coord| c.y.to_radians().sin();
-    let total: f64 = ring
-        .iter()
-        .zip(ring.iter().cycle().skip(1))
-        .zip(steps)
-        .map(|((p1, p2), dlon)| {
-            let sines = match pole_sine(p1.y, p2.y).filter(|_| full) {
-                Some(s) => 2.0 * s,
-                None => sin(p1) + sin(p2),
-            };
-            dlon.to_radians() * (2.0 + sines)
-        })
-        .sum();
+    let total = compensated_sum(ring.iter().zip(ring.iter().cycle().skip(1)).zip(steps).map(|((p1, p2), dlon)| {
+        let sines = match pole_sine(p1.y, p2.y).filter(|_| full) {
+            Some(s) => 2.0 * s,
+            None => sin(p1) + sin(p2),
+        };
+        dlon.to_radians() * (2.0 + sines)
+    }));
     (total * EARTH_RADIUS_M * EARTH_RADIUS_M / 2.0).abs()
+}
+
+/// Kahan compensated summation prevents long valid rings crossing the winding tolerance from
+/// accumulated addition roundoff: Kahan (1965), https://doi.org/10.1145/363707.363723.
+fn compensated_sum(terms: impl IntoIterator<Item = f64>) -> f64 {
+    let (mut total, mut lost) = (0.0, 0.0);
+    for term in terms {
+        let corrected = term - lost;
+        let next = total + corrected;
+        lost = (next - total) - corrected;
+        total = next;
+    }
+    total
 }
 
 /// Map scale denominator (1:N) for a Web Mercator resolution (metres per screen pixel) at a latitude.
@@ -1311,6 +1382,89 @@ mod tests {
     }
 
     #[test]
+    fn polar_winding_with_only_a_seam_is_ambiguous() {
+        let c = Coord::new;
+        let ring = [
+            c(-180.0, 90.0),
+            c(180.0, 0.0),
+            c(-60.0, 10.0),
+            c(60.0, 20.0),
+            c(180.0, 30.0),
+            c(-60.0, 40.0),
+            c(60.0, 50.0),
+            c(180.0, 60.0),
+            c(180.0, -90.0),
+            c(90.0, -80.0),
+        ];
+        assert!(ring_area_is_ambiguous(&ring));
+        assert!(geodesic_ring_area_m2(&ring).is_nan());
+        let (perimeter, area) = wgs84_ring_perimeter_area_m2(&ring);
+        assert!(perimeter.is_finite() && area.is_nan());
+    }
+
+    #[test]
+    fn ambiguous_polar_winding_has_no_single_area() {
+        let c = Coord::new;
+        let ring = [c(-180.0, 90.0), c(180.0, 90.0), c(-90.0, -90.0), c(90.0, -80.0)];
+        for reversed in [false, true] {
+            for start in 0..ring.len() {
+                let mut shape = ring.to_vec();
+                if reversed {
+                    shape.reverse();
+                }
+                shape.rotate_left(start);
+                for closed in [false, true] {
+                    let mut points = shape.clone();
+                    if closed {
+                        points.push(points[0]);
+                    }
+                    let area = geodesic_ring_area_m2(&points);
+                    assert!(area.is_nan(), "{points:?}: no single spherical region, got {area}");
+                    let (perimeter, area) = wgs84_ring_perimeter_area_m2(&points);
+                    assert!(perimeter.is_finite() && perimeter > 0.0);
+                    assert!(area.is_nan(), "{points:?}: no single ellipsoidal region");
+                }
+            }
+        }
+        // The explicitly whole-world rectangle remains a well-defined area.
+        let world = [c(-180.0, -90.0), c(180.0, -90.0), c(180.0, 90.0), c(-180.0, 90.0)];
+        let globe = 4.0 * std::f64::consts::PI * EARTH_RADIUS_M * EARTH_RADIUS_M;
+        assert!((geodesic_ring_area_m2(&world) / globe - 1.0).abs() < 1e-12);
+        assert!(wgs84_ring_perimeter_area_m2(&world).1.is_finite());
+    }
+
+    #[test]
+    fn densified_world_boundaries_do_not_become_ambiguous_from_roundoff() {
+        let corners = [
+            Coord::new(-180.0, -90.0),
+            Coord::new(180.0, -90.0),
+            Coord::new(180.0, 90.0),
+            Coord::new(-180.0, 90.0),
+            Coord::new(-180.0, -90.0),
+        ];
+        for keep_full in [false, true] {
+            let mut ring = Vec::new();
+            for (edge, pair) in corners.windows(2).enumerate() {
+                let steps = if keep_full && edge == 0 { 1 } else { 10_000 };
+                for index in 0..steps {
+                    let t = index as f64 / steps as f64;
+                    ring.push(Coord::new(pair[0].x + (pair[1].x - pair[0].x) * t, pair[0].y + (pair[1].y - pair[0].y) * t));
+                }
+            }
+            for reverse in [false, true] {
+                if reverse {
+                    ring.reverse();
+                }
+                assert!(!ring_area_is_ambiguous(&ring), "full={keep_full}, reverse={reverse}");
+                let surface = 4.0 * std::f64::consts::PI * EARTH_RADIUS_M * EARTH_RADIUS_M;
+                let area = geodesic_ring_area_m2(&ring);
+                assert!(area.is_finite() && (area / surface - 1.0).abs() < 1e-12, "{area}");
+                assert!(wgs84_ring_perimeter_area_m2(&ring).1.is_finite());
+            }
+        }
+    }
+
+    #[test]
     fn wgs84_measures_match_geographiclib() {
         // References from GeographicLib (pyproj.Geod / Polygon.Compute on WGS 84), cross-checked
         // against `geo`'s GeodesicArea: a 1° × 1° box at the equator, and the same box stretched
@@ -1625,6 +1779,7 @@ mod tests {
         assert_eq!(format_distance(-99_949.0), "-99.9 km");
         assert_eq!(format_distance(-99_960.0), "-100 km");
         assert_eq!(format_area(-0.3), "0 m²");
+        assert_eq!(format_area(-0.5), "0 m²");
         assert_eq!(format_area(-0.0), "0 m²");
         assert_eq!(format_area(-0.6), "-1 m²");
         assert_eq!(format_area(-999_999.4), "-999999 m²");
@@ -1725,5 +1880,41 @@ mod tests {
         assert_eq!(e, Extent::new(-1.0, 2.0, 1.0, 5.0));
         assert!(e.intersects(&Extent::new(0.0, 0.0, 3.0, 3.0)));
         assert!(!e.intersects(&Extent::EMPTY));
+    }
+
+    /// A ring looping around a pole without being cut at ±180° (#1354) winds once around it, each
+    /// way, from 0° or from -180°, around either pole; written twice round it winds twice. The cut
+    /// form, a ring through a pole, an ordinary ring and one with a coordinate missing don't.
+    #[test]
+    fn rings_looping_around_a_pole_count_their_turns() {
+        let parallel = |lat: f64, from: f64, step: f64, n: usize| -> Vec<Coord> {
+            let mut r: Vec<Coord> = (0..n).map(|i| Coord::new(from + step * i as f64, lat)).collect();
+            r.push(Coord::new(from, lat));
+            r
+        };
+        assert_eq!(ring_pole_turns(&parallel(80.0, 0.0, 30.0, 12)), 1, "the issue's 12-point loop");
+        assert_eq!(ring_pole_turns(&parallel(80.0, 0.0, -30.0, 12)), -1, "the other way round");
+        assert_eq!(ring_pole_turns(&parallel(80.0, -180.0, 30.0, 12)), 1, "from -180°");
+        assert_eq!(ring_pole_turns(&parallel(-75.0, 0.0, 45.0, 8)), 1, "around the south pole");
+        assert_eq!(ring_pole_turns(&parallel(80.0, 0.0, 30.0, 24)), 2, "twice round");
+        // Longitudes written past ±180° (0 to 330 and on) loop the same way.
+        assert_eq!(ring_pole_turns(&parallel(60.0, 170.0, 40.0, 9)), 1);
+        // The cut form RustGIS takes: along the cap's edge from -180° to 180°, then along the pole.
+        let cut = [(-180.0, 80.0), (0.0, 80.0), (180.0, 80.0), (180.0, 90.0), (-180.0, 90.0), (-180.0, 80.0)];
+        assert_eq!(ring_pole_turns(&cut.map(|(x, y)| Coord::new(x, y))), 0);
+        // The cut form without the pole vertices: a seam at ±180°, no loop.
+        let seam = [(-180.0, 80.0), (180.0, 80.0), (180.0, 85.0), (-180.0, 85.0), (-180.0, 80.0)];
+        assert_eq!(ring_pole_turns(&seam.map(|(x, y)| Coord::new(x, y))), 0);
+        let square = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)];
+        assert_eq!(ring_pole_turns(&square.map(|(x, y)| Coord::new(x, y))), 0);
+        // A cell across the antimeridian, written unsplit: steps cancel.
+        let across = [(170.0, 0.0), (-170.0, 0.0), (-170.0, 10.0), (170.0, 10.0), (170.0, 0.0)];
+        assert_eq!(ring_pole_turns(&across.map(|(x, y)| Coord::new(x, y))), 0);
+        let mut missing = parallel(80.0, 0.0, 30.0, 12);
+        if let Some(c) = missing.get_mut(3) {
+            c.x = f64::NAN;
+        }
+        assert_eq!(ring_pole_turns(&missing), 0, "a coordinate missing");
+        assert_eq!(ring_pole_turns(&[Coord::new(0.0, 80.0), Coord::new(180.0, 80.0)]), 0, "too short");
     }
 }

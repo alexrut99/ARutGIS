@@ -11,10 +11,10 @@ use crate::{CmdResult, CommandSpec as C, Session};
 pub fn commands() -> Vec<C> {
     vec![
         C::new("map.findPlace", "By Place or Address…", "Home › Navigate › Locate", find_place).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Network)).params(
-            r#"{"query": "a place or an address", "provider"?: "nominatim" (OpenStreetMap, default) | "photon" | "locatieserver" (PDOK, the Netherlands' addresses and places) | "thai" (Thailand's subdistricts, districts and provinces by name or postcode: ต.สุเทพ อ.เมือง จ.เชียงใหม่, 50200), "url"?: "a geocoding server of your own", "limit"?: 1–20, "go"?: bool (zooms to the first, default true)}"#,
+            r#"{"query": "a place or an address", "provider"?: "nominatim" (OpenStreetMap, default) | "photon" | "census" (U.S. street addresses, current address ranges) | "locatieserver" (PDOK, the Netherlands' addresses and places) | "thai" (Thailand's subdistricts, districts and provinces by name or postcode: ต.สุเทพ อ.เมือง จ.เชียงใหม่, 50200), "url"?: "a geocoding server of your own", "limit"?: 1–20, "go"?: bool (zooms to the first, default true)}"#,
         ),
         C::new("layer.geocode", "Geocode Addresses", "Home › Add › Add Data", geocode).inputs(source_inputs).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Network)).params(
-            r#"{"table"?: name|id (a standalone table, such as a CSV of addresses), "layer"?: name|id (or the active layer), "address": field | [fields] (joined with commas, such as street, city, country), "provider"?: "nominatim" | "photon" | "locatieserver" | "thai" (PDOK, Dutch addresses; up to 10,000 a run), "url"?: "a geocoding server of your own (more than 100 addresses with nominatim or photon)", "name"?: text, "places"?: "answers already looked up, {address: {lon, lat, name} | null} (the app's background run; nothing is fetched)"}"#,
+            r#"{"table"?: name|id (a standalone table, such as a CSV of addresses), "layer"?: name|id (or the active layer), "address": field | [fields] (joined with commas, such as street, city, country), "provider"?: "nominatim" | "photon" | "census" (U.S. street addresses, current address ranges) | "locatieserver" | "thai" (PDOK, Dutch addresses; up to 10,000 a run), "url"?: "a geocoding server of your own (more than 100 addresses with nominatim or photon)", "name"?: text, "places"?: "answers already looked up, {address: {lon, lat, name} | null} (the app's background run; nothing is fetched)"}"#,
         ),
     ]
 }
@@ -53,6 +53,9 @@ fn find_place(s: &mut Session, p: &Value) -> CmdResult {
         let found = crate::render::rustgis_tiles::geocode::search_blocking(&g, query, limit)?;
         if found.skipped > 0 {
             s.warn(skipped_notice(found.skipped));
+        }
+        if found.limited > 0 {
+            s.notify(format!("Search candidates not shown: {} (limit {limit}).", found.limited), false);
         }
         let places = found.places;
         thai_notice(s);
@@ -189,6 +192,11 @@ fn rustgis_tiles_max() -> usize {
     crate::render::rustgis_tiles::geocode::MAX_BATCH
 }
 
+/// Turns addresses into points; desktop dialogs fetch off-frame and supply `places`.
+/// Keeps every source row and appends its returned name and whether it has a usable point.
+/// Without `places`, native lookup is synchronous, including the existing Script pane
+/// fallback, with no progress or Cancel. Moving that path off-frame needs cached network
+/// answers for script replay, so requests and later row-dependent commands are not repeated.
 fn geocode(s: &mut Session, p: &Value) -> CmdResult {
     let g = geocoder(p)?;
     let (rows, distinct) = addresses(s, p)?;
@@ -204,6 +212,12 @@ fn geocode(s: &mut Session, p: &Value) -> CmdResult {
             let l = l?;
             if l.skipped > 0 {
                 s.warn(skipped_notice(l.skipped));
+            }
+            if l.limited > 0 {
+                s.notify(
+                    format!("{} additional geocoding candidates were not used; the first match was kept for each address.", l.limited),
+                    false,
+                );
             }
             if l.failed > 0 {
                 s.notify(
@@ -221,20 +235,26 @@ fn geocode(s: &mut Session, p: &Value) -> CmdResult {
     let src = source(s, p)?;
     let name =
         ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| format!("{} (geocoded)", src.name));
-    // The table's fields, and what the geocoder called each place.
+    // Keep the table's fields, even when they already name one of the output columns.
     let mut fields = src.fields.clone();
     let mut col = "geocoded".to_string();
     while fields.iter().any(|f| f.name.eq_ignore_ascii_case(&col)) {
         col.push('_');
     }
     fields.push(Field::new(col, FieldType::Text));
+    let mut status_col = "match_status".to_string();
+    while fields.iter().any(|f| f.name.eq_ignore_ascii_case(&status_col)) {
+        status_col.push('_');
+    }
+    fields.push(Field::new(status_col, FieldType::Text));
     let mut ds = rustgis_data::Dataset::new(name, GeometryType::Point, fields);
     let (mut matched, mut unmatched) = (0usize, 0usize);
     for (i, (feat, address)) in src.features.iter().zip(&rows).enumerate() {
-        let place = found.get(address).and_then(Option::as_ref);
+        let place = if address.is_empty() { None } else { found.get(address).and_then(Option::as_ref) };
         let mut attrs = feat.attrs.clone();
         attrs.resize(src.fields.len(), Attr::Null);
         attrs.push(place.map(|pl| Attr::Text(pl.name.clone())).unwrap_or(Attr::Null));
+        attrs.push(Attr::Text(if place.is_some() { "matched" } else { "unmatched" }.into()));
         if place.is_some() {
             matched += 1;
         } else {
@@ -261,6 +281,8 @@ struct Lookup {
     error: Option<String>,
     /// Places the answers gave without a usable position.
     skipped: usize,
+    /// Additional candidates omitted when keeping one match per address.
+    limited: usize,
 }
 
 /// Geocodes each address, waiting between requests as the server asks.
@@ -286,6 +308,7 @@ fn lookup(g: &Geocoder, distinct: &[String]) -> Result<Lookup, String> {
                 succeeded += 1;
                 in_a_row = 0;
                 out.skipped += found.skipped;
+                out.limited += found.limited;
                 out.found.insert(a.clone(), found.places.into_iter().next());
             }
             // A failed request isn't "not found": it is counted apart, and a server that refuses

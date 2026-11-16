@@ -85,16 +85,16 @@ impl Datum {
     }
 }
 
-/// Converts between two proj4 systems; geographic ones in degrees.
+/// Converts between two systems given as PROJ definitions; geographic ones in degrees.
 struct Convert {
     /// The two systems; the definitions are this module's own, so they always parse (a failure
     /// would convert nothing).
-    systems: Option<(proj4rs::Proj, proj4rs::Proj)>,
+    systems: Option<(rustgis_data::raster::Transformer, rustgis_data::raster::Transformer)>,
 }
 
 impl Convert {
     fn new(from: &str, to: &str) -> Convert {
-        let p = |d: &str| proj4rs::Proj::from_proj_string(d).ok();
+        let p = |d: &str| rustgis_data::raster::Crs::parse(d).ok().and_then(|c| c.transformer().ok());
         Convert { systems: p(from).zip(p(to)) }
     }
 
@@ -103,9 +103,8 @@ impl Convert {
         if !c.is_finite() {
             return None;
         }
-        let mut p = if from.is_latlong() { (c.x.to_radians(), c.y.to_radians(), 0.0) } else { (c.x, c.y, 0.0) };
-        proj4rs::transform::transform(from, to, &mut p).ok()?;
-        let out = if to.is_latlong() { Coord::new(p.0.to_degrees(), p.1.to_degrees()) } else { Coord::new(p.0, p.1) };
+        // Through WGS 84 longitude and latitude, as each system's transformer gives and takes.
+        let out = to.from_lonlat_unchecked(from.to_lonlat(c)?)?;
         out.is_finite().then_some(out)
     }
 }

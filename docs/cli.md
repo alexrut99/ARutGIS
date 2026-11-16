@@ -25,9 +25,23 @@ It defaults to 1600 × 900 pixels at 96 DPI; `--width`, `--height` and `--dpi` c
 A data file is zoomed to its full extent; a project keeps its saved view.
 `--tiles` accepts an XYZ template, vector tiles or a MapLibre-style address.
 
-`--worldview auto|default|china` chooses the disputed borders in the built-in countries and
-world outline, for `render`, `run` and the other subcommands. `auto` follows
-`RUSTGIS_WORLDVIEW`, else the system time zone and locale.
+`--worldview auto|default|CODE` chooses the disputed borders in the built-in countries and
+world outline, for `render`, `run`, `ask` and `mcp`: the default borders, or a
+[worldview](user-guide/maps.md#worldview)'s code, such as `chn`, `ind` or `usa`. A worldview
+other than the default is downloaded once and kept in the cache folder; if the download fails,
+a named one is an error. `auto` follows `RUSTGIS_WORLDVIEW`, else the system time zone and
+locale (China's view in mainland China, falling back to the default borders with a warning when
+it can't be downloaded). `--worldview-detail simplified|original` chooses how detailed: the
+simplified borders (the default, about 250 KB) or Natural Earth's 1:10m ones (a 3 MB download),
+which `--worldview default` also downloads. Given explicitly, it makes a failed download an
+error even with `auto`. Nothing is downloaded by `ask`'s model and sign-in options, by `ask`
+with no request unless it reads or saves a project (with `--account` and no request, not even
+then), nor by `mcp --attach`.
+
+`--threads N` sets the most threads one piece of work uses (1 to 1024, never more than the
+cores), as [`gp.threads`](user-guide/analysis.md#analysis-workflows) sets it. With `mcp --attach` the
+open app's own setting holds, so `--threads` is refused there. Without it, a run takes
+the computer's cores, up to 16.
 
 ## Chaining commands
 
@@ -49,7 +63,8 @@ no parameters; otherwise use `--cmd 'id={json params}'`. What a command reports 
 which the app shows in its status bar, goes to standard error.
 
 Pass `--use-saved-secrets` to load the desktop app's saved connections and let
-`connection.login` and project sources use their remembered database passwords and S3 keys.
+`connection.login` and project sources use their remembered database passwords, S3 keys and
+web-service logins (Basic authentication or an API key in a header or query parameter).
 It also lets `ask` use the API key the app remembers, only for the same provider and address
 when the environment supplies no key, and the ChatGPT sign-in kept in the system keychain, and
 lets files on NASA's Earthdata data servers use the Earthdata Login token the app remembers
@@ -64,6 +79,15 @@ run continues without that saved secret and warns once on standard error. An unr
 malformed preferences file produces a separate warning when opting in; missing preferences are
 normal. On macOS, Keychain may ask once per item whether `rustgis-cli` may read it; **Always
 Allow** stops that question for the executable and item.
+
+Web-service logins are loaded only for the same connection ID, origin and login definition;
+the flag never shares a login with another connection. `connection.login` keeps an entered
+password or API key session-only unless `"remember": true` opts it into the OS store.
+If saving fails, the session login still works and a warning says it was not remembered.
+`connection.forgetLogin` deletes only the saved login, leaving the session login usable.
+`connection.logout` retains the saved login but blocks automatic reuse for the rest of the
+session until an explicit `connection.login`. See [Web-service logins](user-guide/data.md#web-service-logins)
+for exact-origin matching and HTTP confirmation.
 
 Nothing waits on `run` the way a window does, so a long run takes the bounds the app's panes give
 it on a thread: a trend over a data cube (`cube.trend`) may compare up to 20 billion pairs, ten
@@ -117,7 +141,7 @@ rustgis-cli ask --login                             # sign in with ChatGPT to us
 rustgis-cli ask --sample --provider chatgpt "Zoom to Tokyo"
 ```
 
-The provider is `--provider` (`anthropic`, `openai`, `chatgpt`, `gemini`, `openrouter`, `ollama`, `custom`, `requesty`, `trustedrouter`),
+The provider is `--provider` (`anthropic`, `openai`, `chatgpt`, `gemini`, `openrouter`, `ollama`, `custom`, `requesty`, `trustedrouter`, `opper`),
 else `RUSTGIS_ASSISTANT_PROVIDER`, else the first with a key in the environment, else the app's
 saved provider when `--use-saved-secrets` is set, else Ollama. ChatGPT sign-in is used only when
 that provider is selected. Account management and `--models` do not read saved API keys:

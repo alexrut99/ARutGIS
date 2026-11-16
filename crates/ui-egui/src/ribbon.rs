@@ -11,8 +11,8 @@ use serde_json::{Value, json};
 
 use crate::theme::{Tokens, regular, semibold};
 use crate::widgets::{
-    CONTENT_H, Dragged, LABEL_H, big, big_form_menu, big_menu, big_split_menu, col, group, menu_item, small, small_form_menu, small_menu,
-    submenu_row, text_w,
+    CONTENT_H, Dragged, LABEL_H, big, big_form_menu, big_menu, big_split_form_menu, big_split_menu, col, group, menu_item, small,
+    small_form_menu, small_menu, submenu_row, text_w,
 };
 use crate::{RightPane, RustGisApp, icons};
 
@@ -28,11 +28,15 @@ pub fn current_tab(name: &str) -> &str {
         "Map" => "Home",
         "Insert" | "Raster Data" => "Data",
         "Feature Layer" | "Raster Layer" => "Style",
-        "Analysis" | "Imagery" => "Analyze",
+        "Analysis" => "Analyze",
         "Share" | "Layout" => "Publish",
         _ => name,
     };
-    if TABS.contains(&tab) || tab.starts_with("plugin:") { tab } else { "Home" }
+    // The imagery groups were on Analyze, then moved to the Imagery extension's tab (#1752).
+    if tab == "Imagery" {
+        return "extension:imagery";
+    }
+    if TABS.contains(&tab) || tab.starts_with("plugin:") || tab.starts_with("extension:") { tab } else { "Home" }
 }
 
 /// Saved hidden tabs under the current names: renamed tabs carry over, and names of tabs whose
@@ -47,7 +51,10 @@ pub fn current_hidden_tabs(saved: Vec<String>) -> Vec<String> {
             "Share" => "Publish",
             n => n,
         };
-        if (TABS.contains(&tab) || tab.starts_with("plugin:")) && !FIXED_TABS.contains(&tab) && !out.iter().any(|t| t == tab) {
+        if (TABS.contains(&tab) || tab.starts_with("plugin:") || tab.starts_with("extension:"))
+            && !FIXED_TABS.contains(&tab)
+            && !out.iter().any(|t| t == tab)
+        {
             out.push(tab.to_string());
         }
     }
@@ -69,10 +76,40 @@ fn plugin_tabs(app: &RustGisApp) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The extensions that are on with a tab of their own (#1752): (tab id, caption in the interface
+/// language).
+fn extension_tabs(app: &RustGisApp) -> Vec<(String, String)> {
+    rustgis_engine::extensions::ALL
+        .iter()
+        .filter(|e| app.session.extensions().is_on(e.id))
+        .filter_map(|e| e.tab.map(|caption| (rustgis_engine::extensions::tab_id(e.id), tl_raw!(caption).to_string())))
+        .collect()
+}
+
+/// RustGIS's tabs, then the tabs of extensions that are on (after Help), then plugins' own tabs:
+/// (tab id, caption in the interface language).
+pub(crate) fn all_tabs(app: &RustGisApp) -> Vec<(String, String)> {
+    let mut tabs: Vec<(String, String)> = TABS.iter().map(|t| (t.to_string(), tl!(*t).to_string())).collect();
+    tabs.extend(extension_tabs(app));
+    tabs.extend(plugin_tabs(app));
+    tabs
+}
+
+/// Whether tab `tab` (one of RustGIS's, an extension's or a plugin's) is there to show.
+pub fn tab_exists(app: &RustGisApp, tab: &str) -> bool {
+    if tab.starts_with("plugin:") {
+        plugin_tabs(app).iter().any(|(id, _)| id == tab)
+    } else if tab.starts_with("extension:") {
+        extension_tabs(app).iter().any(|(id, _)| id == tab)
+    } else {
+        TABS.contains(&tab)
+    }
+}
+
 pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    // A plugin's tab whose plugin was turned off or removed.
-    if app.ui.tab.starts_with("plugin:") && !plugin_tabs(app).iter().any(|(id, _)| *id == app.ui.tab) {
+    // A tab whose plugin or extension was turned off or removed.
+    if !tab_exists(app, &app.ui.tab) {
         app.ui.tab = "Plugins".into();
     }
     egui::Panel::top("tabs")
@@ -102,6 +139,7 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
                     let tab = app.ui.tab.clone();
                     match tab.as_str() {
                         t if t.starts_with("plugin:") => plugin_tab(app, ui, t.trim_start_matches("plugin:")),
+                        t if t.starts_with("extension:") => extension_groups(app, ui, t.trim_start_matches("extension:")),
                         "Data" => data_tab(app, ui),
                         "Style" => style_tab(app, ui),
                         "Labeling" => labeling_tab(app, ui),
@@ -214,9 +252,8 @@ fn tab_strip(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
             app.ui.backstage = true;
         }
         ui.add_space(6.0);
-        // RustGIS's tabs, then plugins' own tabs; the user can hide any of them.
-        let mut tabs: Vec<(String, String)> = TABS.iter().map(|t| (t.to_string(), tl!(*t).to_string())).collect();
-        tabs.extend(plugin_tabs(app));
+        // RustGIS's tabs, extensions' and plugins' own tabs; the user can hide any of them.
+        let mut tabs = all_tabs(app);
         tabs.retain(|(id, _)| !app.ui.hidden_tabs.iter().any(|h| h == id));
         // The tabs scroll between the Project button and the right-side controls (the collapse
         // button and the active tool indicator) when the window is too narrow for them.
@@ -466,11 +503,14 @@ fn home_tab(app: &mut RustGisApp, ui: &mut Ui) {
             true,
             |ui, app| {
                 menu_item(ui, app, "", "Delimited Text…", "ui.addDelimited", Value::Null);
+                menu_item(ui, app, "", "DXF…", "ui.addDxf", Value::Null);
                 menu_item(ui, app, "", "Geocode Addresses…", "ui.dialog", json!({"name": "geocode"}));
                 menu_item(ui, app, "", "From URL…", "ui.addUrl", Value::Null);
                 menu_item(ui, app, "", "From Service…", "ui.addService", Value::Null);
                 menu_item(ui, app, "", "Zarr…", "ui.dialog", json!({"name": "zarr"}));
-                // Databases are read through DuckDB, a program the browser can't run.
+                // Databases are read through DuckDB, a program the browser can't run. A phone keeps
+                // the row: its PostGIS, MySQL and SQL Server connections need no program, and a
+                // DuckDB database refused there says why (#1902).
                 #[cfg(not(target_arch = "wasm32"))]
                 menu_item(ui, app, "", "Database…", "ui.dialog", json!({"name": "addDatabase"}));
                 #[cfg(not(target_arch = "wasm32"))]
@@ -959,6 +999,31 @@ fn offline_group(app: &mut RustGisApp, ui: &mut Ui) {
             false,
             false,
         );
+        // The same, as a file for a phone (#1902): the data in view and the map's tile archives.
+        big(
+            ui,
+            app,
+            "package",
+            "Package for\nthe Field",
+            "Save the data in view, with the map's MBTiles and PMTiles basemaps, as a field package to open on a phone.",
+            "ui.saveItem",
+            json!({"kind": "fieldPackage"}),
+            false,
+            false,
+        );
+        col(ui, |ui| {
+            // A field package sent back from a phone: its edits and photos, to its offline area.
+            crate::widgets::small(
+                ui,
+                app,
+                "open",
+                "Bring Back",
+                "Bring a field package's edits and photos back to the offline area it was made from.",
+                "ui.openItem",
+                json!({"kind": "fieldPackage"}),
+                false,
+            );
+        });
         col(ui, |ui| {
             for (icon, label, cmd, desc) in [
                 ("redo", "Sync", "offline.sync", "Send offline edits back and refresh."),
@@ -1716,10 +1781,14 @@ fn analysis_groups(app: &mut RustGisApp, ui: &mut Ui) {
             "Workflows",
             "Guided analysis: suitability, visibility, networks, interpolation and more.",
             |ui, app| {
-                for (id, title) in crate::analysispane::SECTIONS
+                let shown: Vec<&(&str, &str)> = crate::analysispane::SECTIONS
                     .iter()
-                    .filter(|s| !matches!(s.0, "rasterFunctions" | "functionEditor" | "environments" | "models"))
-                {
+                    .filter(|s| {
+                        !matches!(s.0, "rasterFunctions" | "functionEditor" | "environments" | "models")
+                            && crate::analysispane::section_shown(&app.session, s.0)
+                    })
+                    .collect();
+                for (id, title) in shown {
                     menu_item(ui, app, "geoprocessing", title, "ui.pane.workflows", json!({"section": id}));
                 }
             },
@@ -1732,7 +1801,7 @@ fn analysis_groups(app: &mut RustGisApp, ui: &mut Ui) {
                 app,
                 "relief",
                 "Raster Functions",
-                "Slope, aspect, hillshade, NDVI, band math, thresholds.",
+                "Slope (degrees), aspect, hillshade, NDVI, band math, thresholds.",
                 "ui.pane.workflows",
                 json!({"section": "rasterFunctions"}),
                 false,
@@ -1788,10 +1857,64 @@ fn analysis_groups(app: &mut RustGisApp, ui: &mut Ui) {
     });
 }
 
+/// View › Display › Graticule's menu: the graticule's type (choosing one shows it), and the
+/// measured grid's coordinate system.
+fn graticule_menu(ui: &mut Ui, app: &mut RustGisApp) {
+    use rustgis_engine::map::graticule::GraticuleType;
+    let (on, kind) = (app.session.map().graticule, app.session.map().graticule_type);
+    for t in GraticuleType::ALL {
+        if ui.add(egui::Button::selectable(on && kind == t, tl!(t.label()))).clicked() {
+            if let Err(e) = app.run("map.graticule", json!({"type": t.code()})) {
+                app.session.notify(e, true);
+            }
+            ui.close();
+        }
+    }
+    ui.separator();
+    let name = ui.label(tl!("Measured grid's coordinate system"));
+    ui.horizontal(|ui| {
+        let edit = ui.add(egui::TextEdit::singleline(&mut app.ui.graticule_crs_input).hint_text("2056").desired_width(90.0)).on_hover_text(
+            tl!("An EPSG code, WKT or a PROJ string; empty: the map's own when it is projected, else the UTM zone at the view's centre"),
+        );
+        // Named by the label above it, for a screen reader (the hint is only a placeholder).
+        let edit = edit.labelled_by(name.id);
+        let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if ui.button(tl!("Use System")).clicked() || enter {
+            let typed = app.ui.graticule_crs_input.trim();
+            let crs = if typed.is_empty() { String::new() } else { crate::dialogs::typed_crs(typed) };
+            match app.run("map.graticule", json!({"type": "measured", "crs": crs})) {
+                Ok(_) => {
+                    app.ui.graticule_crs_input.clear();
+                    ui.close();
+                }
+                Err(e) => app.session.notify(e, true),
+            }
+        }
+    });
+    let shown = app.session.map().graticule_crs.as_deref().map(rustgis_engine::map::graticule::short_crs);
+    ui.label(match shown {
+        Some(c) => crate::i18n::fmt("Now: {crs}", &[("crs", &c)]),
+        None => tl!("Now: the map's own, else the UTM zone at the centre").to_string(),
+    });
+}
+
 fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
     group(ui, "Display", |ui| {
         let g = app.session.map().graticule;
-        big(ui, app, "graticule", "Graticule", "Show latitude/longitude lines on the basemap.", "map.graticule", Value::Null, g, false);
+        big_split_form_menu(
+            ui,
+            app,
+            "graticule",
+            "Graticule",
+            "Show or hide the graticule over the basemap: latitudes and longitudes, a measured grid or the UTM zones.",
+            "map.graticule",
+            Value::Null,
+            g,
+            "Graticule options",
+            "What the graticule draws: latitudes and longitudes, a measured grid or the UTM zones.",
+            true,
+            graticule_menu,
+        );
         let gpu = app.map.gpu_enabled;
         big(
             ui,
@@ -1839,18 +1962,16 @@ fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
         });
         col(ui, |ui| {
             small(ui, app, "globe_view", "Global", "A globe scene.", "map.viewMode", json!({"mode": "global"}), on);
-            if rustgis_engine::map::projection::local_views_supported() {
-                small(
-                    ui,
-                    app,
-                    "map",
-                    "Local",
-                    "A flat scene centred on the view (azimuthal equidistant).",
-                    "map.viewMode",
-                    json!({"mode": "local"}),
-                    local,
-                );
-            }
+            small(
+                ui,
+                app,
+                "map",
+                "Local",
+                "A flat scene centred on the view (azimuthal equidistant).",
+                "map.viewMode",
+                json!({"mode": "local"}),
+                local,
+            );
         });
     });
     let v = app.session.map().view.clone();
@@ -2017,6 +2138,18 @@ fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
                 json!({"mode": if v.fast { "quality" } else { "speed" }}),
                 v.fast,
             );
+            // Drawn and written by the desktop app only: the browser's `ui.dialog` refuses it.
+            #[cfg(not(target_arch = "wasm32"))]
+            small(
+                ui,
+                app,
+                "maneuver_roundabout",
+                "Export Orbit…",
+                "Write a turn of the view about its centre as an animated GIF or PNG frames.",
+                "ui.dialog",
+                json!({"name": "exportOrbit"}),
+                false,
+            );
         });
     });
     group(ui, "Windows", |ui| {
@@ -2090,10 +2223,10 @@ fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
                 app,
                 "identify",
                 "Details",
-                "Details of the selected layer.",
+                "Details of the selected layer, on the Source tab of its properties.",
                 "ui.pane.details",
                 Value::Null,
-                app.ui.right == Some(RightPane::Details),
+                crate::layerprops::source_in_view(&app.ui),
             );
         });
         col(ui, |ui| {
@@ -2142,12 +2275,22 @@ fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
             small(
                 ui,
                 app,
-                "identify",
-                "Diagnostics",
+                "message_log",
+                "Messages",
                 "Review errors, warnings, information and failed network requests from this session.",
                 "ui.pane.diagnosticLog",
                 Value::Null,
                 app.ui.right == Some(RightPane::DiagnosticLog),
+            );
+            small(
+                ui,
+                app,
+                "settings",
+                "Layer Properties",
+                "Show the selected layer's settings in one place.",
+                "ui.pane.layerProperties",
+                Value::Null,
+                app.ui.right == Some(RightPane::LayerProperties),
             );
         });
     });
@@ -2344,6 +2487,10 @@ fn data_source_group(app: &mut RustGisApp, ui: &mut Ui) {
             false,
             false,
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        if active_layer(app).is_some_and(crate::reloaddata::supported) {
+            big(ui, app, "redo", "Reload\nData", crate::reloaddata::HELP, "ui.reloadData", Value::Null, false, false);
+        }
     });
 }
 
@@ -2377,11 +2524,21 @@ fn layer_hint(ui: &mut Ui, text: &str) {
     });
 }
 
-/// The Analyze tab: geoprocessing, workflows, imagery and notebooks.
+/// The Analyze tab: geoprocessing, workflows and notebooks. Its imagery groups are on the Imagery extension's tab (#1752).
 fn analyze_tab(app: &mut RustGisApp, ui: &mut Ui) {
     analysis_groups(app, ui);
     notebook_group(app, ui);
-    imagery_groups(app, ui);
+}
+
+/// An extension's groups (#1752), on its own tab or, for one without a tab, on the Plugins tab.
+/// Nothing while it is off.
+fn extension_groups(app: &mut RustGisApp, ui: &mut Ui, id: &str) {
+    if !app.session.extensions().is_on(id) {
+        return;
+    }
+    if id == rustgis_engine::extensions::IMAGERY.id {
+        imagery_groups(app, ui);
+    }
 }
 
 /// The Publish tab: the open layout's groups first, then reports, presentations, export and
@@ -2520,6 +2677,44 @@ fn edit_tab(app: &mut RustGisApp, ui: &mut Ui) {
         if r.clicked() {
             app.map.cancel_sketch();
         }
+        let can_box = crate::boxedit::ready(app);
+        ui.add_enabled_ui(can_box, |ui| {
+            let r = big(
+                ui,
+                app,
+                "g_rect",
+                "Rotated\nBox",
+                "Draw boxes; drag the paddle to rotate, corners to resize. Space or middle-drag pans.",
+                "tool.set",
+                json!({"tool":"rotatedBox"}),
+                app.session.tool == Tool::RotatedBox,
+                false,
+            );
+            if r.clicked() {
+                app.map.cancel_sketch();
+                app.ui.open_right(RightPane::Editing);
+            }
+            r.on_disabled_hover_text(tl!("Turn editing on and select a loaded polygon layer in a flat Earth map."));
+        });
+        let can_circle = crate::circleedit::ready(app);
+        ui.add_enabled_ui(can_circle, |ui| {
+            let r = big(
+                ui,
+                app,
+                "g_circle",
+                "Circle",
+                "Draw circle features from centre to edge; drag the radius handle to resize. Space or middle-drag pans.",
+                "tool.set",
+                json!({"tool":"circle"}),
+                app.session.tool == Tool::Circle,
+                false,
+            );
+            if r.clicked() {
+                app.map.cancel_sketch();
+                app.ui.open_right(RightPane::Editing);
+            }
+            r.on_disabled_hover_text(tl!("Turn editing on and select a loaded polygon layer in a flat Earth map."));
+        });
         big(ui, app, "delete", "Delete", "Delete the selected features.", "edit.delete", Value::Null, false, false);
         let r = big(
             ui,
@@ -2832,16 +3027,19 @@ fn share_groups(app: &mut RustGisApp, ui: &mut Ui) {
                 Value::Null,
                 app.ui.right == Some(RightPane::Shares),
             );
-            small(
-                ui,
-                app,
-                "modelbuilder",
-                "Deep Learning",
-                "Package a trained deep learning model.",
-                "ui.saveItem",
-                json!({"kind": "dlPackage"}),
-                false,
-            );
+            // Deep learning packages are the Imagery extension's (#1752).
+            if app.session.extensions().is_on(rustgis_engine::extensions::IMAGERY.id) {
+                small(
+                    ui,
+                    app,
+                    "modelbuilder",
+                    "Deep Learning",
+                    "Package a trained deep learning model.",
+                    "ui.saveItem",
+                    json!({"kind": "dlPackage"}),
+                    false,
+                );
+            }
         });
     });
     group(ui, "Layout", |ui| {
@@ -3200,6 +3398,16 @@ fn layout_groups(app: &mut RustGisApp, ui: &mut Ui) {
             small(ui, app, "save_as", "Save Layout File", "Save the layout as a layout file.", "ui.saveLayout", Value::Null, false);
             small(ui, app, "map", "Show Map", "Close the layout and show the map.", "layout.close", Value::Null, false);
         });
+        col(ui, |ui| {
+            // A PDF's map frames carry their coordinates (a GeoPDF) unless this is turned off: a
+            // toggle, as Snap and Rulers are.
+            let on = app.ui.pdf_georeference;
+            let desc =
+                "Export and print the layout's map frames to PDF with their coordinates, so PDF readers can locate and measure in them.";
+            if small(ui, app, "globe_view", "Georeference PDF", desc, "ui.menu", Value::Null, on).clicked() {
+                app.ui.pdf_georeference = !on;
+            }
+        });
     });
 }
 
@@ -3239,6 +3447,23 @@ fn plugins_tab(app: &mut RustGisApp, ui: &mut Ui) {
             );
         });
     });
+    group(ui, "Extensions", |ui| {
+        big(
+            ui,
+            app,
+            "extension",
+            "Extensions",
+            "Turn on or off the optional parts of RustGIS, such as Imagery.",
+            "ui.extensions",
+            Value::Null,
+            app.extensions.open,
+            false,
+        );
+    });
+    // The groups of the extensions that are on and have no tab of their own.
+    for e in rustgis_engine::extensions::ALL.iter().filter(|e| e.tab.is_none()) {
+        extension_groups(app, ui, e.id);
+    }
     // A group per enabled plugin with commands, in the interface language when it has one
     // (plugins with a tab of their own are on that tab instead).
     let lang = app.lang().code();
@@ -3451,10 +3676,9 @@ fn settings_tab(app: &mut RustGisApp, ui: &mut Ui) {
     });
     group(ui, "Customize", |ui| {
         let hidden = app.ui.hidden_tabs.clone();
-        // RustGIS's tabs and plugins' tabs.
-        let mut all: Vec<(String, String)> =
-            TABS.iter().filter(|t| !FIXED_TABS.contains(*t)).map(|t| (t.to_string(), tl!(*t).to_string())).collect();
-        all.extend(plugin_tabs(app));
+        // RustGIS's tabs, extensions' and plugins' tabs.
+        let mut all = all_tabs(app);
+        all.retain(|(id, _)| !FIXED_TABS.contains(&id.as_str()));
         big_form_menu(ui, app, "settings", "Ribbon", "Choose which tabs the ribbon shows.", move |ui, app| {
             for (tab, caption) in &all {
                 let mut on = !hidden.iter().any(|h| h == tab);
@@ -3479,10 +3703,53 @@ fn settings_tab(app: &mut RustGisApp, ui: &mut Ui) {
         worldview_menu(app, ui);
     });
     group(ui, "Start-up", |ui| start_project_menu(app, ui));
+    // The browser has no threads to set.
+    if !cfg!(target_arch = "wasm32") {
+        group(ui, "Performance", |ui| threads_menu(app, ui));
+    }
     // Only a shell that keeps recovery copies (the desktop app) has autosave.
     if app.services.recovery.is_some() {
         group(ui, "Autosave", |ui| autosave_menu(app, ui));
     }
+}
+
+/// A thread setting's name: "Automatic (8)", with the threads it gives, or the number.
+fn threads_label(setting: Option<usize>) -> String {
+    use rustgis_engine::data::threads;
+    match setting {
+        None => crate::i18n::fmt("Automatic ({n})", &[("n", &threads::default_max().to_string())]),
+        Some(n) => n.min(threads::cores()).to_string(),
+    }
+}
+
+/// Settings › Threads: the most threads one piece of work uses (#1562), the computer's cores up
+/// to 16 by default.
+fn threads_menu(app: &mut RustGisApp, ui: &mut Ui) {
+    use rustgis_engine::data::threads;
+    let setting = threads::setting();
+    let label = format!("{}\n{}", tl!("Threads"), threads_label(setting));
+    let tip = "The most threads a tool, a raster read or a map drawing uses: fewer keep cores free for other work.";
+    big_menu(ui, app, "settings", &label, tip, move |ui, app| {
+        if ui.add(egui::Button::selectable(setting.is_none(), threads_label(None))).clicked() {
+            let _ = app.run("ui.threads", json!({"threads": null}));
+            ui.close();
+        }
+        let mut choices = crate::threadsui::choices(threads::cores());
+        // A setting made elsewhere (`gp.threads`, a script) is listed too, so it shows as chosen.
+        if let Some(s) = setting.map(|s| s.min(threads::cores()))
+            && !choices.contains(&s)
+        {
+            choices.push(s);
+            choices.sort_unstable();
+        }
+        for n in choices {
+            let on = setting.is_some_and(|s| s.min(threads::cores()) == n);
+            if ui.add(egui::Button::selectable(on, n.to_string())).clicked() {
+                let _ = app.run("ui.threads", json!({"threads": n}));
+                ui.close();
+            }
+        }
+    });
 }
 
 /// An interval's name: "Off" or "Every 5 min".
@@ -3790,16 +4057,21 @@ fn feature_style_groups(app: &mut RustGisApp, ui: &mut Ui) {
     layer_group(app, ui, &layer);
 }
 
-/// The polygon layers that could mask `layer`.
-fn mask_menu(ui: &mut Ui, app: &mut RustGisApp, layer: &rustgis_engine::map::Layer) {
-    let polys: Vec<String> = app
-        .session
+/// The names of the polygon layers that could mask `layer`: the ribbon's Masking menu and the
+/// Layer Properties pane's Display tab (#1803) offer the same ones.
+pub(crate) fn mask_choices(app: &RustGisApp, layer: &rustgis_engine::map::Layer) -> Vec<String> {
+    app.session
         .map()
         .layers
         .iter()
         .filter(|l| l.id != layer.id && l.geometry_type() == GeometryType::Polygon)
         .map(|l| l.name.clone())
-        .collect();
+        .collect()
+}
+
+/// The polygon layers that could mask `layer`.
+fn mask_menu(ui: &mut Ui, app: &mut RustGisApp, layer: &rustgis_engine::map::Layer) {
+    let polys = mask_choices(app, layer);
     let cur = layer.mask.clone();
     small_menu(ui, app, "polygon_layer", "Masking", "Show the layer only inside another layer's polygons.", move |ui, app| {
         if ui.radio(cur.is_none(), tl!("No mask")).clicked() {
@@ -3863,52 +4135,34 @@ fn effects_groups(app: &mut RustGisApp, ui: &mut Ui, layer: &rustgis_engine::map
     });
     if gt == GeometryType::Polygon {
         let x = layer.extrusion.clone();
-        let numeric: Vec<String> = layer.dataset.fields.iter().filter(|f| f.ty.is_numeric()).map(|f| f.name.clone()).collect();
+        let (id, numeric) = (layer.id, numeric_fields(layer));
         group(ui, "Extrusion", |ui| {
-            let cur = x.clone();
+            let (cur, fields) = (x.clone(), numeric.clone());
             big_menu(ui, app, "polygon_layer", "Type", "Raise polygons by a height or a field.", move |ui, app| {
-                if ui.radio(cur.is_none(), tl!("None")).clicked() {
-                    let _ = app.run("layer.extrusion", json!({"type": "none"}));
+                if extrusion_type_choices(ui, app, id, cur.as_ref(), &fields) {
                     ui.close();
-                }
-                if ui.radio(cur.as_ref().is_some_and(|x| x.field.is_none()), tl!("Constant height")).clicked() {
-                    let _ = app.run("layer.extrusion", json!({"type": "height", "height": 50_000}));
-                    ui.close();
-                }
-                for f in &numeric {
-                    if ui
-                        .radio(
-                            cur.as_ref().and_then(|x| x.field.as_deref()) == Some(f.as_str()),
-                            crate::i18n::fmt("By {field}", &[("field", f)]),
-                        )
-                        .clicked()
-                    {
-                        let _ = app.run("layer.extrusion", json!({"type": "field", "field": f}));
-                        ui.close();
-                    }
                 }
             });
             if let Some(xx) = &x {
                 ui.vertical(|ui| {
-                    ui.add_space(8.0);
-                    let mut k = xx.factor;
-                    ui.horizontal(|ui| {
-                        let input_label = ui.label(egui::RichText::new(tl!("Factor")).size(11.5));
-                        // Kept across a drag until it is let go (#607).
-                        let drag = Dragged::lend(ui, egui::Id::unique(("extrusion_factor", layer.id)), &mut k);
-                        let r = ui
-                            .add(
-                                egui::DragValue::new(&mut k)
-                                    .update_while_editing(false)
-                                    .range(0.0..=1e6)
-                                    .speed(xx.factor.max(0.0001) * 0.02),
-                            )
-                            .labelled_by(input_label.id);
-                        if drag.settled(ui, &r, &mut k) && k != xx.factor {
-                            let t = if xx.field.is_some() { "field" } else { "height" };
-                            let _ = app.run("layer.extrusion", json!({"type": t, "field": xx.field, "factor": k}));
-                        }
-                    });
+                    // What the walls stand on: the ground, a constant (Base (m) below) or a numeric
+                    // field (the constant is used where the field holds no number). A small menu
+                    // over Factor, so the group stays narrow on a 1366 px window.
+                    let on = xx.clone();
+                    small_menu(
+                        ui,
+                        app,
+                        "extrusion_base",
+                        "Base",
+                        "What the walls stand on: the ground, a field or the constant Base (m).",
+                        move |ui, app| {
+                            if extrusion_base_choices(ui, app, id, &on, &numeric) {
+                                ui.close();
+                            }
+                        },
+                    );
+                    extrusion_factor_row(app, ui, id, xx, "ribbon", 11.5);
+                    extrusion_base_row(app, ui, id, xx, "ribbon", 11.5);
                 });
             }
         });
@@ -3965,6 +4219,160 @@ fn effects_groups(app: &mut RustGisApp, ui: &mut Ui, layer: &rustgis_engine::map
     }
 }
 
+/// The names of `layer`'s numeric fields: what an extrusion's height or base can be read from.
+pub(crate) fn numeric_fields(layer: &rustgis_engine::map::Layer) -> Vec<String> {
+    layer.dataset.fields.iter().filter(|f| f.ty.is_numeric()).map(|f| f.name.clone()).collect()
+}
+
+/// The extrusion types of layer `id` as radio buttons, shared by the ribbon's Type menu and the
+/// Layer Properties pane: None, Constant height, and By <field> for each of `fields`. Choosing the
+/// type the layer has changes nothing, so a constant height isn't reset to 50 km by choosing it
+/// again. Whether one was clicked, so a menu can close.
+pub(crate) fn extrusion_type_choices(
+    ui: &mut Ui,
+    app: &mut RustGisApp,
+    id: u32,
+    cur: Option<&rustgis_engine::map::effects::Extrusion>,
+    fields: &[String],
+) -> bool {
+    let mut clicked = false;
+    let on = cur.is_none();
+    if ui.radio(on, tl!("None")).clicked() {
+        clicked = true;
+        if !on {
+            let _ = app.run("layer.extrusion", json!({"layer": id, "type": "none"}));
+        }
+    }
+    let on = cur.is_some_and(|x| x.field.is_none());
+    if ui.radio(on, tl!("Constant height")).clicked() {
+        clicked = true;
+        if !on {
+            let _ = app.run("layer.extrusion", json!({"layer": id, "type": "height", "height": 50_000}));
+        }
+    }
+    for f in fields {
+        let on = cur.and_then(|x| x.field.as_deref()) == Some(f.as_str());
+        if ui.radio(on, crate::i18n::fmt("By {field}", &[("field", f)])).clicked() {
+            clicked = true;
+            if !on {
+                let _ = app.run("layer.extrusion", json!({"layer": id, "type": "field", "field": f}));
+            }
+        }
+    }
+    clicked
+}
+
+/// What layer `id`'s walls stand on, as radio buttons shared by the ribbon's Base menu and the
+/// Layer Properties pane: the ground, the constant Base (m) once it is set, or By <field> for each
+/// of `fields`. As with the type, choosing the base the layer has changes nothing. Whether one was
+/// clicked, so a menu can close.
+pub(crate) fn extrusion_base_choices(
+    ui: &mut Ui,
+    app: &mut RustGisApp,
+    id: u32,
+    x: &rustgis_engine::map::effects::Extrusion,
+    fields: &[String],
+) -> bool {
+    let mut clicked = false;
+    let on = x.base_field.is_none() && (x.base <= 0.0 || x.base.is_nan());
+    if ui.radio(on, tl!("Ground")).clicked() {
+        clicked = true;
+        if !on {
+            let _ = app.run("layer.extrusionBase", json!({"layer": id, "field": null, "base": 0}));
+        }
+    }
+    // A constant base is set with Base (m); once set, it can be chosen over a field.
+    if x.base > 0.0 {
+        let label = crate::i18n::fmt("Constant ({m} m)", &[("m", &x.base.to_string())]);
+        let on = x.base_field.is_none();
+        if ui.radio(on, label).clicked() {
+            clicked = true;
+            if !on {
+                let _ = app.run("layer.extrusionBase", json!({"layer": id, "field": null}));
+            }
+        }
+    }
+    for f in fields {
+        let on = x.base_field.as_deref() == Some(f.as_str());
+        if ui.radio(on, crate::i18n::fmt("By {field}", &[("field", f)])).clicked() {
+            clicked = true;
+            if !on {
+                let _ = app.run("layer.extrusionBase", json!({"layer": id, "field": f}));
+            }
+        }
+    }
+    clicked
+}
+
+/// Layer `id`'s extrusion Factor, shared by the ribbon and the Layer Properties pane (`salt`
+/// keeps their drags apart). As Base (m): a saved factor out of range is shown, not written back.
+pub(crate) fn extrusion_factor_row(
+    app: &mut RustGisApp,
+    ui: &mut Ui,
+    id: u32,
+    x: &rustgis_engine::map::effects::Extrusion,
+    salt: &str,
+    size: f32,
+) {
+    let mut k = if x.factor.is_finite() { x.factor } else { 1.0 };
+    ui.horizontal(|ui| {
+        let input_label = ui.label(egui::RichText::new(tl!("Factor")).size(size));
+        // Kept across a drag until it is let go (#607).
+        let drag = Dragged::lend(ui, egui::Id::unique(("extrusion_factor", salt, id)), &mut k);
+        let r = ui
+            .add(
+                egui::DragValue::new(&mut k)
+                    .update_while_editing(false)
+                    .range(0.0..=1e6)
+                    .clamp_existing_to_range(false)
+                    .speed(x.factor.max(0.0001) * 0.02),
+            )
+            .labelled_by(input_label.id);
+        if drag.settled(ui, &r, &mut k) && k != x.factor {
+            // The height is sent with the factor, constant or the field's fallback where it holds
+            // no number: left out, `layer.extrusion` would raise one below 1,000 m to 1,000 m.
+            let p = match &x.field {
+                Some(f) => json!({"layer": id, "type": "field", "field": f, "height": x.height, "factor": k}),
+                None => json!({"layer": id, "type": "height", "height": x.height, "factor": k}),
+            };
+            let _ = app.run("layer.extrusion", p);
+        }
+    });
+}
+
+/// Layer `id`'s constant extrusion base, Base (m), shared by the ribbon and the Layer Properties
+/// pane (`salt` keeps their drags apart). A saved base outside the range (below 0, or no number)
+/// is shown as it is, never written back just by being shown: only a drag or an edit sends the
+/// command.
+pub(crate) fn extrusion_base_row(
+    app: &mut RustGisApp,
+    ui: &mut Ui,
+    id: u32,
+    x: &rustgis_engine::map::effects::Extrusion,
+    salt: &str,
+    size: f32,
+) {
+    let mut b = if x.base.is_finite() { x.base } else { 0.0 };
+    ui.horizontal(|ui| {
+        let input_label = ui.label(egui::RichText::new(tl!("Base (m)")).size(size));
+        // Kept across a drag until it is let go, as the factor is.
+        let drag = Dragged::lend(ui, egui::Id::unique(("extrusion_base", salt, id)), &mut b);
+        let r = ui
+            .add(
+                egui::DragValue::new(&mut b)
+                    .update_while_editing(false)
+                    .range(0.0..=1e7)
+                    .clamp_existing_to_range(false)
+                    .speed(x.base.max(10.0) * 0.02),
+            )
+            .labelled_by(input_label.id)
+            .on_hover_text(tl!("The constant base: used where no field is chosen, or the field holds no number."));
+        if drag.settled(ui, &r, &mut b) && b != x.base {
+            let _ = app.run("layer.extrusionBase", json!({"layer": id, "base": b}));
+        }
+    });
+}
+
 fn imagery_groups(app: &mut RustGisApp, ui: &mut Ui) {
     let wf = |section: &str| json!({"section": section});
     group(ui, "Ortho Mapping", |ui| {
@@ -4015,7 +4423,7 @@ fn imagery_groups(app: &mut RustGisApp, ui: &mut Ui) {
                 app,
                 "relief",
                 "Raster Functions",
-                "Slope, hillshade, NDVI and more.",
+                "Slope (degrees), hillshade, NDVI and more.",
                 "ui.pane.workflows",
                 wf("rasterFunctions"),
                 false,
@@ -4033,7 +4441,16 @@ fn imagery_groups(app: &mut RustGisApp, ui: &mut Ui) {
                 wf("change"),
                 false,
             );
-            small(ui, app, "graduated", "Spectral Analysis", "Every band's value at a pixel.", "ui.pane.workflows", wf("spectral"), false);
+            small(
+                ui,
+                app,
+                "graduated",
+                "Spectral Analysis",
+                "Chart every band at points on the map, and compare them.",
+                "ui.pane.workflows",
+                wf("spectral"),
+                false,
+            );
         });
     });
     group(ui, "Image Classification", |ui| {
@@ -4107,36 +4524,43 @@ fn imagery_groups(app: &mut RustGisApp, ui: &mut Ui) {
     });
 }
 
+/// The layer's Out Beyond and In Beyond pickers (`layer.scaleRange`), a row each: the ribbon's
+/// Visibility Range group and the Layer Properties pane's Display tab (#1803) share them. `salt`
+/// keeps the two places' pickers apart; `size` is the labels' text size.
+pub(crate) fn scale_range_rows(app: &mut RustGisApp, ui: &mut Ui, layer: &rustgis_engine::map::Layer, salt: &str, size: f32) {
+    for (label, cur, key) in [("Out Beyond", layer.min_scale, "min"), ("In Beyond", layer.max_scale, "max")] {
+        ui.horizontal(|ui| {
+            let input_label = ui.label(egui::RichText::new(tl!(label)).size(size));
+            egui::ComboBox::from_id_salt(format!("{salt}_{key}"))
+                .selected_text(scale_label(cur))
+                .width(118.0)
+                .show_ui(ui, |ui| {
+                    let mut choices: Vec<Option<f64>> = vec![None];
+                    choices.extend(SCALES.iter().map(|s| Some(*s)));
+                    for c in choices {
+                        if ui.selectable_label(c == cur, scale_label(c)).clicked() {
+                            let (mut min, mut max) = (layer.min_scale, layer.max_scale);
+                            if key == "min" {
+                                min = c;
+                            } else {
+                                max = c;
+                            }
+                            let _ = app.run("layer.scaleRange", json!({"min": min, "max": max}));
+                        }
+                    }
+                })
+                .response
+                .labelled_by(input_label.id);
+        });
+    }
+}
+
 /// The Visibility Range and Effects groups shared by feature and raster layers.
 fn visibility_and_effects(app: &mut RustGisApp, ui: &mut Ui, layer: &rustgis_engine::map::Layer) {
     group(ui, "Visibility Range", |ui| {
         ui.vertical(|ui| {
             ui.add_space(6.0);
-            for (label, cur, key) in [("Out Beyond", layer.min_scale, "min"), ("In Beyond", layer.max_scale, "max")] {
-                ui.horizontal(|ui| {
-                    let input_label = ui.label(egui::RichText::new(tl!(label)).size(11.5));
-                    egui::ComboBox::from_id_salt(format!("scale_{key}"))
-                        .selected_text(scale_label(cur))
-                        .width(118.0)
-                        .show_ui(ui, |ui| {
-                            let mut choices: Vec<Option<f64>> = vec![None];
-                            choices.extend(SCALES.iter().map(|s| Some(*s)));
-                            for c in choices {
-                                if ui.selectable_label(c == cur, scale_label(c)).clicked() {
-                                    let (mut min, mut max) = (layer.min_scale, layer.max_scale);
-                                    if key == "min" {
-                                        min = c;
-                                    } else {
-                                        max = c;
-                                    }
-                                    let _ = app.run("layer.scaleRange", json!({"min": min, "max": max}));
-                                }
-                            }
-                        })
-                        .response
-                        .labelled_by(input_label.id);
-                });
-            }
+            scale_range_rows(app, ui, layer, "scale", 11.5);
         });
         big(ui, app, "scale_range", "Clear\nLimits", "Draw the layer at every scale.", "layer.scaleRange", json!({}), false, false);
     });
@@ -4257,7 +4681,9 @@ fn drawing_group(app: &mut RustGisApp, ui: &mut Ui, layer: &rustgis_engine::map:
                     crate::widgets::one_step_per_press(app, &resp);
                     let _ = app.run("layer.color", json!({"color": crate::theme::rgba(c).hex8()}));
                 }
-                ui.label(egui::RichText::new(tl!("Color")).size(11.5));
+                // A line has no inside: its colour is the line's (the outline is the "Outline" width below).
+                let name = if layer.geometry_type() == GeometryType::Polyline { tl!("Color") } else { tl!("Fill") };
+                ui.label(egui::RichText::new(name).size(11.5));
             });
             let mut w = layer.renderer.base_symbol().stroke_width;
             ui.horizontal(|ui| {
@@ -4280,13 +4706,18 @@ fn drawing_group(app: &mut RustGisApp, ui: &mut Ui, layer: &rustgis_engine::map:
                 });
             }
             if layer.has_geometry(GeometryType::Polygon) && !layer.graphics {
+                let hidden = layer.no_fill.is_some();
                 small(
                     ui,
                     app,
-                    "no_fill",
-                    "No Fill",
-                    "Draw only polygon outlines, keeping their colors and widths.",
-                    "layer.noFill",
+                    if hidden { "symbology" } else { "no_fill" },
+                    if hidden { "Restore Fill" } else { "No Fill" },
+                    if hidden {
+                        "Restore polygon fills hidden by No Fill, keeping their colors and outlines."
+                    } else {
+                        "Draw only polygon outlines, keeping their colors and widths."
+                    },
+                    if hidden { "layer.restoreFill" } else { "layer.noFill" },
                     Value::Null,
                     false,
                 );
@@ -4546,10 +4977,10 @@ fn raster_data_groups(app: &mut RustGisApp, ui: &mut Ui) {
             app,
             "identify",
             "Raster\nInformation",
-            "Size, bands, statistics and coordinate system.",
+            "Size, bands, statistics and coordinate system, on the Source tab of the raster's properties.",
             "ui.pane.details",
             Value::Null,
-            app.ui.right == Some(RightPane::Details),
+            crate::layerprops::source_in_view(&app.ui),
             false,
         );
     });
@@ -4790,8 +5221,8 @@ fn feature_data_groups(app: &mut RustGisApp, ui: &mut Ui) {
             "def_query",
             "Definition\nQuery",
             "Limit which features draw with a SQL expression.",
-            "ui.dialog",
-            json!({"name": "definitionQuery"}),
+            "ui.pane.layerProperties",
+            json!({"tab": "query"}),
             has,
             false,
         );
@@ -4918,29 +5349,51 @@ fn other_name(ui: &Ui, l: crate::i18n::Lang) -> &'static str {
     if shown == l.english() && drawable(ui, l.name()) { l.name() } else { l.english() }
 }
 
-/// Whose view of disputed borders the built-in countries and world outline show (Settings › Language).
+/// Whose view of disputed borders the built-in countries and world outline show (Settings ›
+/// Language): the built-in default or one of Natural Earth's points of view, downloaded when
+/// chosen. Until one is chosen, a system in mainland China shows China's.
 fn worldview_menu(app: &mut RustGisApp, ui: &mut Ui) {
-    use rustgis_engine::sample::Worldview;
-    let name = |w: Worldview| match w {
-        Worldview::Default => tl!("Default"),
-        Worldview::China => tl!("China"),
+    use crate::worldviewui::name;
+    use rustgis_engine::sample::{self, Detail, View, Worldview};
+    let label = match crate::worldviewui::downloading(app) {
+        Some(w) => crate::i18n::fmt("{name} (downloading…)", &[("name", name(w))]),
+        None => name(sample::worldview()).to_string(),
     };
-    let auto = app.ui.worldview == crate::i18n::AUTO;
-    let current = rustgis_engine::sample::worldview();
-    let label = if auto { format!("{} ({})", tl!("Automatic"), name(current)) } else { name(current).to_string() };
     let label = format!("{}\n{label}", tl!("Worldview"));
     big_menu(ui, app, "globe_view", &label, "Whose borders the sample countries and the basemap outline show.", move |ui, app| {
-        if ui.selectable_label(auto, tl!("Automatic (system time zone and region)")).clicked() {
-            let _ = app.run("ui.worldview", json!({"worldview": crate::i18n::AUTO}));
-            ui.close();
-        }
-        ui.separator();
-        for w in [Worldview::Default, Worldview::China] {
-            if ui.selectable_label(!auto && w == current, name(w)).clicked() {
-                let _ = app.run("ui.worldview", json!({"worldview": w.code()}));
-                ui.close();
+        // Looked up only while the menu is open: `auto` reads the system's time zone and locale.
+        let wanted = crate::worldviewui::wanted(app);
+        ui.label(egui::RichText::new(tl!("Detail")).small().weak());
+        for (d, text, tip) in [
+            (Detail::Simplified, tl!("Simplified"), tl!("Borders at 1:110m, a small download (about 250 KB)")),
+            (
+                Detail::Original,
+                tl!("Original"),
+                tl!("Natural Earth's 1:10m borders with every island, a larger download (about 3 MB, 10 MB unpacked)"),
+            ),
+        ] {
+            if ui.selectable_label(wanted.detail == d, text).on_hover_text(tip).clicked() {
+                let _ = app.run("ui.worldview", json!({"detail": d.code()}));
             }
         }
+        ui.separator();
+        let detail = Detail::from_code(&app.ui.worldview_detail).unwrap_or_default();
+        egui::ScrollArea::vertical().max_height(ui.ctx().content_rect().height() * 0.6).show(ui, |ui| {
+            for w in Worldview::all() {
+                let text = if sample::text(View::new(w, detail)).is_some() {
+                    name(w).to_string()
+                } else {
+                    crate::i18n::fmt("{name} (download)", &[("name", name(w))])
+                };
+                if ui.selectable_label(w == wanted.worldview, text).clicked() {
+                    let _ = app.run("ui.worldview", json!({"worldview": w.code()}));
+                    ui.close();
+                }
+                if w.built_in() {
+                    ui.separator();
+                }
+            }
+        });
     });
 }
 
@@ -5132,7 +5585,6 @@ fn terrain_menu(ui: &mut Ui, app: &mut RustGisApp) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
@@ -5161,6 +5613,50 @@ mod tests {
         );
         h.run();
         h
+    }
+
+    /// View › Display › Graticule: the button shows or hides it, its menu picks the type (and shows
+    /// it), and the measured grid's coordinate system typed there is used, or refused with a
+    /// notice and nothing changed.
+    #[test]
+    fn the_graticule_menu_picks_its_type_and_the_measured_grids_system() {
+        use rustgis_engine::map::graticule::GraticuleType;
+        let mut h = tab_harness(RustGisApp::with_sample(), view_tab);
+        let on = h.state().session.map().graticule;
+        h.get_by_label("Graticule").click();
+        h.run();
+        assert_eq!(h.state().session.map().graticule, !on);
+        h.get_by_label("Graticule options").click();
+        h.run();
+        h.get_by_label("UTM Zones").click();
+        h.run();
+        assert!(h.state().session.map().graticule && h.state().session.map().graticule_type == GraticuleType::Utm);
+        // A system typed as an EPSG code: clicking into the field keeps the menu open.
+        h.get_by_label("Graticule options").click();
+        h.run();
+        h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Measured grid's coordinate system").click();
+        h.run();
+        h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Measured grid's coordinate system").type_text("2056");
+        h.run();
+        assert_eq!(h.state().ui.graticule_crs_input, "2056", "typed into the open menu");
+        h.get_by_label("Use System").click();
+        h.run();
+        let m = h.state().session.map();
+        assert_eq!((m.graticule_type, m.graticule_crs.as_deref()), (GraticuleType::Measured, Some("EPSG:2056")));
+        assert!(h.state().ui.graticule_crs_input.is_empty());
+        // A geographic one: refused, said, and nothing changed.
+        let said = h.state().session.notices.len();
+        h.state_mut().ui.graticule_crs_input = "4326".into();
+        h.get_by_label("Graticule options").click();
+        h.run();
+        h.get_by_label("Use System").click();
+        h.run();
+        assert_eq!(h.state().session.map().graticule_crs.as_deref(), Some("EPSG:2056"));
+        assert!(
+            h.state().session.notices[said..].iter().any(|n| n.text.contains("is geographic")),
+            "{:?}",
+            h.state().session.notices.last()
+        );
     }
 
     /// The language list names every language in English while the interface is English, with the
@@ -5227,6 +5723,19 @@ mod tests {
         assert!(!bare.iter().any(|n| n.0 == bn.name()));
     }
 
+    /// Data › Definition Query shows the Layer Properties pane on its Query tab (#1803), even when
+    /// the pane is already in view on another tab.
+    #[test]
+    fn definition_query_opens_the_query_tab() {
+        let mut app = cities();
+        app.run("ui.pane.layerProperties", json!({"tab": "general"})).unwrap();
+        let mut h = tab_harness(app, feature_data_groups);
+        h.get_by_role_and_label(egui::accesskit::Role::Button, "Definition Query").click();
+        h.run();
+        assert_eq!(h.state().ui.right, Some(crate::RightPane::LayerProperties));
+        assert_eq!(h.state().ui.layer_properties_tab, crate::layerprops::Topic::Query);
+    }
+
     /// The Labeling tab holds every label group (#897): a feature layer's, then the map's, which
     /// show with no layer too; Style and View have none left.
     #[test]
@@ -5266,6 +5775,34 @@ mod tests {
         );
         h.run();
         h
+    }
+
+    #[test]
+    fn drawing_restores_polygon_fills_without_reclassifying() {
+        let mut h = drawing_harness();
+        h.state_mut().run("layer.select", json!({"layer": "Countries"})).unwrap();
+        h.run();
+        let renderer = h.state().session.map().layer_by_name("Countries").unwrap().renderer.clone();
+        h.get_by_label("No Fill").click();
+        h.run();
+        assert!(h.state().session.map().layer_by_name("Countries").unwrap().no_fill.is_some());
+        h.get_by_label("Restore Fill").click();
+        h.run();
+        let layer = h.state().session.map().layer_by_name("Countries").unwrap();
+        assert!(layer.no_fill.is_none());
+        assert_eq!(layer.renderer, renderer);
+        assert!(h.query_by_label("No Fill").is_some());
+    }
+
+    #[test]
+    fn drawing_names_the_colour_by_what_it_changes() {
+        let mut h = drawing_harness();
+        for (layer, fill) in [("Countries", true), ("Cities", true), ("Rivers", false)] {
+            h.state_mut().run("layer.select", json!({"layer": layer})).unwrap();
+            h.run();
+            // The colour well itself is also labelled "Color", so only "Fill" tells the two apart.
+            assert_eq!(h.query_by_label("Fill").is_some(), fill, "{layer}");
+        }
     }
 
     /// Drags a number of the harness from `at` by 16, 32 and 48 points, calling `each` between.

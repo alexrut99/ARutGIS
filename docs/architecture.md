@@ -60,7 +60,7 @@ previous owner; browser futures receive explicit captures and never hold a threa
 across an await. Unowned requests are not broadcast to other sessions. Transport metadata
 uses observed statuses and known timeout/connection causes only.
 
-The egui Diagnostics pane (`ui.pane.diagnosticLog`) filters and copies these sanitized records.
+The egui Messages pane (`ui.pane.diagnosticLog`) filters and copies these sanitized records.
 The existing Diagnostic Monitor (`ui.pane.diagnostics`) remains the performance view.
 
 ## Never crash
@@ -88,10 +88,9 @@ when they are installed, RustGIS calls them to read [more formats](user-guide/da
 run DuckDB queries and run the [GeoLibre tools](user-guide/analysis.md#geolibre-tools). In the web
 app the GeoLibre tools run in the browser instead, through geolibre-rust's WASI runner. Some
 dependencies do compile C code into the build: the Zstandard decoder (`zstd-sys`,
-desktop and browser), SQLite (`libsqlite3-sys` through `rusqlite`, desktop), the TLS cryptography
-libraries (`aws-lc-sys` and `ring`, desktop) and GeographicLib's geodesic routines for the
-azimuthal equidistant projection (`proj4rs-geodesic`, desktop). Building them needs a C
-compiler; building the web app needs clang for Zstandard.
+desktop and browser), SQLite (`libsqlite3-sys` through `rusqlite`, desktop) and the TLS
+cryptography libraries (`aws-lc-sys` and `ring`, desktop). Building them needs a C compiler;
+building the web app needs clang for Zstandard.
 
 ## Secrets
 

@@ -14,6 +14,21 @@ signs the app and keeps it up to date:
 
 [![Get it from Microsoft](https://get.microsoft.com/images/en-us%20dark.svg){ width="200" }](https://apps.microsoft.com/detail/9ppjw8h561lq?mode=direct)
 
+## Phones and tablets
+
+The [field app](user-guide/field-work.md) for collecting and editing data away from a desk is on
+Google Play for Android and on the App Store for iPhone and iPad:
+
+<div class="store-badges" markdown>
+
+[![Get it on Google Play](https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png){ .store-badge-play }](https://play.google.com/store/apps/details?id=org.rustgis.mobile)
+[![Download on the App Store](https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg)](https://apps.apple.com/app/rustgis/id6834987896)
+
+</div>
+
+Releases from v0.7.0 on also carry signed Android APKs (below), for a device without Google
+Play.
+
 ## Download
 
 Each [GitHub release](https://github.com/alexrut99/ARutGIS/releases/latest) carries ready-to-run
@@ -32,6 +47,7 @@ builds of the desktop app and `rustgis-cli`. The same files, grouped by platform
 | Linux x64 / arm64 (Fedora, RHEL, openSUSE) | `rustgis-<version>-1.x86_64.rpm` / `rustgis-<version>-1.aarch64.rpm` |
 | Linux x64 / arm64 (any distribution, no install) | `ARutGIS-<version>-linux-x86_64.AppImage` / `ARutGIS-<version>-linux-aarch64.AppImage` |
 | Linux x64 / arm64 (other) | `ARutGIS-<version>-linux-x86_64.tar.gz` / `ARutGIS-<version>-linux-aarch64.tar.gz` |
+| Android arm64 / x86_64 (phones, tablets and emulators; see [Field Work](user-guide/field-work.md)) | `RustGIS-<version>-android-arm64.apk` / `RustGIS-<version>-android-x86_64.apk` |
 
 On macOS the command-line tool is a separate `rustgis-cli-<version>-macos-<arch>.tar.gz`;
 the other packages include it (the Windows installers and the MSIX add `rustgis-cli` to every
@@ -88,7 +104,7 @@ RustGIS is also published to these package managers, which keep it up to date:
 | Platform | Command |
 | --- | --- |
 | Windows x64 ([winget](https://learn.microsoft.com/windows/package-manager/)) | `winget install OpenGeos.RustGIS` (x64 only for now: on ARM64, use the ARM64 setup.exe or .msi above) |
-| macOS ([Homebrew](https://brew.sh)) | `brew install --cask opengeos/rustgis/rustgis` |
+| macOS and Linux ([Homebrew](https://github.com/Homebrew/homebrew-cask/blob/main/Casks/r/rustgis.rb)) | `brew install --cask rustgis` (the DMG on macOS, the AppImage on Linux) |
 | macOS and Linux, command-line tool only (Homebrew) | `brew install opengeos/rustgis/rustgis-cli` |
 | Arch Linux ([AUR](https://aur.archlinux.org/packages/rustgis-bin)) | `yay -S rustgis-bin` (or any AUR helper) |
 | Fedora ([COPR](https://copr.fedorainfracloud.org/coprs/giswqs/rustgis/)) | `sudo dnf copr enable giswqs/rustgis && sudo dnf install rustgis` |
@@ -98,7 +114,11 @@ RustGIS and `rustgis-cli` before `winget upgrade`: the setup.exe, run silently, 
 for each to close and otherwise stops without installing (exit code 2), rather than replace only
 part of it. The same goes for Help › Check for Updates › Install and Restart: close any other
 RustGIS window first, or the update waits for it and then isn't installed (RustGIS says so).
-On Homebrew 5.1 and later, run `brew trust opengeos/rustgis` once before installing from the tap.
+The `rustgis` cask is in Homebrew's own repository, so it needs no tap. The `rustgis-cli`
+formula comes from the opengeos/rustgis tap; installing it by that full name trusts just that
+formula, with no separate `brew trust` step. If you installed the app from that tap
+before (`opengeos/rustgis/rustgis`), it keeps updating from there; to move to Homebrew's cask,
+run `brew uninstall --cask opengeos/rustgis/rustgis && brew install --cask rustgis`.
 Each package is the same build as the release page, and a new release reaches the package
 managers shortly after it is published (winget after Microsoft's review).
 
@@ -117,8 +137,7 @@ cargo build --release -p rustgis-cli      # the command-line tool
 
 The build downloads the Natural Earth sample data from
 [rustgis-assets](https://github.com/opengeos/rustgis-assets). To build offline, download
-`countries.geojson`, `countries_chn.geojson`, `cities.geojson`, `rivers.geojson` and
-`lakes.geojson` from `https://assets.rustgis.app/data/` once and point the build at them:
+`countries.geojson`, `cities.geojson`, `rivers.geojson` and `lakes.geojson` from `https://assets.rustgis.app/data/` once and point the build at them:
 
 ```sh
 RUSTGIS_DATA_DIR=/path/to/data cargo build --release
@@ -131,6 +150,8 @@ RUSTGIS_DATA_DIR=/path/to/data cargo build --release
 | Linux (X11 and Wayland) | Supported |
 | macOS | Supported |
 | Windows | Supported |
+| Android | The [field app](user-guide/field-work.md) from [Google Play](https://play.google.com/store/apps/details?id=org.rustgis.mobile), or the signed APKs with each release from v0.7.0 on |
+| iOS and iPadOS | The [field app](user-guide/field-work.md) from the [App Store](https://apps.apple.com/app/rustgis/id6834987896) |
 | Web browser | Supported: [web.rustgis.app](https://web.rustgis.app) (WebGPU or WebGL2), installable as an app on iOS, Android and desktops ([how](#install-the-web-app)) |
 
 ## Web app
@@ -145,7 +166,10 @@ RustGIS also runs in the browser, compiled to WebAssembly: open
 - **Save** and **Export** download the file. **Save As**, and the first **Save** of a project,
   ask for the file name first; the browser decides which folder downloads go to (Firefox, for
   one, saves to its Downloads folder unless told to ask). A project opened from a file is named
-  after it, and **Save** downloads it under that name again.
+  after it, and **Save** downloads it under that name again. The browser doesn't tell RustGIS
+  whether it saved a download (its save prompt can be cancelled), so **Save** keeps any unsaved
+  changes, and **Save As** to a different name makes the project unsaved. Closing or leaving
+  the tab asks first while there are unsaved changes; an unchanged project stays clean.
 - The interface uses the built-in font, because a web page can't read installed fonts. Choosing
   Chinese, Japanese, Korean or Persian downloads a font for that script.
 - Process plugins (including Python plugins), and the formats read through GDAL or DuckDB,
@@ -316,7 +340,7 @@ The desktop app and the command line keep their files in three folders:
 | Folder | Holds | Windows | macOS | Linux |
 | --- | --- | --- | --- | --- |
 | Settings | preferences (`prefs.json`), the crash log, AI Assistant sign-ins and skills | `%APPDATA%\RustGIS` | `~/Library/Application Support/RustGIS` | `$XDG_CONFIG_HOME/rustgis` (`~/.config/rustgis`) |
-| Data | installed plugins, the GeoLibre runner and recovery copies of unsaved work | `%LOCALAPPDATA%\RustGIS` | `~/Library/Application Support/RustGIS` | `$XDG_DATA_HOME/rustgis` (`~/.local/share/rustgis`) |
+| Data | installed plugins and what they remember (`plugins/settings/`), the GeoLibre runner and recovery copies of unsaved work | `%LOCALAPPDATA%\RustGIS` | `~/Library/Application Support/RustGIS` | `$XDG_DATA_HOME/rustgis` (`~/.local/share/rustgis`) |
 | Cache | GDAL and DuckDB conversions | `%LOCALAPPDATA%\RustGIS\cache` | `~/Library/Caches/RustGIS` | `$XDG_CACHE_HOME/rustgis` (`~/.cache/rustgis`) |
 
 Set `RUSTGIS_CONFIG_DIR`, `RUSTGIS_APP_DATA_DIR` or `RUSTGIS_CACHE_DIR` to use another folder

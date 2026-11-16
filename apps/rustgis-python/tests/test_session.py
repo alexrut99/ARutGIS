@@ -3,6 +3,7 @@
 import json
 import shutil
 import subprocess
+import warnings
 
 import pytest
 
@@ -19,6 +20,18 @@ POINTS = {"type": "FeatureCollection", "features": [
 def sample():
     """A session with the World Atlas sample open."""
     return rustgis.Session(sample=True)
+
+
+def test_startup_plugin_failures_are_reported(monkeypatch):
+    monkeypatch.setattr(rustgis, "load_plugins", lambda: ["Survey: invalid cached blocklist"])
+    with pytest.warns(RuntimeWarning, match="Survey: invalid cached blocklist"):
+        session = rustgis.Session(plugins=True)
+    assert session.info()["layers"] == []
+    monkeypatch.setattr(rustgis, "load_plugins", lambda: [])
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        rustgis.Session(plugins=True)
+    assert not any(issubclass(warning.category, RuntimeWarning) for warning in seen)
 
 
 def test_version_matches_the_engine():
@@ -375,6 +388,53 @@ def test_a_layer_named_like_another_layers_id_reads_its_own_features(sample):
     assert True not in sample
 
 
+def test_a_layer_read_in_place_exports_its_whole_source(tmp_path):
+    session = rustgis.Session()
+    far = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-70.0, -30.0]}, "properties": {"name": "Far"}}
+    path = tmp_path / "streamed.geojson"
+    path.write_text(json.dumps({"type": "FeatureCollection", "features": POINTS["features"] + [far]}))
+    layer = session.add_data(path, stream=True)
+    # The view holds Hong Kong and Guangzhou, not Far.
+    session.zoom_to((113, 22, 115, 24))
+    session.to_png(width=64, height=64)
+    assert {f["properties"]["name"] for f in layer.to_geojson()["features"]} == {"Hong Kong", "Guangzhou", "Far"}
+    try:
+        import geopandas  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        assert len(layer.to_geopandas()) == 3
+    assert not any("couldn't be read" in text for text, _ in session.notices())
+    # A row that can't be read is left out and said.
+    bad = {"type": "Feature", "geometry": {"type": "Point", "coordinates": "x"}, "properties": {"name": "Bad"}}
+    path = tmp_path / "bad.geojson"
+    path.write_text(json.dumps({"type": "FeatureCollection", "features": POINTS["features"] + [bad]}))
+    layer = session.add_data(path, stream=True)
+    session.notices()
+    assert len(layer.to_geojson()["features"]) == 2
+    assert [text for text, _ in session.notices() if "1 row couldn't be read and was left out" in text]
+
+
+def test_geojson_export_reports_lost_heights_without_repeating_opening_notes(tmp_path):
+    for stream in (False, True):
+        session = rustgis.Session()
+        path = tmp_path / "heights.geojson"
+        path.write_text(json.dumps({"type": "FeatureCollection", "features": [{
+            "type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2, 3]}, "properties": {}
+        }]}))
+        layer = session.add_data(path, stream=stream)
+        opening = [text for text, _ in session.notices()]
+        exported = layer.to_geojson()
+        assert exported["features"][0]["geometry"]["coordinates"] == [1, 2]
+        notes = [text for text, _ in session.notices()]
+        assert any("as GeoJSON" in text and "no Z or M" in text for text in notes)
+        assert not set(opening).intersection(notes), "opening reader notes must not be replayed"
+        clean = session.add_geojson(POINTS, name="clean")
+        session.notices()
+        clean.to_geojson()
+        assert session.notices() == []
+
+
 def test_a_layer_of_another_session_is_refused(sample):
     other = rustgis.Session(sample=True)
     stranger = other["Cities"]
@@ -382,3 +442,22 @@ def test_a_layer_of_another_session_is_refused(sample):
     with pytest.raises(rustgis.RustGISError, match="another session"):
         sample.remove_layer(stranger)
     assert "Cities" in sample
+
+
+def test_threads_set_the_count_for_the_process():
+    try:
+        s = rustgis.Session(threads=2)
+        t = s.run("gp.threads")
+        assert t["threads"] == 2
+        assert t["max"] == min(2, t["cores"])
+        # Every session of the process shares it.
+        assert rustgis.Session().run("gp.threads")["threads"] == 2
+        with pytest.raises(rustgis.RustGISError, match="1 to 1024"):
+            rustgis.Session(threads=0)
+        # A session that fails to start leaves the setting as it was.
+        with pytest.raises(rustgis.RustGISError):
+            rustgis.Session("/nonexistent/project.rgis", threads=3)
+        assert rustgis.Session().run("gp.threads")["threads"] == 2
+    finally:
+        rustgis.Session().run("gp.threads", threads=None)
+    assert rustgis.Session().run("gp.threads")["threads"] is None

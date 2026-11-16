@@ -25,6 +25,8 @@ const MAX_TAB_ITEMS: usize = 16_384;
 const MAX_TAB_LABEL: usize = 32;
 const MAX_RUN_ARGS: usize = 64;
 const MAX_SKILLS: usize = 32;
+/// A command may run for at most a day before RustGIS stops it.
+const MAX_COMMAND_TIMEOUT: u64 = 86_400;
 
 /// RustGIS's own ribbon tabs (and the Project button), and the names they had before: a plugin's
 /// tab can't take them.
@@ -95,6 +97,24 @@ pub enum Runtime {
     Process,
     /// Skills for the AI assistant only (`skills`): no code, nothing that runs.
     Skills,
+}
+
+/// What a `file` parameter hands its tool.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FileMode {
+    /// The file's contents, read by RustGIS (at most `tools::MAX_FILE`), in the request's `files`.
+    #[default]
+    Contents,
+    /// The file's full path, unread and of any size: process plugins only, which read it
+    /// themselves (#1438).
+    Path,
+}
+
+impl FileMode {
+    fn is_contents(&self) -> bool {
+        *self == FileMode::Contents
+    }
 }
 
 /// A process plugin's program and arguments, the same everywhere or by platform.
@@ -173,6 +193,16 @@ pub struct CommandDecl {
     /// Parameter description for scripts and agents, like a built-in command's.
     #[serde(default = "no_params")]
     pub params: String,
+    /// The command's dialog: when given, its button opens a dialog with these fields, and
+    /// **Run** runs the command with their values as parameters and shows what it answers (its
+    /// `report` text). Fields are declared as tool parameters, plus `rasterLayer` and without
+    /// `file`; a `field` lists the fields of the layer field above it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form: Vec<ParamDecl>,
+    /// Seconds the command may run before it is stopped; unset is 120. Set it for work
+    /// that takes longer, such as downloading a dataset.
+    #[serde(default)]
+    pub timeout: Option<u64>,
 }
 
 fn no_params() -> String {
@@ -199,6 +229,9 @@ pub struct ParamDecl {
     /// For `file`: the extensions the file picker offers (`nc`, `tif`); empty for any file.
     #[serde(default)]
     pub extensions: Vec<String>,
+    /// For `file`: whether the tool gets the file's contents (the default) or its path.
+    #[serde(default, skip_serializing_if = "FileMode::is_contents")]
+    pub mode: FileMode,
     #[serde(default)]
     pub help: String,
 }
@@ -267,6 +300,12 @@ pub enum Entry<'a> {
 pub const PARAM_KINDS: &[&str] =
     &["layer", "vectorLayer", "polygonLayer", "pointLayer", "field", "numericField", "number", "text", "choice", "bool", "file"];
 
+/// The field kinds a command's dialog may use: a tool's, and raster layers (a command reads
+/// layers itself, by name, so a dialog can offer rasters too), but no `file` (a command that
+/// wants a file has host calls for it, behind the `files` permission).
+pub const FORM_KINDS: &[&str] =
+    &["layer", "vectorLayer", "polygonLayer", "pointLayer", "rasterLayer", "field", "numericField", "number", "text", "choice", "bool"];
+
 /// The most extensions a `file` parameter may list.
 const MAX_EXTENSIONS: usize = 16;
 
@@ -318,6 +357,10 @@ pub struct Manifest {
     /// For a process plugin in Python: the environment RustGIS makes for it.
     #[serde(default)]
     pub python: Option<PythonDecl>,
+    /// For a process plugin: keep the program running between its commands (a session), so it
+    /// can ask RustGIS for things at any time and hear when the map changes. See the `session` module.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub session: bool,
     /// The plugin ABI the module was built for.
     #[serde(default = "default_abi")]
     pub abi: u32,
@@ -349,16 +392,27 @@ pub struct Manifest {
 
 /// `s` in language `lang` from `i18n` (translations by language code), or `s`. Tries the exact
 /// code, then the language without its region, then any region of it, so `zh` finds `zh-CN`.
+/// Chinese falls back only within its script: a Traditional interface (`zh-tw`) never gets a
+/// plugin's Simplified text, nor a Simplified one Traditional text; it shows English instead.
 pub fn translate<'a>(i18n: &'a BTreeMap<String, BTreeMap<String, String>>, lang: &str, s: &'a str) -> &'a str {
     let base_of = |l: &str| l.split(['-', '_']).next().unwrap_or(l).to_ascii_lowercase();
     let base = base_of(lang);
+    let traditional = traditional_chinese(lang);
+    let same_script = |k: &str| base != "zh" || traditional_chinese(k) == traditional;
     let pick = |want: &dyn Fn(&str) -> bool| {
         i18n.iter().filter(|(k, _)| want(k)).find_map(|(_, t)| t.get(s)).map(String::as_str).filter(|t| !t.is_empty())
     };
     pick(&|k| k.eq_ignore_ascii_case(lang))
-        .or_else(|| pick(&|k| k.eq_ignore_ascii_case(&base)))
-        .or_else(|| pick(&|k| base_of(k) == base))
+        .or_else(|| pick(&|k| k.eq_ignore_ascii_case(&base) && same_script(k)))
+        .or_else(|| pick(&|k| base_of(k) == base && same_script(k)))
         .unwrap_or(s)
+}
+
+/// Whether a Chinese language code is written in Traditional characters: `zh-Hant`, or Taiwan,
+/// Hong Kong or Macau without an explicit `Hans` script.
+fn traditional_chinese(code: &str) -> bool {
+    let parts: Vec<String> = code.split(['-', '_']).skip(1).map(str::to_ascii_lowercase).collect();
+    !parts.iter().any(|p| p == "hans") && parts.iter().any(|p| matches!(p.as_str(), "hant" | "tw" | "hk" | "mo"))
 }
 
 fn default_entry() -> String {
@@ -388,7 +442,7 @@ pub fn valid_path(s: &str) -> bool {
         && s.split('/').all(|seg| !seg.is_empty() && seg != "." && seg != "..")
 }
 
-/// A version's numbers (`1.2.3`, `1.2`, `1.2.3-beta.1`: the pre-release part is ignored).
+/// A version's numbers (`1.2.3`, `1.2`, `1.2.3-beta.1`: the pre-release part is left out).
 pub fn version_parts(v: &str) -> Option<[u64; 3]> {
     let core = v.trim().trim_start_matches('v').split(['-', '+']).next()?;
     let mut out = [0u64; 3];
@@ -400,9 +454,63 @@ pub fn version_parts(v: &str) -> Option<[u64; 3]> {
     (n > 0).then_some(out)
 }
 
-/// Compares two versions; an unreadable one sorts first.
+/// Whether this RustGIS is at least `min`, a plugin's `minRustgisVersion`. Numbers only: a RustGIS
+/// pre-release (`0.7.0-rc.1`) runs the plugins its release will. An empty or unreadable `min`
+/// asks for nothing (a manifest refuses an unreadable one itself).
+pub fn rustgis_meets(min: &str) -> bool {
+    match version_parts(min) {
+        Some(min) => version_parts(RUSTGIS_VERSION).is_some_and(|this| this >= min),
+        None => true,
+    }
+}
+
+/// Compares two versions by SemVer 2.0.0 precedence: the numbers first, then a pre-release
+/// sorts before its release (`1.0.0-beta.1` < `1.0.0`), and pre-releases compare identifier by
+/// identifier (`beta.2` < `beta.11` < `rc.1`). Build metadata (`+…`) is ignored, and a missing
+/// number counts as 0 (`v2.0` = `2.0.0`). An unreadable version sorts first.
 pub fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    version_parts(a).cmp(&version_parts(b))
+    match (version_parts(a), version_parts(b)) {
+        (Some(x), Some(y)) => x.cmp(&y).then_with(|| prerelease_cmp(prerelease(a), prerelease(b))),
+        (x, y) => x.cmp(&y),
+    }
+}
+
+/// The pre-release part of a version: after the first `-` and before any build metadata.
+fn prerelease(v: &str) -> &str {
+    let v = v.trim();
+    let v = v.split_once('+').map_or(v, |(core, _)| core);
+    v.split_once('-').map_or("", |(_, pre)| pre)
+}
+
+/// One dot-separated pre-release identifier. Numbers sort before words and compare by value
+/// (as digits without leading zeros, so any length works); words compare as ASCII text.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum PrereleaseId<'a> {
+    Number(usize, &'a str),
+    Word(&'a str),
+}
+
+/// A pre-release part's identifiers, skipping empty ones (`beta..1`), which the versions
+/// accepted so far allow.
+fn prerelease_ids(pre: &str) -> impl Iterator<Item = PrereleaseId<'_>> {
+    pre.split('.').filter(|id| !id.is_empty()).map(|id| {
+        if id.bytes().all(|c| c.is_ascii_digit()) {
+            let digits = id.trim_start_matches('0');
+            PrereleaseId::Number(digits.len(), digits)
+        } else {
+            PrereleaseId::Word(id)
+        }
+    })
+}
+
+/// Orders two pre-release parts; an empty one is a release and sorts after any pre-release.
+fn prerelease_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    match (prerelease_ids(a).next().is_none(), prerelease_ids(b).next().is_none()) {
+        (true, true) => std::cmp::Ordering::Equal,
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        (false, false) => prerelease_ids(a).cmp(prerelease_ids(b)),
+    }
 }
 
 /// RustGIS's own version.
@@ -414,6 +522,81 @@ fn check_text(what: &str, s: &str, required: bool) -> Result<(), String> {
     }
     if s.len() > MAX_TEXT {
         return Err(format!("{what} is too long"));
+    }
+    Ok(())
+}
+
+/// The number in `text`, as a command dialog's number field reads it and sends it: an integer
+/// exactly, as one (for commands that read integers); a whole number written otherwise (`2.0`,
+/// `1e3`) as an integer too; others as floats. `None` when empty, not a number, an integer past
+/// `i64`, a number written otherwise from 2^52 (`1e16`, `9007199254740993.0`,
+/// `4503599627370496.5`), where a float holds no fraction and soon not every whole number, or a
+/// number too small for a float (`1e-400`): a float would round those unseen.
+pub fn form_number(text: &str) -> Option<serde_json::Value> {
+    let t = text.trim();
+    if let Ok(i) = t.parse::<i64>() {
+        return Some(serde_json::json!(i));
+    }
+    if t.strip_prefix(['-', '+']).unwrap_or(t).bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let x = t.parse::<f64>().ok().filter(|x| x.is_finite())?;
+    // Too small for a float, a number other than zero reads as zero: not taken.
+    if x == 0.0 && t.split(['e', 'E']).next().is_some_and(|m| m.bytes().any(|b| (b'1'..=b'9').contains(&b))) {
+        return None;
+    }
+    // From 2^52 a float holds no fraction: a number written otherwise may already be rounded.
+    if x.abs() >= 4_503_599_627_370_496.0 {
+        return None;
+    }
+    Some(if x.fract() == 0.0 { serde_json::json!(x as i64) } else { serde_json::json!(x) })
+}
+
+/// [`form_number`] for a JSON value, a number or a number written as text: an integer past `i64`
+/// is `None` either way.
+pub fn form_number_value(v: &serde_json::Value) -> Option<serde_json::Value> {
+    match v {
+        serde_json::Value::String(t) => form_number(t),
+        serde_json::Value::Number(n) => form_number(&n.to_string()),
+        _ => None,
+    }
+}
+
+/// Checks what a dialog's fields need beyond a tool parameter's, so that nothing is lost unseen:
+/// a default the field can show and send (a number, or a number written as text, for `number`;
+/// `true` or `false` for `bool`; one of its choices for `choice`; text for the other kinds), and
+/// a vector layer field (`vectorLayer`, `polygonLayer` or `pointLayer`) above each `field` or
+/// `numericField`, whose fields it lists, and required when the field is.
+fn check_form(owner: &str, form: &[ParamDecl]) -> Result<(), String> {
+    // The nearest layer field above: its kind, and whether it is required.
+    let mut layer: Option<(&str, bool)> = None;
+    for p in form {
+        if let Some(d) = &p.default {
+            let fits = match p.kind.as_str() {
+                "number" => form_number_value(d).is_some(),
+                "bool" => d.is_boolean(),
+                "choice" => d.as_str().is_some_and(|t| p.choices.iter().any(|c| c == t)),
+                _ => d.is_string(),
+            };
+            if !fits {
+                return Err(format!("plugin.json: {owner}: '{}' has a default of another kind than its field ({})", p.name, p.kind));
+            }
+        }
+        match p.kind.as_str() {
+            "layer" | "vectorLayer" | "polygonLayer" | "pointLayer" | "rasterLayer" => layer = Some((p.kind.as_str(), p.required)),
+            // `layer` may pick a raster too, which has no fields.
+            "field" | "numericField" if !matches!(layer, Some(("vectorLayer" | "polygonLayer" | "pointLayer", _))) => {
+                return Err(format!(
+                    "plugin.json: {owner}: '{}' lists the fields of a layer, so it needs a vector layer field above it",
+                    p.name
+                ));
+            }
+            // Left at `—`, an optional layer would leave a required field nothing to pick.
+            "field" | "numericField" if p.required && layer.is_some_and(|(_, required)| !required) => {
+                return Err(format!("plugin.json: {owner}: '{}' is required, so the layer field above it must be too", p.name));
+            }
+            _ => {}
+        }
     }
     Ok(())
 }
@@ -447,8 +630,8 @@ impl Manifest {
                 if !valid_path(&self.entry) || !self.entry.ends_with(".wasm") {
                     return Err("plugin.json: entry must be a relative path to a .wasm file inside the package".into());
                 }
-                if self.run.is_some() || self.python.is_some() {
-                    return Err("plugin.json: 'run' and 'python' are for process plugins (\"runtime\": \"process\")".into());
+                if self.run.is_some() || self.python.is_some() || self.session {
+                    return Err("plugin.json: 'run', 'python' and 'session' are for process plugins (\"runtime\": \"process\")".into());
                 }
             }
             Runtime::Process => {
@@ -487,8 +670,8 @@ impl Manifest {
                 }
             }
             Runtime::Skills => {
-                if self.run.is_some() || self.python.is_some() {
-                    return Err("plugin.json: 'run' and 'python' are for process plugins (\"runtime\": \"process\")".into());
+                if self.run.is_some() || self.python.is_some() || self.session {
+                    return Err("plugin.json: 'run', 'python' and 'session' are for process plugins (\"runtime\": \"process\")".into());
                 }
                 if !self.commands.is_empty()
                     || !self.tools.is_empty()
@@ -524,7 +707,7 @@ impl Manifest {
             if version_parts(&self.min_rustgis_version).is_none() {
                 return Err("plugin.json: minRustgisVersion is not a version number".into());
             }
-            if version_cmp(RUSTGIS_VERSION, &self.min_rustgis_version).is_lt() {
+            if !rustgis_meets(&self.min_rustgis_version) {
                 return Err(format!("{} needs RustGIS {} or newer (this is {RUSTGIS_VERSION})", self.name, self.min_rustgis_version));
             }
         }
@@ -540,6 +723,16 @@ impl Manifest {
             check_text("command help", &c.help, false)?;
             check_text("command params", &c.params, false)?;
             check_text("command icon", &c.icon, false)?;
+            self.check_params(&c.label, &c.form, FORM_KINDS)?;
+            check_form(&c.label, &c.form)?;
+            if let Some(seconds) = c.timeout
+                && (seconds == 0 || seconds > MAX_COMMAND_TIMEOUT)
+            {
+                return Err(format!(
+                    "plugin.json: command '{}' has a timeout of {seconds} seconds; it must be 1 to {MAX_COMMAND_TIMEOUT}",
+                    c.id
+                ));
+            }
         }
         for t in &self.tools {
             if !valid_id(&t.id, false) || !seen.insert(("t", t.id.as_str())) {
@@ -548,43 +741,7 @@ impl Manifest {
             check_text("tool name", &t.name, true)?;
             check_text("tool summary", &t.summary, false)?;
             check_text("toolbox", &t.toolbox, false)?;
-            if t.params.len() > MAX_PARAMS {
-                return Err(format!("plugin.json: {} has more than {MAX_PARAMS} parameters", t.name));
-            }
-            let mut names = std::collections::HashSet::new();
-            for p in &t.params {
-                if !valid_id(&p.name, true) || !names.insert(p.name.as_str()) {
-                    return Err(format!("plugin.json: {}: parameter '{}' is invalid or repeated", t.name, p.name));
-                }
-                check_text("parameter label", &p.label, true)?;
-                check_text("parameter help", &p.help, false)?;
-                if !PARAM_KINDS.contains(&p.kind.as_str()) {
-                    return Err(format!("plugin.json: {}: unknown parameter kind '{}'", t.name, p.kind));
-                }
-                if p.kind == "choice" && (p.choices.is_empty() || p.choices.len() > MAX_CHOICES) {
-                    return Err(format!("plugin.json: {}: '{}' needs 1 to {MAX_CHOICES} choices", t.name, p.name));
-                }
-                for c in &p.choices {
-                    check_text("choice", c, true)?;
-                }
-                // A file parameter hands the tool a file's contents: only with `files`.
-                if p.kind == "file" && !self.has(Permission::Files) {
-                    return Err(format!("plugin.json: {}: '{}' is a file, which needs the 'files' permission", t.name, p.name));
-                }
-                if p.extensions.len() > MAX_EXTENSIONS
-                    || p.extensions.iter().any(|e| e.is_empty() || e.len() > 16 || !e.chars().all(|c| c.is_ascii_alphanumeric()))
-                {
-                    return Err(format!(
-                        "plugin.json: {}: '{}' has invalid extensions (at most {MAX_EXTENSIONS}, letters and digits without the dot)",
-                        t.name, p.name
-                    ));
-                }
-                if let Some(d) = &p.default
-                    && d.to_string().len() > MAX_TEXT
-                {
-                    return Err(format!("plugin.json: {}: '{}' has too long a default", t.name, p.name));
-                }
-            }
+            self.check_params(&t.name, &t.params, PARAM_KINDS)?;
         }
         // Before the tab, which may name it.
         if let Some(panel) = &self.panel {
@@ -606,6 +763,55 @@ impl Manifest {
             for (k, v) in strings {
                 check_text("translated string", k, true)?;
                 check_text("translation", v, false)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks a tool's parameters or a command's dialog fields (`owner` names it in errors).
+    fn check_params(&self, owner: &str, params: &[ParamDecl], kinds: &[&str]) -> Result<(), String> {
+        if params.len() > MAX_PARAMS {
+            return Err(format!("plugin.json: {owner} has more than {MAX_PARAMS} parameters"));
+        }
+        let mut names = std::collections::HashSet::new();
+        for p in params {
+            if !valid_id(&p.name, true) || !names.insert(p.name.as_str()) {
+                return Err(format!("plugin.json: {owner}: parameter '{}' is invalid or repeated", p.name));
+            }
+            check_text("parameter label", &p.label, true)?;
+            check_text("parameter help", &p.help, false)?;
+            if !kinds.contains(&p.kind.as_str()) {
+                return Err(format!("plugin.json: {owner}: unknown parameter kind '{}'", p.kind));
+            }
+            if p.kind == "choice" && (p.choices.is_empty() || p.choices.len() > MAX_CHOICES) {
+                return Err(format!("plugin.json: {owner}: '{}' needs 1 to {MAX_CHOICES} choices", p.name));
+            }
+            for c in &p.choices {
+                check_text("choice", c, true)?;
+            }
+            // A file parameter hands the tool a file's contents: only with `files`.
+            if p.kind == "file" && !self.has(Permission::Files) {
+                return Err(format!("plugin.json: {owner}: '{}' is a file, which needs the 'files' permission", p.name));
+            }
+            // A path is only of use to a program that can open it.
+            if p.mode == FileMode::Path && (p.kind != "file" || self.runtime != Runtime::Process) {
+                return Err(format!(
+                    "plugin.json: {owner}: '{}' has mode 'path', which only a process plugin's file parameter can have",
+                    p.name
+                ));
+            }
+            if p.extensions.len() > MAX_EXTENSIONS
+                || p.extensions.iter().any(|e| e.is_empty() || e.len() > 16 || !e.chars().all(|c| c.is_ascii_alphanumeric()))
+            {
+                return Err(format!(
+                    "plugin.json: {owner}: '{}' has invalid extensions (at most {MAX_EXTENSIONS}, letters and digits without the dot)",
+                    p.name
+                ));
+            }
+            if let Some(d) = &p.default
+                && d.to_string().len() > MAX_TEXT
+            {
+                return Err(format!("plugin.json: {owner}: '{}' has too long a default", p.name));
             }
         }
         Ok(())

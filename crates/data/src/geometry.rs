@@ -8,7 +8,63 @@ const LABEL_GRID_STEPS: usize = 64;
 // Prefix construction can shift by steps + 1, which must also fit in u128.
 const _: () = assert!(LABEL_GRID_STEPS > 0 && LABEL_GRID_STEPS < (u128::BITS - 1) as usize);
 
+/// A counted explanation when these features contain rings with no single enclosed area.
+pub fn ambiguous_area_message<'a>(geometries: impl Iterator<Item = &'a Geometry>) -> Option<String> {
+    let (mut features, mut rings) = (0usize, 0usize);
+    for geometry in geometries {
+        let count = geometry.ambiguous_area_rings();
+        if count > 0 {
+            features += 1;
+            rings += count;
+        }
+    }
+    (rings > 0).then(|| {
+        format!("area is ambiguous for {rings} ring(s) in {features} feature(s): a ring through both poles winds beyond one whole surface")
+    })
+}
+
+/// A counted explanation when features of `layers` have `rings` rings, in `features` features, that loop around
+/// a pole without being cut at ±180° ([`rustgis_geom::ring_pole_turns`]): taken the short way
+/// round in longitude, such a ring goes around the pole, but longitude and latitude read as x and
+/// y, as the analysis plane reads them, give another shape (a ring along one parallel, a line).
+pub fn pole_loop_message(layers: &[&str], rings: usize, features: usize) -> Option<String> {
+    if rings == 0 {
+        return None;
+    }
+    let names: Vec<String> = layers.iter().map(|l| format!("'{l}'")).collect();
+    let names = match names.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    };
+    // Subject and object forms: "it goes … cut it", "they go … cut them".
+    let (rings_text, verb, they, them, encloses) = if rings == 1 {
+        ("1 ring".to_string(), "goes", "it", "it", "encloses")
+    } else {
+        (format!("{rings} rings"), "go", "they", "them", "enclose")
+    };
+    let features_text = if features == 1 { "1 feature".to_string() } else { format!("{features} features") };
+    Some(format!(
+        "{names}: {rings_text} in {features_text} {verb} around a pole without reaching it, each step in longitude taken the short way; the analysis reads longitude and latitude as x and y, so it doesn't see the area {they} {encloses} (along one parallel, none at all); if {they} {verb} around the pole on purpose, cut {them} at ±180° and close {them} along the pole"
+    ))
+}
+
+/// The rings that loop around a pole ([`Geometry::pole_loop_rings`]) in these features, and the
+/// features that have any: what [`pole_loop_message`] says.
+pub fn pole_loop_count<'a>(geometries: impl Iterator<Item = &'a Geometry>) -> (usize, usize) {
+    let (mut rings, mut features) = (0usize, 0usize);
+    for geometry in geometries {
+        let count = geometry.pole_loop_rings();
+        if count > 0 {
+            features += 1;
+            rings += count;
+        }
+    }
+    (rings, features)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum GeometryType {
     Point,
     Polyline,
@@ -83,6 +139,7 @@ impl Measure {
 
 /// A geometry. Lines hold parts; polygons hold polygons of rings (first ring = exterior).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum Geometry {
     Point(Coord),
     MultiPoint(Vec<Coord>),
@@ -106,6 +163,35 @@ impl Geometry {
             Geometry::MultiPoint(v) => v.iter().copied().for_each(f),
             Geometry::Line(parts) => parts.iter().flatten().copied().for_each(f),
             Geometry::Polygon(polys) => polys.iter().flatten().flatten().copied().for_each(f),
+        }
+    }
+
+    /// Whether every coordinate is a number: none is NaN (which some writers use for an empty
+    /// point) or infinite, which have no place and which a saved project can't hold (#1985).
+    pub fn is_finite(&self) -> bool {
+        // Stops at the first that isn't.
+        match self {
+            Geometry::Point(c) => c.is_finite(),
+            Geometry::MultiPoint(v) => v.iter().all(|c| c.is_finite()),
+            Geometry::Line(parts) => parts.iter().flatten().all(|c| c.is_finite()),
+            Geometry::Polygon(polys) => polys.iter().flatten().flatten().all(|c| c.is_finite()),
+        }
+    }
+
+    /// Rings whose polar winding encloses no single area, including holes.
+    pub fn ambiguous_area_rings(&self) -> usize {
+        match self {
+            Geometry::Polygon(polys) => polys.iter().flatten().filter(|r| rustgis_geom::ring_area_is_ambiguous(r)).count(),
+            _ => 0,
+        }
+    }
+
+    /// Rings, holes included, that loop around a pole without being cut at ±180°
+    /// ([`rustgis_geom::ring_pole_turns`]).
+    pub fn pole_loop_rings(&self) -> usize {
+        match self {
+            Geometry::Polygon(polys) => polys.iter().flatten().filter(|r| rustgis_geom::ring_pole_turns(r) != 0).count(),
+            _ => 0,
         }
     }
 
@@ -133,7 +219,8 @@ impl Geometry {
                             .sum::<f64>()
                     })
                     .sum(),
-            ),
+            )
+            .filter(|area: &f64| area.is_finite()),
             (Geometry::Polygon(polys), Measure::Perimeter) => Some(polys.iter().flatten().map(|r| wgs84_ring_perimeter_area_m2(r).0).sum()),
             (Geometry::Line(parts), Measure::Length) => Some(parts.iter().map(|r| wgs84_length_m(r)).sum()),
             _ => None,
@@ -336,9 +423,17 @@ impl VertexId {
 /// How many vertices a path has: a closed ring's repeated last point doesn't count.
 fn open_len(path: &[Coord], ring: bool) -> usize {
     match (path.first(), path.last()) {
-        (Some(a), Some(b)) if ring && path.len() > 1 && a == b => path.len() - 1,
+        (Some(a), Some(b)) if ring && path.len() > 1 && same_point(a, b) => path.len() - 1,
         _ => path.len(),
     }
+}
+
+/// Whether two points are the same place. A NaN coordinate equals nothing as a number, so NaN is
+/// matched by its bits: a ring that repeats a NaN point closes on it.
+fn same_point(a: &Coord, b: &Coord) -> bool {
+    // Each coordinate on its own: equal as numbers (so 0 and −0 match), or a NaN by its bits.
+    let same = |p: f64, q: f64| p == q || p.to_bits() == q.to_bits();
+    same(a.x, b.x) && same(a.y, b.y)
 }
 
 impl Geometry {
@@ -762,6 +857,30 @@ mod tests {
         assert!(g.hit(Coord::new(5.0, 5.0), 1.5)); // near the hole's edge
         let lp = g.label_point().unwrap();
         assert!(polygon_contains(&[square(0.0, 0.0, 10.0), square(4.0, 4.0, 2.0)], lp));
+    }
+
+    /// A polygon ring that starts and ends on the same NaN point is closed on it (NaN equals
+    /// nothing as a number, so it's matched by its bits): its last point isn't a vertex of its own,
+    /// so every ring reader sees four vertices and four edges, and deleting the first vertex keeps
+    /// the ring closed on the next one. A line with the same ends isn't a ring: all three count.
+    #[test]
+    fn a_ring_closed_on_a_nan_point_counts_it_once() {
+        let gap = Coord::new(f64::NAN, 0.0);
+        let ring = vec![gap, Coord::new(1.0, 0.0), Coord::new(1.0, 1.0), Coord::new(0.0, 1.0), gap];
+        let g = Geometry::Polygon(vec![vec![ring]]);
+        assert_eq!((g.vertices().len(), g.edges().len()), (4, 4));
+        let Ok(Geometry::Polygon(after)) = g.delete_vertex(VertexId { part: 0, ring: 0, index: 0 }) else { panic!("not deleted") };
+        let ring = after.first().and_then(|rings| rings.first()).cloned().unwrap_or_default();
+        assert_eq!(ring.len(), 4);
+        assert_eq!((ring.first(), ring.last()), (Some(&Coord::new(1.0, 0.0)), Some(&Coord::new(1.0, 0.0))));
+        let line = Geometry::Line(vec![vec![gap, Coord::new(1.0, 0.0), gap]]);
+        assert_eq!(line.vertices().len(), 3);
+        // The same NaN point written once with 0 and once with −0 still closes the ring.
+        let signed = vec![Coord::new(f64::NAN, 0.0), Coord::new(1.0, 0.0), Coord::new(1.0, 1.0), Coord::new(f64::NAN, -0.0)];
+        assert_eq!(Geometry::Polygon(vec![vec![signed]]).vertices().len(), 3);
+        // And the other way round: a signed zero in x, the NaN in y.
+        let mirrored = vec![Coord::new(0.0, f64::NAN), Coord::new(1.0, 0.0), Coord::new(1.0, 1.0), Coord::new(-0.0, f64::NAN)];
+        assert_eq!(Geometry::Polygon(vec![vec![mirrored]]).vertices().len(), 3);
     }
 
     #[test]

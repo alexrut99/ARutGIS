@@ -30,8 +30,9 @@ const TILE_REFRESH: f64 = 0.5;
 /// Mesh cells along each side of a band: fine enough that the texture's straight-line
 /// interpolation across a cell doesn't show the perspective.
 const CELLS: usize = 16;
-/// Mesh cells along each side of a band over terrain: the relief needs finer ones (the
-/// settled frame's own).
+/// Mesh cells along each side of a band over terrain: the moving drape's, as
+/// `render::terrain::CELLS`, kept coarse because the mesh is laid out every frame (the settled
+/// frame's is finer, `render::terrain::settled_grid`).
 const TERRAIN_CELLS: usize = render::terrain::CELLS;
 
 struct Drape {
@@ -63,6 +64,7 @@ struct Drawn {
     relief: Option<(usize, Vec<Vec<f64>>)>,
     shapes: Vec<ExtrudedShape>,
     markers: Vec<UprightMarker>,
+    archives: render::ArchiveRevision,
 }
 
 /// The drape of the moving tilted map, kept between frames while the map doesn't change.
@@ -121,8 +123,13 @@ impl TiltDrape {
         running
     }
 
+    /// Whether there is a drape to paint.
+    pub fn drawn(&self) -> bool {
+        self.drape.is_some()
+    }
+
     /// Whether the next drape is being drawn.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    #[cfg_attr(target_arch = "wasm32", expect(dead_code, reason = "only the desktop draws the next drape in the background"))]
     pub fn busy(&self) -> bool {
         #[cfg(not(target_arch = "wasm32"))]
         return self.job.is_some();
@@ -156,7 +163,6 @@ impl TiltDrape {
     /// Starts drawing the drape of `map` (a copy) for `view` on a worker, waking `ctx` when it
     /// is done. False when no thread could be started.
     #[cfg(not(target_arch = "wasm32"))]
-    #[allow(clippy::too_many_arguments)]
     fn start(&mut self, ctx: &egui::Context, mut map: Map, view: View, max_side: u32, key: DrapeKey, tiles: u64, time: f64) -> bool {
         self.start_with(ctx, key, move || {
             let drawn = draw(&mut map, &view, max_side, key, tiles, time);
@@ -188,7 +194,10 @@ impl TiltDrape {
     }
 
     /// Makes `drawn` the drape, its pictures textures (reusing the last drape's).
-    fn show(&mut self, ctx: &egui::Context, drawn: Drawn) {
+    fn show(&mut self, ctx: &egui::Context, drawn: Drawn, map: &Map) {
+        if !drawn.archives.current([map]) {
+            return;
+        }
         // Something to drape: `warm` keeps it up to date again.
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -225,6 +234,7 @@ impl TiltDrape {
         if let Some(drawn) = self.take(map)
             && drawn.key == key
             && drawn.ppp == drape_ppp
+            && drawn.archives.current([&*map])
             && self.drape.as_ref().is_none_or(|d| d.built <= drawn.built)
         {
             if drawn.patches.is_empty() {
@@ -233,7 +243,7 @@ impl TiltDrape {
                 self.drape = None;
                 self.empty = Some((key, drawn.camera));
             } else {
-                self.show(ctx, drawn);
+                self.show(ctx, drawn, map);
             }
         }
         if self.job.as_ref().is_some_and(|(k, _)| *k != key) {
@@ -243,7 +253,6 @@ impl TiltDrape {
 
     /// Whether the drape shows this map change as it is now over the `w × h` view of `cam`:
     /// drawn at about its zoom, covering it, and with the tiles come since (or drawn just now).
-    #[allow(clippy::too_many_arguments)]
     fn fresh(&self, cam: &Camera, key: DrapeKey, drape_ppp: f32, tiles: u64, w: f64, h: f64, time: f64) -> bool {
         self.drape.as_ref().is_some_and(|d| {
             d.key == key
@@ -258,7 +267,6 @@ impl TiltDrape {
     /// came, the view moved past it) or there is none, so the next gesture starts on a drape of
     /// the map as it is: one drawn when the gesture starts shows what the map showed then (on a
     /// map just opened, nothing). In the browser, with no threads, the gesture draws it.
-    #[allow(clippy::too_many_arguments)]
     pub fn warm(&mut self, ctx: &egui::Context, map: &mut Map, key: DrapeKey, tiles: u64, w: f64, h: f64, ppp: f32, time: f64) {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -288,7 +296,6 @@ impl TiltDrape {
     /// view has moved or zoomed past it or the map changed. The first drape of a map change is
     /// drawn at once; one following the view is drawn off the UI thread, the last staying on
     /// screen meanwhile. False when there is nothing to drape.
-    #[allow(clippy::too_many_arguments)]
     pub fn prepare(&mut self, ctx: &egui::Context, map: &mut Map, key: DrapeKey, tiles: u64, w: f64, h: f64, ppp: f32, time: f64) -> bool {
         let cam = map.camera;
         // A screen's worth of detail at most: the settled frame is sharp.
@@ -339,7 +346,7 @@ impl TiltDrape {
             self.drape = None;
             return false;
         }
-        self.show(ctx, drawn);
+        self.show(ctx, drawn, map);
         true
     }
 
@@ -430,22 +437,30 @@ impl TiltDrape {
         order.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         type Rings = Vec<Vec<(f64, f64)>>;
         let to_ground = |rings: &[Vec<Coord>]| -> Rings { rings.iter().map(|r| r.iter().map(|c| cam.ground_px(*c)).collect()).collect() };
-        let shapes: Vec<(&ExtrudedShape, f64, f64, Rings, Rings)> = order
+        let shapes: Vec<(&ExtrudedShape, f64, f64, f64, Rings, Rings)> = order
             .iter()
             .filter_map(|&(_, depth, i)| {
                 let s = d.shapes.get(i)?;
-                Some((s, depth, (s.height / cam.res.max(1e-9)).clamp(0.0, 1e7), to_ground(&s.rings), to_ground(&s.holes)))
+                let foot = render::base_within(s.base_height / cam.res.max(1e-9), 1e7);
+                let up = (s.height / cam.res.max(1e-9)).clamp(0.0, 1e7 - foot);
+                Some((s, depth, foot, up, to_ground(&s.rings), to_ground(&s.holes)))
             })
             .collect();
         let mut mesh = Mesh::default();
         // Shadows on the ground first, under every feature.
-        let shade = Color32::from_black_alpha(60);
-        for (s, _, up, rings, _) in shapes.iter().filter(|x| x.0.shadows) {
-            for q in render::tilted_shadow_quads(cam, w, h, rings, *up) {
+        for (s, _, foot, up, rings, holes) in shapes.iter().filter(|x| x.0.shadows) {
+            let shade = Color32::from_black_alpha((60 * u16::from(s.fill.a()) / 255) as u8);
+            // Raised, a hole's walls cast too: the footprint moved by the base, which no longer sits
+            // under the roof, is the top one's and every edge's sweep between them.
+            let swept: &[Vec<(f64, f64)>] = if *foot > 0.0 { holes } else { &[] };
+            for q in render::tilted_shadow_quads(cam, w, h, rings, *foot, *up)
+                .into_iter()
+                .chain(render::tilted_shadow_quads(cam, w, h, swept, *foot, *up))
+            {
                 fan(&mut mesh, q.into_iter().map(|p| Some(pos(p))), shade);
             }
             // The footprint moved away from the light: the roof's triangles on the ground.
-            let (du, dv) = render::shadow_shift(*up);
+            let (du, dv) = render::shadow_shift(*foot + *up);
             for [a, b, c] in s.roof_indices.as_chunks::<3>().0 {
                 let tri: Option<Vec<(f64, f64)>> =
                     [a, b, c].iter().map(|&&k| s.roof.get(k as usize).map(|p| ground(s, p)).map(|(u, v)| (u + du, v + dv))).collect();
@@ -454,14 +469,15 @@ impl TiltDrape {
                 fan(&mut mesh, cut.into_iter().map(|(u, v)| cam.project_raised(u, v, 0.0, w, h).map(pos)), shade);
             }
         }
-        for (s, depth, up, rings, holes) in &shapes {
+        for (s, depth, foot, up, rings, holes) in &shapes {
             let t = ((depth - FAR * 0.5) / (FAR * 0.5)).clamp(0.0, 1.0);
-            let base = s.fill.lerp(fog, t * t * (3.0 - 2.0 * t));
-            for wall in render::tilted_walls(cam, w, h, rings, holes, *up, s.face_culling, s.lighting) {
-                let (top, foot) = (c32(base.shade(wall.top)), c32(base.shade(wall.foot)));
+            // Fog fades the colour, not the layer's transparency (the alpha stays).
+            let base = s.fill.lerp(fog, t * t * (3.0 - 2.0 * t)).with_alpha(s.fill.a());
+            for wall in render::tilted_walls(cam, w, h, rings, holes, *foot, *up, s.face_culling, s.lighting) {
+                let (top_colour, foot_colour) = (c32(base.shade(wall.top)), c32(base.shade(wall.foot)));
                 let [fa, fb, tb, ta] = wall.quad;
                 let k = mesh.vertices.len() as u32;
-                for (p, c) in [(fa, foot), (fb, foot), (tb, top), (ta, top)] {
+                for (p, c) in [(fa, foot_colour), (fb, foot_colour), (tb, top_colour), (ta, top_colour)] {
                     mesh.colored_vertex(pos(p), c);
                 }
                 mesh.add_triangle(k, k + 1, k + 2);
@@ -469,12 +485,13 @@ impl TiltDrape {
             }
             // The roof's triangles, each cut where it reaches behind the eye.
             let color = c32(base);
-            let v_max = cam.near_v(*up, h);
+            let roof = *foot + *up;
+            let v_max = cam.near_v(roof, h);
             for [a, b, c] in s.roof_indices.as_chunks::<3>().0 {
                 let tri: Option<Vec<(f64, f64)>> = [a, b, c].iter().map(|&&k| s.roof.get(k as usize).map(|p| ground(s, p))).collect();
                 let Some(tri) = tri else { continue };
                 let cut = render::clip_near(&tri, v_max);
-                fan(&mut mesh, cut.into_iter().map(|(u, v)| cam.project_raised(u, v, *up, w, h).map(pos)), color);
+                fan(&mut mesh, cut.into_iter().map(|(u, v)| cam.project_raised(u, v, roof, w, h).map(pos)), color);
             }
         }
         (!mesh.indices.is_empty()).then_some(mesh)
@@ -556,9 +573,21 @@ impl TiltDrape {
 fn draw(map: &mut Map, view: &View, max_side: u32, key: DrapeKey, tiles: u64, time: f64) -> Drawn {
     let cam = view.camera;
     let ppp = view.pixels_per_point as f32;
+    let archives = render::archive_revisions([&*map]);
     let patches = render::render_tilt_drape(map, view, MARGIN, max_side);
     if patches.is_empty() {
-        return Drawn { key, ppp, camera: cam, tiles, built: time, patches, relief: None, shapes: Vec::new(), markers: Vec::new() };
+        return Drawn {
+            key,
+            ppp,
+            camera: cam,
+            tiles,
+            built: time,
+            patches,
+            relief: None,
+            shapes: Vec::new(),
+            markers: Vec::new(),
+            archives,
+        };
     }
     // A turned flat map's band is a square over the circle round the view: what stands on it is
     // taken over all of it, as the view turns there.
@@ -586,7 +615,7 @@ fn draw(map: &mut Map, view: &View, max_side: u32, key: DrapeKey, tiles: u64, ti
             .collect();
         (n, heights)
     });
-    Drawn { key, ppp, camera: cam, tiles, built: time, patches, relief, shapes, markers }
+    Drawn { key, ppp, camera: cam, tiles, built: time, patches, relief, shapes, markers, archives }
 }
 
 /// Adds a convex polygon (screen points, `None` where one couldn't be placed) to `mesh` as a fan
@@ -677,6 +706,7 @@ mod tests {
                 face_culling: true,
                 lighting: true,
                 shadows: false,
+                ..Default::default()
             });
         }
         let mut d = TiltDrape::default();
@@ -707,6 +737,68 @@ mod tests {
         let foot = m.camera.to_screen(rustgis_engine::geom::lonlat_to_merc(Coord::new(10.0, 47.0)), 800.0, 600.0).1 as f32;
         let top = mesh.vertices.iter().map(|v| v.pos.y).fold(f32::MAX, f32::min);
         assert!(top < foot - 20.0, "{top} vs {foot}");
+    }
+
+    #[test]
+    fn extrusions_stand_on_their_base_on_the_drape() {
+        use rustgis_engine::data::{Dataset, Geometry, GeometryType};
+        let ctx = egui::Context::default();
+        let top_of = |base: f64| {
+            let mut m = tilted(55.0);
+            let mut ds = Dataset::new("blocks", GeometryType::Polygon, vec![]);
+            let ring =
+                vec![Coord::new(9.0, 47.0), Coord::new(11.0, 47.0), Coord::new(11.0, 49.0), Coord::new(9.0, 49.0), Coord::new(9.0, 47.0)];
+            ds.push(Some(Geometry::Polygon(vec![vec![ring]])), vec![]);
+            let id = m.add_dataset(ds);
+            if let Some(l) = m.layer_mut(id) {
+                l.extrusion = Some(rustgis_engine::map::effects::Extrusion { height: 100_000.0, base, ..Default::default() });
+            }
+            let mut d = TiltDrape::default();
+            assert!(d.prepare(&ctx, &mut m, DrapeKey { rev: 0, sources: 0 }, 0, 800.0, 600.0, 1.0, 0.0));
+            let rect = Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+            let mesh = d.extrusions(rect, &m.camera, fog()).expect("the block stands up");
+            assert!(mesh.is_valid());
+            mesh.vertices.iter().map(|v| v.pos.y).fold(f32::MAX, f32::min)
+        };
+        let (grounded, raised) = (top_of(0.0), top_of(100_000.0));
+        assert!(raised < grounded - 20.0, "roof at {raised} on a base, {grounded} without");
+    }
+
+    #[test]
+    fn a_raised_block_with_a_hole_casts_its_holes_walls_too() {
+        use rustgis_engine::data::{Dataset, Geometry, GeometryType};
+        let ctx = egui::Context::default();
+        let size = |base: f64, with_hole: bool| {
+            let mut m = tilted(55.0);
+            let mut ds = Dataset::new("blocks", GeometryType::Polygon, vec![]);
+            let sq = |a: f64| {
+                vec![
+                    Coord::new(10.0 - a, 48.0 - a),
+                    Coord::new(10.0 + a, 48.0 - a),
+                    Coord::new(10.0 + a, 48.0 + a),
+                    Coord::new(10.0 - a, 48.0 + a),
+                ]
+            };
+            let (mut outer, mut hole) = (sq(1.0), sq(0.3));
+            outer.push(outer[0]);
+            hole.push(hole[0]);
+            let rings = if with_hole { vec![outer, hole] } else { vec![outer] };
+            ds.push(Some(Geometry::Polygon(vec![rings])), vec![]);
+            let id = m.add_dataset(ds);
+            if let Some(l) = m.layer_mut(id) {
+                l.extrusion =
+                    Some(rustgis_engine::map::effects::Extrusion { height: 100_000.0, base, shadows: true, ..Default::default() });
+            }
+            let mut d = TiltDrape::default();
+            assert!(d.prepare(&ctx, &mut m, DrapeKey { rev: 0, sources: 0 }, 0, 800.0, 600.0, 1.0, 0.0));
+            let rect = Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+            let mesh = d.extrusions(rect, &m.camera, fog()).expect("the block stands up");
+            mesh.vertices.len()
+        };
+        // Raised, the hole's 4 walls cast their sweep (a quad each, or more where cut near the eye);
+        // a solid block casts as much raised as on the ground.
+        assert!(size(100_000.0, true) >= size(0.0, true) + 16, "{} vs {}", size(100_000.0, true), size(0.0, true));
+        assert_eq!(size(100_000.0, false), size(0.0, false));
     }
 
     #[test]
@@ -763,6 +855,8 @@ mod tests {
                 m.view.terrain = Some(rustgis_engine::map::view::Terrain {
                     source: rustgis_engine::map::view::TerrainSource::Layer("dem".into()),
                     exaggeration: 3.0,
+                    block: None,
+                    water: None,
                 });
             }
             let mut d = TiltDrape::default();
@@ -888,7 +982,7 @@ mod tests {
         while d.busy() {
             assert!(d.prepare(&ctx, &mut m, key, 0, 800.0, 600.0, 1.0, 0.1));
             assert!(std::time::Instant::now() < end, "the worker never ended");
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for drape worker completion
         }
         assert!(d.failed == Some(key));
         // A job for an earlier map change isn't waited for: the next prepare lets it go.
@@ -909,7 +1003,7 @@ mod tests {
         let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while d.let_go_running() {
             assert!(std::time::Instant::now() < end, "the let-go worker never ended");
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for the let-go worker
         }
         d.failed = Some(key);
         // Panning far away draws the next drape at once, covering the view.
@@ -995,7 +1089,7 @@ mod tests {
         let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while d.busy() {
             assert!(std::time::Instant::now() < end, "the worker never ended");
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for the resting drape
             d.warm(&ctx, &mut m, key, 0, 800.0, 600.0, 1.0, 0.1);
         }
         assert!(d.drape.is_none());
@@ -1060,14 +1154,25 @@ mod tests {
         let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while d.drape.is_none() {
             assert!(std::time::Instant::now() < end, "the view moved to was never draped");
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for the new-view drape
             d.warm(&ctx, &mut m, key, 0, 800.0, 600.0, 1.0, 0.1);
         }
     }
 
     /// A drape with nothing in it, as a worker hands back for a view over no ground.
     fn nothing(key: DrapeKey, camera: Camera) -> Drawn {
-        Drawn { key, ppp: 1.0, camera, tiles: 0, built: 0.0, patches: Vec::new(), relief: None, shapes: Vec::new(), markers: Vec::new() }
+        Drawn {
+            key,
+            ppp: 1.0,
+            camera,
+            tiles: 0,
+            built: 0.0,
+            patches: Vec::new(),
+            relief: None,
+            shapes: Vec::new(),
+            markers: Vec::new(),
+            archives: Default::default(),
+        }
     }
 
     /// Prepares `d` until the drape being drawn is shown.
@@ -1075,7 +1180,7 @@ mod tests {
         let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while d.busy() {
             assert!(std::time::Instant::now() < end, "the drape never came");
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for drape preparation
             assert!(d.prepare(ctx, m, key, 0, 800.0, 600.0, 1.0, time));
         }
     }

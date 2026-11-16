@@ -23,16 +23,17 @@ serde_json = { workspace = true }
 base64 = { workspace = true }
 log = { workspace = true }
 web-time = { workspace = true }
-# Search with accents aside (a plugin panel's tree): letters decomposed, their marks dropped.
-unicode-normalization = "0.1"
 # The system's preferred interface languages (the browser's on the web).
 sys-locale = { version = "0.3", features = ["js"] }
 
 # Pictures kept with features (photo thumbnails), shown in the identify popup.
-image = { workspace = true, features = ["jpeg"] }
+image = { workspace = true, features = ["gif", "jpeg", "webp"] }
+
+# The system's file dialogs. `rfd` has no Android or iOS backend: `filedialog.rs` stands in there.
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))'.dependencies]
+rfd = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-rfd = { workspace = true }
 # Help › Check for Updates checks a downloaded installer against the release's SHA256SUMS.
 sha2 = { workspace = true }
 

@@ -35,8 +35,8 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 /// Whether command `id`, run by itself with `params`, goes into the log: one that changes the
-/// project (all but those built with `.view()`; a plugin's when its manifest asks for the Edit
-/// permission), undo and redo, a save, the log's own clearing and switching, and a command whose
+/// project (automatic edits or an explicit `Edits` effect; a plugin's when its manifest asks for
+/// the Edit permission), undo and redo, a save, the log's own clearing and switching, and a command whose
 /// parameters name a file, folder, address or connection (an export), as the plugin permission
 /// gate reads them. Reading and looking around (listing, describing, moving the view) is left
 /// out: agents, scripts and plugins call those hundreds of times, and they would push the changes
@@ -60,27 +60,28 @@ pub(crate) fn is_logged(s: &Session, id: &str, params: &Value) -> bool {
         rustgis_plugins::command(id).is_some_and(|c| c.mutates())
     } else {
         match s.registry.get(id) {
-            Some(spec) => spec.mutates,
+            Some(spec) => spec.changes_project(),
             None => return false,
         }
     };
     mutates || crate::cmd::items::names_place(params, crate::cmd::plugins::PLACE_KEYS, 0)
 }
 
-/// `params` as the log keeps them: a document given as text (a map, a project, a capabilities
-/// answer, GeoJSON) as its size only, since one may hold secrets no redaction finds in it (an S3
-/// source's token inside a map's JSON); the rest clipped (so a long script costs little), then
-/// without secrets (as History's Copy as code takes them out). A secret cut short is still taken
+/// `params` as the log keeps them: response bodies (`answer`) and documents given as text
+/// (maps, projects, capabilities, GeoJSON) as their sizes only, since they may hold secrets no
+/// field-name redaction finds; the rest clipped (so a long script costs little), then without
+/// secrets (as History's Copy as code takes them out). A secret cut short is still taken
 /// out: what is left of it follows its name. Within [`LOG_PARAMS_BYTES`] of JSON in three tries,
 /// each giving up more: texts at that bound and lists at their first [`LOG_LIST_ITEMS`]; then
 /// texts at 512 characters; then the first keys with their short values only.
 pub(crate) fn kept_params(params: &Value) -> Value {
-    let v = redacted(&clip(params, LOG_PARAMS_BYTES, LOG_LIST_ITEMS, 0));
+    let v = redacted(&clip(params, LOG_PARAMS_BYTES, LOG_LIST_ITEMS, 0, true));
     if serde_json::to_vec(&v).map_or(0, |b| b.len()) <= LOG_PARAMS_BYTES {
         return v;
     }
-    // Texts shorter; lists as they are (already cut, their "… N items in all" kept).
-    let clipped = clip(&v, 512, usize::MAX, 0);
+    // Texts shorter; lists as they are (already cut, their "… N items in all" kept); responses
+    // already given as their sizes.
+    let clipped = clip(&v, 512, usize::MAX, 0, false);
     if serde_json::to_vec(&clipped).map_or(0, |b| b.len()) <= LOG_PARAMS_BYTES {
         return clipped;
     }
@@ -191,7 +192,7 @@ fn review_value(v: &Value, depth: usize) -> Result<Value, String> {
                 }
             }
             out.push_str(rest);
-            Value::String(crate::cmd::history::redacted_text(&sql_secrets_removed(&out)))
+            Value::String(crate::cmd::history::redacted_parameter(&sql_secrets_removed(&out)))
         }
         other => other.clone(),
     })
@@ -243,17 +244,31 @@ fn embedded_redacted(v: &Value, depth: usize) -> Value {
             Value::String(sql_secrets_removed(&t))
         }
         Value::Array(a) if depth < 8 => Value::Array(a.iter().map(|x| embedded_redacted(x, depth + 1)).collect()),
-        Value::Object(o) if depth < 8 => Value::Object(
-            o.iter()
-                .map(|(k, x)| {
-                    // Preserve History's plain-key refinement; the log-only fields share diagnostics'
-                    // canonical list.
-                    let sensitive =
-                        rustgis_data::address::normalized_name(k).as_deref() != Some("key") && rustgis_data::address::log_sensitive(k);
-                    (k.clone(), if sensitive { Value::String(String::new()) } else { embedded_redacted(x, depth + 1) })
-                })
-                .collect(),
-        ),
+        Value::Object(o) if depth < 8 => {
+            // The same-object login names the key parameter that "auth" would otherwise hide.
+            let query_name = crate::cmd::history::query_login_name(o);
+            Value::Object(
+                o.iter()
+                    .map(|(k, x)| {
+                        // Preserve History's plain-key refinement; the log-only fields share diagnostics'
+                        // canonical list.
+                        let sensitive =
+                            rustgis_data::address::normalized_name(k).as_deref() != Some("key") && rustgis_data::address::log_sensitive(k);
+                        let value = if sensitive {
+                            Value::String(String::new())
+                        } else if k == "address"
+                            && let (Some(name), Some(address)) = (query_name, x.as_str())
+                        {
+                            let address = crate::render::rustgis_tiles::logins::without_query_parameter(address, name);
+                            embedded_redacted(&Value::String(address), depth + 1)
+                        } else {
+                            embedded_redacted(x, depth + 1)
+                        };
+                        (k.clone(), value)
+                    })
+                    .collect(),
+            )
+        }
         // Past eight levels, left out, as `clip` does: JSON read from a text wasn't clipped, and
         // what is that deep isn't looked at.
         Value::Array(_) | Value::Object(_) => Value::String("…".into()),
@@ -457,10 +472,10 @@ fn is_base64(t: &str) -> bool {
 }
 
 /// `v` with each text cut to `chars` characters (a key to 200), a text that reads as a document
-/// (JSON or XML past [`DOCUMENT_CHARS`]) or as a file's contents in base64 given as its size, and
-/// each list cut to its first `items` (and how many there were); nesting past eight levels is
-/// left out.
-fn clip(v: &Value, chars: usize, items: usize, depth: usize) -> Value {
+/// (JSON or XML past [`DOCUMENT_CHARS`]) or as a file's contents in base64 given as its size, a
+/// response (`answer`) given as its size when `answers`, and each list cut to its first `items`
+/// (and how many there were); nesting past eight levels is left out.
+fn clip(v: &Value, chars: usize, items: usize, depth: usize, answers: bool) -> Value {
     match v {
         // A byte-order mark before it is still a document's start.
         Value::String(t)
@@ -471,7 +486,7 @@ fn clip(v: &Value, chars: usize, items: usize, depth: usize) -> Value {
         Value::String(t) if is_base64(t) => Value::String(format!("(file contents of {} characters, base64)", t.len())),
         Value::String(t) if t.chars().nth(chars).is_some() => Value::String(format!("{}…", t.chars().take(chars).collect::<String>())),
         Value::Array(a) if depth < 8 => {
-            let mut out: Vec<Value> = a.iter().take(items).map(|x| clip(x, chars, items, depth + 1)).collect();
+            let mut out: Vec<Value> = a.iter().take(items).map(|x| clip(x, chars, items, depth + 1, answers)).collect();
             if a.len() > items {
                 out.push(Value::String(format!("… {} items in all", a.len())));
             }
@@ -483,7 +498,18 @@ fn clip(v: &Value, chars: usize, items: usize, depth: usize) -> Value {
             // goes.
             let mut out = serde_json::Map::new();
             for (k, x) in o {
-                let value = || if k.chars().nth(200).is_some() { Value::String("…".into()) } else { clip(x, chars, items, depth + 1) };
+                let value = || {
+                    if k.chars().nth(200).is_some() {
+                        Value::String("…".into())
+                    } else if answers
+                        && k == "answer"
+                        && let Some(text) = x.as_str()
+                    {
+                        Value::String(format!("(a response of {} characters)", text.chars().count()))
+                    } else {
+                        clip(x, chars, items, depth + 1, answers)
+                    }
+                };
                 out.entry(k.chars().take(200).collect::<String>()).or_insert_with(value);
             }
             Value::Object(out)
@@ -519,6 +545,7 @@ pub(crate) fn entry(
         project: project.0,
         opened: project.1,
         partial,
+        plugin: None,
     }
 }
 
@@ -573,6 +600,10 @@ pub struct LogEntry {
     /// wouldn't run as they ran.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub partial: bool,
+    /// The plugin whose session program asked for it between its commands: it counts with the
+    /// plugins' commands toward [`LOG_PLUGIN_LIMIT`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
 }
 
 impl LogEntry {
@@ -623,7 +654,7 @@ impl SessionLog {
         if self.off && !matches!(e.command.as_str(), "project.logCommands" | "project.clearLog") {
             return;
         }
-        let plugin = |e: &LogEntry| e.command.starts_with(rustgis_plugins::PREFIX);
+        let plugin = |e: &LogEntry| e.command.starts_with(rustgis_plugins::PREFIX) || e.plugin.is_some();
         if plugin(&e)
             && self.plugin_entries >= LOG_PLUGIN_LIMIT
             && let Some(oldest) = self.entries.iter().position(plugin)
@@ -649,7 +680,8 @@ impl SessionLog {
     /// into the last undo step ([`crate::Session::merge_undo`]). The entry keeps when the first
     /// started, takes the last one's parameters, and adds up how long they took.
     pub fn join_last(&mut self, mut e: LogEntry) {
-        if let Some(last) = self.entries.back_mut().filter(|l| l.ok && l.command == e.command) {
+        // A session plugin's entry between the steps isn't the user's step to join.
+        if let Some(last) = self.entries.back_mut().filter(|l| l.ok && l.command == e.command && l.plugin == e.plugin) {
             e.at = last.at;
             e.millis = last.millis.saturating_add(e.millis);
             *last = e;
@@ -713,7 +745,7 @@ impl SessionLog {
     /// line). Entry by entry, so a long log isn't held as text first.
     pub fn write(&self, w: &mut dyn std::io::Write, csv: bool) -> std::io::Result<()> {
         if csv {
-            w.write_all(b"time_utc,at,command,ok,millis,error,params,project\n")?;
+            w.write_all(b"time_utc,at,command,ok,millis,error,params,plugin,project\n")?;
         }
         self.entries.iter().try_for_each(|e| write_entry(w, e, csv))
     }
@@ -740,7 +772,7 @@ fn write_entry(w: &mut dyn std::io::Write, e: &LogEntry, csv: bool) -> std::io::
     if csv {
         writeln!(
             w,
-            "{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{}",
             e.time_utc(),
             e.at,
             csv_cell(&e.command),
@@ -748,6 +780,7 @@ fn write_entry(w: &mut dyn std::io::Write, e: &LogEntry, csv: bool) -> std::io::
             e.millis,
             csv_cell(e.error.as_deref().unwrap_or("")),
             csv_cell(&e.params.to_string()),
+            csv_cell(e.plugin.as_deref().unwrap_or("")),
             csv_cell(&e.project)
         )
     } else {

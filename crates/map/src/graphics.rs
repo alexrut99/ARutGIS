@@ -127,6 +127,122 @@ pub fn symbol(ds: &Dataset, row: usize) -> Symbol {
     }
 }
 
+/// One graphic with its look, as a graphics layer keeps it in a row (see [`FIELDS`]): what an
+/// import adds (`project.importQgis`). `None` and the defaults leave a field empty, which draws
+/// as a graphic drawn without that setting does.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Graphic {
+    /// One of [`SHAPES`].
+    pub kind: &'static str,
+    pub geometry: rustgis_data::Geometry,
+    /// A text graphic's text.
+    pub text: Option<String>,
+    /// The fill; a text's colour.
+    pub fill: Option<Rgba>,
+    /// The outline; a line's colour.
+    pub outline: Option<Rgba>,
+    /// The outline's (a line's) width, in points.
+    pub width: Option<f32>,
+    /// A point's size, in points.
+    pub size: Option<f32>,
+    /// A text's font size, in points.
+    pub font_size: Option<f32>,
+    pub bold: bool,
+    pub italic: bool,
+    pub align: Option<TextAlign>,
+    pub letter_spacing: f32,
+    /// A picture's PNG or JPEG, base64.
+    pub image: Option<String>,
+}
+
+impl Graphic {
+    /// A graphic of `kind` at `geometry`, with nothing else set.
+    pub fn new(kind: &'static str, geometry: rustgis_data::Geometry) -> Self {
+        Graphic {
+            kind,
+            geometry,
+            text: None,
+            fill: None,
+            outline: None,
+            width: None,
+            size: None,
+            font_size: None,
+            bold: false,
+            italic: false,
+            align: None,
+            letter_spacing: 0.0,
+            image: None,
+        }
+    }
+}
+
+/// The longest text a graphic keeps, in characters.
+pub const MAX_TEXT: usize = 2000;
+/// The widest outline (line), in points.
+pub const MAX_WIDTH: f64 = 50.0;
+/// The largest point, in points.
+pub const MAX_SIZE: f64 = 200.0;
+
+/// Whether [`push`] cuts something of `g` to fit: a text past [`MAX_TEXT`], a font size outside
+/// [`FONT_SIZE`], a width or size below 0 or past [`MAX_WIDTH`] / [`MAX_SIZE`], or letter spacing outside
+/// [`MIN_LETTER_SPACING`]..=[`MAX_LETTER_SPACING`].
+pub fn cut(g: &Graphic) -> bool {
+    let past = |v: Option<f32>, max: f64| v.is_some_and(|v| f64::from(v) > max || v < 0.0);
+    g.text.as_ref().is_some_and(|t| t.chars().nth(MAX_TEXT).is_some())
+        || g.font_size.is_some_and(|f| !FONT_SIZE.contains(&f64::from(f)))
+        || past(g.width, MAX_WIDTH)
+        || past(g.size, MAX_SIZE)
+        // Not finite (a spacing past what an f32 holds): left out, so cut too.
+        || !(MIN_LETTER_SPACING..=MAX_LETTER_SPACING).contains(&f64::from(g.letter_spacing))
+}
+
+/// Adds `g` to the graphics dataset `ds` as its last row, its numbers in the ranges the
+/// `graphics.*` commands keep them in; a dataset made before a field gains it where `g` sets it.
+pub fn push(ds: &mut Dataset, g: Graphic) {
+    let text = |v: Option<String>| v.map_or(Value::Null, Value::Text);
+    let hex = |c: Option<Rgba>| c.map_or(Value::Null, |c| Value::Text(c.hex()));
+    let num = |v: Option<f32>, min: f64, max: f64| {
+        v.filter(|v| v.is_finite()).map_or(Value::Null, |v| Value::Float(f64::from(v).clamp(min, max)))
+    };
+    let mut sets = vec![
+        ("kind", Value::Text(g.kind.to_string())),
+        ("text", text(g.text.map(|t| t.chars().take(MAX_TEXT).collect()))),
+        ("fill", hex(g.fill)),
+        ("outline", hex(g.outline)),
+        ("width", num(g.width, 0.0, MAX_WIDTH)),
+        ("size", num(g.size, 0.0, MAX_SIZE)),
+        ("font_size", num(g.font_size, *FONT_SIZE.start(), *FONT_SIZE.end())),
+        ("image", text(g.image)),
+    ];
+    if g.bold {
+        sets.push(("bold", Value::Bool(true)));
+    }
+    if g.italic {
+        sets.push(("italic", Value::Bool(true)));
+    }
+    if let Some(a) = g.align {
+        sets.push(("align", Value::Text(a.code().into())));
+    }
+    if g.letter_spacing != 0.0 && g.letter_spacing.is_finite() {
+        sets.push(("letter_spacing", Value::Float(f64::from(g.letter_spacing).clamp(MIN_LETTER_SPACING, MAX_LETTER_SPACING))));
+    }
+    let mut attrs = vec![Value::Null; ds.fields.len()];
+    for (name, v) in sets {
+        if matches!(v, Value::Null) {
+            continue;
+        }
+        let ty = FIELDS.iter().find(|(n, _)| *n == name).map_or(FieldType::Text, |(_, t)| *t);
+        let fi = ds.ensure_field(name, ty);
+        if attrs.len() <= fi {
+            attrs.resize(fi + 1, Value::Null);
+        }
+        if let Some(cell) = attrs.get_mut(fi) {
+            *cell = v;
+        }
+    }
+    ds.push(Some(g.geometry), attrs);
+}
+
 /// What dynamic text tokens stand for when a map is drawn.
 pub struct TokenValues {
     pub map: String,
@@ -221,16 +337,7 @@ pub fn thousands(v: f64) -> String {
 pub fn civil(secs: u64) -> (String, String) {
     let days = (secs / 86_400) as i64;
     let rem = secs % 86_400;
-    // Days to civil date (proleptic Gregorian), after Howard Hinnant's algorithm.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
+    let (y, m, d) = rustgis_data::date::civil_from_days(days);
     (format!("{y:04}-{m:02}-{d:02}"), format!("{:02}:{:02}", rem / 3600, rem % 3600 / 60))
 }
 

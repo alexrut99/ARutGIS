@@ -14,7 +14,7 @@ use tiff::tags::Tag;
 
 use super::cog::Sparse;
 use super::crs::CustomCrs;
-use super::{ColorHint, Crs, Exact, GeoTransform, Raster, Uncounted, max_samples};
+use super::{ColorHint, Crs, Exact, GeoTransform, ImageGrid, Raster, Uncounted, max_samples};
 use crate::{DataError, Result};
 
 fn err(e: impl std::fmt::Display) -> DataError {
@@ -41,6 +41,128 @@ struct Geo {
     referenced: bool,
 }
 
+/// Reads the first image's original dimensions, CRS and full affine grid without decoding
+/// pixels, choosing an overview or resampling north-up. Accepts a byte cursor or a seekable
+/// file reader. Unlike [`read`], this requires embedded georeferencing and a recognised CRS;
+/// it never substitutes a scan's stand-in grid or assumes WGS 84 from coordinate ranges.
+///
+/// PixelIsPoint tie points are normalised to pixel corners, as in [`ImageGrid`]. Sidecars,
+/// subdatasets and externally supplied georeferencing are not applied. This performs synchronous
+/// header I/O, with individual tag values limited to 1 MiB: desktop callers should use a
+/// background read. Cancel is checked before/after
+/// parsing and between tie points; an individual TIFF decoder/header read cannot be interrupted.
+///
+/// ```no_run
+/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// use rustgis_data::raster::geotiff;
+/// let input = std::io::BufReader::new(std::fs::File::open("image.tif")?);
+/// let grid = geotiff::read_image_grid(input)?;
+/// let native = grid.to_world(0.5, 0.5).ok_or("pixel centre overflows")?;
+/// let lonlat = grid.crs().transformer()?.to_lonlat(native).ok_or("outside projection")?;
+/// // Keep `grid` for editing in the original pixels, independently of the displayed raster.
+/// # let _ = lonlat;
+/// # Ok(())
+/// # }
+/// ```
+pub fn read_image_grid<R: Read + Seek>(input: R) -> Result<ImageGrid> {
+    crate::progress::check()?;
+    let result = (|| {
+        let mut limits = Limits::default();
+        limits.ifd_value_size = 1 << 20;
+        let mut dec = Decoder::new(input).map_err(err)?.with_limits(limits);
+        if dec.find_tag_unsigned::<u32>(Tag::NewSubfileType).map_err(err)?.unwrap_or(0) & 5 != 0 {
+            return Err(err("image grid requires a full-resolution first image, not an overview or mask"));
+        }
+        let (width, height) = dec.dimensions().map_err(err)?;
+        let keys = image_grid_tags(&mut dec)?;
+        let geo = geo_tags_with_keys(&mut dec, &keys)?;
+        let crs = geo.crs.ok_or_else(|| match geo.unknown_epsg {
+            Some(code) => err(super::crs::unusable_epsg(code)),
+            None => err(geo.custom_error.as_deref().unwrap_or("image grid requires a recognised embedded coordinate system")),
+        })?;
+        let t = geo.transform;
+        ImageGrid::new(width, height, crs, geo.affine.unwrap_or([t.origin_x, t.pixel_width, 0., t.origin_y, 0., t.pixel_height]))
+    })();
+    crate::progress::check()?;
+    result
+}
+
+/// The exact-grid API refuses malformed georeferencing rather than taking a partial matrix,
+/// falling back to another tag, or interpreting inconsistent ground-control points as affine.
+fn image_grid_tags<R: Read + Seek>(dec: &mut Decoder<R>) -> Result<Vec<u16>> {
+    let mut keys = dec
+        .find_tag(Tag::GeoKeyDirectoryTag)
+        .map_err(err)?
+        .ok_or_else(|| err("image grid requires embedded GeoTIFF keys"))?
+        .into_u16_vec()
+        .map_err(err)?;
+    let Some(&[version, revision, minor, count]) = keys.first_chunk::<4>() else {
+        return Err(err("image grid has an incomplete GeoKey directory"));
+    };
+    if version != 1 || revision != 1 || minor > 1 {
+        return Err(err("image grid has an unsupported GeoKey directory version"));
+    }
+    let entries = keys.get(4..4 + usize::from(count) * 4).ok_or_else(|| err("image grid has an incomplete GeoKey directory"))?;
+    let doubles = |dec: &mut Decoder<R>, tag| -> Result<Option<Vec<f64>>> {
+        dec.find_tag(Tag::Unknown(tag)).map_err(err)?.map(|v| v.into_f64_vec().map_err(err)).transpose()
+    };
+    let parameters = doubles(dec, 34736)?.unwrap_or_default();
+    let ascii = dec.find_tag(Tag::Unknown(34737)).map_err(err)?.map(|v| v.into_string().map_err(err)).transpose()?.unwrap_or_default();
+    for &[key, location, count, value] in entries.as_chunks::<4>().0 {
+        crate::progress::check()?;
+        let expected_location = match key {
+            1026 | 2049 | 3073 | 4097 => Some(34737),
+            2053 | 2055 | 2057..=2059 | 2061 | 3077..=3096 => Some(34736),
+            1024 | 1025 | 2048 | 2050..=2052 | 2054 | 2056 | 2060 | 3072 | 3074..=3076 | 4096 | 4098 | 4099 => Some(0),
+            _ => None,
+        };
+        let start = usize::from(value);
+        let readable = match location {
+            0 => count == 1,
+            34736 => count == 1 && parameters.get(start).is_some_and(|v| v.is_finite()),
+            34737 => count > 0 && ascii.get(start..start + usize::from(count)).is_some(),
+            // The CRS reader cannot resolve other storage, including SHORT parameter arrays.
+            _ => false,
+        };
+        if !readable || expected_location.is_some_and(|expected| location != expected) {
+            return Err(err(format!("image grid GeoKey {key} has an unreadable parameter reference")));
+        }
+        if matches!(key, 2048 | 3072) && (location != 0 || count != 1) {
+            return Err(err("image grid has an invalid coordinate system GeoKey"));
+        }
+        if matches!(key, 1024 | 1025) && (location != 0 || count != 1 || !matches!(value, 1 | 2)) {
+            return Err(err("image grid requires two-dimensional area or point GeoTIFF georeferencing"));
+        }
+    }
+    if let Some(m) = doubles(dec, 34264)? {
+        if m.len() != 16 || !m.iter().all(|v| v.is_finite()) || m.get(12..) != Some(&[0., 0., 0., 1.]) {
+            return Err(err("image grid requires a finite 4 × 4 affine transformation matrix"));
+        }
+    } else {
+        let scale = doubles(dec, 33550)?.ok_or_else(|| err("image grid requires embedded GeoTIFF georeferencing"))?;
+        let ties = doubles(dec, 33922)?.ok_or_else(|| err("image grid requires a pixel scale and tie point"))?;
+        if scale.len() != 3 || ties.is_empty() || !ties.len().is_multiple_of(6) || !scale.iter().chain(&ties).all(|v| v.is_finite()) {
+            return Err(err("image grid has an invalid pixel scale or tie point"));
+        }
+        let Some(&[col, row, _, x, y, _]) = ties.as_chunks::<6>().0.first() else {
+            return Err(err("image grid has no tie point"));
+        };
+        for &[c, r, _, wx, wy, _] in ties.as_chunks::<6>().0 {
+            crate::progress::check()?;
+            let expected = [x + (c - col) * scale[0], y - (r - row) * scale[1]];
+            if expected
+                .into_iter()
+                .zip([wx, wy])
+                .any(|(a, b)| !a.is_finite() || (a - b).abs() > 64. * f64::EPSILON * a.abs().max(b.abs()).max(1.))
+            {
+                return Err(err("image grid tie points do not describe one affine grid"));
+            }
+        }
+    }
+    keys.truncate(4 + usize::from(count) * 4);
+    Ok(keys)
+}
+
 /// Whether the first sample past the colour ones is declared alpha (extra sample 1, associated, or
 /// 2, unassociated).
 pub(super) fn extra_alpha<R: Read + Seek>(dec: &mut Decoder<R>) -> bool {
@@ -48,21 +170,24 @@ pub(super) fn extra_alpha<R: Read + Seek>(dec: &mut Decoder<R>) -> bool {
 }
 
 /// How `n` samples of a grey image the decoder calls multiband are shown: grey with alpha when
-/// there are two and the second is declared alpha (extra sample 1, associated, or 2, unassociated),
-/// else grey. GDAL marks the second band of an ordinary two-band file as 0, unspecified data.
+/// the second is declared alpha (extra sample 1, associated, or 2, unassociated), whatever data
+/// bands follow it, else grey. GDAL marks the second band of an ordinary two-band file as 0,
+/// unspecified data.
 pub(super) fn multiband_color<R: Read + Seek>(dec: &mut Decoder<R>, n: u16) -> ColorHint {
-    let alpha =
-        n == 2 && dec.find_tag_unsigned_vec::<u16>(Tag::ExtraSamples).ok().flatten().is_some_and(|v| matches!(v.first(), Some(1 | 2)));
-    if alpha { ColorHint::GrayAlpha } else { ColorHint::Gray }
+    if n >= 2 && extra_alpha(dec) { ColorHint::GrayAlpha } else { ColorHint::Gray }
 }
 
 fn geo_tags<R: Read + Seek>(dec: &mut Decoder<R>) -> Result<Geo> {
+    let keys: Vec<u16> = dec.find_tag(Tag::GeoKeyDirectoryTag).ok().flatten().and_then(|v| v.into_u16_vec().ok()).unwrap_or_default();
+    geo_tags_with_keys(dec, &keys)
+}
+
+/// Ordinary readers pass their legacy whole directory; exact grids pass validated declared keys.
+fn geo_tags_with_keys<R: Read + Seek>(dec: &mut Decoder<R>, keys: &[u16]) -> Result<Geo> {
     let doubles =
         |dec: &mut Decoder<R>, tag: u16| -> Option<Vec<f64>> { dec.find_tag(Tag::Unknown(tag)).ok().flatten()?.into_f64_vec().ok() };
-    // GeoKey directory: a header of four shorts, then (key, location, count, value) entries.
-    let keys: Vec<u16> = dec.find_tag(Tag::GeoKeyDirectoryTag).ok().flatten().and_then(|v| v.into_u16_vec().ok()).unwrap_or_default();
     let key = |k: u16| -> Option<u16> {
-        keys.get(4..)?.as_chunks::<4>().0.iter().find(|[key, location, _, _]| *key == k && *location == 0).map(|[_, _, _, value]| *value)
+        key_entries(keys)?.iter().find(|[key, location, _, _]| *key == k && *location == 0).map(|[_, _, _, value]| *value)
     };
     let pixel_is_point = key(1025) == Some(2);
     let geographic_model = key(1024) == Some(2);
@@ -72,7 +197,7 @@ fn geo_tags<R: Read + Seek>(dec: &mut Decoder<R>) -> Result<Geo> {
     // A projected file with a user-defined projection (the NLCD's Albers, say) defines it in its
     // keys: read as its own system, never as the geographic system it's based on.
     let user_defined = key(1024) == Some(1) && key(3072).is_none_or(|c| !usable(&c));
-    let citation = |k: u16| match geokey(&keys, &gdoubles, &gascii, k) {
+    let citation = |k: u16| match geokey(keys, &gdoubles, &gascii, k) {
         Some(KeyValue::Ascii(t)) if !t.trim().is_empty() => Some(t),
         _ => None,
     };
@@ -82,7 +207,7 @@ fn geo_tags<R: Read + Seek>(dec: &mut Decoder<R>) -> Result<Geo> {
     // says so, as GDAL names one. GeoTIFF has no key for axis directions, and PROJ gives such a
     // projection westings.
     if user_defined
-        && planetary_axes(&keys, &gdoubles, &gascii).is_some()
+        && planetary_axes(keys, &gdoubles, &gascii).is_some()
         // PCSCitation, GTCitation, GeogCitation.
         && [3073, 1026, 2049].into_iter().filter_map(citation).any(|t| super::planetary::ographic_name(&t))
     {
@@ -92,7 +217,7 @@ fn geo_tags<R: Read + Seek>(dec: &mut Decoder<R>) -> Result<Geo> {
     // later only if the coordinates aren't degrees), its reason kept for the message.
     let mut custom_error = None;
     let (code, crs) = if user_defined {
-        match custom_crs(&keys, &gdoubles, &gascii) {
+        match custom_crs(keys, &gdoubles, &gascii) {
             Ok(crs) => (None, Some(crs)),
             Err(e) => {
                 custom_error = Some(e.to_string());
@@ -108,11 +233,11 @@ fn geo_tags<R: Read + Seek>(dec: &mut Decoder<R>) -> Result<Geo> {
     // A projection of it that can't be read is refused, because its metres would be read as
     // degrees.
     let crs = match crs {
-        None if geographic_model && key(2048).is_none_or(|c| !usable(&c)) => planetary_geographic(&keys, &gdoubles, &gascii)?.or(crs),
+        None if geographic_model && key(2048).is_none_or(|c| !usable(&c)) => planetary_geographic(keys, &gdoubles, &gascii)?.or(crs),
         crs => crs,
     };
     if let Some(e) = &custom_error
-        && planetary_axes(&keys, &gdoubles, &gascii).is_some()
+        && planetary_axes(keys, &gdoubles, &gascii).is_some()
     {
         return Err(err(super::planetary::refused(&system(), e.strip_prefix("GeoTIFF: ").unwrap_or(e))));
     }
@@ -247,8 +372,14 @@ enum KeyValue {
     Ascii(String),
 }
 
+/// Preserve ordinary readers' legacy scan when a file misstates its key count. The exact-grid
+/// API passes only the declared entries, validated separately, so it cannot scan parameter tails.
+fn key_entries(keys: &[u16]) -> Option<&[[u16; 4]]> {
+    Some(keys.get(4..)?.as_chunks::<4>().0)
+}
+
 fn geokey(keys: &[u16], doubles: &[f64], ascii: &str, k: u16) -> Option<KeyValue> {
-    let [_, location, count, value] = *keys.get(4..)?.as_chunks::<4>().0.iter().find(|e| e[0] == k)?;
+    let [_, location, count, value] = *key_entries(keys)?.iter().find(|e| e[0] == k)?;
     match location {
         0 => Some(KeyValue::Short(value)),
         34736 => doubles.get(value as usize).copied().map(KeyValue::Double),
@@ -414,7 +545,7 @@ fn proj4_of_keys(keys: &[u16], doubles: &[f64], ascii: &str) -> Result<(String, 
         Some(21) => format!("+proj=ortho +lat_0={lat0} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
         // CT_Robinson.
         Some(23) => format!("+proj=robin +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        // MODIS's grid; RustGIS computes it (`rustgis_geom::Sinusoidal`).
+        // MODIS's grid.
         Some(24) => format!("+proj=sinu +lon_0={lon0} +x_0={x0} +y_0={y0}"),
         Some(28) => format!("+proj=cea +lat_ts={lat1} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
         Some(c) => return Err(err(format!("the file's own projection (coordinate transformation {c}) isn't supported"))),
@@ -450,8 +581,7 @@ fn proj4_of_keys(keys: &[u16], doubles: &[f64], ascii: &str) -> Result<(String, 
 }
 
 /// Whether two PROJ definitions place the same points: points around the projection's origin,
-/// unprojected by both (as RustGIS computes them, sinusoidal and ellipsoidal equidistant
-/// cylindrical included), land within a centimetre.
+/// unprojected by both, land within a centimetre.
 fn same_projection(a: &str, b: &str) -> bool {
     let offsets = [(0.0, 0.0), (100_000.0, 50_000.0), (-250_000.0, 150_000.0), (300_000.0, -200_000.0), (-50_000.0, -400_000.0)];
     let (Ok(ta), Ok(tb)) = (super::crs::transformer_of(a), super::crs::transformer_of(b)) else { return false };
@@ -676,12 +806,23 @@ fn lzw<R: Read + Seek>(dec: &mut Decoder<R>) -> bool {
     dec.find_tag_unsigned::<u16>(Tag::Compression).ok().flatten() == Some(5)
 }
 
-/// Decodes chunk `index` (a strip or tile) of the current image. The `tiff` crate fails on some
-/// LZW chunks it should read (issue #350): those are decoded by [`super::lzw`] instead.
-pub(crate) fn read_chunk<R: Read + Seek>(dec: &mut Decoder<R>, index: u32) -> Result<DecodingResult> {
+/// Decodes chunk `index` (a strip or tile) of the current image: its samples, and which of them
+/// its own encoding marks invalid (LERC's validity masks), for the caller to make no-data with
+/// [`super::lerc::blank`]. The `tiff` crate fails on some LZW chunks it should read (issue #350):
+/// those are decoded by [`super::lzw`] instead. It has no LERC codec: LERC chunks are decoded by
+/// [`super::lerc`] (#1818), `table` keeping the image's chunk offsets from one call to the next.
+pub(crate) fn read_chunk<R: Read + Seek>(
+    dec: &mut Decoder<R>,
+    index: u32,
+    table: &mut super::lerc::Table,
+) -> Result<(DecodingResult, Option<Vec<bool>>)> {
+    if super::lerc::is_lerc(dec) {
+        let c = super::lerc::chunk(dec, index, table)?;
+        return Ok((c.samples, c.gaps));
+    }
     match dec.read_chunk(index) {
-        Ok(v) => Ok(v),
-        Err(e) if lzw(dec) => super::lzw::chunk(dec, index).map_err(|_| err(e)),
+        Ok(v) => Ok((v, None)),
+        Err(e) if lzw(dec) => super::lzw::chunk(dec, index).map(|v| (v, None)).map_err(|_| err(e)),
         Err(e) => Err(err(e)),
     }
 }
@@ -936,6 +1077,13 @@ impl Chunks {
         }
     }
 
+    /// The most one chunk holds while it is decoded: its samples as read (up to 8 bytes each),
+    /// as 32-bit floats, and which of them were rounded (a byte each).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn bytes(&self) -> usize {
+        (self.cw as usize).saturating_mul(self.ch as usize).saturating_mul(self.samples).saturating_mul(13)
+    }
+
     fn count(&self) -> u64 {
         u64::from(self.per_plane) * self.planes as u64
     }
@@ -957,7 +1105,6 @@ impl Chunks {
     /// Copies every `k`-th pixel each way of chunk `c` of `plane` (decoded as `values`) into
     /// `bands`, each `ow` pixels wide, counting in `rounded` (by band) the pixels copied whose bit
     /// is set in `changed` (from [`rounded_bits`]).
-    #[allow(clippy::too_many_arguments)]
     fn place(
         &self,
         bands: &mut [Vec<f32>],
@@ -1019,7 +1166,8 @@ const PARALLEL_CHUNKS: u64 = 16;
 /// made as it is read, for a file too large to hold that has none. Returns the bands. With `k`
 /// 1, the whole image a chunk at a time. With `open`, chunks are decoded on several threads,
 /// each reading image `image` of its own copy of the file.
-#[allow(clippy::too_many_arguments)]
+/// Progress counts chunks examined, including ones skipped by the overview. Cancel is checked
+/// between chunks; decoding and placing an individual chunk cannot be interrupted.
 fn decimate<R: Read + Seek>(
     dec: &mut Decoder<R>,
     w: u32,
@@ -1030,6 +1178,7 @@ fn decimate<R: Read + Seek>(
     nodata: Uncounted,
     open: Option<(Opener<'_>, usize, Limits)>,
 ) -> Result<(Vec<Vec<f32>>, &'static str, Vec<u64>)> {
+    crate::progress::check()?;
     let k = k.max(1);
     let (ow, oh) = (w.div_ceil(k) as usize, h.div_ceil(k) as usize);
     let mut bands = (0..nbands).map(|_| super::filled(ow, oh, f32::NAN)).collect::<Result<Vec<_>>>()?;
@@ -1038,28 +1187,39 @@ fn decimate<R: Read + Seek>(
     if let Some((open, image, limits)) = open
         && chunks.count() >= PARALLEL_CHUNKS
     {
-        let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
+        // Each thread decodes a chunk of its own. Up to the default count as before; past it (a
+        // high setting) no more than the threads' scratch budget holds, so the peak doesn't
+        // multiply with the setting.
+        let affordable = 1 + crate::memory::thread_scratch() / chunks.bytes().max(1);
+        let chunk_count = usize::try_from(chunks.count()).unwrap_or(usize::MAX);
+        let threads = crate::threads::max().min(affordable.max(crate::threads::default_max())).min(chunk_count);
         if threads > 1 {
             return decimate_parallel(chunks, bands, k, (ow, oh), nodata, threads, open, image, limits);
         }
     }
     let _ = open;
+    crate::progress::begin(usize::try_from(chunks.count()).unwrap_or(usize::MAX));
     let mut data_type = "Float32";
     let mut rounded = vec![0u64; nbands];
+    let mut table = super::lerc::Table::default();
     for i in 0..chunks.count() {
-        let Some((plane, index)) = chunks.wanted(i, k) else { continue };
-        let buf = read_chunk(dec, index)?;
-        let changed = rounded_bits(&buf, nodata);
-        let (values, dt) = to_f32(buf, (ow, oh))?;
-        data_type = dt;
-        chunks.place(&mut bands, &values, changed.as_deref(), &mut rounded, plane, index, k, ow);
+        crate::progress::check()?;
+        if let Some((plane, index)) = chunks.wanted(i, k) {
+            let (buf, gaps) = read_chunk(dec, index, &mut table)?;
+            let changed = rounded_bits(&buf, nodata);
+            let (mut values, dt) = to_f32(buf, (ow, oh))?;
+            super::lerc::blank(&mut values, gaps.as_deref());
+            data_type = dt;
+            chunks.place(&mut bands, &values, changed.as_deref(), &mut rounded, plane, index, k, ow);
+        }
+        crate::progress::step(1)?;
     }
+    crate::progress::check()?;
     Ok((bands, data_type, rounded))
 }
 
 /// [`decimate`] on `threads` threads, each with its own decoder taking the next chunk in turn.
 #[cfg(not(target_arch = "wasm32"))]
-#[allow(clippy::too_many_arguments)]
 fn decimate_parallel(
     chunks: Chunks,
     bands: Vec<Vec<f32>>,
@@ -1073,6 +1233,9 @@ fn decimate_parallel(
 ) -> Result<(Vec<Vec<f32>>, &'static str, Vec<u64>)> {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    crate::progress::begin(usize::try_from(chunks.count()).unwrap_or(usize::MAX));
+    crate::progress::check()?;
+    let probe = crate::progress::current();
     let next = AtomicU64::new(0);
     let failed = AtomicBool::new(false);
     let failure: Mutex<Option<DataError>> = Mutex::new(None);
@@ -1085,24 +1248,38 @@ fn decimate_parallel(
         }
     };
     let work = || {
+        let _guard = crate::progress::install(probe.clone());
+        if let Err(e) = crate::progress::check() {
+            return fail(e);
+        }
         let dec = open().map_err(err).and_then(|r| Decoder::new(r).map_err(err)).map(|d| d.with_limits(limits.clone()));
         let mut dec = match dec.and_then(|mut d| d.seek_to_image(image).map_err(err).map(|()| d)) {
             Ok(d) => d,
             Err(e) => return fail(e),
         };
+        let mut table = super::lerc::Table::default();
         while !failed.load(Ordering::Relaxed) {
+            if let Err(e) = crate::progress::check() {
+                return fail(e);
+            }
             let i = next.fetch_add(1, Ordering::Relaxed);
             if i >= chunks.count() {
                 break;
             }
-            let Some((plane, index)) = chunks.wanted(i, k) else { continue };
-            match read_chunk(&mut dec, index) {
-                Ok(buf) => {
+            let Some((plane, index)) = chunks.wanted(i, k) else {
+                if let Err(e) = crate::progress::step(1) {
+                    return fail(e);
+                }
+                continue;
+            };
+            match read_chunk(&mut dec, index, &mut table) {
+                Ok((buf, gaps)) => {
                     let changed = rounded_bits(&buf, nodata);
-                    let (values, dt) = match to_f32(buf, (ow, oh)) {
+                    let (mut values, dt) = match to_f32(buf, (ow, oh)) {
                         Ok(v) => v,
                         Err(e) => return fail(e),
                     };
+                    super::lerc::blank(&mut values, gaps.as_deref());
                     if let Ok(mut o) = out.lock() {
                         let (bands, data_type, rounded) = &mut *o;
                         *data_type = dt;
@@ -1111,10 +1288,17 @@ fn decimate_parallel(
                 }
                 Err(e) => return fail(e),
             }
+            if let Err(e) = crate::progress::step(1) {
+                return fail(e);
+            }
         }
     };
     std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..threads).map(|_| scope.spawn(work)).collect();
+        // A thread the OS refuses costs speed, not the read: this one decodes chunks too.
+        let handles: Vec<_> = (1..threads).filter_map(|_| std::thread::Builder::new().spawn_scoped(scope, work).ok()).collect();
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).is_err() {
+            fail(err("a chunk couldn't be decoded"));
+        }
         for h in handles {
             if h.join().is_err() {
                 fail(err("a chunk couldn't be decoded"));
@@ -1124,6 +1308,7 @@ fn decimate_parallel(
     if let Some(e) = failure.into_inner().ok().flatten() {
         return Err(e);
     }
+    crate::progress::check()?;
     out.into_inner().map_err(|_| err("a chunk couldn't be decoded"))
 }
 
@@ -1224,9 +1409,9 @@ pub(super) fn read_limited_with_nodata(
         Ok(None) => None,
         Ok(Some(v)) => match v.into_string() {
             Ok(t) => super::pam::parse_gdal_metadata(&t),
-            Err(e) => Some(super::pam::Pam::losing(format!("it isn't text ({e}): band and class names are left out"))),
+            Err(e) => Some(super::pam::Pam::losing(format!("it isn't text ({e}): band and class names and wavelengths are left out"))),
         },
-        Err(e) => Some(super::pam::Pam::losing(format!("it doesn't decode ({e}): band and class names are left out"))),
+        Err(e) => Some(super::pam::Pam::losing(format!("it doesn't decode ({e}): band and class names and wavelengths are left out"))),
     };
     // Who holds the rights to the picture, kept as it reads so an export of it says so too (the
     // writers make it the ASCII a tag holds, and the exports say what that changed); one that
@@ -1382,7 +1567,10 @@ pub(super) fn read_limited_with_nodata(
     // A large image, from a file, is read a chunk at a time on several threads (not one of
     // fewer than 8 bits a sample, whose chunks pack several pixels to a byte).
     let chunked = open.is_some() && n >= 1 << 20 && bits(&mut dec) >= 8;
-    let whole = if decimate_by > 1 || extra_samples || planar_tiles || chunked {
+    // The decoder has no LERC codec: such an image is read a chunk at a time, every chunk decoded
+    // by [`super::lerc`] (#1818).
+    let lerc = super::lerc::is_lerc(&mut dec);
+    let whole = if decimate_by > 1 || extra_samples || planar_tiles || chunked || lerc {
         None
     } else {
         let mut buf = DecodingResult::U8(Vec::new());
@@ -1446,15 +1634,38 @@ pub(super) fn read_limited_with_nodata(
     if ycbcr {
         ycbcr_to_rgb(&mut bands);
     }
+    // The image's internal transparency mask: its masked pixels are no-data, as outside a
+    // reprojection are. One that can't be read leaves them as stored, and says so.
+    let mut mask_lost = None;
+    match super::mask::find(&mut dec, image, if decimate_by > 1 { (full_w, full_h) } else { (w, h) }) {
+        super::mask::Found::At(m) => match super::mask::read(&mut dec, m, decimate_by) {
+            Ok(opaque) if opaque.len() == n => {
+                for band in &mut bands {
+                    for (v, _) in band.iter_mut().zip(&opaque).filter(|(_, o)| !**o) {
+                        *v = f32::NAN;
+                    }
+                }
+            }
+            Ok(_) => mask_lost = Some("its transparency mask doesn't match its image".to_string()),
+            Err(DataError::Cancelled) => return Err(DataError::Cancelled),
+            Err(e) => mask_lost = Some(e.to_string()),
+        },
+        super::mask::Found::Elsewhere => mask_lost = Some("the file has none for the image read".to_string()),
+        super::mask::Found::Unscanned(why) => mask_lost = Some(why),
+        super::mask::Found::None => {}
+    }
+    let mask_lost = mask_lost.map(|why| format!("its transparency mask isn't applied ({why}): masked pixels draw as stored"));
     // A scan keeps a stand-in transform, sized to the pixels read.
     if !geo.referenced {
         let mut r = Raster::new(name, w, h, bands, super::unreferenced(w, h), Crs::LonLat, geo.nodata, color, data_type)?;
         r.georeferenced = false;
         r.overview = overview;
+        r.step = decimate_by.max(1);
         r.rounded = rounded;
         r.copyright = copyright.filter(|c| !c.is_empty());
         r.lost.extend(copyright_lost);
         r.lost.extend(table_lost);
+        r.lost.extend(mask_lost);
         if let Some(p) = &described {
             r.apply_pam(p, super::pam::GDAL_METADATA);
         }
@@ -1474,7 +1685,7 @@ pub(super) fn read_limited_with_nodata(
     transform.pixel_height *= sy;
     let (bands, w, h) = match geo.affine {
         Some([x, xc, xr, y, yc, yr]) => {
-            let (bands, ow, oh, north_up) = super::north_up(bands, w, h, [x, xc * sx, xr * sy, y, yc * sx, yr * sy], max)?;
+            let (bands, ow, oh, north_up) = super::north_up(&bands, w, h, [x, xc * sx, xr * sy, y, yc * sx, yr * sy], max)?;
             transform = north_up;
             (bands, ow, oh)
         }
@@ -1504,11 +1715,14 @@ pub(super) fn read_limited_with_nodata(
     };
     let mut r = Raster::new(name, w, h, bands, transform, crs, geo.nodata, color, data_type)?;
     r.overview = overview;
+    // A turned image is resampled to a grid of its own: its pixels are no longer the file's.
+    r.step = if geo.affine.is_none() { decimate_by.max(1) } else { 1 };
     r.rounded = rounded;
     r.copyright = copyright.filter(|c| !c.is_empty());
     r.lost.extend(copyright_lost);
     r.lost.extend(super::planetary::note_of(crs));
     r.lost.extend(table_lost);
+    r.lost.extend(mask_lost);
     if let Some(p) = &described {
         r.apply_pam(p, super::pam::GDAL_METADATA);
     }
@@ -1581,13 +1795,22 @@ fn as_area(keys: &[u16]) -> Vec<u16> {
 }
 
 /// Whether band `b` is written as bytes: whole numbers within 0–255 (or no valid pixels at all),
-/// and a no-data value that is one too.
+/// and a no-data value that is one too. A colour band's statistics leave out the cells its alpha
+/// draws see-through (#1810), so those cells' values are looked at too: a file is written in the
+/// type it was before, whatever they hold.
 pub(super) fn fits_bytes(r: &Raster, b: usize) -> bool {
     let Some(band) = r.bands.get(b) else { return false };
     let s = &band.stats;
     let whole_bytes = s.min >= 0.0 && s.max <= 255.0 && (s.categories.is_some() || r.data_type == "UInt8");
     let nodata_ok = r.nodata.is_none_or(|d| (0.0..=255.0).contains(&d) && d.fract() == 0.0);
-    nodata_ok && (whole_bytes || s.count == 0)
+    let byte = |v: f32| !r.is_valid(v) || (v.fract() == 0.0 && (0.0..=255.0).contains(&v));
+    // Looked at only once the statistics fit, as it reads the whole band; an 8-bit band's are
+    // bytes already.
+    let see_through_bytes = || {
+        r.data_type == "UInt8"
+            || r.see_through_cells(b).is_none_or(|hidden| band.data.iter().enumerate().all(|(i, &v)| !hidden(i) || byte(v)))
+    };
+    nodata_ok && (whole_bytes || s.count == 0) && see_through_bytes()
 }
 
 /// The bands [`write`] writes of `r` given `band`: RGB and its fourth sample (alpha only when
@@ -1602,53 +1825,54 @@ pub fn written_bands(r: &Raster, band: usize) -> Vec<usize> {
 
 /// Writes a raster as a Deflate-compressed GeoTIFF: a colour raster's colour bands (RGB(A) bytes
 /// when they are 8-bit, else 32-bit floats, alpha kept), so it reads back in colour; otherwise
-/// `band` (0-based) as 32-bit floats. `band` is for rasters that aren't colour ones: a colour
-/// raster always writes its colour bands, as its 8-bit form did before. A cancelled run stops
-/// it (with [`DataError::Cancelled`]) within a strip.
+/// `band` (0-based), as bytes when it is an 8-bit band of whole bytes, else as 32-bit floats.
+/// `band` is for rasters that aren't colour ones: a colour raster always writes its colour bands,
+/// as its 8-bit form did before. The strips go through the predictors and Deflate effort of the
+/// COG writer ([`super::cogwrite::write_strips`]). A cancelled run stops it (with
+/// [`DataError::Cancelled`]) within a strip.
 pub fn write(r: &Raster, band: usize) -> Result<Vec<u8>> {
-    match encode(r, band) {
-        Ok(bytes) => Ok(bytes),
-        // The encoder's error for a cancel only says the write stopped.
-        Err(e) => crate::progress::check().and(Err(e)),
-    }
+    encode(r, band, false)
 }
 
-/// The file's bytes, written by the encoder a strip's compressed output at a time: each write
-/// fails once the run was cancelled. It counts no progress: the encoder doesn't say where a
-/// strip ends.
-struct Probed<W>(W);
-
-impl<W: std::io::Write> std::io::Write for Probed<W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        crate::progress::check().map_err(std::io::Error::other)?;
-        self.0.write(buf)
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.0.flush()
-    }
+/// Writes every band of a raster, for a layer whose pixels the project keeps: as [`write`] does
+/// when that keeps them all, otherwise as 32-bit float samples (RGB first for a colour raster,
+/// and alpha after them when it has one), which [`read`] reads back as the same bands.
+pub fn write_all(r: &Raster) -> Result<Vec<u8>> {
+    encode(r, 0, true)
 }
 
-impl<W: Seek> Seek for Probed<W> {
-    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        self.0.seek(pos)
-    }
+/// Writes `data` (samples interleaved as `img` lays them out, a row after another) as `img`'s
+/// strips, at the end of `out`.
+fn put<T: Copy + Sync, const N: usize>(
+    img: super::cogwrite::Strips,
+    data: &[T],
+    le: fn(T) -> [u8; N],
+    out: &mut std::io::Cursor<Vec<u8>>,
+) -> Result<()> {
+    let per_row = img.w as usize * usize::from(img.spp);
+    super::cogwrite::write_strips(img, out, |rows, buf| {
+        let s = data.get(rows.start * per_row..rows.end * per_row).ok_or_else(|| err("the samples don't fill the image"))?;
+        buf.extend(s.iter().flat_map(|v| le(*v)));
+        Ok(())
+    })
 }
 
-/// [`write`], a cancel failing as any write error does.
-fn encode(r: &Raster, band: usize) -> Result<Vec<u8>> {
-    use tiff::encoder::{Compression, DeflateLevel, TiffEncoder, colortype};
+/// [`write`] (or with `every`, [`write_all`]).
+fn encode(r: &Raster, band: usize, every: bool) -> Result<Vec<u8>> {
+    use super::cogwrite::{Sample, Strips, few_classes, geo_entries};
     // A scan's place is only where it was laid on the view: not coordinates to write into a file.
     r.require_coordinates().map_err(err)?;
-    let mut out = Probed(std::io::Cursor::new(Vec::new()));
-    let mut enc = TiffEncoder::new(&mut out).map_err(err)?.with_compression(Compression::Deflate(DeflateLevel::Balanced));
+    let mut out = std::io::Cursor::new(Vec::new());
     let gt = r.transform;
     if gt.pixel_height > 0.0 || gt.pixel_width < 0.0 {
         return Err(err("only north-up rasters can be exported for now"));
     }
-    let scale = [gt.pixel_width.abs(), gt.pixel_height.abs(), 0.0];
-    let tie = [0.0, 0.0, 0.0, gt.origin_x, gt.origin_y, 0.0];
-    let GeoKeys { keys, custom } = geo_keys(r)?;
+    let geo = geo_keys(r)?;
     let (w, h) = (r.width, r.height);
+    // Every band holds width × height values; one that doesn't is refused rather than padded.
+    if r.bands.iter().any(|b| b.data.len() != (w as usize) * (h as usize)) {
+        return Err(err(format!("a band of the raster doesn't hold its {w} × {h} values")));
+    }
     let bytes = |b: usize| -> Option<Vec<u8>> {
         let band = r.bands.get(b)?;
         // No-data pixels keep the no-data value, so the written GDAL_NODATA tag still matches.
@@ -1657,49 +1881,75 @@ fn encode(r: &Raster, band: usize) -> Result<Vec<u8>> {
             .then(|| band.data.iter().map(|v| if r.is_valid(*v) { v.clamp(0.0, 255.0) as u8 } else { nodata.unwrap_or(0) }).collect())
     };
     let rgb = matches!(r.color, ColorHint::Rgb { .. }) && r.bands.len() >= 3;
-    // Each branch below names the bands it writes as samples (`$written`): their names, and the
-    // first one's class names (the red band's, for a colour file), go to GDAL's metadata tag,
-    // read back on open.
-    let copyright = r.copyright.as_deref().map(super::tag_text).filter(|c| !c.is_empty());
-    macro_rules! tags {
-        ($img:expr, $written:expr) => {{
-            let classes = super::gdal_metadata_of(r, $written);
-            let e = $img.encoder();
-            // The fourth sample says what it is: unassociated alpha (2) or data (0, as RGB and
-            // near-infrared). The encoder writes no ExtraSamples tag, and without one a reader
-            // can't tell alpha from data.
-            if $written.len() == 4 && rgb {
-                let extra: u16 = if matches!(r.color, ColorHint::Rgb { alpha: true }) { 2 } else { 0 };
-                e.write_tag(Tag::ExtraSamples, &[extra][..]).map_err(err)?;
-            }
-            e.write_tag(Tag::ModelPixelScaleTag, &scale[..]).map_err(err)?;
-            e.write_tag(Tag::ModelTiepointTag, &tie[..]).map_err(err)?;
-            e.write_tag(Tag::GeoKeyDirectoryTag, &keys[..]).map_err(err)?;
-            if let Some(d) = &custom {
-                if !d.doubles.is_empty() {
-                    e.write_tag(Tag::Unknown(34736), &d.doubles[..]).map_err(err)?;
-                }
-                if !d.ascii.is_empty() {
-                    e.write_tag(Tag::Unknown(34737), d.ascii.as_str()).map_err(err)?;
-                }
-            }
-            if let Some(xml) = &classes {
-                e.write_tag(Tag::Unknown(42112), xml.as_str()).map_err(err)?;
-            }
-            if let Some(c) = &copyright {
-                e.write_tag(Tag::Copyright, c.as_str()).map_err(err)?;
-            }
-            if let Some(nd) = r.nodata {
-                e.write_tag(Tag::GdalNodata, nd.to_string().as_str()).map_err(err)?;
-            }
-        }};
-    }
+    // The image each branch below writes: `written` names the bands it writes as samples, whose
+    // names, and the first one's class names (the red band's, for a colour file), go to GDAL's
+    // metadata tag, read back on open. Grey or RGB samples come first, then those `extra` says
+    // what they are (unassociated alpha, 2, or data, 0). A single band of classes takes no
+    // predictor.
+    let image = |written: &[usize], sample: Sample, extra: Vec<u16>| -> Result<Strips> {
+        let colour = if rgb { 3 } else { 1 };
+        Ok(Strips {
+            w,
+            h,
+            spp: u16::try_from(colour + extra.len()).map_err(|_| err("a TIFF holds at most 65,535 bands"))?,
+            sample,
+            photometric: if rgb { 2 } else { 1 },
+            extra,
+            classes: matches!(written, [b] if r.bands.get(*b).is_some_and(few_classes)),
+            tags: geo_entries(r, &geo, written, r.nodata.map(|d| d.to_string())),
+        })
+    };
+    // The fourth sample of a colour file says what it is: alpha, or data (as RGB and near-infrared).
+    let fourth = || vec![if matches!(r.color, ColorHint::Rgb { alpha: true }) { 2 } else { 0 }];
     // Without alpha or a no-data marker, byte samples cannot keep NaN holes (for example the
     // cells outside a reprojected RGBI image). Keep those samples as floats instead.
     let byte_holes = r.nodata.is_none()
         && matches!(r.color, ColorHint::Rgb { alpha: false })
         && written_bands(r, band).iter().any(|b| r.bands.get(*b).is_some_and(|b| b.stats.count < (w as usize) * (h as usize)));
-    if rgb
+    let all: Vec<usize> = (0..r.bands.len()).collect();
+    if every && written_bands(r, band).len() < all.len() {
+        // More bands than colour (or one grey band) takes: each a 32-bit float sample, the first
+        // past the colour (or grey) ones alpha when the raster says it is.
+        // Alpha follows the colour (or grey) samples it belongs to: RGB's is the fourth band, grey's
+        // the second, so a colour hint on too few bands for colour marks none.
+        let alpha = if rgb { matches!(r.color, ColorHint::Rgb { alpha: true }) } else { matches!(r.color, ColorHint::GrayAlpha) };
+        let extras: Vec<u16> = (0..all.len() - if rgb { 3 } else { 1 }).map(|i| if i == 0 && alpha { 2 } else { 0 }).collect();
+        // The samples interleaved, as large as the raster: reserved first, so a raster this
+        // machine can't hold twice is an error, and a cancel is heard while they are copied.
+        // Bytes when every band is whole bytes (and an empty cell can be written as no-data),
+        // so an 8-bit image reads back as one; otherwise 32-bit floats.
+        let n = (w as usize) * (h as usize);
+        let samples = n.checked_mul(all.len()).ok_or_else(|| err("the raster is too large to write"))?;
+        // Decided from the values, not the statistics (a raster read in part has none): every
+        // valid value a whole number in 0–255, and an empty cell only where no-data can mark it.
+        // An 8-bit raster can hold fractions after resampling; those stay floats.
+        let in_bytes = |v: &f32| !r.is_valid(*v) || (v.fract() == 0.0 && (0.0..=255.0).contains(v));
+        let marked = |v: &f32| r.nodata.is_some() || r.is_valid(*v);
+        // Only an 8-bit raster: a float one holding byte-range values keeps its type and range.
+        let as_bytes = r.data_type == "UInt8"
+            && all.iter().all(|b| fits_bytes(r, *b))
+            && r.bands.iter().all(|b| b.data.iter().all(|v| in_bytes(v) && marked(v)));
+        macro_rules! wide {
+            ($sample:expr, $kind:expr, $le:expr) => {{
+                let mut data = super::room(samples, w as usize, h as usize)?;
+                for i in 0..n {
+                    if i % (1 << 20) == 0 {
+                        crate::progress::check()?;
+                    }
+                    // Every band holds `n` values (checked above), so none is filled in.
+                    data.extend(r.bands.iter().map(|b| $sample(b.data.get(i).copied().unwrap_or(f32::NAN))));
+                }
+                put(image(&all[..], $kind, extras)?, &data, $le, &mut out)?;
+            }};
+        }
+        if as_bytes {
+            let nodata = r.nodata.map_or(0, |d| d as u8);
+            let byte = |v: f32| if r.is_valid(v) { v.clamp(0.0, 255.0) as u8 } else { nodata };
+            wide!(byte, Sample::Byte, u8::to_le_bytes)
+        } else {
+            wide!(|v: f32| v, Sample::Float, f32::to_le_bytes)
+        }
+    } else if rgb
         && !byte_holes
         && (!written_bands(r, band).contains(&3) || fits_bytes(r, 3))
         && let (Some(red), Some(green), Some(blue)) = (bytes(0), bytes(1), bytes(2))
@@ -1711,17 +1961,13 @@ fn encode(r: &Raster, band: usize) -> Result<Vec<u8>> {
             for i in 0..n {
                 data.extend([red.get(i), green.get(i), blue.get(i), a.get(i)].map(|v| v.copied().unwrap_or(0)));
             }
-            let mut img = enc.new_image::<colortype::RGBA8>(w, h).map_err(err)?;
-            tags!(img, &[0, 1, 2, 3]);
-            img.write_data(&data).map_err(err)?;
+            put(image(&[0, 1, 2, 3], Sample::Byte, fourth())?, &data, u8::to_le_bytes, &mut out)?;
         } else {
             let mut data = Vec::with_capacity(n * 3);
             for i in 0..n {
                 data.extend([red.get(i), green.get(i), blue.get(i)].map(|v| v.copied().unwrap_or(0)));
             }
-            let mut img = enc.new_image::<colortype::RGB8>(w, h).map_err(err)?;
-            tags!(img, &[0, 1, 2]);
-            img.write_data(&data).map_err(err)?;
+            put(image(&[0, 1, 2], Sample::Byte, Vec::new())?, &data, u8::to_le_bytes, &mut out)?;
         }
     } else if rgb && let (Some(red), Some(green), Some(blue)) = (r.bands.first(), r.bands.get(1), r.bands.get(2)) {
         // Colour bands that aren't bytes (three embedding dimensions): kept as 32-bit floats, with
@@ -1734,33 +1980,120 @@ fn encode(r: &Raster, band: usize) -> Result<Vec<u8>> {
                 for i in 0..n {
                     data.extend([at(red, i), at(green, i), at(blue, i), at(alpha, i)]);
                 }
-                let mut img = enc.new_image::<colortype::RGBA32Float>(w, h).map_err(err)?;
-                tags!(img, &[0, 1, 2, 3]);
-                img.write_data(&data).map_err(err)?;
+                put(image(&[0, 1, 2, 3], Sample::Float, fourth())?, &data, f32::to_le_bytes, &mut out)?;
             }
             None => {
                 let mut data = Vec::with_capacity(n * 3);
                 for i in 0..n {
                     data.extend([at(red, i), at(green, i), at(blue, i)]);
                 }
-                let mut img = enc.new_image::<colortype::RGB32Float>(w, h).map_err(err)?;
-                tags!(img, &[0, 1, 2]);
-                img.write_data(&data).map_err(err)?;
+                put(image(&[0, 1, 2], Sample::Float, Vec::new())?, &data, f32::to_le_bytes, &mut out)?;
             }
         }
     } else {
         let b = r.bands.get(band).ok_or_else(|| err(format!("the raster has no band {}", band + 1)))?;
-        let mut img = enc.new_image::<colortype::Gray32Float>(w, h).map_err(err)?;
-        tags!(img, &[band]);
-        img.write_data(&b.data).map_err(err)?;
+        // An 8-bit band is written as bytes when every value is a whole byte and an empty cell is
+        // only where no-data can mark it (as the multiband samples above); otherwise as floats.
+        let byte = |v: &f32| if r.is_valid(*v) { v.fract() == 0.0 && (0.0..=255.0).contains(v) } else { r.nodata.is_some() };
+        if r.data_type == "UInt8" && fits_bytes(r, band) && b.data.iter().all(byte) {
+            let nodata = r.nodata.map_or(0, |d| d as u8);
+            let mut data = super::room(b.data.len(), w as usize, h as usize)?;
+            for (i, v) in b.data.iter().enumerate() {
+                if i % (1 << 20) == 0 {
+                    crate::progress::check()?;
+                }
+                data.push(if r.is_valid(*v) { *v as u8 } else { nodata });
+            }
+            put(image(&[band], Sample::Byte, Vec::new())?, &data, u8::to_le_bytes, &mut out)?;
+        } else {
+            put(image(&[band], Sample::Float, Vec::new())?, &b.data, f32::to_le_bytes, &mut out)?;
+        }
     }
-    Ok(out.0.into_inner())
+    Ok(out.into_inner())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::raster::tests::small;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn chunked_reads_count_progress_and_stop_before_or_during_serial_and_parallel_work() {
+        use crate::progress::{install, tests::Counted};
+        use std::io::Cursor;
+        use std::sync::atomic::Ordering;
+
+        // Sixteen strips; k=4 skips twelve of them, but progress still reaches its total.
+        let values: Vec<f32> = (0..256).map(|i| i as f32).collect();
+        let mut encoded = Cursor::new(Vec::new());
+        {
+            let mut enc = tiff::encoder::TiffEncoder::new(&mut encoded).unwrap();
+            let mut img = enc.new_image::<tiff::encoder::colortype::Gray32Float>(16, 16).unwrap();
+            img.rows_per_strip(1).unwrap();
+            img.write_data(&values).unwrap();
+        }
+        let bytes = encoded.into_inner();
+        for parallel in [false, true] {
+            for k in [1u32, 4] {
+                for after in [None, Some(0), Some(1)] {
+                    let probe = after.map_or_else(|| std::sync::Arc::new(Counted::default()), Counted::cancelling_after);
+                    let mut dec = Decoder::new(Cursor::new(&bytes)).unwrap();
+                    let chunks = Chunks::new(&mut dec, 16, 16, 1, false);
+                    let _guard = install(Some(probe.clone()));
+                    let got = if parallel {
+                        let caller = std::thread::current().id();
+                        let open = || {
+                            // Make a worker, rather than the calling thread, count the first
+                            // chunk. This catches a missing thread-local probe handover even
+                            // when the caller could otherwise decode the entire tiny fixture.
+                            if std::thread::current().id() == caller {
+                                let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                                while probe.done.load(Ordering::Relaxed) == 0 {
+                                    if std::time::Instant::now() >= end {
+                                        return Err(std::io::Error::other("worker never reported chunk progress"));
+                                    }
+                                    std::thread::yield_now();
+                                }
+                            }
+                            reader(Cursor::new(bytes.clone()))
+                        };
+                        let side = 16usize.div_ceil(k as usize);
+                        decimate_parallel(
+                            chunks,
+                            vec![vec![f32::NAN; side * side]],
+                            k,
+                            (side, side),
+                            Uncounted::new(None, None),
+                            2,
+                            &open,
+                            0,
+                            Limits::default(),
+                        )
+                    } else {
+                        decimate(&mut dec, 16, 16, 1, false, k, Uncounted::new(None, None), None)
+                    };
+                    if let Some(after) = after {
+                        assert!(matches!(got, Err(DataError::Cancelled)), "parallel={parallel}, k={k}, after={after}: {got:?}");
+                        let done = probe.done.load(Ordering::Relaxed);
+                        assert!(done >= after && done < 16, "{done} chunks counted before Cancel");
+                        assert!(matches!(crate::progress::check(), Err(DataError::Cancelled)), "the caller keeps its probe");
+                    } else {
+                        let (bands, data_type, rounded) = got.unwrap();
+                        let expected: Vec<f32> = (0..16)
+                            .step_by(k as usize)
+                            .flat_map(|y| (0..16).step_by(k as usize).map(move |x| (y * 16 + x) as f32))
+                            .collect();
+                        assert_eq!(bands, vec![expected]);
+                        assert_eq!(data_type, "Float32");
+                        assert_eq!(rounded, vec![0]);
+                        assert_eq!(probe.total.load(Ordering::Relaxed), 16);
+                        assert_eq!(probe.done.load(Ordering::Relaxed), 16);
+                    }
+                }
+            }
+        }
+    }
 
     /// Who holds the rights (the Copyright tag) is written by both writers and read back, as the
     /// ASCII a TIFF tag holds (`©` as `(c)`, control characters as spaces, others as `?`); a
@@ -1859,6 +2192,22 @@ mod tests {
         assert_eq!(back.value(0, 2, 1), Some(7.0));
         assert_eq!(back.value(0, 1, 1), None);
         assert_eq!(back.data_type, "Float32");
+    }
+
+    /// A grey 8-bit band is written as bytes, its no-data cells as the no-data value; without a
+    /// no-data value to mark an empty cell, or with a fraction, it stays floats.
+    #[test]
+    fn grey_bytes_round_trip_as_bytes() {
+        let gt = GeoTransform { origin_x: 0.0, origin_y: 3.0, pixel_width: 1.0, pixel_height: -1.0 };
+        let byte = |cells: Vec<f32>, nodata| {
+            let r = Raster::new("g", 3, 1, vec![cells], gt, Crs::LonLat, nodata, ColorHint::Gray, "UInt8").unwrap();
+            read(std::io::Cursor::new(write(&r, 0).unwrap()), "back").unwrap()
+        };
+        let back = byte(vec![1.0, 0.0, 255.0], Some(0.0));
+        assert_eq!((back.data_type.as_str(), back.nodata), ("UInt8", Some(0.0)));
+        assert_eq!((back.value(0, 0, 0), back.value(0, 1, 0), back.value(0, 2, 0)), (Some(1.0), None, Some(255.0)));
+        assert_eq!(byte(vec![1.0, f32::NAN, 2.0], None).data_type, "Float32");
+        assert_eq!(byte(vec![1.0, 2.5, 2.0], Some(0.0)).data_type, "Float32");
     }
 
     #[test]
@@ -1962,6 +2311,56 @@ mod tests {
         assert_eq!(back.value(3, 0, 0), Some(0.0));
     }
 
+    /// `write_all` keeps the bands `write` leaves out: every band of a grey raster, grey and its
+    /// alpha (with a data band after it too), and a colour raster's bands past RGB and alpha, each
+    /// read back as written, with its colour; 8-bit bands stay 8-bit.
+    #[test]
+    fn write_all_keeps_every_band() {
+        let gt = GeoTransform { origin_x: 0.0, origin_y: 2.0, pixel_width: 1.0, pixel_height: -1.0 };
+        let raster = |n: usize, color: ColorHint| {
+            let bands = (0..n).map(|b| (0..6).map(|i| (b * 10 + i) as f32 + 0.5).collect()).collect();
+            Raster::new("r", 3, 2, bands, gt, Crs::LonLat, None, color, "Float32").unwrap()
+        };
+        for r in [
+            raster(3, ColorHint::Gray),
+            raster(2, ColorHint::GrayAlpha),
+            raster(3, ColorHint::GrayAlpha),
+            raster(6, ColorHint::Rgb { alpha: true }),
+        ] {
+            assert!(written_bands(&r, 0).len() < r.band_count());
+            let back = read(std::io::Cursor::new(write_all(&r).unwrap()), "r").unwrap();
+            assert_eq!((back.band_count(), &back.color), (r.band_count(), &r.color));
+            assert!((0..r.band_count()).all(|b| back.bands[b].data == r.bands[b].data), "{:?}", r.color);
+        }
+        // Two bands hinted as colour with alpha are too few for colour: neither is marked alpha.
+        let two = raster(2, ColorHint::Rgb { alpha: true });
+        let back = read(std::io::Cursor::new(write_all(&two).unwrap()), "r").unwrap();
+        assert_eq!((back.band_count(), &back.color), (2, &ColorHint::Gray));
+        // An 8-bit colour image with more bands stays 8-bit, so it reads back with the same range.
+        let bytes = (0..5).map(|b| (0..6).map(|i| (b * 40 + i) as f32).collect()).collect();
+        let rgbi = Raster::new("b", 3, 2, bytes, gt, Crs::LonLat, None, ColorHint::Rgb { alpha: false }, "UInt8").unwrap();
+        let back = read(std::io::Cursor::new(write_all(&rgbi).unwrap()), "b").unwrap();
+        assert_eq!((back.band_count(), &back.color, back.data_type.as_str()), (5, &rgbi.color, "UInt8"));
+        assert!((0..5).all(|b| back.bands[b].data == rgbi.bands[b].data));
+        // A float raster holding byte-range whole values stays float, with its own range.
+        let floats = vec![vec![0.0, 1.0, 7.0, 9.0, 4.0, 3.0], vec![1.0; 6]];
+        let floats = Raster::unmeasured("f", 3, 2, floats, gt, Crs::LonLat, None, ColorHint::Gray, "Float32").unwrap();
+        assert_eq!(read(std::io::Cursor::new(write_all(&floats).unwrap()), "f").unwrap().data_type, "Float32");
+        // An 8-bit raster holding a fraction (a resampled mean) keeps it: written as floats.
+        let mean = vec![vec![0.0, 1.5, 7.0, 9.0, 0.0, 3.0], vec![1.0; 6]];
+        let means = Raster::new("m", 3, 2, mean, gt, Crs::LonLat, Some(0.0), ColorHint::Gray, "UInt8").unwrap();
+        let back = read(std::io::Cursor::new(write_all(&means).unwrap()), "m").unwrap();
+        assert_eq!(back.value(0, 1, 0), Some(1.5));
+        // A raster without statistics (read in part) is judged by its values: 1200 isn't a byte.
+        let tall = vec![vec![1200.0, 0.0, 300.0, 1.0, 2.0, 3.0], vec![1.0; 6]];
+        let tall = Raster::unmeasured("t", 3, 2, tall, gt, Crs::LonLat, Some(0.0), ColorHint::Gray, "UInt8").unwrap();
+        let back = read(std::io::Cursor::new(write_all(&tall).unwrap()), "t").unwrap();
+        assert_eq!((back.value(0, 0, 0), back.value(0, 2, 0)), (Some(1200.0), Some(300.0)));
+        // What `write` keeps whole is written as `write` writes it.
+        let rgb = raster(3, ColorHint::Rgb { alpha: false });
+        assert_eq!(write_all(&rgb).unwrap(), write(&rgb, 0).unwrap());
+    }
+
     /// An Equi7 tile (a Sentinel-1 product on TU Wien's grid, say) names its system by its EPSG
     /// code, 27707 for South America: read as that system, not refused.
     #[test]
@@ -2036,7 +2435,7 @@ mod tests {
 
     /// Orthographic and Robinson systems from WKT are written as keys (CT_Orthographic 21 and
     /// CT_Robinson 23, by the projection centre's keys) and read back as the same; an ellipsoidal
-    /// equidistant cylindrical one (EPSG:4087's, CT 17) is compared as computed on the ellipsoid.
+    /// equidistant cylindrical one (EPSG:4087's, CT 17) uses PROJ-compatible coordinates.
     #[test]
     fn orthographic_robinson_and_ellipsoidal_eqc_are_written_as_keys() {
         for (def, ct) in [
@@ -2051,7 +2450,8 @@ mod tests {
             let back = custom_crs(&k, &d, &a).unwrap().custom_def().unwrap().proj4.clone();
             assert!(same_projection(def, &back), "{def}: {back}");
         }
-        // The same projection on a sphere of the semi-major axis is another one.
+        // PROJ 9.8 computes it on the ellipsoid: on the sphere of its semi-major axis it is
+        // another projection.
         assert!(!same_projection(
             "+proj=eqc +lat_ts=0 +lon_0=0 +datum=WGS84 +units=m +no_defs",
             "+proj=eqc +lat_ts=0 +lon_0=0 +R=6378137 +units=m +no_defs"
@@ -2363,11 +2763,35 @@ mod tests {
     }
 
     fn rgb_tiled_samples(images: &[(u32, u32, u16)], bits: u16, predictor: u16, pixel: impl Fn(u32, u32, u32) -> u16) -> Vec<u8> {
+        // The first image is the full one, the rest overviews (NewSubfileType 1).
+        let images: Vec<(u32, u32, u16, u32)> =
+            images.iter().enumerate().map(|(i, &(size, tile, samples))| (size, tile, samples, u32::from(i > 0))).collect();
+        rgb_tiled_images(&images, bits, predictor, pixel)
+    }
+
+    /// As [`rgb_tiled_samples`], each image `(size, tile, samples, subfile type)` in turn: a
+    /// transparency mask has the subfile type 4.
+    fn rgb_tiled_images(images: &[(u32, u32, u16, u32)], bits: u16, predictor: u16, pixel: impl Fn(u32, u32, u32) -> u16) -> Vec<u8> {
+        rgb_tiled_masked(images, bits, predictor, pixel, |_, _, _| true)
+    }
+
+    /// As [`rgb_tiled_images`], with a real mask for each image whose subfile type has bit 2 set:
+    /// 1 bit a pixel, opaque where `opaque(size, x, y)` (in the mask's own pixels) holds, deflated unless
+    /// `predictor` is 1.
+    fn rgb_tiled_masked(
+        images: &[(u32, u32, u16, u32)],
+        bits: u16,
+        predictor: u16,
+        pixel: impl Fn(u32, u32, u32) -> u16,
+        opaque: impl Fn(u32, u32, u32) -> bool,
+    ) -> Vec<u8> {
         let full = images.first().map_or(1, |i| i.0);
         let mut out = vec![b'I', b'I', 42, 0, 0, 0, 0, 0];
         let mut next_link = 4;
-        for (i, &(size, tile, samples)) in images.iter().enumerate() {
+        for (i, &(size, tile, samples, subfile)) in images.iter().enumerate() {
             let k = full / size;
+            let (mask, deflated) = (subfile & 4 != 0, predictor != 1);
+            let (samples, bits, predictor) = if mask { (1, 1, 1) } else { (samples, bits, predictor) };
             let n = size.div_ceil(tile);
             // The tiles' data first, then the IFD pointing at it.
             let mut offsets = Vec::new();
@@ -2376,6 +2800,17 @@ mod tests {
                 offsets.push(out.len() as u32);
                 let mut raw = Vec::new();
                 for y in 0..tile {
+                    if mask {
+                        let y = (t / n) * tile + y;
+                        let mut row = vec![0u8; tile.div_ceil(8) as usize];
+                        for x in (0..tile).filter(|x| (t % n) * tile + x < size && y < size) {
+                            if opaque(size, (t % n) * tile + x, y) {
+                                row[(x / 8) as usize] |= 0x80 >> (x % 8);
+                            }
+                        }
+                        raw.extend(row);
+                        continue;
+                    }
                     let mut prev = [0u16; 4];
                     for x in 0..tile {
                         let (x, y) = ((t % n) * tile + x, (t / n) * tile + y);
@@ -2387,7 +2822,7 @@ mod tests {
                         }
                     }
                 }
-                let encoded = if predictor == 1 { raw } else { miniz_oxide::deflate::compress_to_vec_zlib(&raw, 6) };
+                let encoded = if predictor == 1 && !(mask && deflated) { raw } else { miniz_oxide::deflate::compress_to_vec_zlib(&raw, 6) };
                 counts.push(encoded.len() as u32);
                 out.extend(encoded);
             }
@@ -2396,12 +2831,12 @@ mod tests {
             let longs = |v: &[u32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
             let doubles = |v: &[f64]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
             let mut e: Vec<(u16, u16, u32, Vec<u8>)> = vec![
-                (254, 4, 1, longs(&[u32::from(i > 0)])),
+                (254, 4, 1, longs(&[subfile])),
                 (256, 4, 1, longs(&[size])),
                 (257, 4, 1, longs(&[size])),
                 (258, 3, u32::from(samples), shorts(&vec![bits; usize::from(samples)])),
-                (259, 3, 1, shorts(&[if predictor == 1 { 1 } else { 8 }])),
-                (262, 3, 1, shorts(&[2])),
+                (259, 3, 1, shorts(&[if predictor == 1 && !(mask && deflated) { 1 } else { 8 }])),
+                (262, 3, 1, shorts(&[if mask { 4 } else { 2 }])),
                 (277, 3, 1, shorts(&[samples])),
                 (284, 3, 1, shorts(&[1])),
                 (317, 3, 1, shorts(&[predictor])),
@@ -2560,13 +2995,228 @@ mod tests {
                 }
             }
         }
-        // An image no smaller than the level before isn't an overview: skipped, whatever its
-        // samples, rather than failing the file.
+        // An image smaller than the full one is an overview candidate wherever it sits, so one
+        // whose samples differ is left out and said, rather than silently passed over.
         let bytes = rgb_tiled_samples(&[(40, 16, 4), (20, 16, 4), (20, 16, 3)], 8, 1, |b, x, y| (b * 10 + x + y) as u16);
         let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
         let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
         assert_eq!((layout.levels.len(), layout.bands), (2, 4));
-        assert!(layout.lost.iter().all(|n| !n.contains("overview(s)")), "{:?}", layout.lost);
+        assert!(
+            layout
+                .lost
+                .iter()
+                .any(|n| n.contains("1 overview(s) with samples per pixel other than the full image's 4") && n.contains("image 2 (3)")),
+            "{:?}",
+            layout.lost
+        );
+        // An image no smaller than the full one in both directions isn't an overview: passed over,
+        // and said, whatever its samples.
+        let bytes = rgb_tiled_samples(&[(40, 16, 4), (40, 16, 4), (20, 16, 4)], 8, 1, |b, x, y| (b * 10 + x + y) as u16);
+        let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+        let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+        assert_eq!(layout.levels.iter().map(|l| l.width).collect::<Vec<_>>(), [40, 20]);
+        assert!(
+            layout.lost.iter().any(|n| n.contains("1 image(s) not smaller than the full image") && n.contains("image 1 (40 × 40)")),
+            "{:?}",
+            layout.lost
+        );
+        // Each size is one level: an overview as wide as one kept is passed over, and said.
+        let bytes = rgb_tiled_samples(&[(40, 16, 4), (20, 16, 4), (20, 16, 4)], 8, 1, |b, x, y| (b * 10 + x + y) as u16);
+        let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+        let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+        assert_eq!(layout.levels.iter().map(|l| l.width).collect::<Vec<_>>(), [40, 20]);
+        assert!(
+            layout.lost.iter().any(|n| n.contains("1 overview(s) as wide as one already kept") && n.contains("image 2 (20 × 20)")),
+            "{:?}",
+            layout.lost
+        );
+        // A left-out overview's tiles, too large to be a level's, don't fail the file: the next
+        // overview with the full image's samples is still a level.
+        let bytes = rgb_tiled_samples(&[(40, 16, 4), (20, 1200, 3), (10, 16, 4)], 8, 1, |b, x, y| (b * 10 + x + y) as u16);
+        let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+        let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+        assert_eq!(layout.levels.iter().map(|l| (l.width, l.ifd)).collect::<Vec<_>>(), [(40, 0), (10, 2)]);
+        assert!(layout.lost.iter().any(|n| n.contains("1 overview(s)") && n.contains("image 1 (3)")), "{:?}", layout.lost);
+        assert!(layout.lost.iter().all(|n| !n.contains("scan for overviews stopped")), "{:?}", layout.lost);
+    }
+
+    /// Looking for overviews passes over a bounded number of images, and says when it stops.
+    #[test]
+    fn cog_overview_scan_stops_after_so_many_skipped_images() {
+        use super::super::cog::{self, Parse, Sparse};
+        // The full image, 64 more of its size (not overviews of it), then an overview.
+        let mut images = vec![(32, 16, 4); 65];
+        images.push((16, 16, 4));
+        let bytes = rgb_tiled_samples(&images, 8, 1, |b, x, y| (b * 10 + x + y) as u16);
+        let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+        let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+        assert_eq!(layout.levels.iter().map(|l| l.width).collect::<Vec<_>>(), [32]);
+        assert!(layout.lost.iter().any(|n| n.contains("stopped after 64 skipped images")), "{:?}", layout.lost);
+    }
+
+    /// Transparency masks count toward the same scan bound as the other images passed over.
+    #[test]
+    fn cog_overview_scan_stops_after_so_many_masks() {
+        use super::super::cog::{self, Parse, Sparse};
+        // The full image, 64 masks of its size, then an overview the scan never reaches.
+        let mut images = vec![(32, 16, 4, 0)];
+        images.extend(vec![(32, 16, 4, 4); 64]);
+        images.push((16, 16, 4, 1));
+        let bytes = rgb_tiled_images(&images, 8, 1, |b, x, y| (b * 10 + x + y) as u16);
+        let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+        let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+        assert_eq!(layout.levels.iter().map(|l| l.width).collect::<Vec<_>>(), [32]);
+        assert!(layout.lost.iter().any(|n| n.contains("stopped after 64 skipped images")), "{:?}", layout.lost);
+        // Fewer masks: the overview is read, and nothing is said.
+        let mut images = vec![(32, 16, 4, 0)];
+        images.extend(vec![(32, 16, 4, 4); 3]);
+        images.push((16, 16, 4, 1));
+        let bytes = rgb_tiled_images(&images, 8, 1, |b, x, y| (b * 10 + x + y) as u16);
+        let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+        let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+        assert_eq!(layout.levels.iter().map(|l| (l.width, l.ifd)).collect::<Vec<_>>(), [(32, 0), (16, 4)]);
+        assert!(layout.lost.iter().all(|n| !n.contains("scan for overviews stopped")), "{:?}", layout.lost);
+    }
+
+    /// Sets `tag`'s value (a short, in place) in the `ifd`-th image of a little-endian TIFF.
+    fn set_short(bytes: &mut [u8], ifd: usize, tag: u16, value: u16) {
+        let long = |b: &[u8], at: usize| u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]) as usize;
+        let mut at = long(bytes, 4);
+        for _ in 0..ifd {
+            at = long(bytes, at + 2 + 12 * usize::from(u16::from_le_bytes([bytes[at], bytes[at + 1]])));
+        }
+        for k in 0..usize::from(u16::from_le_bytes([bytes[at], bytes[at + 1]])) {
+            let e = at + 2 + 12 * k;
+            if bytes[e..e + 2] == tag.to_le_bytes() {
+                bytes[e + 8..e + 10].copy_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
+
+    /// The issue's file: a JPEG RGB image's border masked by an internal mask (stored black), its
+    /// centre kept, one black centre pixel included.
+    fn masked_rgb(predictor: u16) -> Vec<u8> {
+        let centre = |x: u32, y: u32| (8..24).contains(&x) && (8..24).contains(&y);
+        let pixel = move |b: u32, x: u32, y: u32| if centre(x, y) && (x, y) != (12, 12) { [200, 120, 40][b as usize] } else { 0 };
+        rgb_tiled_masked(&[(32, 16, 3, 0), (32, 16, 1, 4)], 8, predictor, pixel, move |_, x, y| centre(x, y))
+    }
+
+    #[test]
+    fn an_internal_mask_makes_masked_pixels_transparent() {
+        for predictor in [1, 2] {
+            let r = read(std::io::Cursor::new(masked_rgb(predictor)), "masked").unwrap();
+            assert_eq!((r.width, r.height, r.band_count(), r.color.clone()), (32, 32, 3, ColorHint::Rgb { alpha: false }));
+            for y in 0..32 {
+                for x in 0..32 {
+                    for b in 0..3 {
+                        let inside = (8..24).contains(&x) && (8..24).contains(&y);
+                        let want = if !inside {
+                            None
+                        } else if (x, y) == (12, 12) {
+                            Some(0.0)
+                        } else {
+                            Some([200.0, 120.0, 40.0][b])
+                        };
+                        assert_eq!(r.value(b, x as i64, y as i64), want, "band {b} at {x},{y}");
+                    }
+                }
+            }
+            assert!(r.lost.is_empty(), "{:?}", r.lost);
+            // The statistics leave the masked pixels out.
+            assert_eq!(r.bands[0].stats.count, 16 * 16);
+        }
+    }
+
+    #[test]
+    fn a_file_without_a_mask_is_unchanged() {
+        let pixel = |b: u32, x: u32, y: u32| (b * 10 + x + y) as u16;
+        let r = read(std::io::Cursor::new(rgb_tiled_samples(&[(32, 16, 3)], 8, 1, pixel)), "plain").unwrap();
+        assert!(r.lost.is_empty(), "{:?}", r.lost);
+        assert_eq!(r.bands[0].stats.count, 32 * 32);
+        assert_eq!(r.value(1, 0, 0), Some(10.0));
+    }
+
+    #[test]
+    fn an_overviews_own_mask_applies_when_the_overview_is_read() {
+        // The full image's mask hides its left 8 columns, the overview's its top 4 rows.
+        let opaque = |size: u32, x: u32, y: u32| if size == 64 { x >= 8 } else { y >= 4 };
+        let images = [(64, 16, 3, 0), (32, 16, 3, 1), (32, 16, 1, 5), (64, 16, 1, 4)];
+        let bytes = rgb_tiled_masked(&images, 8, 1, |b, _, _| u16::try_from(b + 1).unwrap_or(0) * 50, opaque);
+        // Masks may come in any order; 3 × 32 × 32 samples fit, 3 × 64 × 64 don't.
+        let r = read_limited(reader(std::io::Cursor::new(&bytes)).unwrap(), "overview", 4_000, None).unwrap();
+        assert_eq!((r.width, r.height, r.overview), (32, 32, Some((64, 64))));
+        for (x, y) in [(0, 0), (31, 3), (0, 3)] {
+            assert_eq!(r.value(0, x, y), None, "{x},{y}");
+        }
+        for (x, y) in [(0, 4), (3, 4), (31, 31), (2, 20)] {
+            assert_eq!(r.value(0, x, y), Some(50.0), "{x},{y}");
+        }
+        assert!(r.lost.is_empty(), "{:?}", r.lost);
+        // The whole image has its own.
+        let full = read(std::io::Cursor::new(&bytes), "full").unwrap();
+        assert_eq!((full.width, full.value(0, 7, 40), full.value(0, 8, 0)), (64, None, Some(50.0)));
+    }
+
+    #[test]
+    fn an_overview_without_a_mask_of_its_own_says_so() {
+        // Only the full image has a mask: the overview read draws as stored, and says why.
+        let images = [(64, 16, 3, 0), (32, 16, 3, 1), (64, 16, 1, 4)];
+        let bytes = rgb_tiled_masked(&images, 8, 1, |_, _, _| 50, |_, x, _| x >= 8);
+        let r = read_limited(reader(std::io::Cursor::new(&bytes)).unwrap(), "overview", 4_000, None).unwrap();
+        assert_eq!((r.width, r.value(0, 0, 0)), (32, Some(50.0)));
+        assert_eq!(
+            r.lost,
+            ["its transparency mask isn't applied (the file has none for the image read): masked pixels draw as stored"],
+            "{:?}",
+            r.lost
+        );
+    }
+
+    #[test]
+    fn a_mask_follows_an_image_read_every_other_pixel() {
+        // No overview fits: every second pixel of the full image is read, with its mask's.
+        let opaque = |_: u32, x: u32, y: u32| (x / 3 + y / 5).is_multiple_of(2);
+        let bytes = rgb_tiled_masked(&[(64, 16, 3, 0), (64, 16, 1, 4)], 8, 1, |_, _, _| 90, opaque);
+        let r = read_limited(reader(std::io::Cursor::new(&bytes)).unwrap(), "sparse", 4_000, None).unwrap();
+        assert_eq!((r.width, r.overview), (32, Some((64, 64))));
+        for y in 0..32u32 {
+            for x in 0..32u32 {
+                let want = opaque(64, x * 2, y * 2).then_some(90.0);
+                assert_eq!(r.value(0, i64::from(x), i64::from(y)), want, "{x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_mask_that_cant_be_read_is_said_once_and_the_image_loads() {
+        let mut bytes = masked_rgb(1);
+        // JPEG, which masks aren't read in.
+        set_short(&mut bytes, 1, 259, 7);
+        let r = read(std::io::Cursor::new(&bytes), "bad").unwrap();
+        assert_eq!(r.lost.len(), 1, "{:?}", r.lost);
+        assert!(r.lost[0].starts_with("its transparency mask isn't applied (a transparency mask's compression (7)"), "{:?}", r.lost);
+        assert_eq!(r.value(0, 0, 0), Some(0.0), "masked pixels draw as stored");
+        assert_eq!(r.value(0, 20, 20), Some(200.0));
+        // More than one bit a pixel.
+        let mut bytes = masked_rgb(1);
+        set_short(&mut bytes, 1, 258, 8);
+        let r = read(std::io::Cursor::new(&bytes), "bad").unwrap();
+        assert!(r.lost.iter().any(|n| n.contains("isn't 1 bit a pixel")), "{:?}", r.lost);
+        assert_eq!(r.value(0, 0, 0), Some(0.0));
+    }
+
+    #[test]
+    fn a_cog_header_says_its_masks_arent_applied_in_place() {
+        use super::super::cog::{self, Parse, Sparse};
+        let layout = |bytes: Vec<u8>| {
+            let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+            let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+            layout
+        };
+        let l = layout(masked_rgb(1));
+        assert_eq!(l.lost, ["1 transparency mask(s) aren't applied when tiles are read in place: masked pixels draw as stored"]);
+        let plain = layout(rgb_tiled_samples(&[(32, 16, 3)], 8, 1, |b, _, _| b as u16));
+        assert!(plain.lost.is_empty(), "{:?}", plain.lost);
     }
 
     /// An RGBI image too large to read whole, with a three-sample overview that would fit: the
@@ -2579,8 +3229,17 @@ mod tests {
         assert_eq!((r.band_count(), r.color.clone()), (4, ColorHint::Rgb { alpha: false }));
         // Every other pixel of the full image, not the full image whole.
         assert_eq!((r.width, r.height, r.overview), (20, 20, Some((40, 40))));
-        assert_eq!(r.value(3, 0, 0), Some(f32::from(pixel(3, 0, 0))));
-        assert_eq!(r.value(3, 1, 1), Some(f32::from(pixel(3, 2, 2))));
+        for y in 0..r.height {
+            for x in 0..r.width {
+                for b in 0..4 {
+                    assert_eq!(
+                        r.value(b as usize, i64::from(x), i64::from(y)),
+                        Some(f32::from(pixel(b, x * 2, y * 2))),
+                        "band {b} at {x},{y}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -2844,7 +3503,7 @@ mod tests {
     fn a_files_own_projection_is_read_and_written_back() {
         // The NLCD's Albers, as its GeoKeys give it.
         let keys = [
-            1u16, 1, 0, 11, 1024, 0, 1, 1, 1025, 0, 1, 1, 2048, 0, 1, 4326, 3072, 0, 1, 32767, 3074, 0, 1, 32767, 3075, 0, 1, 11, 3076, 0,
+            1u16, 1, 0, 12, 1024, 0, 1, 1, 1025, 0, 1, 1, 2048, 0, 1, 4326, 3072, 0, 1, 32767, 3074, 0, 1, 32767, 3075, 0, 1, 11, 3076, 0,
             1, 9001, 3078, 34736, 1, 0, 3079, 34736, 1, 1, 3080, 34736, 1, 2, 3081, 34736, 1, 3, 3082, 34736, 1, 4,
         ];
         let doubles = [29.5f64, 45.5, -96.0, 23.0, 0.0];
@@ -2894,7 +3553,7 @@ mod tests {
     #[test]
     fn modis_sinusoidal_is_read_and_written_back() {
         let keys = [
-            1u16, 1, 0, 14, 1024, 0, 1, 1, 1025, 0, 1, 1, 2048, 0, 1, 32767, 2050, 0, 1, 32767, 2054, 0, 1, 9102, 2056, 0, 1, 32767, 2057,
+            1u16, 1, 0, 15, 1024, 0, 1, 1, 1025, 0, 1, 1, 2048, 0, 1, 32767, 2050, 0, 1, 32767, 2054, 0, 1, 9102, 2056, 0, 1, 32767, 2057,
             34736, 1, 0, 2058, 34736, 1, 1, 3072, 0, 1, 32767, 3074, 0, 1, 32767, 3075, 0, 1, 24, 3076, 0, 1, 9001, 3082, 34736, 1, 2,
             3083, 34736, 1, 3, 3088, 34736, 1, 4,
         ];
