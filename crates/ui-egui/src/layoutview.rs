@@ -3601,10 +3601,11 @@ mod tests {
         assert!((turned(170.0, 0.0, 30.0, false) + 160.0).abs() < 1e-9, "200° is -160°");
     }
 
-    /// A text turned 90° shows its handles on its turned box (#1763): its right-hand handle sits
-    /// at the bottom, and dragging it down lengthens the text, its top staying put.
+    /// A turned text has no handles, as any turned element: it is sized in the Format pane. (RustGIS
+    /// resizes a turned text by handles on its turned box, #1763; ARutGIS turns every element, by
+    /// its own handle.) Upright again, its handles are back.
     #[test]
-    fn a_turned_text_resizes_by_its_turned_handles() {
+    fn a_turned_text_has_no_handles_until_upright() {
         let mut app = RustGisApp::with_sample();
         app.run("layout.new", json!({"name": "Turn", "template": "blank"})).unwrap();
         let li = app.session.active_layout.unwrap();
@@ -3629,26 +3630,15 @@ mod tests {
         h.run_steps(3);
         let layout = h.state().session.project.layouts[li].clone();
         let (page, s) = page_rect(&h.state().layout, area.get(), &layout);
-        // The box's right-hand end, 40 mm right of its centre (100, 105), turned to 40 mm below it.
-        let from = to_screen(page, s, (100.0, 145.0));
-        assert_eq!(handle_at(h.state(), &layout, page, s, from), Some((id, 3)), "the right-hand handle, turned");
-        let to = to_screen(page, s, (100.0, 165.0));
-        let button = |pos: Pos2, pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
-        h.event(Event::PointerMoved(from));
-        h.step();
-        h.event(button(from, true));
-        h.step();
-        for i in 1..=6 {
-            h.event(Event::PointerMoved(from + (to - from) * i as f32 / 6.0));
-            h.step();
+        // The box's ends, 40 mm from its centre (100, 105): above and below it once turned.
+        for end in [(100.0, 145.0), (100.0, 65.0), (140.0, 105.0)] {
+            assert_eq!(handle_at(h.state(), &layout, page, s, to_screen(page, s, end)), None, "turned: no handle at {end:?}");
         }
-        h.event(button(to, false));
-        h.step();
-        let e = h.state().session.project.layouts[li].element(id).unwrap();
-        assert!((e.w - 100.0).abs() < 1.0 && (e.h - 10.0).abs() < 1e-9, "20 mm longer: {} × {}", e.w, e.h);
-        let (bx, by, bw, bh) = e.bounds();
-        assert!((by - 65.0).abs() < 1e-6 && (bx - 95.0).abs() < 1e-6, "its top and side stay: {bx}, {by}");
-        assert!((bh - e.w).abs() < 1e-6 && (bw - 10.0).abs() < 1e-6);
+        h.state_mut().run("layout.update", json!({"layout": li, "element": id, "rotation": 0})).unwrap();
+        h.run_steps(2);
+        let layout = h.state().session.project.layouts[li].clone();
+        let right = to_screen(page, s, (140.0, 105.0));
+        assert_eq!(handle_at(h.state(), &layout, page, s, right), Some((id, 3)), "upright: its right-hand handle");
     }
 
     /// Navigating map frames, a selected text on a map frame keeps its handles, where they stick
