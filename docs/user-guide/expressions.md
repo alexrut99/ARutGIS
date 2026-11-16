@@ -152,7 +152,7 @@ Rules shared by all of them:
 | `replace(s, find, with)` | Every `find` in `s` replaced by `with` |
 | `concat(a, b, …)` | The values joined as text, nulls skipped |
 | `color_rgb(r, g, b)`, `color_rgba(r, g, b, a)` | A colour as the text `'r,g,b'` or `'r,g,b,a'`, each channel 0–255 |
-| `area([unit])` | A polygon's area in `'m2'` (the default), `'km2'`, `'ha'`, `'ac'`, `'ft2'` or `'mi2'` |
+| `area([unit])` | A polygon's area in `'m2'` (the default), `'km2'`, `'ha'`, `'ac'`, `'ft2'`, `'mi2'` or `'rai'` (Thai rai, 1,600 m²) |
 | `perimeter([unit])` | The length of a polygon's rings in `'m'` (the default), `'km'`, `'ft'` or `'mi'` |
 | `line_length([unit])` | A line's length, in the same units as `perimeter` |
 

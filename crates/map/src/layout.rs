@@ -3716,6 +3716,7 @@ mod tests {
                     extent_width: INDICATOR_WIDTH,
                     bearing: 0.0,
                     pitch: 0.0,
+                    exclude: Vec::new(),
                 },
             );
             let r = l.clamp();
@@ -3916,9 +3917,11 @@ mod tests {
             title: "L".into(),
             all_classes: false,
             hide_other: false,
+            show_no_data: false,
             exclude: Vec::new(),
             look: Box::new(look.clone()),
             columns: 1,
+            labels: Default::default(),
         };
         let back: ElementKind = serde_json::from_str(&serde_json::to_string(&kind).unwrap()).unwrap();
         assert_eq!(back, kind);

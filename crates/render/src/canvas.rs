@@ -519,7 +519,7 @@ mod tests {
             size: 12.0,
             color: Color::WHITE,
             transform: Transform::identity(),
-            glyphs: vec![crate::vector::Glyph { id: ab_glyph::Font::glyph_id(font, 'A'), x: 0.0, ch: 'A' }],
+            glyphs: vec![crate::vector::Glyph { id: ab_glyph::Font::glyph_id(font, 'A'), x: 0.0, y: 0.0, ch: 'A' }],
             halo: None,
             decorative: false,
         };

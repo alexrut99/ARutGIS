@@ -450,7 +450,7 @@ mod tests {
     #[test]
     fn a_halo_run_is_stroked() {
         let font = crate::text::label_font().unwrap();
-        let glyphs = vec![Glyph { id: ab_glyph::Font::glyph_id(font, 'H'), x: 0.0, ch: 'H' }];
+        let glyphs = vec![Glyph { id: ab_glyph::Font::glyph_id(font, 'H'), x: 0.0, y: 0.0, ch: 'H' }];
         let upm = ab_glyph::Font::units_per_em(font).unwrap();
         let mut d = Drawing::new(40.0, 40.0);
         let run = |color, halo| GlyphRun {

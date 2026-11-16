@@ -2232,7 +2232,8 @@ fn bar_plan(ground_per_pt: f64, width_pt: f64, units: ScaleUnits) -> Option<BarP
     if !(ground_per_pt.is_finite() && ground_per_pt > 0.0 && width_pt.is_finite()) {
         return None;
     }
-    let room_m = ground_per_pt * width_pt * BAR_SHARE;
+    // (The bar keeps [`BAR_INSET`] clear of each end of its element, as [`scale_bar`] lays it out.)
+    let room_m = ground_per_pt * (width_pt - 2.0 * f64::from(BAR_INSET)).max(0.0) * BAR_SHARE;
     let (unit_m, abbr) = units.resolve(rustgis_geom::nice_distance(room_m));
     let total = rustgis_geom::nice_distance(room_m / unit_m);
     (total > 0.0).then_some(BarPlan { total, unit_m, abbr })
@@ -2258,7 +2259,7 @@ pub fn scale_bar_width_pt(ground_per_pt: f64, width_pt: f64, bar: (ScaleUnits, u
     // A little over the share the bar takes, so the f32 rectangle an export rebuilds the width
     // from (its error growing with the element's place on the page) doesn't pick the next shorter
     // length: a ten-thousandth, 0.003 mm on a 30 mm box.
-    let w = (len / BAR_SHARE * (1.0 + 1e-4)).max(f64::from(BAR_INSET) + len + half + pad_pt);
+    let w = (len / BAR_SHARE * (1.0 + 1e-4) + 2.0 * f64::from(BAR_INSET)).max(f64::from(BAR_INSET) + len + half + pad_pt);
     Some(if w < width_pt && bar_plan(ground_per_pt, w, units) == Some(plan) { w } else { width_pt })
 }
 
@@ -4215,7 +4216,7 @@ mod tests {
         let fallback = l.renderer.symbol_for(&l.dataset, 2);
         let listed = |map: &mut Map, all: bool, show: bool| {
             let drawn = (!all).then(|| complete_shown_legends(map, 1e6, show).unwrap());
-            let opts = LegendOptions { show_no_data: show, hide_other: true, exclude: &[], labels: &NO_LABELS, scale: 1e6 };
+            let opts = LegendOptions { show_no_data: show, hide_other: true, exclude: &[], labels: &NO_LABELS, scale: 1e6, look: plain() };
             legend_rows(map, drawn.as_deref(), &opts)
                 .into_iter()
                 .filter_map(|r| match r {
@@ -4229,7 +4230,7 @@ mod tests {
         map.layer_mut(id).unwrap().definition_query = Some("percent IS NOT NULL".into());
         assert!(listed(&mut map, false, true).is_empty());
         assert_eq!(listed(&mut map, true, true), vec![fallback]);
-        let sizes = |map: &mut Map, show| legend_sizes_with_no_data_mm(map, 1e6, true, true, show, (&[], &NO_LABELS)).unwrap()[0];
+        let sizes = |map: &mut Map, show| legend_sizes_with_no_data_mm(map, 1e6, true, true, show, (&[], &NO_LABELS), plain()).unwrap()[0];
         assert!(sizes(&mut map, true).1 > sizes(&mut map, false).1);
     }
 
@@ -4272,6 +4273,7 @@ mod tests {
                 hide_other: false,
                 show_no_data: false,
                 exclude: vec![],
+                look: Default::default(),
                 columns: 1,
                 labels: BTreeMap::new(),
             },
@@ -4611,7 +4613,7 @@ mod tests {
     fn legend_with(map: &Map, look: &LegendLook) -> Pixmap {
         let mut pm = Pixmap::new(400, 400).unwrap();
         pm.fill(tiny_skia::Color::WHITE);
-        let opts = LegendOptions { hide_other: true, exclude: &[], scale: 1e6, look };
+        let opts = LegendOptions { show_no_data: false, hide_other: true, exclude: &[], labels: &NO_LABELS, scale: 1e6, look };
         crate::canvas::with_canvas(&mut pm, |c| {
             legend(c, Rect::from_xywh(0.0, 0.0, 400.0, 400.0).unwrap(), map, ("Legend", 1), None, opts, 1.0)
         });
@@ -4631,7 +4633,7 @@ mod tests {
     #[test]
     fn a_legends_look_sets_its_type_patches_spacing_and_texts() {
         let mut map = legend_map();
-        let size = |map: &mut Map, look: &LegendLook| legend_sizes_mm(map, 1e6, true, true, &[], look).unwrap()[0];
+        let size = |map: &mut Map, look: &LegendLook| legend_sizes_mm(map, 1e6, true, true, (&[], &NO_LABELS), look).unwrap()[0];
         let plain_pm = legend_with(&map, plain());
         let (w0, h0) = size(&mut map, plain());
         // Towns and its three classes, Roads, Lakes: six rows of the height they always had.
@@ -4687,7 +4689,7 @@ mod tests {
     #[test]
     fn each_layer_and_class_takes_a_type_of_its_own() {
         let mut map = legend_map();
-        let size = |map: &mut Map, look: &LegendLook| legend_sizes_mm(map, 1e6, true, true, &[], look).unwrap()[0];
+        let size = |map: &mut Map, look: &LegendLook| legend_sizes_mm(map, 1e6, true, true, (&[], &NO_LABELS), look).unwrap()[0];
         let (w0, h0) = size(&mut map, plain());
         let mm = 25.4 / 96.0;
         // Towns' name at 20 points: its row alone grows, to a 20-point row.
@@ -4721,9 +4723,11 @@ mod tests {
         let mut map = legend_map();
         let mut look = LegendLook::default();
         look.set_label_type("Towns", "a", Some(LabelText { size: 11.0, bold: true, ..LabelText::scale_bar() }));
-        let (w, h) = legend_sizes_mm(&mut map, 1e6, true, true, &[], &look).unwrap()[0];
+        let (w, h) = legend_sizes_mm(&mut map, 1e6, true, true, (&[], &NO_LABELS), &look).unwrap()[0];
         let title_mm = f64::from(title_row(&look)) * 25.4 / 96.0;
-        let pieces = legend_pieces_mm(&mut map, 1e6, ("Legend", 1), true, true, &[], &look, (w + 5.0, h + title_mm + 1.0)).unwrap();
+        let pieces =
+            legend_pieces_mm(&mut map, 1e6, ("Legend", 1), true, (true, false), (&[], &NO_LABELS), &look, (w + 5.0, h + title_mm + 1.0))
+                .unwrap();
         let texts: Vec<(&str, f64)> = pieces
             .iter()
             .filter_map(|p| match p {
@@ -4755,7 +4759,9 @@ mod tests {
             last = y;
         }
         // Too short for all its rows: only those that fit.
-        let short = legend_pieces_mm(&mut map, 1e6, ("Legend", 1), true, true, &[], &look, (w + 5.0, title_mm + 5.0)).unwrap();
+        let short =
+            legend_pieces_mm(&mut map, 1e6, ("Legend", 1), true, (true, false), (&[], &NO_LABELS), &look, (w + 5.0, title_mm + 5.0))
+                .unwrap();
         assert!(short.len() < pieces.len() && !short.is_empty());
     }
 
@@ -5202,7 +5208,7 @@ mod tests {
         let labels =
             |pairs: &[(&str, &str)]| -> BTreeMap<String, String> { pairs.iter().map(|(n, l)| (n.to_string(), l.to_string())).collect() };
         let names = |labels: &BTreeMap<String, String>| -> Vec<String> {
-            let opts = LegendOptions { show_no_data: false, hide_other: true, exclude: &[], labels, scale: 1e6 };
+            let opts = LegendOptions { show_no_data: false, hide_other: true, exclude: &[], labels, scale: 1e6, look: plain() };
             legend_rows(&map, None, &opts)
                 .iter()
                 .filter_map(|r| match r {
@@ -5218,7 +5224,8 @@ mod tests {
         assert_eq!(names(&labels(&[("pts", "  ")])), ["pts", long], "a blank label shows the name");
         assert_eq!(names(&labels(&[("Atlantis", "x")])), ["pts", long], "a label for no layer of the map changes nothing");
         // Its size: narrower with the short label, wider with a long one; as tall either way.
-        let size = |labels: &BTreeMap<String, String>| legend_sizes_mm(&mut map.clone(), 1e6, true, true, (&[], labels)).unwrap()[0];
+        let size =
+            |labels: &BTreeMap<String, String>| legend_sizes_mm(&mut map.clone(), 1e6, true, true, (&[], labels), plain()).unwrap()[0];
         let (named, labelled) = (size(&NO_LABELS), size(&short));
         let wide = size(&labels(&[(long, "Setores censitários do Censo Demográfico de 2022 em Minas Gerais")]));
         assert!(labelled.0 < named.0 - 20.0 && wide.0 > named.0 + 20.0, "{labelled:?} {named:?} {wide:?}");
@@ -5227,7 +5234,7 @@ mod tests {
         let reach = |labels: &BTreeMap<String, String>| {
             let mut pm = Pixmap::new(400, 200).unwrap();
             pm.fill(tiny_skia::Color::WHITE);
-            let opts = LegendOptions { show_no_data: false, hide_other: true, exclude: &[], labels, scale: 1e6 };
+            let opts = LegendOptions { show_no_data: false, hide_other: true, exclude: &[], labels, scale: 1e6, look: plain() };
             crate::canvas::with_canvas(&mut pm, |c| {
                 legend(c, Rect::from_xywh(0.0, 0.0, 400.0, 200.0).unwrap(), &map, ("", 1), None, opts, 1.0)
             });
@@ -5491,6 +5498,7 @@ mod tests {
                 extent_width: rustgis_map::layout::INDICATOR_WIDTH,
                 bearing: 0.0,
                 pitch: 0.0,
+                exclude: Vec::new(),
             };
             l.add(&name, (5.0 + 20.0 * i as f64, 5.0, 18.0, 18.0), frame);
         }
@@ -5558,7 +5566,7 @@ mod tests {
     #[test]
     fn a_legend_lists_a_classified_rasters_classes() {
         let mut map = classes_map(5);
-        let opts = LegendOptions { show_no_data: false, hide_other: true, exclude: &[], labels: &NO_LABELS, scale: 1e6 };
+        let opts = LegendOptions { show_no_data: false, hide_other: true, exclude: &[], labels: &NO_LABELS, scale: 1e6, look: plain() };
         let labels = |rows: &[LegendRow]| -> Vec<String> {
             rows.iter()
                 .map(|r| match r {
@@ -5592,7 +5600,7 @@ mod tests {
         assert_eq!(swatches, pane);
         // Sized by its rows: its name and five classes.
         let mm = 25.4 / 96.0;
-        let [(_, h), ..] = legend_sizes_mm(&mut map, 1e6, false, false, (&[], &NO_LABELS)).unwrap();
+        let [(_, h), ..] = legend_sizes_mm(&mut map, 1e6, false, false, (&[], &NO_LABELS), plain()).unwrap();
         assert!((h - 6.0 * f64::from(LEGEND_ROW) * mm).abs() < 1e-6, "{h} mm");
         let labelled = BTreeMap::from([("Land cover".to_string(), "Classes do MapBiomas".to_string())]);
         let opts_labelled = LegendOptions { labels: &labelled, ..opts };
@@ -6141,8 +6149,8 @@ Elaboração: RustGIS",
             RasterRenderer::Classify { band: 0, method: rustgis_map::ClassMethod::EqualInterval, ramp: ramp.clone(), breaks, classes: 4 };
         let classes = ramp_map(classify, Stretch::MinMax);
         // Named: a colorbar with no layer leaves a raster drawn by classes to the legend (#1679).
-        assert!(rustgis_map::layout::colorbar_layer(&classes, None).is_none());
-        assert!(rustgis_map::layout::colorbar_layer(&map, None).is_some(), "a stretch is the default's");
+        assert!(rustgis_map::layout::colorbar_layer(&classes, None, &[]).is_none());
+        assert!(rustgis_map::layout::colorbar_layer(&map, None, &[]).is_some(), "a stretch is the default's");
         // A stretched raster in a hidden group isn't the default's: the one the map shows is.
         let mut hidden = map.clone();
         let top = hidden.layers[0].clone();
@@ -6151,7 +6159,7 @@ Elaboração: RustGIS",
         group.visible = false;
         group.children.push(id);
         hidden.add_group(group);
-        assert_eq!(rustgis_map::layout::colorbar_layer(&hidden, None).map(|l| l.name.as_str()), Some("dem"));
+        assert_eq!(rustgis_map::layout::colorbar_layer(&hidden, None, &[]).map(|l| l.name.as_str()), Some("dem"));
         let pm = colorbar_page(&classes, Orientation::Horizontal, false, "");
         let mut colours: Vec<(u8, u8, u8)> = ((16.0 * k) as u32..(84.0 * k) as u32).map(|x| rgb(&pm, x, y)).collect();
         colours.dedup();
@@ -6721,7 +6729,7 @@ Elaboração: RustGIS",
         // corner, else where the frame puts it); the pixels both darken.
         let overlap = |g: &Grid, credit: &[String], inset: Option<(f32, f32)>| {
             let mut labels_pm = Canvas::from_pixmap(white());
-            let labels = draw_grid(&mut labels_pm, &map, &view, g, false);
+            let (_, labels) = draw_grid(&mut labels_pm, &map, &view, g, false);
             assert!(!labels.is_empty());
             let (w, h) = (fw as f32, fh as f32);
             let tw = crate::attribution_text(credit).unwrap().1;
@@ -6755,7 +6763,7 @@ Elaboração: RustGIS",
         // Drawn with the frame's map: the labels' pixels are the grid's alone.
         let mut labels_pm = Canvas::from_pixmap(white());
         let all = grid(GridEdges { top: false, bottom: true, left: false, right: true }, Orientation::Horizontal);
-        let labels = draw_grid(&mut labels_pm, &map, &view, &all, false);
+        let (_, labels) = draw_grid(&mut labels_pm, &map, &view, &all, false);
         let img = crate::Rendered {
             pixmap: white(),
             labels: Vec::new(),
@@ -6769,7 +6777,7 @@ Elaboração: RustGIS",
             recorded: None,
             label_layers: Vec::new(),
         };
-        let framed = finish_frame(img, ppp, Some((&map, &view, &all, false)));
+        let (framed, _) = finish_frame(img, ppp, Some((&map, &view, &all, false)));
         let (a, b) = (labels_pm.pixmap(), framed.pixmap());
         assert_ne!(a.data(), b.data(), "the credit is drawn");
         for (_, [x0, y0, x1, y1]) in &labels {
@@ -7006,7 +7014,7 @@ Elaboração: RustGIS",
         serif.layer.font = FontFamily::Serif;
         looks.push(serif);
         for (i, look) in looks.iter().enumerate() {
-            let opts = LegendOptions { hide_other: true, exclude: &[], scale: 1e6, look };
+            let opts = LegendOptions { show_no_data: false, hide_other: true, exclude: &[], labels: &NO_LABELS, scale: 1e6, look };
             let r = Rect::from_xywh(20.0 + i as f32 * 430.0, 20.0, 400.0, 390.0).unwrap();
             legend(&mut sheet, r, &map, ("Legend คำอธิบาย", 1), None, opts, 2.0);
         }
@@ -7125,10 +7133,13 @@ Elaboração: RustGIS",
             let mut pm = Pixmap::new(320, 60).unwrap();
             pm.fill(tiny_skia::Color::WHITE);
             let r = Rect::from_xywh(0.0, 0.0, width, 60.0).unwrap();
-            let colors = (Rgba::rgb(0x22, 0x22, 0x22), Rgba::rgb(0xFF, 0xFF, 0xFF));
-            crate::canvas::with_canvas(&mut pm, |c| {
-                scale_bar(c, r, ground, (ScaleUnits::Auto, 4, ScaleBarStyle::Alternating), colors, 1.0, true)
+            let kind = bar_kind(|k| {
+                if let ElementKind::ScaleBar { units, divisions, style, .. } = k {
+                    (*units, *divisions, *style) = (ScaleUnits::Auto, 4, ScaleBarStyle::Alternating);
+                }
             });
+            let look = ScaleLook::of(&kind).unwrap();
+            crate::canvas::with_canvas(&mut pm, |c| scale_bar(c, r, ground, &look, 1.0, true));
             pm
         };
         // 20 km on a bar of 300 points takes two thirds of it; 10 km at 37.2 m a point, a third.
@@ -7298,8 +7309,11 @@ Elaboração: RustGIS",
         let info = PageInfo { page: 1, pages: 1, page_name: String::new() };
         let mut layout = Layout::new("T", 100.0, 100.0);
         let black = Rgba::rgb(0, 0, 0);
-        let id =
-            layout.add("Bar", (20.0, 45.0, 60.0, 10.0), ElementKind::Rectangle { fill: black, outline: black, width: 0.0, radius: 0.0 });
+        let id = layout.add(
+            "Bar",
+            (20.0, 45.0, 60.0, 10.0),
+            ElementKind::Rectangle { fill: black, outline: black, width: 0.0, radius: 0.0, dash: None },
+        );
         let dark = |pm: &Pixmap, x: f64, y: f64| {
             let k = f64::from(pm.width()) / 100.0;
             pm.pixel((x * k) as u32, (y * k) as u32).is_some_and(|p| p.red() < 64)
@@ -7326,15 +7340,23 @@ Elaboração: RustGIS",
         use crate::vector::Item;
         let mut layout = Layout::new("T", 100.0, 100.0);
         let black = Rgba::rgb(0, 0, 0);
-        let bar =
-            layout.add("Bar", (20.0, 45.0, 60.0, 10.0), ElementKind::Rectangle { fill: black, outline: black, width: 0.0, radius: 0.0 });
+        let bar = layout.add(
+            "Bar",
+            (20.0, 45.0, 60.0, 10.0),
+            ElementKind::Rectangle { fill: black, outline: black, width: 0.0, radius: 0.0, dash: None },
+        );
         let title = layout.add("Title", (20.0, 10.0, 60.0, 12.0), ElementKind::text("แผนที่ Map", 14.0, black, false));
         for id in [bar, title] {
             layout.element_mut(id).unwrap().rotation = 30.0;
         }
         let (drawing, _) = render_drawing(&layout, &mut [], 96.0, &PageInfo::default()).unwrap();
         let (_, _, items) = drawing.finish();
-        let groups: Vec<&crate::vector::Group> = items.iter().filter_map(|i| if let Item::Group(g) = i { Some(g) } else { None }).collect();
+        // Each element is a layer of the page (#1815), its turned group inside it.
+        fn inner(items: &[Item]) -> Vec<&crate::vector::Group> {
+            items.iter().filter_map(|i| if let Item::Group(g) = i { Some(g) } else { None }).collect()
+        }
+        let groups: Vec<&crate::vector::Group> =
+            inner(&items).into_iter().flat_map(|g| if g.layer.is_some() { inner(&g.items) } else { vec![g] }).collect();
         assert_eq!(groups.len(), 2, "a group for each turned element, of {} items", items.len());
         for g in &groups {
             assert!(g.transform.kx.abs() > 0.3 && g.transform.ky.abs() > 0.3, "turned: {:?}", g.transform);
@@ -7350,9 +7372,9 @@ Elaboração: RustGIS",
     fn a_legends_columns_take_its_look() {
         let mut map = legend_map();
         let mm = 25.4 / 96.0;
-        let plain_sizes = legend_sizes_mm(&mut map, 1e6, true, true, &[], plain()).unwrap();
+        let plain_sizes = legend_sizes_mm(&mut map, 1e6, true, true, (&[], &NO_LABELS), plain()).unwrap();
         let look = LegendLook { spacing: 4.0, patch_width: 40.0, ..LegendLook::default() };
-        let sizes = legend_sizes_mm(&mut map, 1e6, true, true, &[], &look).unwrap();
+        let sizes = legend_sizes_mm(&mut map, 1e6, true, true, (&[], &NO_LABELS), &look).unwrap();
         // Six rows: five gaps in one column; in two, three rows each (a name kept with its class).
         assert!((sizes[0].1 - (6.0 * f64::from(LEGEND_ROW) + 5.0 * 4.0) * mm).abs() < 1e-4, "{sizes:?}");
         assert!(sizes[1].1 < sizes[0].1 && sizes[1].0 > sizes[0].0, "{sizes:?}");
@@ -7360,7 +7382,9 @@ Elaboração: RustGIS",
             assert!(s.0 > p.0 + 20.0 * mm, "column count {}: wider patches widen it: {s:?} of {p:?}", k + 1);
         }
         // Drawn in two columns, in the box it was sized to: every row drawn, none past the box.
-        let pieces = legend_pieces_mm(&mut map, 1e6, ("", 2), true, true, &[], &look, (sizes[1].0 + 0.5, sizes[1].1 + 0.5)).unwrap();
+        let pieces =
+            legend_pieces_mm(&mut map, 1e6, ("", 2), true, (true, false), (&[], &NO_LABELS), &look, (sizes[1].0 + 0.5, sizes[1].1 + 0.5))
+                .unwrap();
         let labels = pieces.iter().filter(|p| matches!(p, LegendPiece::Text { .. })).count();
         assert_eq!(labels, 6, "{pieces:?}");
         let xs: Vec<f64> = pieces.iter().filter_map(|p| if let LegendPiece::Patch { x, .. } = p { Some(*x) } else { None }).collect();

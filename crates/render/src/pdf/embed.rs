@@ -234,7 +234,7 @@ mod tests {
             size: 20.0,
             color: Color::BLACK,
             transform: Transform::from_row(1.0, 0.0, kx, 1.0, 10.0, 40.0),
-            glyphs: text.chars().zip(0..).map(|(ch, i)| Glyph { id: font.glyph_id(ch), x: 11.0 * i as f32, ch }).collect(),
+            glyphs: text.chars().zip(0..).map(|(ch, i)| Glyph { id: font.glyph_id(ch), x: 11.0 * i as f32, y: 0.0, ch }).collect(),
             halo: None,
             decorative: false,
         };
@@ -359,7 +359,7 @@ mod tests {
             size: 20.0,
             color,
             transform: Transform::from_row(2.0, 0.0, 0.0, 2.0, 10.0, 40.0),
-            glyphs: "Rio".chars().zip(0..).map(|(ch, i)| Glyph { id: font.glyph_id(ch), x: 11.0 * i as f32, ch }).collect(),
+            glyphs: "Rio".chars().zip(0..).map(|(ch, i)| Glyph { id: font.glyph_id(ch), x: 11.0 * i as f32, y: 0.0, ch }).collect(),
             halo,
             decorative: false,
         };
