@@ -463,13 +463,13 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   and the commands say so. A family that is installed but whose file can't be read (too large,
   damaged) is drawn in the fallback too, and the command that names it says so. The fallback
   starts as the family's own class (a serif's is Serif).
-  A text turns with **Rotation**, in degrees clockwise about the centre of its box, as a map
-  frame's bearing turns: 90 reads top to bottom and -90 bottom to top, for a source line up the
-  margin, a vertical coordinate or a name along a river. The 0°, 90° and -90° buttons beside it set
-  those. The element keeps its unturned box (X, Y, Width, Height), so moving and aligning work as
-  before; its selection and handles follow the turned box. Every export draws it turned (PNG, PDF,
-  GeoPDF, SVG). Scripts set `"rotation": 90` on `layout.addElement` and `layout.update`; an angle
-  outside -180 to 180 is kept as the same turn within it (450 is 90).
+  A text turns as every element does (see **Turning** below): by its round handle, or by
+  **Rotation (°)** in the Format pane, in degrees anticlockwise, for a source line up the margin,
+  a vertical coordinate or a name along a river. Scripts set `"rotation": 90` on
+  `layout.addElement` and `layout.update`; an angle outside -180 to 180 is kept as the same turn
+  within it (450 is 90). RustGIS 0.7 turns only texts, clockwise, by a rotation kept on the text
+  itself: a layout it saved opens with its texts turned as it drew them, and that turn adds to
+  the element's own.
   Scripts give the family's name: `"font": "Garamond"`, with `"fallback": "serif"` if wanted;
   `labels.fonts` lists the installed families. The project keeps the name, never a file. A PDF
   sets its text in the letters' own outlines, so it shows the family wherever it is opened, and
@@ -510,7 +510,7 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   the text `layout.paste` takes.
 - **Turning**: every element has a round handle above it: drag it to turn the element about its
   centre, snapping to every 45° (**Shift**: 15° steps), or type **Rotation (°)** in the Format pane
-  (degrees anticlockwise; `layout.update` `{"rotation": 30}`). A turned element is printed and
+  (degrees anticlockwise; `layout.addElement` and `layout.update` take `{"rotation": 30}`). A turned element is printed and
   exported turned, and is sized in the Format pane. Lines turn by their own angle, as before.
 - **Locked**, at the top of the Format pane, keeps a finished element from being changed by
   mistake: it can still be selected (a lock marks its corner, and it has no handles), but not
