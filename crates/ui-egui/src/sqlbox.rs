@@ -111,8 +111,9 @@ fn editor(
     }
     chips(ui, &mut d.text, ds);
     let text = d.text.trim().to_string();
-    // Only parsing runs each frame; counting waits for Check.
-    let reads = if text.is_empty() { Ok(()) } else { rustgis_engine::data::query::parse(&text, ds).map(|_| ()) };
+    // Live syntax and field checks must not scan geometry or invalidate a retained clause.
+    // Check and the command handling Apply perform the full data validation.
+    let reads = if text.is_empty() { Ok(()) } else { rustgis_engine::data::query::parse_fields(&text, ds).map(|_| ()) };
     let changed = text != stored.unwrap_or_default();
     let mut apply = None;
     ui.horizontal(|ui| {
@@ -172,54 +173,23 @@ fn editor(
     apply
 }
 
-/// The layer's fields and the common operators, each added to the clause where it ends.
+/// The layer's fields, the common operators and the language's functions and variables, each
+/// added to the clause where it ends.
 fn chips(ui: &mut Ui, text: &mut String, ds: &Dataset) {
-    let add = |text: &mut String, word: &str| {
-        if !text.is_empty() && !text.ends_with(' ') {
-            text.push(' ');
-        }
-        text.push_str(word);
-        text.push(' ');
-    };
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(tl!("Fields:")).small().weak());
         for f in ds.fields.iter().take(MAX_CHIPS) {
             if ui.small_button(&f.name).clicked() {
-                add(text, &field_ref(&f.name));
+                crate::dialogs::add_word(text, &crate::exprcomplete::field_ref(&f.name));
             }
         }
     });
     ui.horizontal_wrapped(|ui| {
         for op in ["=", "<>", ">", "<", ">=", "<=", "LIKE", "IN", "IS NULL", "AND", "OR", "NOT"] {
             if ui.small_button(op).clicked() {
-                add(text, op);
+                crate::dialogs::add_word(text, op);
             }
         }
+        crate::dialogs::expr_menus(ui, text);
     });
-}
-
-/// A field as a clause names it: as it is when it reads as a plain name, else in double quotes.
-pub(crate) fn field_ref(name: &str) -> String {
-    let plain = rustgis_engine::data::query::is_plain_name(name);
-    // The words the clause language reads itself (`rustgis_data::query`), values included.
-    let keyword = ["AND", "OR", "NOT", "LIKE", "IN", "IS", "NULL", "TRUE", "FALSE"].iter().any(|k| k.eq_ignore_ascii_case(name));
-    if plain && !keyword { name.to_string() } else { format!("\"{}\"", name.replace('"', "\"\"")) }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::field_ref;
-
-    #[test]
-    fn a_field_is_quoted_only_when_a_clause_needs_it() {
-        assert_eq!(field_ref("pop_max"), "pop_max");
-        assert_eq!(field_ref("Name 2"), "\"Name 2\"");
-        assert_eq!(field_ref("2020"), "\"2020\"");
-        assert_eq!(field_ref("in"), "\"in\"");
-        assert_eq!(field_ref("True"), "\"True\"");
-        assert_eq!(field_ref("año"), "año");
-        // Thai vowel and tone marks are part of a plain name.
-        assert_eq!(field_ref("พื้นที่_ตร_กม"), "พื้นที่_ตร_กม");
-        assert_eq!(field_ref("a\"b"), "\"a\"\"b\"");
-    }
 }

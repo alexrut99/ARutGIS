@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 from ._rustgis import Engine as _Engine
@@ -240,19 +241,29 @@ class Layer:
     def to_geojson(self, selected: bool = False) -> Dict[str, Any]:
         """The layer's features as a GeoJSON FeatureCollection, in longitude and latitude.
 
-        A large file read in place holds the features of the last view; run
-        ``session.run("layer.loadAll", layer=name)`` first to get all of them.
+        All of a layer read in place (a large file, a database table) is read from its source on
+        each call, into memory, as Load All Features reads it and within its limits; rows that
+        can't be read are left out and said in ``session.notices()``. With ``selected``, only the
+        selected features are returned, from memory.
+        :meth:`to_file` can be cheaper for a large layer: to GeoJSON, CSV, FlatGeobuf, GeoPackage
+        or GeoParquet it writes a chunk at a time where the source allows; otherwise it reads the
+        layer whole too.
 
         Args:
             selected: Only the selected features.
 
         Returns:
             The FeatureCollection as a dict.
+
+        Raises:
+            RustGISError: When the layer isn't found, or a layer read in place can't be read
+                whole from its source.
         """
         return json.loads(self.session._layer_geojson(self.id, selected))
 
     def to_geopandas(self, selected: bool = False) -> Any:
-        """The layer as a ``geopandas.GeoDataFrame`` in EPSG:4326.
+        """The layer as a ``geopandas.GeoDataFrame`` in EPSG:4326: its features as
+        :meth:`to_geojson` gives them.
 
         Args:
             selected: Only the selected features.
@@ -359,7 +370,8 @@ class _Api:
 
         A file of several layers (the tables of a GeoPackage, a GDAL file split by geometry
         type) reports the first as ``"layer"`` and every one as ``"layers"``, so ``"layers"``
-        decides. Standalone tables added with the layers are in :meth:`info`, not returned.
+        decides. Any standalone tables that were actually added are in :meth:`info`, not
+        returned. GeoPackage attribute-only tables are not imported when adding a whole file.
 
         Args:
             result: The command's result.
@@ -551,7 +563,9 @@ class _Api:
             path: The file: GeoJSON, CSV, Shapefile (or a zip of them), GeoPackage, GeoParquet,
                 FlatGeobuf, KML/KMZ, GPX, GeoTIFF, ASCII grid, and the formats GDAL or DuckDB
                 read when they are installed.
-            name: The layer's name (the file's name when left out).
+            name: The layer's name (the file's name when left out). Native multi-layer imports
+                apply it only to the first layer. GDAL or DuckDB files split into several layers keep
+                their generated names and report the ignored name in a notice.
             **params: More ``layer.addData`` parameters, e.g. ``layer=`` for one table of a
                 GeoPackage, ``x=`` and ``y=`` for a CSV's coordinate columns.
 
@@ -752,6 +766,12 @@ class Session(_Api):
             When the keychain can't be used the session goes on without the saved secret and
             logs one ``WARNING`` to the ``rustgis`` logger; that diagnostic never raises or emits
             a Python warning (a command that needed the secret still raises its own error).
+        threads: The most threads one piece of work uses (a tool's rows or features, a raster's
+            chunks), 1 to 1024; never more than the computer's cores. It holds for the whole
+            process, every session in it included, until it is set again; ``None`` (the default)
+            leaves it as it is, at first the cores up to 16. The same as
+            ``s.run("gp.threads", threads=n)``, which also takes ``threads=None`` to go back to
+            the default.
 
     Example:
         >>> s = rustgis.Session(data=["parcels.gpkg"])
@@ -767,18 +787,31 @@ class Session(_Api):
         data: Optional[Union[PathLike, Iterable[PathLike]]] = None,
         plugins: bool = False,
         use_saved_secrets: bool = False,
+        threads: Optional[int] = None,
     ) -> None:
         """Starts a session, optionally opening a project, the sample and data files."""
         if plugins:
-            load_plugins()
+            for problem in load_plugins():
+                warnings.warn(problem, RuntimeWarning, stacklevel=2)
         self._engine = _Engine(use_saved_secrets)
-        if sample:
-            self.run("project.sample")
-        if project is not None:
-            self.open(project)
-        if data is not None:
-            for path in [data] if isinstance(data, (str, os.PathLike)) else data:
-                self.add_data(path)
+        previous = None
+        if threads is not None:
+            previous = self.run("gp.threads")["threads"]
+            self.run("gp.threads", threads=threads)
+        try:
+            if sample:
+                self.run("project.sample")
+            if project is not None:
+                self.open(project)
+            if data is not None:
+                for path in [data] if isinstance(data, (str, os.PathLike)) else data:
+                    self.add_data(path)
+        except BaseException:
+            # A session that failed to start leaves the process's setting as it found it, unless
+            # it was changed again meanwhile.
+            if threads is not None and self.run("gp.threads")["threads"] == threads:
+                self.run("gp.threads", threads=previous)
+            raise
 
     def run(self, command: str, params: Optional[Dict[str, Any]] = None, /, **kwargs: Any) -> Any:
         """Runs a RustGIS command by id.

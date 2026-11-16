@@ -35,7 +35,10 @@ Select a layer in Layers and open **Style › Symbology** (or the Symbology pane
   (`layer.symbology={"type": "unique", "expression": "…"}`).
 - **Graduated Colors**: 1 to 12 classes of a numeric field by natural breaks (Jenks), equal
   interval, quantile, geometric interval, standard deviation, arithmetic progression or head/tail
-  breaks (the Method list is in alphabetical order). Geometric interval makes class
+  breaks (the Method list is in alphabetical order). Quantile sorts the values and places each
+  class's upper bound at an **observed value**, without interpolation between values. It aims for
+  similar record counts per class; ties can give unequal counts or fewer distinct classes.
+  Geometric interval makes class
   widths grow by one ratio, for values piled up at the low end; for a field that reaches zero or
   below, the minimum is taken as if it sat at a hundredth of the range, so the widths grow by
   101^(1/classes). Standard deviation makes classes one deviation wide about the mean, and leaves
@@ -119,7 +122,8 @@ project's `jet`, say) is renamed with ` (custom)` when the project opens; layers
 keep their colours, as each holds its own copy. Click a group's name to show or hide it. The Style tab sets the fill **Color**, the
 **Outline** width, **Transparency** and a **Visibility Range** (the scales between which the layer
 draws; a large file read in place is not read at all outside them); points can be circles, squares,
-triangles, diamonds or stars. **Data › Definition Query** draws only the features matching a SQL
+triangles, diamonds or stars. **Data › Definition Query** (the Query tab of the
+[Layer Properties pane](#layer-properties)) draws only the features matching a SQL
 clause; Unique Values, Graduated Colors and Proportional Symbols take their values, classes and
 sizes from those features when you apply them (apply the symbology again after changing the query),
 and **Full Extent** zooms to them. A layer with [subtypes](editing.md#data-design) can be symbolized
@@ -130,10 +134,23 @@ For polygons, **No Fill** in the Symbology pane or **Style › Drawing** draws o
 It keeps each symbol's outline colour and width, including in Unique Values and Graduated Colors,
 without changing the classes. Change the outline with **Outline color** and **Outline width** in
 the Single Symbol editor, or `layer.outline` for all classes. Undo restores the previous fills;
-the colour picker's opacity control can also make a fill visible again. By command:
+the button also changes to **Restore Fill**, which puts the fills back as they were: their
+colours and opacities, the layer's own fill layers and each class's. A fill that was transparent
+before No Fill stays transparent, and a class colour, outline or label changed while No Fill is on
+is kept. Fills shown while No Fill is on (a class's fill layers, or a class colour with an
+opacity) show until No Fill is chosen again, which hides them too and keeps them for Restore Fill
+in place of what it kept for those classes. A new symbology, colour scheme or fill colour (`layer.symbology`, `layer.ramp`,
+`layer.color`), a saved style applied (`style.apply`), a QGIS style with symbols (`style.importQgis`), subtypes that symbolize the layer
+(`data.subtypes`), or fill layers in the symbol's colour for the whole layer (`layer.fillLayers`),
+turn No Fill off and draw the fills themselves, so Restore Fill is then no longer offered, and a
+notice counts the hidden fills that were dropped. On a mixed or streamed layer, where No Fill lays
+a transparent fill over the symbols, fill layers for the whole layer of any colour turn it off
+too, as they replace that fill. A project saved with No Fill on by an earlier RustGIS doesn't record the fills, so Restore Fill says what it couldn't put back.
+On a polygon layer the symbols' fills show at the default opacity; on a mixed or streamed layer the symbols keep their own opacity, and fill layers the layer or its classes had don't come back. By command:
 
 ```text
 layer.noFill={"layer":"Countries"}
+layer.restoreFill={"layer":"Countries"}
 ```
 
 A GeoJSON with mixed geometry keeps its points, lines and polygons in one layer, classified by its
@@ -522,6 +539,17 @@ Turn labels on per layer (Labeling › Labels › **Label**), then:
   Lock keeps the ones placed. The distance grows with the labels at a reference scale
   (`labels.placement={"layer": "Rivers", "position": "curved", "repeat": 144}`; `null` or `0` is
   the one at the middle).
+- **Distance from the line**: a label placed along a line (Parallel or Curved) set off it, so it
+  doesn't sit over the line it names (Labeling pane › Position › **Distance**, 0 to 200 points, with
+  **Above** or **Below**). The distance runs from the line to the text's nearest edge, and above and
+  below are as the text reads, not north and south: over a level road the label is higher on the
+  screen, beside a road read downward it is to its right. Curved, each character moves off with its
+  own part of the line, so the text keeps following it; where the line bends so tightly that the
+  characters on the inside of the bend would run into one another, the place is left out, as one
+  too sharp to curve is. Repeats and other places along the line sit off it the same way, Lock keeps
+  them where they were found along the line, and the distance grows with the labels at a reference
+  scale (`labels.placement={"layer": "Rivers", "lineOffset": 4}`; negative is below, `0` or `null`
+  on the line).
 - **Show all labels** (Labeling pane › Position): labels among the view's 20,000 highest-priority
   candidates are drawn, over the others where
   they crowd, rather than some left out (`labels.placement={"layer": "Cities", "showAll": true}`).
@@ -556,7 +584,8 @@ Turn labels on per layer (Labeling › Labels › **Label**), then:
   installed families, `{"font": ""}` goes back to the label font).
 - **SQL**: label only the features that match a SQL clause (the language of definition
   queries), such as `pop_max > 5000000`. In the Labeling pane, Class › **SQL** › **New
-  expression**: write the clause (the field and operator buttons add to it), **Check** says
+  expression**: write the clause (the field and operator buttons, and the **Functions** and
+  **Variables** menus, add to it), **Check** says
   whether it reads and how many of the features the layer draws at the map's scale match
   (after its definition query, display filters and time window), and **Apply** sets it in one
   undo step; **Clear** removes the chosen class's clause, leaving other classes unchanged
@@ -596,6 +625,10 @@ Turn labels on per layer (Labeling › Labels › **Label**), then:
 - **Convert** (Labeling › Map Labeling, or Layers › right-click › **Convert To Annotation**) turns a
   layer's labels into an annotation layer: one point per label, carrying its
   text in a `TEXT` field, which you can then edit, move or delete like any other features.
+  A label along a line becomes an upright point at its line's middle vertex (the end of a line
+  of two), which can be some way from where the label was drawn: its angle, curve, repeats and
+  distance from the line are left out, and the conversion says how many, and how many of them
+  belong to a class that repeats along lines (each becomes one point).
 - **Label classes** label different features differently, such as large cities in larger text.
   Each class has a SQL clause choosing its features, and its own field, text symbol, placement
   and visibility range. Each class labels every feature its clause matches, the **Default**
@@ -634,6 +667,50 @@ Turn labels on per layer (Labeling › Labels › **Label**), then:
   <figcaption>City labels placed above and to the right of their points, beside the country labels.</figcaption>
 </figure>
 
+## Layer properties
+
+The **Layer Properties pane** brings together a layer's settings that are otherwise spread over the
+ribbon and the layer's right-click menu. A tab per topic shows one part at a time:
+
+- **General**: the layer's name (renamed when you leave the box or press Enter; Escape keeps the
+  old one; up to 200 characters: a longer paste is cut to fit, and a note under the full box says
+  so),
+  **Visible**, for a feature layer **Selectable** (whether the Select tool picks its
+  features on the map), and **Show legend in Layers**. Symbology and labels keep their own panes.
+- **Source**: what the layer is read from (geometry, feature and field counts, source, coordinate
+  system, extent and fields; for a raster, its size, bands, statistics and coordinate system), with
+  the actions on the source that the layer's menu has, where they apply: **Load All Features**,
+  **Repair Data Source…**, **Reload Data** (desktop) and **Define Projection…**.
+- **Display**: the visibility range (**Out Beyond**, **In Beyond**, **Clear Limits**),
+  **Transparency**, **Masking**, a raster's **Layer Blend** or a feature layer's **Reference
+  scale**, and the **Depth priority** that View › Scene › Raise and Lower Priority change (a
+  higher one draws on top, whatever the layer order). A polygon layer also has its
+  **Extrusion**, as Style › Extrusion, Faces and Light and Shadow set it: the **Type** (None,
+  Constant height or By a numeric field) and, once extruded, the **Height (m)** of a constant
+  height (the ribbon sets 50 km), **Factor**, **Base** with **Base (m)**, **Face Culling**,
+  **Lighting** and **Cast Shadow**. Each change undoes on its own.
+- **Query**, for a feature layer: its definition query, the SQL clause the features must match to
+  draw (the grammar is in [Expressions](expressions.md)). Buttons add a field or an operator, and
+  the **Functions** and **Variables** menus add a function (left open for its arguments, with what
+  it gives on hover) or a variable such as `$area`; a red
+  line says what is wrong with a clause as you type it, **Apply** (or Ctrl+Enter) sets it and
+  **Clear** draws every feature again. A clause being typed is kept while you look at another tab;
+  choosing another layer or Escape in the box drops it.
+- **Time**, for a feature layer: **Bound to the time slider**, and the **Date field** it is bound
+  by (the list shows the fields whose values read as dates, with the share that does). Only the
+  features whose date falls in the slider's window draw; the slider's span, step and playback are
+  on [View › Time](workspace.md). Each change undoes on its own.
+
+Open it with Layers › right-click › **Properties…** or **View › Windows › Layer Properties**;
+**Data › Definition Query** opens it on the Query tab, and **View › Windows › Details** (for a
+raster also **Data › Raster Information**) on the Source tab, which they show and hide as they did
+the Details pane it replaces. It follows the selected layer, as the Symbology and Labeling panes do:
+its header shows the layer's type and name, and lights up for a moment when another layer is
+selected, and the pane's tab names the layer too. A name being typed is kept when you click away,
+even on another layer, as Enter keeps it; Escape drops it. It runs the same commands as the ribbon,
+so each change undoes on its own, except **Show legend in Layers**: like the arrow beside a layer in
+the Layers pane, it changes what that pane shows, not the layer, so it isn't a step to undo.
+
 ## Layer effects
 
 On the **Style** tab, **Masking** shows a layer only inside another layer's polygons;
@@ -643,6 +720,30 @@ range); **Aggregation** draws points as hexagon or square bins coloured by count
 **Factor**, with **Face Culling**, **Lighting** and **Cast Shadow** controls. It draws in an
 oblique view on an untilted flat map and in perspective on a tilted map; the globe draws the
 polygons flat. See [Rotating and tilting the map](maps.md#navigating).
+
+An extrusion can stand on a **base**: its walls rise from the base to the base plus the height,
+so a balcony or a bridge floats above the ground. The base is a numeric field's value (such as the
+`base_height` the CityGML and CityJSON readers give each part), else a constant in metres, both
+multiplied by the same **Factor** as the height. A value that is no number takes the constant,
+and a negative base is the ground. Shadows fall from the base, roof labels sit at the top, and a
+web scene (**Publish › Share As › Web Scene**) raises the parts too. Once a layer is extruded,
+**Style › Extrusion › Base** chooses **Ground** (which also sets **Base (m)** to 0), a field
+(**By base_height**), or the constant **Base (m)** sets, listed once it is above 0; neither changes
+the height or the factor. The `layer.extrusionBase` command does the same (`field`, `base`;
+`"field": null` clears the field). Turning extrusion off drops the base with it. Without a tilt,
+and on a tilted map drawn without the graphics card, extrusions are painted in the order they
+stand on the ground, so a part raised over a building behind it may be painted under it.
+
+Layers that go together, such as a city model's layers, are raised at once: pick them in the
+Layers pane, right-click one of them and choose **Extrusion › None** or **By** a numeric field
+every one of them has (**By height**) and, once all are extruded, **Extrusion Base › Ground** or
+**By** a field (**By base_height**).
+It acts on their polygon layers and says so when the others are left out, sets every one alike in
+one step to undo, and leaves each one's height, factor and base as they were where the choice
+doesn't set them. `layer.extrusion` and `layer.extrusionBase` take a list of layers in `layer`
+for the same. A layer that isn't polygons, a field that one of them lacks, or (for the base) one
+that isn't extruded yet refuses the whole list and changes none; the message names those layers
+(a list whose first layer isn't polygons is refused as that one layer would be).
 
 For a raster layer, the **Style** tab also has **Layer Blend** (multiply, screen, overlay,
 darken, lighten, difference), **Swipe** (the layer shows only left of a divider you slide, to

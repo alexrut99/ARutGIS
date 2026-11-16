@@ -82,7 +82,7 @@ fn a_solid_is_its_footprint_with_its_heights() {
     assert_eq!(ds.name, "model", "the only layer takes the file's name");
     assert_eq!(ds.geometry_type, GeometryType::Polygon);
     let names: Vec<&str> = ds.fields.iter().map(|f| f.name.as_str()).collect();
-    assert_eq!(names, ["id", "type", "parent", "lod", "floors", "name", "z_min", "z_max", "height"]);
+    assert_eq!(names, ["id", "type", "parent", "lod", "floors", "name", "z_min", "z_max", "height", "base_height"]);
     assert_eq!(value(ds, 0, "id"), crate::Value::Text("b1".into()));
     assert_eq!(value(ds, 0, "lod"), crate::Value::Text("2".into()));
     assert_eq!(value(ds, 0, "floors"), crate::Value::Int(2));
@@ -92,6 +92,8 @@ fn a_solid_is_its_footprint_with_its_heights() {
     let said = messages_of(&out);
     assert_eq!(said.len(), 1, "a clean solid says only that: {said:?}");
     assert!(said[0].starts_with("1 3D city objects are drawn as their footprints"), "{said:?}");
+    assert!(said[0].ends_with("the lowest point of the topmost object they are part of (0 for that object)"), "{said:?}");
+    assert_eq!(value(ds, 0, "base_height"), crate::Value::Float(0.0), "a building alone starts where it stands");
 }
 
 /// A clean 2D model says nothing.
@@ -273,7 +275,7 @@ fn an_instance_kept_without_geometry_isnt_said_to_be_drawn() {
 fn an_attribute_named_as_a_field_is_renamed_and_said() {
     let bytes = doc(
         box_vertices(),
-        json!({"b": {"type": "Building", "attributes": {"height": 99, "Type": "x"},
+        json!({"b": {"type": "Building", "attributes": {"height": 99, "Type": "x", "base_height": 7},
             "geometry": [{"type": "Solid", "lod": "2", "boundaries": box_shell()}]}}),
     );
     let out = read("m.city.json", &bytes, None).unwrap();
@@ -281,7 +283,12 @@ fn an_attribute_named_as_a_field_is_renamed_and_said() {
     assert_eq!(value(ds, 0, "height_1"), crate::Value::Int(99));
     assert_eq!(value(ds, 0, "height"), crate::Value::Float(5.0));
     assert_eq!(value(ds, 0, "Type_1"), crate::Value::Text("x".into()));
-    assert!(says(&out, "attributes renamed with a number, as these fields are the reader's own: Type, height"), "{:?}", messages_of(&out));
+    assert_eq!(value(ds, 0, "base_height_1"), crate::Value::Int(7));
+    assert!(
+        says(&out, "attributes renamed with a number, as these fields are the reader's own: Type, base_height, height"),
+        "{:?}",
+        messages_of(&out)
+    );
     // Renamed, it keeps clear of the object's other attributes.
     let bytes = doc(
         box_vertices(),
@@ -825,9 +832,41 @@ fn built(id: &str, parent: Option<&str>, z: Option<(f64, f64)>) -> Built {
         ty: "Building".into(),
         parent_ids: parent.into_iter().map(String::from).collect(),
         z,
+        ground: None,
         solid: false,
         attributes: Vec::new(),
     }
+}
+
+/// Taking grounds from the topmost objects stops past what the visits allow, and says after how many
+/// rounds; a cycle settles to its lowest.
+#[test]
+fn setting_grounds_is_bounded() {
+    let chain = || -> Vec<Built> {
+        (0..20)
+            .map(|i| {
+                let parent = (i < 19).then(|| format!("o{}", i + 1));
+                built(&format!("o{i}"), parent.as_deref(), Some((f64::from(19 - i), 30.0)))
+            })
+            .collect()
+    };
+    let mut objects = chain();
+    assert_eq!(set_grounds(&mut objects, 0), Some(MIN_PARENT_ROUNDS));
+    assert!(objects[0].ground > Some(0.0), "the top's ground isn't reached: {:?}", objects[0].ground);
+    let mut objects = chain();
+    assert_eq!(set_grounds(&mut objects, MAX_PARENT_VISITS), None, "with room, it settles");
+    assert_eq!(objects[0].ground, Some(0.0));
+    let mut cycle = vec![built("a", Some("b"), Some((1.0, 2.0))), built("b", Some("a"), Some((0.0, 1.0)))];
+    assert_eq!(set_grounds(&mut cycle, MAX_PARENT_VISITS), None);
+    assert_eq!((cycle[0].ground, cycle[1].ground), (Some(0.0), Some(0.0)));
+    let said = |c: &Counts| messages(c).into_iter().filter(|m| m.contains("base_height is measured")).collect::<Vec<_>>();
+    assert_eq!(
+        said(&Counts { ground_rounds: 3, ..Counts::default() }),
+        [
+            "parent chains go deeper than 3 levels: some parts' base_height is measured from a parent, not from the topmost object they are part of"
+        ]
+    );
+    assert!(said(&Counts::default()).is_empty(), "grounds that settled say nothing");
 }
 
 /// Past what the visits allow it stops and says after how many rounds; a cycle settles.
@@ -855,6 +894,91 @@ fn raising_parents_is_bounded() {
     let mut cycle = vec![built("a", Some("b"), Some((1.0, 2.0))), built("b", Some("a"), Some((0.0, 1.0)))];
     assert_eq!(raise_parents(&mut cycle, MAX_PARENT_VISITS), None);
     assert_eq!((cycle[0].z, cycle[1].z), (Some((0.0, 2.0)), Some((0.0, 2.0))));
+}
+
+/// `base_height` is how far above the lowest point of the topmost object it is part of an object
+/// starts: 0 for a building, its own height for a part over the building's roof, and a basement's
+/// depth for a part over a basement. A group's members aren't parts of the group.
+#[test]
+fn a_part_starts_at_its_height_above_its_building() {
+    let points = |lo: f64, hi: f64| [[0.0, 0.0, lo], [0.0001, 0.0001, hi]];
+    let z = [(10.0, 20.0), (13.0, 14.0), (50.0, 60.0), (0.0, 10.0), (-3.0, 0.0), (0.0, 10.0), (-3.0, 0.0), (5.0, 6.0)];
+    let vertices: Vec<[f64; 3]> = z.iter().flat_map(|&(lo, hi)| points(lo, hi)).collect();
+    let at = |k: usize| json!([{"type": "MultiPoint", "boundaries": [2 * k, 2 * k + 1]}]);
+    let objects = json!({
+        "g": {"type": "CityObjectGroup", "children": ["b", "c"]},
+        "b": {"type": "Building", "parents": ["g"], "children": ["b0", "b1"]},
+        "b0": {"type": "BuildingPart", "parents": ["b"], "geometry": at(0)},
+        "b1": {"type": "BuildingPart", "parents": ["b"], "geometry": at(1)},
+        "c": {"type": "Building", "parents": ["g"], "geometry": at(2)},
+        "d": {"type": "Building", "children": ["d0", "d1"]},
+        "d0": {"type": "BuildingPart", "parents": ["d"], "geometry": at(3)},
+        "d1": {"type": "BuildingPart", "parents": ["d"], "geometry": at(4)},
+        // Three levels, listed child first (by their ids): the ground comes from the top, through the
+        // middle, in more than one round.
+        "z": {"type": "Building", "children": ["y0", "y1"]},
+        "y0": {"type": "BuildingPart", "parents": ["z"], "children": ["x"], "geometry": at(5)},
+        "y1": {"type": "BuildingPart", "parents": ["z"], "geometry": at(6)},
+        "x": {"type": "BuildingPart", "parents": ["y0"], "geometry": at(7)},
+    });
+    let out = read("m.city.json", &doc(json!(vertices), objects), None).unwrap();
+    let base = |id: &str| {
+        out.iter()
+            .find_map(|(ds, _)| {
+                (0..ds.features.len()).find(|&r| value(ds, r, "id") == crate::Value::Text(id.into())).map(|r| value(ds, r, "base_height"))
+            })
+            .unwrap()
+    };
+    let float = crate::Value::Float;
+    assert_eq!(base("b0"), float(0.0));
+    assert_eq!(base("b1"), float(3.0), "the balcony starts 3 m above its building's lowest point");
+    assert_eq!(base("b"), float(0.0));
+    assert_eq!(base("c"), float(0.0), "not 40 m above the group's lowest member");
+    assert_eq!(base("g"), float(0.0));
+    assert_eq!(base("d1"), float(0.0));
+    assert_eq!(base("d0"), float(3.0), "over a basement, it starts at the basement's depth");
+    assert_eq!(base("x"), float(8.0), "from its topmost object's lowest point, not its parent's");
+    assert!(!says(&out, "name a parent"), "{:?}", messages_of(&out));
+}
+
+/// A part whose parent isn't in the file, or couldn't be read, is measured from itself, and said.
+#[test]
+fn a_part_whose_parent_is_missing_is_said() {
+    let vertices = json!([[0.0, 0.0, 10.0], [0.0001, 0.0001, 20.0]]);
+    let at = json!([{"type": "MultiPoint", "boundaries": [0, 1]}]);
+    let objects = json!({
+        "p": {"type": "BuildingPart", "parents": ["nowhere"], "geometry": at},
+        "q": {"type": "BuildingPart", "parents": ["broken"], "geometry": at},
+        "broken": {"type": 7},
+    });
+    let out = read("m.city.json", &doc(vertices, objects), None).unwrap();
+    assert_eq!(value(&out[0].0, 0, "base_height"), crate::Value::Float(0.0));
+    assert!(
+        says(&out, "2 city objects name a parent that isn't in the file or couldn't be read: their base_height leaves it out"),
+        "{:?}",
+        messages_of(&out)
+    );
+}
+
+/// A compound URN is read by its horizontal part, not by its last code, and its vertical part gives
+/// the heights' unit: said when it isn't metres upward, in place of the horizontal system's.
+#[test]
+fn a_compound_urn_is_read_by_its_parts() {
+    let named = |system: &str| json!({"metadata": {"referenceSystem": system}});
+    let points = json!([[1000, 1000, 0], [1010, 1010, 30]]);
+    let objects = json!({"a": {"type": "Road", "geometry": [{"type": "MultiPoint", "boundaries": [0, 1]}]}});
+    let read_in = |system: &str| read("m.city.json", &doc_with(points.clone(), objects.clone(), named(system)), None).unwrap();
+    // Its last code, 7415, is RD New + NAP: the horizontal part, 25832, is what it is read in.
+    let out = read_in("urn:ogc:def:crs,crs:EPSG::25832,crs:EPSG::7415");
+    assert_eq!(out[0].0.crs, Some(Crs::Epsg(25832)));
+    let out = read_in("urn:ogc:def:crs,crs:EPSG::25832,crs:EPSG::5783");
+    assert!(!messages_of(&out).iter().any(|m| m.contains("vertical system") || m.contains("measures in")), "{:?}", messages_of(&out));
+    let out = read_in("urn:ogc:def:crs,crs:EPSG::25832,crs:EPSG::6360");
+    assert!(says(&out, "(crs:EPSG::6360) measures heights in US survey feet"), "{:?}", messages_of(&out));
+    // Feet across, metres up: the heights are metres, and nothing is said.
+    let out = read_in("urn:ogc:def:crs,crs:EPSG::2263,crs:EPSG::5703");
+    assert_eq!(out[0].0.crs, Some(Crs::Epsg(2263)));
+    assert!(!says(&out, "measures in"), "{:?}", messages_of(&out));
 }
 
 /// Heights in a system of feet are said, as extrusions read metres; a system in metres says nothing.
@@ -956,11 +1080,22 @@ fn lines_and_points_keep_their_highest_lod() {
 fn a_height_too_large_to_be_a_number_is_said() {
     let objects = json!({"a": {"type": "Road", "geometry": [{"type": "MultiPoint", "boundaries": [0, 1]}]}});
     let out = read("m.city.json", &doc(json!([[0, 0, -1e308], [1, 1, 1e308]]), objects.clone()), None).unwrap();
-    assert!(says(&out, "1 city objects have a lowest and highest Z too far apart"), "{:?}", messages_of(&out));
+    assert!(says(&out, "1 city objects have Z values too far apart for their difference to be a number"), "{:?}", messages_of(&out));
     assert_eq!(value(&out[0].0, 0, "height"), crate::Value::Null);
     assert_eq!(value(&out[0].0, 0, "z_max"), crate::Value::Float(1e308));
-    let out = read("m.city.json", &doc(json!([[0, 0, -10], [1, 1, 20]]), objects), None).unwrap();
+    let out = read("m.city.json", &doc(json!([[0, 0, -10], [1, 1, 20]]), objects.clone()), None).unwrap();
     assert!(!says(&out, "too far apart"), "{:?}", messages_of(&out));
+    // A part too far above its building's lowest point: its base_height is left empty, and said.
+    let parts = json!({
+        "b": {"type": "Building", "children": ["p", "q"]},
+        "p": {"type": "BuildingPart", "parents": ["b"], "geometry": [{"type": "MultiPoint", "boundaries": [0]}]},
+        "q": {"type": "BuildingPart", "parents": ["b"], "geometry": [{"type": "MultiPoint", "boundaries": [1]}]},
+    });
+    let out = read("m.city.json", &doc(json!([[0, 0, -1e308], [1, 1, 1e308]]), parts), None).unwrap();
+    let ds = out.iter().map(|(ds, _)| ds).find(|ds| ds.features.len() == 2).unwrap();
+    let q = (0..2).find(|&r| value(ds, r, "id") == crate::Value::Text("q".into())).unwrap();
+    assert_eq!(value(ds, q, "base_height"), crate::Value::Null);
+    assert!(says(&out, "2 city objects have Z values too far apart"), "the building and its part: {:?}", messages_of(&out));
 }
 
 /// A line of one point at a higher level doesn't take the place of a line drawn at a lower one, and
@@ -1332,7 +1467,24 @@ fn attributes_are_typed_by_every_value_in_their_layer() {
     let names: Vec<&str> = ds.fields.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(
         names,
-        ["id", "type", "parent", "lod", "big", "count", "exact", "flag", "mixed", "nested", "none", "share", "z_min", "z_max", "height"]
+        [
+            "id",
+            "type",
+            "parent",
+            "lod",
+            "big",
+            "count",
+            "exact",
+            "flag",
+            "mixed",
+            "nested",
+            "none",
+            "share",
+            "z_min",
+            "z_max",
+            "height",
+            "base_height"
+        ]
     );
 }
 
@@ -1356,4 +1508,149 @@ fn a_line_starting_at_nan_is_said_when_lost() {
     let made = object_rows(parts, 0, &mut counts, &mut budget);
     assert_eq!(made.rows.first().and_then(|r| r.lod.as_deref()), Some("2"));
     assert_eq!(counts.unusable_lost, 0);
+}
+
+/// A read counts its objects and stops between them once its run is cancelled; without a run to
+/// answer to it reads them all.
+#[test]
+fn a_cancelled_read_stops_between_objects() {
+    use crate::progress::tests::Counted;
+    use std::sync::atomic::Ordering;
+    let objects: serde_json::Map<String, Json> = (0..5)
+        .map(|i| (format!("b{i}"), json!({"type": "Building", "geometry": [{"type": "Solid", "lod": "1", "boundaries": box_shell()}]})))
+        .collect();
+    let bytes = doc(box_vertices(), Json::Object(objects));
+    let probe = Counted::cancelling_after(2);
+    let res = {
+        let _g = crate::progress::install(Some(probe.clone()));
+        read("model.city.json", &bytes, None)
+    };
+    assert!(matches!(res, Err(DataError::Cancelled)), "{:?}", res.map(|o| o.len()));
+    assert_eq!(probe.total.load(Ordering::Relaxed), 5);
+    assert_eq!(read("model.city.json", &bytes, None).unwrap()[0].0.features.len(), 5);
+}
+
+/// A geometry instance is its template placed by its matrix at its reference point, with the
+/// template's heights placed too. One whose matrix isn't 16 numbers, whose template is missing, or
+/// whose template can't be read is its reference point, and said; a template that can't be read is
+/// said once, not for each instance.
+#[test]
+fn an_instance_is_its_template_placed() {
+    let instance = |template: usize, matrix: Json| {
+        json!({"type": "SolitaryVegetationObject", "geometry": [
+            {"type": "GeometryInstance", "template": template, "boundaries": [0], "transformationMatrix": matrix}]})
+    };
+    let twice = json!([2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1]);
+    let objects = json!({
+        "tree": instance(0, twice.clone()),
+        "short": instance(0, json!([1, 0, 0])),
+        "missing": instance(5, twice.clone()),
+        "broken": instance(1, twice.clone()),
+        "broken again": instance(1, twice),
+    });
+    let mut root: Json = serde_json::from_slice(&doc(json!([[5, 5, 1]]), objects)).unwrap();
+    let cube = json!([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]]);
+    root["geometry-templates"] = json!({"templates": [
+        {"type": "Solid", "lod": "2", "boundaries": box_shell()},
+        {"type": "MultiSurface", "lod": "2", "boundaries": [[[0, 1, 99]]]},
+    ], "vertices-templates": cube.clone()});
+    let out = read("m.city.json", root.to_string().as_bytes(), None).unwrap();
+    let placed = &out.iter().find(|(d, _)| d.geometry_type == GeometryType::Polygon).expect("the placed tree").0;
+    assert_eq!(placed.features.len(), 1);
+    assert!((area(geometry(placed, 0)) - 4.0).abs() < 1e-9, "{:?}", geometry(placed, 0));
+    let Some(Geometry::Polygon(polys)) = geometry(placed, 0) else { panic!("a polygon") };
+    assert!(polys[0][0].iter().all(|c| (5.0..=7.0).contains(&c.x) && (5.0..=7.0).contains(&c.y)), "at its reference point");
+    assert_eq!(value(placed, 0, "z_min"), crate::Value::Float(1.0));
+    assert_eq!(value(placed, 0, "z_max"), crate::Value::Float(3.0));
+    assert!(says(&out, "4 geometry instances are drawn as a point"), "{:?}", messages_of(&out));
+    assert!(says(&out, "1 geometries of city objects have vertex indexes that can't be read"), "{:?}", messages_of(&out));
+    // Placed whole, an instance says nothing.
+    let mut clean: Json = serde_json::from_slice(&doc(
+        json!([[5, 5, 1]]),
+        json!({"tree": instance(0, json!([2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1]))}),
+    ))
+    .unwrap();
+    clean["geometry-templates"] =
+        json!({"templates": [{"type": "Solid", "lod": "2", "boundaries": box_shell()}], "vertices-templates": cube});
+    let out = read("m.city.json", clean.to_string().as_bytes(), None).unwrap();
+    assert!(!says(&out, "geometry instances"), "{:?}", messages_of(&out));
+    assert!(!says(&out, "can't be read"), "{:?}", messages_of(&out));
+}
+
+/// One tree instancing `template` at [5, 5, 1] with `matrix`, beside `templates`.
+fn instanced(matrix: Json, templates: Json) -> Vec<u8> {
+    let objects = json!({"tree": {"type": "SolitaryVegetationObject", "geometry": [
+        {"type": "GeometryInstance", "template": 0, "boundaries": [0], "transformationMatrix": matrix}]}});
+    let mut root: Json = serde_json::from_slice(&doc(json!([[5, 5, 1]]), objects)).unwrap();
+    root["geometry-templates"] = templates;
+    root.to_string().into_bytes()
+}
+
+fn cube() -> Json {
+    json!([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]])
+}
+
+/// A `geometry-templates` block that can't be read is said, and its instances drawn as points.
+#[test]
+fn templates_that_cant_be_read_are_said() {
+    let unit = json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    let bad = json!({"templates": [{"type": "Solid", "lod": "2", "boundaries": box_shell()}], "vertices-templates": [[0, 0, "x"]]});
+    let out = read("m.city.json", &instanced(unit, bad), None).unwrap();
+    assert!(says(&out, "1 geometries of city objects have vertex indexes that can't be read"), "{:?}", messages_of(&out));
+    assert!(says(&out, "1 geometry instances are drawn as a point"), "{:?}", messages_of(&out));
+}
+
+/// Empty rings cost placing too: a template of many is held back by the file's placing, and said.
+#[test]
+fn empty_rings_cost_placing() {
+    let unit = json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    let mut empty: Vec<Json> = (0..5_000).map(|_| json!([[]])).collect();
+    empty.push(json!([[0, 1, 2, 3]]));
+    let templates = json!({"templates": [{"type": "MultiSurface", "lod": "2", "boundaries": empty}], "vertices-templates": cube()});
+    let out = read("m.city.json", &instanced(unit, templates), None).unwrap();
+    assert!(says(&out, "1 geometry instances are drawn as a point"), "{:?}", messages_of(&out));
+}
+
+/// Rings a matrix flattens when it places a template are said for each instance.
+#[test]
+fn rings_flattened_by_placing_are_said() {
+    let flat = json!([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    let templates = json!({"templates": [{"type": "Solid", "lod": "2", "boundaries": box_shell()}], "vertices-templates": cube()});
+    let out = read("m.city.json", &instanced(flat, templates), None).unwrap();
+    assert!(says(&out, "3 rings with fewer than three different points are left out"), "{:?}", messages_of(&out));
+}
+
+/// An instance with no matrix (CityJSON requires one) is drawn at its reference point, and said.
+#[test]
+fn an_instance_with_no_matrix_is_a_point() {
+    let templates = json!({"templates": [{"type": "Solid", "lod": "2", "boundaries": box_shell()}], "vertices-templates": cube()});
+    let mut root: Json = serde_json::from_slice(&instanced(Json::Null, templates)).unwrap();
+    let instance = root["CityObjects"]["tree"]["geometry"][0].as_object_mut().unwrap();
+    instance.remove("transformationMatrix");
+    let out = read("m.city.json", root.to_string().as_bytes(), None).unwrap();
+    assert!(says(&out, "1 geometry instances are drawn as a point"), "{:?}", messages_of(&out));
+}
+
+/// A template with no surfaces places nothing: its instance is drawn at its reference point, and said.
+#[test]
+fn an_empty_template_is_a_point() {
+    let unit = json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    let templates = json!({"templates": [{"type": "MultiSurface", "lod": "2", "boundaries": []}], "vertices-templates": cube()});
+    let out = read("m.city.json", &instanced(unit, templates), None).unwrap();
+    assert!(says(&out, "1 geometry instances are drawn as a point"), "{:?}", messages_of(&out));
+}
+
+/// A template with a ring of no area says it once; a matrix that flattens its other rings says
+/// those for each instance, not the template's again.
+#[test]
+fn a_degenerate_template_still_says_rings_placing_flattens() {
+    let mut boundaries = box_shell();
+    boundaries[0].as_array_mut().unwrap().push(json!([[0, 1]]));
+    let templates = json!({"templates": [{"type": "Solid", "lod": "2", "boundaries": boundaries}], "vertices-templates": cube()});
+    let unit = json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    let out = read("m.city.json", &instanced(unit, templates.clone()), None).unwrap();
+    assert!(says(&out, "1 rings with fewer than three different points are left out"), "{:?}", messages_of(&out));
+    let flat = json!([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    let out = read("m.city.json", &instanced(flat, templates), None).unwrap();
+    assert!(says(&out, "4 rings with fewer than three different points are left out"), "{:?}", messages_of(&out));
 }

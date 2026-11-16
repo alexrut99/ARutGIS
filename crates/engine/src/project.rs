@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::GpRecord;
 
+#[path = "project_capabilities.rs"]
+mod capabilities;
 #[path = "project_label_losses.rs"]
 pub(crate) mod label_losses;
+pub(crate) use capabilities::{layer_file_bytes, map_file_bytes};
 
 /// A map export cannot keep runtime-only download reservations, even in a larger project.
 pub(crate) fn ensure_map_imports_complete(map: &Map) -> Result<(), String> {
@@ -38,7 +41,9 @@ pub const PACKAGE_EXTENSION: &str = "rgispkg";
 /// Whether a file name or path opens as a project: a project file or a project package, ignoring
 /// case. Unlike [`is_project_file`], this includes packages, which a project never saves to.
 pub fn opens_as_project(name: &str) -> bool {
-    is_project_file(name) || name.to_ascii_lowercase().strip_suffix(PACKAGE_EXTENSION).is_some_and(|s| s.ends_with('.'))
+    is_project_file(name)
+        || name.to_ascii_lowercase().strip_suffix(PACKAGE_EXTENSION).is_some_and(|s| s.ends_with('.'))
+        || crate::cmd::field::is_field_package(name)
 }
 
 /// The command that opens a file given by its path, as the desktop app's command line and a file
@@ -53,12 +58,33 @@ pub fn open_command(path: &str) -> &'static str {
         "layer.addData"
     }
 }
-/// Saved-document compatibility version, independent of the RustGIS release version: the newest
-/// this version reads. Advance it when an older reader would lose meaningful saved information
-/// on resaving. A project is written as the oldest format that keeps all it holds
-/// ([`Project::format_written`]), so an older RustGIS still opens the ones that use nothing new:
-/// 2 only when a layout's map frame leaves layers of its map out.
-pub const FORMAT: u32 = rustgis_map::layout::FRAME_LAYERS_FORMAT;
+/// The format this RustGIS writes: the saved-document compatibility version, independent of the
+/// RustGIS release version. Advance it when an older reader would lose meaningful saved
+/// information on resaving; within format 2, such an addition is named in `requires` instead
+/// (see [`READ_FORMAT`] and [`CAPABILITIES`]).
+pub const FORMAT: u32 = 2;
+/// The newest format this RustGIS reads. Format 2 was made readable before writing began
+/// (#1853): a document of format 2 opens when this RustGIS knows every capability it `requires`,
+/// so what a later RustGIS adds to format 2, and an older one would lose, is listed there and
+/// refused by name instead.
+pub const READ_FORMAT: u32 = 2;
+/// The saved additions this RustGIS understands. Writers require only capabilities used by
+/// their payload, so a format-2 reader without them refuses instead of discarding their fields.
+pub const CAPABILITIES: &[&str] =
+    &["terrain-block", "terrain-water", "shaded-relief-effects", "normalized-legend-urls", "field-origin", "frame-layers"];
+/// The most entries a document's `requires` may list: past it the document is refused without
+/// the rest being read.
+pub(crate) const MAX_REQUIRES: usize = 256;
+/// The longest capability name kept whole, in bytes: a longer one can't be a known capability
+/// (none is longer, held below), so only its start is kept, marked `…`, for the refusal to show.
+const MAX_CAPABILITY_BYTES: usize = 128;
+const _: () = {
+    let mut i = 0;
+    while i < CAPABILITIES.len() {
+        assert!(CAPABILITIES[i].len() <= MAX_CAPABILITY_BYTES, "a known capability's name is at most MAX_CAPABILITY_BYTES");
+        i += 1;
+    }
+};
 /// Largest project file read or saved in the browser, or on a computer whose memory isn't known
 /// (512 MiB): the floor of [`max_bytes`].
 pub const BYTES_FLOOR: u64 = 512 << 20;
@@ -319,15 +345,22 @@ pub(crate) fn public_login_params(value: &serde_json::Value) -> Option<serde_jso
 // serialized, whichever path serializes it: see the `Serialize` impl below.)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(remote = "Self")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Project {
     /// Read-time adjustments (labels, diagrams, layouts), consumed by the session and never saved.
     #[serde(skip)]
-    pub(crate) read_notices: Vec<(ReadPart, String)>,
-    /// The format read from disk; serialization always declares what the current writer's
-    /// payload needs ([`Project::format_written`]).
-    #[serde(default = "format", getter = "Project::format_written")]
+    pub(crate) read_notices: Vec<(ReadPart, NoticeText)>,
+    /// The format read from disk; serialization always declares the current writer's format.
+    #[serde(default = "format", serialize_with = "write_format")]
     pub format: u32,
     pub name: String,
+    /// Persistent home-project identity for offline returns; legacy projects acquire it when packaged.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub origin_id: String,
+    /// The home and area this field copy belongs to, retained through ordinary saves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_origin: Option<FieldOrigin>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub maps: Vec<Map>,
     pub active_map: usize,
     #[serde(default)]
@@ -339,6 +372,7 @@ pub struct Project {
     #[serde(default)]
     pub gp_history: Vec<GpRecord>,
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub layouts: Vec<rustgis_map::layout::Layout>,
     /// Folder connections shown in the Browser.
     #[serde(default)]
@@ -348,6 +382,7 @@ pub struct Project {
     pub styles: Vec<StyleItem>,
     /// Custom colour ramps, offered beside the built-in ones (renderers keep their own copy).
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub ramps: Vec<rustgis_map::color::CustomRamp>,
     /// Step-by-step tasks: guided command sequences.
     #[serde(default)]
@@ -360,6 +395,7 @@ pub struct Project {
     pub models: Vec<Model>,
     /// Ortho and reality mapping workspaces.
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub workspaces: Vec<crate::cmd::imagery::Workspace>,
     /// Maps move together (View › Link Views).
     #[serde(default)]
@@ -375,20 +411,26 @@ pub struct Project {
     pub offline_areas: Vec<OfflineArea>,
     /// Reports on layers' records.
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub reports: Vec<rustgis_map::report::Report>,
     /// Presentations: pages of maps, text, images and videos.
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub presentations: Vec<rustgis_map::presentation::Presentation>,
     /// Notebooks of text and command cells.
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub notebooks: Vec<crate::cmd::notebook::Notebook>,
     /// Trained deep learning models.
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub dl_models: Vec<crate::cmd::deeplearning::DlModel>,
     /// Shares made (Publish › Share As › Jobs) and the folders they go to.
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub shared: Vec<crate::cmd::sharing::SharedItem>,
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<crate::schema::Open>"))]
     pub data_stores: Vec<crate::cmd::sharing::DataStore>,
 }
 
@@ -401,6 +443,28 @@ pub struct Table {
     pub id: u32,
     #[serde(flatten)]
     pub dataset: Dataset,
+    /// Runtime identity of these contents; snapshots retain it, wholesale replacements renew it.
+    #[serde(skip)]
+    instance_id: u64,
+}
+
+/// A fresh runtime identity, independent of reusable project-local table ids.
+fn next_table_instance() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+impl Table {
+    /// Wraps a dataset under its project-local id with a fresh, unsaved runtime identity.
+    pub fn new(id: u32, dataset: Dataset) -> Self {
+        Self { id, dataset, instance_id: next_table_instance() }
+    }
+
+    /// Identifies these live contents across ordinary edits and undo snapshots, but not replacement.
+    pub fn instance_id(&self) -> u64 {
+        self.instance_id
+    }
 }
 
 /// A table as a file holds it: the dataset's fields beside the id (absent from files written
@@ -408,6 +472,7 @@ pub struct Table {
 /// geometry lost to it and Z or M values dropped (absent from files written before tables kept
 /// them). Read field by field, since `flatten` would buffer every row first.
 #[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct TableFile {
     #[serde(default)]
     id: u32,
@@ -426,10 +491,12 @@ struct TableFile {
 }
 
 impl From<TableFile> for Table {
+    /// Loads stored data under a fresh runtime identity, never one supplied by the file.
     fn from(t: TableFile) -> Self {
         let TableFile { id, name, geometry_type, fields, features, source, crs, crs_incomplete, zm_dropped } = t;
         Table {
             id,
+            instance_id: next_table_instance(),
             dataset: Dataset {
                 name,
                 geometry_type,
@@ -442,6 +509,22 @@ impl From<TableFile> for Table {
                 windowed: false,
             },
         }
+    }
+}
+
+/// A table is saved as [`TableFile`] reads it.
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Table {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Table".into()
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let mut schema = TableFile::json_schema(generator);
+        schema.insert(
+            "description".into(),
+            "A standalone table: a dataset without geometry, under an id unique among the project's tables (absent from files written before tables had ids).".into(),
+        );
+        schema
     }
 }
 
@@ -471,6 +554,7 @@ impl std::ops::DerefMut for Table {
 
 /// A unit of work tracked in the Workflow Manager.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Job {
     pub id: u32,
     pub name: String,
@@ -489,9 +573,31 @@ pub struct Job {
     pub updated: f64,
 }
 
+/// A field copy's exact home and offline-area identities (128 random bits each).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct FieldOrigin {
+    pub project: String,
+    pub area: String,
+}
+
+pub(crate) fn field_id() -> Result<String, String> {
+    let mut bits = [0u8; 16];
+    getrandom::fill(&mut bits).map_err(|e| format!("cannot make a field-package identity: {e}"))?;
+    Ok(bits.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+pub(crate) fn valid_field_id(id: &str) -> bool {
+    id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 /// A map's data clipped to an extent, to take into the field.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OfflineArea {
+    /// Persistent identity, independent of the editable display name.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     pub name: String,
     /// The map it came from (by name).
     pub map: String,
@@ -500,11 +606,13 @@ pub struct OfflineArea {
     #[serde(default)]
     pub synced: f64,
     /// The snapshot: the map's feature layers holding the features meeting the extent.
+    #[cfg_attr(feature = "schema", schemars(with = "crate::schema::Open"))]
     pub data: Map,
 }
 
 /// Settings every geoprocessing run honours.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct GpEnvironment {
     /// Tools only process features meeting this longitude/latitude extent (when no features are
     /// selected).
@@ -513,12 +621,45 @@ pub struct GpEnvironment {
     /// The cell size (degrees) of rasters tools create, when they don't say.
     #[serde(default)]
     pub cell_size: Option<f64>,
+    /// The projected coordinate system the Geostatistical Wizard makes its surface in, and the cell
+    /// size in its units, when the run doesn't say; `None`: the projected system the layer was read in,
+    /// else degrees with `cell_size`. Kept apart
+    /// from `cell_size` so an older RustGIS, which reads only that, still makes it in degrees rather
+    /// than reading this system's units as degrees: losing it costs that version the setting, not
+    /// the raster.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projected: Option<ProjectedCells>,
+}
+
+impl GpEnvironment {
+    /// The cell size set for rasters made in `crs`: the projected one's in its own system, the
+    /// degree one in longitude/latitude (whether or not a system is set), none in another system.
+    pub fn cell_in(&self, crs: rustgis_data::raster::Crs) -> Option<f64> {
+        match self.projected {
+            Some(g) if g.crs == crs => g.cell_size,
+            _ if crs == rustgis_data::raster::Crs::LonLat => self.cell_size,
+            _ => None,
+        }
+    }
+}
+
+/// A projected coordinate system for the rasters the environment sets ([`GpEnvironment::projected`]).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ProjectedCells {
+    /// The system, never one in degrees: `gp.env` refuses those, and opening a project leaves one
+    /// out.
+    pub crs: rustgis_data::raster::Crs,
+    /// The cell size in the system's units; `None`: the tool's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_size: Option<f64>,
 }
 
 /// A model: geoprocessing steps run in order. A parameter value `%n` stands for the output layer
 /// of step n (1-based). A model drawn in ModelBuilder keeps its `graph` too, which is what runs;
 /// `steps` then holds the same tools in run order, for older versions and web tools.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Model {
     pub name: String,
     #[serde(default)]
@@ -530,6 +671,7 @@ pub struct Model {
 /// A model as ModelBuilder draws it: input, tool and output nodes joined by edges from an output
 /// port to an input port (see `crate::model`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelGraph {
     #[serde(default)]
     pub nodes: Vec<ModelNode>,
@@ -538,6 +680,7 @@ pub struct ModelGraph {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ModelNodeKind {
     /// A layer of the map the model reads.
@@ -550,6 +693,7 @@ pub enum ModelNodeKind {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelNode {
     pub id: String,
     pub kind: ModelNodeKind,
@@ -574,6 +718,7 @@ pub struct ModelNode {
 
 /// An edge from node `from`'s output port to node `to`'s input port (a tool parameter's name).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelEdge {
     pub from: String,
     #[serde(rename = "fromPort", default)]
@@ -584,6 +729,7 @@ pub struct ModelEdge {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelStep {
     pub tool: String,
     pub params: serde_json::Value,
@@ -591,10 +737,13 @@ pub struct ModelStep {
 
 /// A saved style: a layer's symbology and labels.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct StyleItem {
     pub name: String,
     pub geometry: rustgis_data::GeometryType,
+    #[cfg_attr(feature = "schema", schemars(with = "crate::schema::Open"))]
     pub renderer: rustgis_map::Renderer,
+    #[cfg_attr(feature = "schema", schemars(with = "crate::schema::Open"))]
     pub labels: rustgis_map::Labeling,
     #[serde(default)]
     pub transparency: f32,
@@ -602,6 +751,7 @@ pub struct StyleItem {
 
 /// A task: steps that each run a command, in order.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Task {
     pub name: String,
     #[serde(default)]
@@ -610,6 +760,7 @@ pub struct Task {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TaskStep {
     pub title: String,
     #[serde(default)]
@@ -623,28 +774,10 @@ fn format() -> u32 {
     FORMAT
 }
 
-impl Project {
-    /// The format the project is written as. Every project serialization, including templates
-    /// and packages, describes the current writer's payload rather than retaining the version of
-    /// the file originally opened: the oldest format that keeps all the project holds, so one
-    /// that uses nothing newer is still opened by an older RustGIS, and one that does is refused
-    /// by it rather than saved again without what it couldn't read.
-    pub fn format_written(&self) -> u32 {
-        let plain = rustgis_map::layout::PLAIN_FORMAT;
-        self.layouts.iter().map(rustgis_map::layout::Layout::format).fold(plain, u32::max)
-    }
-}
-
-impl Serialize for Project {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        Project::serialize(self, serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Project {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Project::deserialize(deserializer)
-    }
+/// Every project serialization, including templates and packages, describes the current
+/// writer's payload rather than retaining the version of the file originally opened.
+fn write_format<S: serde::Serializer>(_: &u32, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u32(FORMAT)
 }
 
 impl Default for Project {
@@ -677,12 +810,207 @@ fn plain_web_address(path: &str) -> bool {
 struct FileFormat {
     #[serde(default)]
     format: u64,
+    #[serde(default)]
+    requires: Requires,
+}
+
+/// What a document's `requires` holds, read without keeping anything else: the names it lists
+/// (at most [`MAX_REQUIRES`]), or that it lists more, or something that isn't a list of names.
+#[derive(Default)]
+enum Requires {
+    #[default]
+    Nothing,
+    Names(Vec<String>),
+    TooMany,
+    NotNames,
+}
+
+impl<'de> Deserialize<'de> for Requires {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(RequiresVisitor)
+    }
+}
+
+/// One entry of `requires`: a name, or anything else, skipped without being kept.
+enum RequiredName {
+    Name(String),
+    Other,
+}
+
+impl<'de> Deserialize<'de> for RequiredName {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(RequiredNameVisitor)
+    }
+}
+
+/// Skips the rest of a list without keeping any of it.
+fn skip_seq<'de, A: serde::de::SeqAccess<'de>>(mut seq: A) -> Result<(), A::Error> {
+    while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+    Ok(())
+}
+
+/// Skips the rest of an object without keeping any of it.
+fn skip_map<'de, A: serde::de::MapAccess<'de>>(mut map: A) -> Result<(), A::Error> {
+    while map.next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?.is_some() {}
+    Ok(())
+}
+
+/// Implements the visitor methods for the JSON values that are neither a list nor a name: each
+/// gives `$other`.
+macro_rules! other_values {
+    ($other:expr) => {
+        fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
+            Ok($other)
+        }
+        fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
+            Ok($other)
+        }
+        fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
+            Ok($other)
+        }
+        fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
+            Ok($other)
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+            skip_map(map)?;
+            Ok($other)
+        }
+    };
+}
+
+struct RequiredNameVisitor;
+
+impl<'de> serde::de::Visitor<'de> for RequiredNameVisitor {
+    type Value = RequiredName;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a capability name")
+    }
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        // A long name keeps its first bytes (on a character's boundary) and `…` for the refusal;
+        // longer than any known name (held by the assertion above), it can't be taken for one.
+        if v.len() > MAX_CAPABILITY_BYTES {
+            let mut end = MAX_CAPABILITY_BYTES;
+            while !v.is_char_boundary(end) {
+                end -= 1;
+            }
+            Ok(RequiredName::Name(format!("{}…", v.get(..end).unwrap_or_default())))
+        } else {
+            Ok(RequiredName::Name(v.to_string()))
+        }
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(RequiredName::Other)
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+        skip_seq(seq)?;
+        Ok(RequiredName::Other)
+    }
+    other_values!(RequiredName::Other);
+}
+
+struct RequiresVisitor;
+
+impl<'de> serde::de::Visitor<'de> for RequiresVisitor {
+    type Value = Requires;
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a list of capability names")
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(Requires::Nothing)
+    }
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Self::Value, E> {
+        Ok(Requires::NotNames)
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        let mut names = Vec::new();
+        loop {
+            if names.len() >= MAX_REQUIRES {
+                // One more entry is one too many; the rest is skipped unread.
+                if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                    skip_seq(seq)?;
+                    return Ok(Requires::TooMany);
+                }
+                return Ok(Requires::Names(names));
+            }
+            match seq.next_element::<RequiredName>()? {
+                None => return Ok(Requires::Names(names)),
+                Some(RequiredName::Name(n)) => names.push(n),
+                // Not a list of names, whatever else it holds: the rest is skipped unread.
+                Some(RequiredName::Other) => {
+                    skip_seq(seq)?;
+                    return Ok(Requires::NotNames);
+                }
+            }
+        }
+    }
+    other_values!(Requires::NotNames);
+}
+
+/// The capabilities a document requires that this RustGIS doesn't know, each once, or why its
+/// `requires` can't be read (`open`: what that refusal says to update RustGIS for).
+fn unknown_capabilities(requires: &Requires, kind: &str, open: &str) -> Result<Vec<String>, String> {
+    let names = match requires {
+        Requires::Nothing => return Ok(Vec::new()),
+        Requires::Names(names) => names,
+        Requires::TooMany => {
+            return Err(format!(
+                "this {kind} lists more than {MAX_REQUIRES} things it needs (`requires`), more than this RustGIS reads. It may be damaged, or from a newer RustGIS: update RustGIS to {open} it."
+            ));
+        }
+        Requires::NotNames => {
+            return Err(format!(
+                "this {kind} lists what it needs (`requires`) as something other than names, so this RustGIS can't tell whether it reads it. It may be damaged, or from a newer RustGIS: update RustGIS to {open} it."
+            ));
+        }
+    };
+    let mut unknown: Vec<String> = Vec::new();
+    for name in names {
+        if !CAPABILITIES.contains(&name.as_str()) && !unknown.contains(name) {
+            unknown.push(name.clone());
+        }
+    }
+    Ok(unknown)
+}
+
+/// A capability name as a refusal says it: line breaks, other control characters and the
+/// characters that reorder text as spaces, and `(unnamed)` for one with nothing else.
+fn capability_said(name: &str) -> String {
+    let shown: String = name.chars().map(rustgis_data::io::dbf_notice_char).collect();
+    let shown = shown.trim();
+    if shown.is_empty() { "(unnamed)".to_string() } else { shown.to_string() }
+}
+
+/// Whether a saved document's text, read for its format, is one to keep as written rather than
+/// rewrite through RustGIS's types. For a kind whose reader looks at `requires` and reads format 2
+/// (`reads_format_2`: projects and maps): of a format past [`READ_FORMAT`], or requiring anything,
+/// as the typed copy wouldn't keep the list, even of capabilities it knows. For the others (tasks,
+/// presentations, notebooks, models), whose typed copies drop what they don't know: of a format
+/// past [`FORMAT`]. A list (a legacy style file), or text whose `format` isn't a number, isn't one.
+pub(crate) fn kept_as_written(text: &str, reads_format_2: bool) -> bool {
+    if text.trim_start().starts_with('[') {
+        return false;
+    }
+    serde_json::from_str::<FileFormat>(text).is_ok_and(|h| {
+        let requires_nothing = match &h.requires {
+            Requires::Nothing => true,
+            Requires::Names(names) => names.is_empty(),
+            Requires::TooMany | Requires::NotNames => false,
+        };
+        if reads_format_2 { h.format > u64::from(READ_FORMAT) || !requires_nothing } else { h.format > u64::from(FORMAT) }
+    })
 }
 
 /// Refuse future document formats before typed deserialization or normalization. Missing
-/// metadata is legacy content; arrays include legacy style files. Writers remain unchanged
-/// until a change needs a newer format, at which point it must declare that format.
+/// metadata is legacy content; arrays include legacy style files. Up to [`READ_FORMAT`] is read,
+/// unless the document requires a capability this RustGIS doesn't know: that refusal names them.
+/// A change an older reader would lose names a capability in `requires` (see [`CAPABILITIES`]).
 pub(crate) fn check_format(text: &str, kind: &str) -> Result<(), String> {
+    check_format_up_to(text, kind, READ_FORMAT)
+}
+
+/// [`check_format`] for a kind of file whose format is its own, read up to `newest`: an ARutGIS
+/// layout file, which has had one of its own since 0.6.2 (`rustgis_map::layout::FILE_FORMAT`).
+pub(crate) fn check_format_up_to(text: &str, kind: &str, newest: u32) -> Result<(), String> {
     let max = max_bytes();
     if text.len() as u64 > max {
         return Err(format!("the {kind} file is too large (maximum {})", limit_said(max)));
@@ -691,8 +1019,34 @@ pub(crate) fn check_format(text: &str, kind: &str) -> Result<(), String> {
         return Ok(());
     }
     let header: FileFormat = serde_json::from_str(text).map_err(|e| format!("not a RustGIS {kind}: {e}"))?;
-    if header.format > u64::from(FORMAT) {
+    if header.format > u64::from(newest) {
         return Err(format!("this {kind} was saved by a newer RustGIS (format {}). Update RustGIS to open it.", header.format));
+    }
+    requires_known(&header.requires, kind, "open")
+}
+
+/// Refuse a document whose `requires` (`None` when it has none) lists a capability this RustGIS
+/// doesn't know, naming them, as [`check_format`] does: for files read as JSON values, such as
+/// models and web tools. `open` is what the refusal says to update RustGIS for ("import").
+pub(crate) fn check_requires(requires: Option<&serde_json::Value>, kind: &str, open: &str) -> Result<(), String> {
+    let requires = match requires {
+        None => Requires::Nothing,
+        Some(v) => Requires::deserialize(v).map_err(|e| format!("not a RustGIS {kind}: {e}"))?,
+    };
+    requires_known(&requires, kind, open)
+}
+
+/// Refuse what `requires` lists that this RustGIS doesn't know, each name said once.
+fn requires_known(requires: &Requires, kind: &str, open: &str) -> Result<(), String> {
+    let unknown = unknown_capabilities(requires, kind, open)?;
+    if !unknown.is_empty() {
+        let mut said: Vec<String> = Vec::new();
+        for name in unknown.iter().map(|n| capability_said(n)) {
+            if !said.contains(&name) {
+                said.push(name);
+            }
+        }
+        return Err(format!("this {kind} needs what this RustGIS can't read: {}. Update RustGIS to {open} it.", crate::names_said(&said)));
     }
     Ok(())
 }
@@ -725,6 +1079,8 @@ impl Project {
             read_notices: Vec::new(),
             format: FORMAT,
             name: name.into(),
+            origin_id: String::new(),
+            field_origin: None,
             maps: vec![Map::new("Map")],
             active_map: 0,
             tables: Vec::new(),
@@ -852,46 +1208,62 @@ impl Project {
     /// Adds a standalone table, and returns the id it got.
     pub fn add_table(&mut self, dataset: Dataset) -> u32 {
         let id = self.new_table_id();
-        self.tables.push(Table { id, dataset });
+        self.tables.push(Table::new(id, dataset));
         id
     }
 
     /// Adds a tool's output table in place of the tables of its name, as running the tool again
-    /// replaces its result: the first of them keeps its id, so a view open on it stays on it.
+    /// replaces its result: the first keeps its id, so an open view stays on it, but the fresh
+    /// runtime identity invalidates drafts that belonged to the previous contents.
     pub fn put_table(&mut self, dataset: Dataset) -> u32 {
         let id = match self.tables.iter().find(|t| t.name == dataset.name) {
             Some(t) => t.id,
             None => self.new_table_id(),
         };
         self.tables.retain(|t| t.name != dataset.name);
-        self.tables.push(Table { id, dataset });
+        self.tables.push(Table::new(id, dataset));
         id
     }
 
     /// Takes the notices of what reading the project changed, keeping those of the parts given
     /// (an import says only what it takes); the rest are dropped.
-    pub(crate) fn take_read_notices(&mut self, parts: &[ReadPart]) -> Vec<String> {
-        std::mem::take(&mut self.read_notices).into_iter().filter(|(part, _)| parts.contains(part)).map(|(_, n)| n).collect()
+    pub(crate) fn take_read_notices(&mut self, parts: &[ReadPart]) -> Vec<NoticeText> {
+        let mut notices: Vec<NoticeText> =
+            std::mem::take(&mut self.read_notices).into_iter().filter(|(part, _)| parts.contains(part)).map(|(_, n)| n).collect();
+        if parts.contains(&ReadPart::AreaExpressions)
+            && let Some(message) = crate::cmd::design::display_area_messages(self.maps.iter().flat_map(|map| map.layers.iter()))
+        {
+            notices.push(message.into());
+        }
+        notices
     }
 
     /// Repairs invariants after loading (at least one map; a valid active index). Returns a
-    /// notice for each kind of change made to the project's layouts, for the session to show.
+    /// notice for each kind of change that removed, cut or renamed something, for the session
+    /// to show.
     #[must_use]
     pub fn normalize(&mut self) -> Vec<String> {
-        self.repair(false)
+        self.normalize_text().into_iter().map(|n| n.english()).collect()
+    }
+
+    /// The same repairs with deferred translation for session-owned interface notices.
+    pub(crate) fn normalize_text(&mut self) -> Vec<NoticeText> {
+        self.repair(false).into_iter().map(|(_, n)| n).collect()
     }
 
     /// [`Project::normalize`] for a project read from its file, which also opens its plain COG
     /// tile layers (a project saved before GeoTIFFs read in place were raster layers, or with
     /// those `map.addTiles` adds) as raster layers read in place: as the project opens only. A
     /// later repair (a layer file added, maps imported) leaves a tile layer added this session
-    /// as it is. Returns a notice for each kind of change made to the project's layouts.
-    pub(crate) fn normalize_opened(&mut self) -> Vec<String> {
+    /// as it is. Returns a notice for each kind of change that removed, cut or renamed
+    /// something, with the part of the project it is about.
+    pub(crate) fn normalize_opened(&mut self) -> Vec<(ReadPart, NoticeText)> {
         self.repair(true)
     }
 
-    /// Repairs the project; returns a notice per kind of change made to its layouts.
-    fn repair(&mut self, opened: bool) -> Vec<String> {
+    /// Reports removed or shortened content, renamed items and repaired group display settings
+    /// with their affected part. Table ids absent from older formats are filled in for compatibility.
+    fn repair(&mut self, opened: bool) -> Vec<(ReadPart, NoticeText)> {
         if self.maps.is_empty() {
             self.maps.push(Map::new("Map"));
         }
@@ -925,40 +1297,65 @@ impl Project {
             }
         }
         let when = if opened { "while opening the project" } else { "while checking the project" };
-        let notices = layout_notices(&self.name, when, layouts_dropped, &repairs);
+        let mut notices: Vec<(ReadPart, NoticeText)> =
+            layout_notices(&self.name, when, layouts_dropped, &repairs).into_iter().map(|n| (ReadPart::Layouts, n.into())).collect();
+        let mut done = Repaired::default();
         // Files skip the commands' limits, and notebooks and presentations are found (and
         // notebooks trusted) by name, so names are made unique.
-        for r in &mut self.reports {
-            r.clamp();
+        for (what, len) in [
+            ("report(s)", self.reports.len()),
+            ("presentation(s)", self.presentations.len()),
+            ("notebook(s)", self.notebooks.len()),
+            ("deep-learning model(s)", self.dl_models.len()),
+            ("shared item(s)", self.shared.len()),
+            ("data store(s)", self.data_stores.len()),
+            ("color ramp(s)", self.ramps.len()),
+        ] {
+            done.over_limit.add_kind(len.saturating_sub(MAX_ITEMS), what);
         }
         self.reports.truncate(MAX_ITEMS);
         self.presentations.truncate(MAX_ITEMS);
         self.notebooks.truncate(MAX_ITEMS);
         self.dl_models.truncate(MAX_ITEMS);
-        self.dl_models.retain(|m| m.model.validate().is_ok());
+        self.dl_models.retain(|m| {
+            let valid = m.model.validate().is_ok();
+            if !valid {
+                done.models_removed.add(1, &m.name);
+            }
+            valid
+        });
         self.shared.truncate(MAX_ITEMS);
         self.data_stores.truncate(MAX_ITEMS);
+        for r in &mut self.reports {
+            let repairs = r.clamp();
+            done.content(repairs, &r.name);
+        }
         for p in &mut self.presentations {
-            p.clamp();
+            let repairs = p.clamp();
+            done.content(repairs, &p.name);
         }
         for nb in &mut self.notebooks {
-            nb.clamp();
+            let repairs = nb.clamp();
+            done.content(repairs, &nb.name);
         }
-        unique_names(self.presentations.iter_mut().map(|p| &mut p.name));
-        unique_names(self.notebooks.iter_mut().map(|nb| &mut nb.name));
-        unique_names(self.dl_models.iter_mut().map(|m| &mut m.name));
+        done.renamed.add_kind(unique_names(self.presentations.iter_mut().map(|p| &mut p.name)), "presentation(s)");
+        done.renamed.add_kind(unique_names(self.notebooks.iter_mut().map(|nb| &mut nb.name)), "notebook(s)");
+        done.renamed.add_kind(unique_names(self.dl_models.iter_mut().map(|m| &mut m.name)), "deep-learning model(s)");
         // Custom ramps are found by name, before them the built-in schemes: a hand edit's repeated
         // or built-in name gets a suffix, so every ramp stays reachable.
         self.ramps.truncate(MAX_ITEMS);
         for r in &mut self.ramps {
             if rustgis_map::Ramp::from_name(r.name()).is_some() {
+                done.ramps_suffixed.add(1, r.name());
                 r.name_mut().push_str(" (custom)");
             }
         }
-        unique_names(self.ramps.iter_mut().map(|r| r.name_mut()));
+        done.renamed.add_kind(unique_names(self.ramps.iter_mut().map(|r| r.name_mut())), "color ramp(s)");
         for m in &mut self.maps {
             // Groups from project files must stay shallow, bounded and unambiguous. Children
             // refer to existing ordinary layers; no layer belongs to two groups.
+            let groups_before = m.service_groups.len() + m.groups.len();
+            let (mut members_removed, mut names_cut) = (0usize, 0usize);
             m.service_groups.truncate(2000);
             let layer_ids: std::collections::HashSet<u32> = m.layers.iter().map(|l| l.id).collect();
             let mut ids = layer_ids.clone();
@@ -967,9 +1364,12 @@ impl Project {
                 if g.id == 0 || g.url.len() > 8192 || !ids.insert(g.id) {
                     return false;
                 }
+                names_cut += usize::from(g.name.chars().nth(200).is_some());
                 g.name = g.name.chars().take(200).collect();
+                let members = g.children.len();
                 g.children.truncate(2000);
                 g.children.retain(|c| layer_ids.contains(&c.layer) && children.insert(c.layer));
+                members_removed += members - g.children.len();
                 true
             });
             // Layer groups likewise: ids of their own, children that exist and are in no other
@@ -980,20 +1380,35 @@ impl Project {
                 if g.id == 0 || !ids.insert(g.id) {
                     return false;
                 }
+                names_cut += usize::from(g.name.chars().nth(200).is_some());
                 g.name = g.name.chars().take(200).collect();
+                let (transparency, min_scale, max_scale) = (g.transparency, g.min_scale, g.max_scale);
                 g.transparency = if g.transparency.is_finite() { g.transparency.clamp(0.0, 100.0) } else { 0.0 };
                 g.min_scale = g.min_scale.filter(|v| v.is_finite() && *v > 0.0);
                 g.max_scale = g.max_scale.filter(|v| v.is_finite() && *v > 0.0);
+                done.group_settings.add(
+                    usize::from(transparency != g.transparency)
+                        + usize::from(min_scale != g.min_scale)
+                        + usize::from(max_scale != g.max_scale),
+                    &m.name,
+                );
+                let members = g.children.len();
                 g.children.retain(|c| layer_ids.contains(c) && children.insert(*c));
+                members_removed += members - g.children.len();
                 true
             });
-            m.tidy_groups();
+            done.groups_removed.add(groups_before - m.service_groups.len() - m.groups.len(), &m.name);
+            done.members_removed.add(members_removed, &m.name);
+            done.group_names_cut.add(names_cut, &m.name);
+            done.group_parents.add(m.tidy_groups(), &m.name);
             // A projection this version can't use (a hand edit, or a newer file) falls back to
             // Web Mercator rather than being named while another is drawn.
             if let rustgis_map::Projection::Custom(code) = &m.projection
                 && let Err(e) = rustgis_map::projection::Projector::new(code)
             {
                 log::warn!("{}: {e}; using Web Mercator", m.name);
+                done.projection_lost.add(1, &m.name);
+                done.bookmarks_kept |= !m.bookmarks.is_empty();
                 m.projection = rustgis_map::Projection::WebMercator;
                 // The camera is in the lost projection's units: start from the whole world.
                 m.camera = rustgis_map::Camera::world();
@@ -1007,7 +1422,24 @@ impl Project {
                 }
             }
             // Tile layers with an address that can't be fetched (a hand edit) are dropped.
-            m.tiles.retain_mut(|t| t.repair().map_err(|e| log::warn!("{}: {e}", m.name)).is_ok());
+            let mut kept_tiles = 0usize;
+            m.tiles.retain_mut(|t| match t.repair_counted() {
+                Ok(repairs) => {
+                    let converted = opened && crate::cmd::tiles::cog_tile_is_raster(t);
+                    if converted || kept_tiles < rustgis_map::tiles::MAX_TILE_LAYERS {
+                        done.tile(repairs, &t.name);
+                    }
+                    if !converted {
+                        kept_tiles += 1;
+                    }
+                    true
+                }
+                Err(e) => {
+                    log::warn!("{}: {e}", m.name);
+                    done.tiles_removed.add(1, &t.name);
+                    false
+                }
+            });
             // GeoTIFFs read in place are raster layers (a project from before saved tile layers),
             // so they don't count toward the tile layers kept. As the project opens only: a tile
             // layer added this session stays one until the project is opened again.
@@ -1030,6 +1462,7 @@ impl Project {
                     }
                 }
             }
+            done.tiles_over_limit.add(m.tiles.len().saturating_sub(rustgis_map::tiles::MAX_TILE_LAYERS), &m.name);
             m.tiles.truncate(rustgis_map::tiles::MAX_TILE_LAYERS);
             #[cfg(not(target_arch = "wasm32"))]
             for t in &mut m.tiles {
@@ -1085,6 +1518,8 @@ impl Project {
                 }
                 l.normalize_selection();
                 let fields = l.dataset.fields.len();
+                let extra = l.dataset.features.iter().filter(|f| f.attrs.len() > fields).count();
+                done.values_cut.add(extra, &l.name);
                 for f in &mut l.dataset.features {
                     f.attrs.resize(fields, rustgis_data::Value::Null);
                 }
@@ -1092,6 +1527,7 @@ impl Project {
             }
             read_in_place(m);
         }
+        notices.extend(done.notices(&self.name, when));
         notices
     }
 
@@ -1194,23 +1630,28 @@ impl Project {
 
     /// Reads a project from its JSON text (a browser upload).
     pub fn from_json(text: &str) -> Result<Project, String> {
-        Self::read_json(text, true, None, true)
+        Self::read_json(text, true, None, true, None)
     }
 
     /// Reads imported JSON (including package contents) without restoring a saved file's secrets.
     pub(crate) fn from_import_json(text: &str, dir: Option<&Path>) -> Result<Project, String> {
-        Self::read_json(text, false, dir, true)
+        Self::read_json(text, false, dir, true, None)
+    }
+
+    /// Repairs only the maps the import will retain, so excluded maps produce no notices.
+    pub(crate) fn from_import_maps_json(text: &str, dir: Option<&Path>, limit: usize) -> Result<Project, String> {
+        Self::read_json(text, false, dir, true, Some(limit))
     }
 
     /// Peer census must precede normalization: duplicate ids cannot become proof of a unique
     /// matching slot after the normalizer renumbers or drops them. Saved-text restore is absent.
     pub(crate) fn from_peer_raw(text: &str) -> Result<Project, String> {
-        Self::read_json(text, false, None, false)
+        Self::read_json(text, false, None, false, None)
     }
 
     /// Validates compatibility before typed decoding. Saved files may restore exact fields;
     /// peer input stays unnormalized until its slot census has rejected ambiguous identities.
-    fn read_json(text: &str, restore: bool, dir: Option<&Path>, normalize: bool) -> Result<Project, String> {
+    fn read_json(text: &str, restore: bool, dir: Option<&Path>, normalize: bool, map_limit: Option<usize>) -> Result<Project, String> {
         check_format(text, "project")?;
         let mut p: Project = serde_json::from_str(text).map_err(|e| {
             let msg = e.to_string();
@@ -1220,8 +1661,16 @@ impl Project {
                 format!("not a RustGIS project: {msg}")
             }
         })?;
+        let mut area_ids = std::collections::HashSet::new();
+        if (!p.origin_id.is_empty() && !valid_field_id(&p.origin_id))
+            || p.field_origin.as_ref().is_some_and(|origin| !valid_field_id(&origin.project) || !valid_field_id(&origin.area))
+            || p.offline_areas.iter().any(|area| !area.id.is_empty() && (!valid_field_id(&area.id) || !area_ids.insert(area.id.as_str())))
+        {
+            return Err("not a RustGIS project: an offline field identity is invalid or duplicated".into());
+        }
         p.ensure_imports_complete().map_err(|_| "a project file cannot contain runtime GeoLibre download reservations".to_string())?;
-        if p.format > FORMAT {
+        // (A backstop: `check_format` has refused it already.)
+        if p.format > READ_FORMAT {
             return Err(format!("this project was saved by a newer RustGIS (format {}). Update RustGIS to open it.", p.format));
         }
         if restore {
@@ -1235,9 +1684,75 @@ impl Project {
         if let Some(d) = dir.and_then(Path::to_str) {
             p.resolve_paths(d);
         }
-        let layout_notices = if normalize { p.normalize_opened() } else { Vec::new() };
-        p.read_notices = label_losses::notices(text, &p)?;
-        p.read_notices.extend(layout_notices.into_iter().map(|n| (ReadPart::Layouts, n)));
+        let excluded_maps = map_limit.map_or(0, |limit| p.maps.len().saturating_sub(limit));
+        if let Some(limit) = map_limit {
+            p.maps.truncate(limit);
+        }
+        let repair_notices = if normalize { p.normalize_opened() } else { Vec::new() };
+        p.read_notices =
+            label_losses::notices_for_maps(text, &p, map_limit.is_some())?.into_iter().map(|(part, text)| (part, text.into())).collect();
+        p.read_notices.extend(repair_notices);
+        // What `gp.env` refuses, which only a hand-edited file holds, is left out, and said: a system
+        // in degrees or geocentric (its cell size would be read in the wrong units) or one this
+        // version can't project to, and a cell size that isn't above 0.
+        if let Some(g) = p.gp_env.projected.filter(|g| g.crs.is_geographic() || g.crs.is_geocentric() || g.crs.transformer().is_err()) {
+            p.gp_env.projected = None;
+            p.read_notices.push((
+                ReadPart::Items,
+                NoticeText::format(
+                    "the environment's coordinate system {crs} isn't a projected one this version can use, so it was left out",
+                    [("crs", g.crs.label().into())],
+                ),
+            ));
+        }
+        // A measured graticule's system `map.graticule` would refuse (too long, unreadable here, or
+        // in degrees), from a hand-edited file or one saved where it reads (a PROJ string the web
+        // app can't): left out, said, and the graticule falls back to the map's own system.
+        // One notice for all of them, with how many and which.
+        let mut left_out = Vec::new();
+        for m in &mut p.maps {
+            let Some(c) = m.graticule_crs.take() else { continue };
+            let usable = c.trim().chars().nth(rustgis_map::layout::MAX_GRID_CRS).is_none()
+                && rustgis_data::raster::Crs::parse(c.trim())
+                    .is_ok_and(|r| !r.is_geographic() && !r.is_geocentric() && r.transformer().is_ok());
+            if usable {
+                m.graticule_crs = Some(c);
+            } else {
+                left_out.push(format!("{} ({})", m.name, rustgis_map::graticule::short_crs(&c)));
+            }
+        }
+        if !left_out.is_empty() {
+            let n = left_out.len();
+            let mut which = left_out.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+            if n > 3 {
+                which = format!("{which} and {} more", n - 3);
+            }
+            p.read_notices.push((
+                ReadPart::Maps,
+                NoticeText::format(
+                    "{n} map(s): the measured graticule's coordinate system isn't a projected one this version can use, so it was left out (the map's own, else the UTM zone at the centre, is used): {which}",
+                    [("n", n.to_string().into()), ("which", which.into())],
+                ),
+            ));
+        }
+        if let Some(g) = p.gp_env.projected.as_mut()
+            && let Some(c) = g.cell_size.filter(|c| !(c.is_finite() && *c > 0.0))
+        {
+            g.cell_size = None;
+            p.read_notices.push((
+                ReadPart::Items,
+                NoticeText::format(
+                    "the environment's cell size {size} isn't above 0, so it was left out",
+                    [("size", c.to_string().into())],
+                ),
+            ));
+        }
+        if excluded_maps > 0 {
+            p.read_notices.push((
+                ReadPart::Maps,
+                NoticeText::format("{n} map(s) beyond the import limit left out", [("n", excluded_maps.to_string().into())]),
+            ));
+        }
         Ok(p)
     }
 
@@ -1274,7 +1789,7 @@ impl Project {
         let bytes = read_file(path, max)?;
         let text = String::from_utf8(bytes).map_err(|_| format!("{} isn't a RustGIS project", path.display()))?;
         let dir = std::path::absolute(path).ok().and_then(|p| p.parent().map(Path::to_path_buf));
-        Self::read_json(&text, true, dir.as_deref(), true)
+        Self::read_json(&text, true, dir.as_deref(), true, None)
     }
 }
 
@@ -1341,15 +1856,28 @@ pub const MAX_ITEMS: usize = 1000;
 /// The part of a project a read notice is about, so an import says only what it takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReadPart {
+    AreaExpressions,
     Labels,
     Diagrams,
     /// Diagrams that won't show for their layer's aggregation or extrusion (#1596).
     HiddenDiagrams,
     Layouts,
+    /// The maps' groups, projections, tile layers and attribute values.
+    Maps,
+    /// The project's other lists: reports, presentations, notebooks, models, ramps and the like.
+    Items,
 }
 
 /// Every part: a whole project opened.
-pub(crate) const ALL_PARTS: [ReadPart; 4] = [ReadPart::Labels, ReadPart::Diagrams, ReadPart::HiddenDiagrams, ReadPart::Layouts];
+pub(crate) const ALL_PARTS: [ReadPart; 7] = [
+    ReadPart::AreaExpressions,
+    ReadPart::Labels,
+    ReadPart::Diagrams,
+    ReadPart::HiddenDiagrams,
+    ReadPart::Layouts,
+    ReadPart::Maps,
+    ReadPart::Items,
+];
 
 /// The most layouts a project keeps (`layout.*` commands refuse to make more).
 pub(crate) const MAX_LAYOUTS: usize = 200;
@@ -1369,11 +1897,265 @@ fn layout_names(
     of: impl Fn(&rustgis_map::layout::LayoutRepairs) -> usize,
 ) -> String {
     let names: Vec<&str> = repairs.iter().filter(|(_, r)| of(r) > 0).map(|(n, _)| n.as_str()).collect();
-    let mut text = names.iter().take(3).map(|n| format!("\"{}\"", short_name(n))).collect::<Vec<_>>().join(", ");
-    if names.len() > 3 {
-        text.push_str(&format!(" and {} more", names.len() - 3));
+    quoted_names(names.len(), names.iter().take(3).copied())
+}
+
+/// The first three of `total` names, quoted and shortened, then how many more there are.
+fn quoted_names<'a>(total: usize, first: impl Iterator<Item = &'a str>) -> String {
+    let mut text = first.take(3).map(|n| format!("\"{}\"", short_name(n))).collect::<Vec<_>>().join(", ");
+    if total > 3 {
+        text.push_str(&format!(" and {} more", total - 3));
     }
     text
+}
+
+/// A count of one kind of repair and where it was made: the first few names (of maps, layers or
+/// items) and how many there were in all.
+#[derive(Default)]
+struct Tally {
+    count: usize,
+    names: Vec<String>,
+    places: usize,
+    kinds: Vec<(usize, &'static str)>,
+}
+
+impl Tally {
+    /// Adds `n` repairs made in `place`; nothing when `n` is 0.
+    fn add(&mut self, n: usize, place: &str) {
+        if n == 0 {
+            return;
+        }
+        self.count = self.count.saturating_add(n);
+        self.places += 1;
+        if self.names.len() < 3 {
+            self.names.push(place.to_string());
+        }
+    }
+
+    /// Adds `n` repairs of the kind of item `what` (as "notebook(s)"); nothing when `n` is 0.
+    /// Every kind is named: a tally has a few kinds at most.
+    fn add_kind(&mut self, n: usize, what: &'static str) {
+        if n > 0 {
+            self.count = self.count.saturating_add(n);
+            self.places += 1;
+            self.kinds.push((n, what));
+        }
+    }
+
+    /// Literal project names and a translatable count of places beyond the first three.
+    fn places(&self) -> NoticeText {
+        let names: NoticeText = self.names.iter().map(|name| format!("\"{}\"", short_name(name))).collect::<Vec<_>>().join(", ").into();
+        if self.places > 3 {
+            NoticeText::format("{names} and {n} more", [("names", names), ("n", (self.places - 3).to_string().into())])
+        } else {
+            names
+        }
+    }
+
+    /// A counted list whose item-kind labels are translated independently of saved names.
+    fn kinds(&self) -> NoticeText {
+        NoticeText::list(
+            self.kinds
+                .iter()
+                .map(|(n, kind)| NoticeText::format("{n} {kind}", [("n", n.to_string().into()), ("kind", NoticeText::term(kind))])),
+        )
+    }
+}
+
+/// The same content notices for a standalone import, published only after it succeeds.
+pub(crate) fn content_notices(repairs: rustgis_map::content::ContentRepairs, name: &str) -> Vec<NoticeText> {
+    let mut done = Repaired::default();
+    done.content(repairs, name);
+    done.notices(name, "while importing the item").into_iter().map(|(_, n)| n).collect()
+}
+
+/// Successful tile additions use the same counted, redacted notices as project reads.
+pub(crate) fn tile_notices(repairs: rustgis_map::tiles::TileRepairs, name: &str) -> Vec<NoticeText> {
+    let mut done = Repaired::default();
+    done.tile(repairs, name);
+    done.notices(name, "while checking the tile layer").into_iter().map(|(_, n)| n).collect()
+}
+
+/// What [`Project::repair`] removed, cut or renamed outside the layouts, for its notices.
+#[derive(Default)]
+struct Repaired {
+    over_limit: Tally,
+    models_removed: Tally,
+    renamed: Tally,
+    ramps_suffixed: Tally,
+    groups_removed: Tally,
+    members_removed: Tally,
+    group_names_cut: Tally,
+    group_settings: Tally,
+    group_parents: Tally,
+    content_text: Tally,
+    content_filters: Tally,
+    content_entries: Tally,
+    content_images: Tally,
+    content_settings: Tally,
+    projection_lost: Tally,
+    /// A map whose projection was lost has bookmarks, which stay in that projection's units.
+    bookmarks_kept: bool,
+    tile_addresses: Tally,
+    tile_entries: Tally,
+    tile_styles: Tally,
+    tile_text: Tally,
+    tile_settings: Tally,
+    tiles_removed: Tally,
+    tiles_over_limit: Tally,
+    values_cut: Tally,
+}
+
+impl Repaired {
+    /// Groups successful tile repairs by kind without keeping any saved addresses.
+    fn tile(&mut self, repairs: rustgis_map::tiles::TileRepairs, name: &str) {
+        self.tile_addresses.add(repairs.addresses, name);
+        self.tile_entries.add(repairs.entries, name);
+        self.tile_styles.add(repairs.styles, name);
+        self.tile_text.add(repairs.text, name);
+        self.tile_settings.add(repairs.settings, name);
+    }
+
+    /// Keeps loss kinds separate while aggregating affected item names across their clamps.
+    fn content(&mut self, repairs: rustgis_map::content::ContentRepairs, name: &str) {
+        self.content_text.add(repairs.text, name);
+        self.content_filters.add(repairs.filters, name);
+        self.content_entries.add(repairs.entries, name);
+        self.content_images.add(repairs.images, name);
+        self.content_settings.add(repairs.settings, name);
+    }
+
+    /// One deferred notice per kind: only trusted templates and kind labels are translated.
+    fn notices(&self, name: &str, when: &'static str) -> Vec<(ReadPart, NoticeText)> {
+        let name = short_name(name);
+        let mut notices = Vec::new();
+        let mut say = |part, tally: &Tally, text: NoticeText| {
+            if tally.count > 0 {
+                notices.push((part, NoticeText::format("{name}: {message}", [("name", name.clone().into()), ("message", text)])));
+            }
+        };
+        let message = |key, t: &Tally, extra: Vec<(&'static str, NoticeText)>| {
+            let mut args = vec![("n", t.count.to_string().into()), ("places", t.places()), ("when", NoticeText::term(when))];
+            args.extend(extra);
+            NoticeText::format(key, args)
+        };
+        let t = &self.over_limit;
+        say(
+            ReadPart::Items,
+            t,
+            message(
+                "{kinds} beyond the {limit} of each a project holds removed {when}",
+                t,
+                vec![("kinds", t.kinds()), ("limit", MAX_ITEMS.to_string().into())],
+            ),
+        );
+        for (t, key) in [
+            (&self.content_text, "{n} report, presentation or notebook text field(s) shortened to supported limits {when} ({places})"),
+            (&self.content_filters, "{n} report filter(s) shortened to 2000 characters; included records may change {when} ({places})"),
+            (
+                &self.content_entries,
+                "{n} report field(s), group(s), statistic(s), section(s), presentation page(s) or notebook cell(s) beyond supported limits removed {when} ({places})",
+            ),
+            (&self.content_images, "{n} presentation picture(s) or video poster(s) beyond the size limit removed {when} ({places})"),
+            (
+                &self.content_settings,
+                "{n} report or presentation page-size, timing or map-view setting(s) brought into supported ranges {when} ({places})",
+            ),
+        ] {
+            say(ReadPart::Items, t, message(key, t, vec![]));
+        }
+        let t = &self.models_removed;
+        say(ReadPart::Items, t, message("{n} deep-learning model(s) this version can't use removed {when} ({places})", t, vec![]));
+        let t = &self.renamed;
+        say(ReadPart::Items, t, message("names used more than once renamed with a number {when}: {kinds}", t, vec![("kinds", t.kinds())]));
+        let t = &self.ramps_suffixed;
+        say(
+            ReadPart::Items,
+            t,
+            message("{n} color ramp(s) named like a built-in ramp renamed with \" (custom)\" {when} ({places})", t, vec![]),
+        );
+        let t = &self.groups_removed;
+        say(
+            ReadPart::Maps,
+            t,
+            message(
+                "{n} layer group(s) with no id, a repeated id, an over-long address or beyond the limit removed {when} (in {places})",
+                t,
+                vec![],
+            ),
+        );
+        let t = &self.members_removed;
+        say(
+            ReadPart::Maps,
+            t,
+            message(
+                "{n} group member(s) for a missing layer, a layer already in another group or beyond the limit removed {when} (in {places})",
+                t,
+                vec![],
+            ),
+        );
+        let t = &self.group_names_cut;
+        say(ReadPart::Maps, t, message("{n} group name(s) cut to 200 characters {when} (in {places})", t, vec![]));
+        let t = &self.group_settings;
+        say(
+            ReadPart::Maps,
+            t,
+            message(
+                "{n} group transparency or scale-range setting(s) replaced or removed to fit supported values {when} (in {places})",
+                t,
+                vec![],
+            ),
+        );
+        let t = &self.group_parents;
+        say(ReadPart::Maps, t, message("{n} group(s) with an invalid parent moved to the top level {when} (in {places})", t, vec![]));
+        let t = &self.projection_lost;
+        let bookmarks = if self.bookmarks_kept {
+            NoticeText::term("; their bookmarks are still in the old projection's units")
+        } else {
+            String::new().into()
+        };
+        say(
+            ReadPart::Maps,
+            t,
+            message(
+                "{n} map(s) with a projection this version can't use drawn in Web Mercator from the whole world {when} ({places}){bookmarks}",
+                t,
+                vec![("bookmarks", bookmarks)],
+            ),
+        );
+        for (t, key) in [
+            (&self.tile_addresses, "{n} invalid, repeated or excess dated tile address(es) removed {when} ({places})"),
+            (&self.tile_entries, "{n} invalid or excess tile layer-name or subdomain entry(ies) removed {when} ({places})"),
+            (&self.tile_styles, "{n} unreadable tile style definition(s) removed {when}; the tiles keep their colours ({places})"),
+            (&self.tile_text, "{n} tile address, name, attribution or identifier field(s) shortened or replaced {when} ({places})"),
+            (&self.tile_settings, "{n} tile coverage or numeric setting(s) removed or brought into range {when} ({places})"),
+        ] {
+            say(ReadPart::Maps, t, message(key, t, vec![]));
+        }
+        let t = &self.tiles_removed;
+        say(ReadPart::Maps, t, message("{n} tile layer(s) with an address that can't be used removed {when} ({places})", t, vec![]));
+        let t = &self.tiles_over_limit;
+        say(
+            ReadPart::Maps,
+            t,
+            message(
+                "{n} tile layer(s) beyond the {limit} a map holds removed {when} (in {places})",
+                t,
+                vec![("limit", rustgis_map::tiles::MAX_TILE_LAYERS.to_string().into())],
+            ),
+        );
+        let t = &self.values_cut;
+        say(
+            ReadPart::Maps,
+            t,
+            message(
+                "{n} feature(s) with more attribute values than their layer has fields lost the extra values {when} (in {places})",
+                t,
+                vec![],
+            ),
+        );
+        notices
+    }
 }
 
 /// One notice per kind of change [`Project::repair`] made to the layouts of a project read from
@@ -1401,7 +2183,7 @@ pub(crate) fn layout_notices(
     let cut = total(|r| r.elements_cut);
     if cut > 0 {
         notices.push(format!(
-            "{name}: {cut} layout element(s) with a name, text, polygon points or legend exclusions cut to their limits {when} (in {})",
+            "{name}: {cut} layout element(s) with a name, text, polygon points, legend exclusions or legend labels cut to their limits {when} (in {})",
             layout_names(repairs, |r| r.elements_cut)
         ));
     }
@@ -1419,6 +2201,13 @@ pub(crate) fn layout_notices(
             layout_names(repairs, |r| r.page_adjusted)
         ));
     }
+    let mgrs = total(|r| r.mgrs_off);
+    if mgrs > 0 {
+        notices.push(format!(
+            "{name}: MGRS labels turned off on {mgrs} map frame grid(s) that weren't measured grids in a WGS 84 UTM zone (named by its EPSG code) {when} (in {})",
+            layout_names(repairs, |r| r.mgrs_off)
+        ));
+    }
     let series = total(|r| r.series_removed);
     if series > 0 {
         notices.push(format!(
@@ -1431,13 +2220,16 @@ pub(crate) fn layout_notices(
 
 /// Renames names repeated (ignoring case) after their first use: "Tour", "Tour 2", …. Each base
 /// name remembers the last number it gave, so many repeats cost no more than a few each.
-fn unique_names<'a>(names: impl Iterator<Item = &'a mut String>) {
+/// Returns how many it renamed.
+fn unique_names<'a>(names: impl Iterator<Item = &'a mut String>) -> usize {
     let mut seen = std::collections::HashSet::new();
     let mut next: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut renamed = 0;
     for name in names {
         if seen.insert(name.to_ascii_lowercase()) {
             continue;
         }
+        renamed += 1;
         let base = name.clone();
         let k = next.entry(base.to_ascii_lowercase()).or_insert(1);
         loop {
@@ -1448,10 +2240,12 @@ fn unique_names<'a>(names: impl Iterator<Item = &'a mut String>) {
             }
         }
     }
+    renamed
 }
 
 // Durable ownership is classified here so private fields cannot disappear from the inventory.
 use crate::durable::{Durable, FieldMut, Leaf, Owner, Prepare};
+use crate::notice_text::NoticeText;
 
 impl Durable for Project {
     /// Offers classified whole fields once, before any live mutation.
@@ -1460,6 +2254,8 @@ impl Durable for Project {
             read_notices: _,
             format: _,
             name: _,
+            origin_id: _,
+            field_origin: _,
             maps,
             active_map: _,
             tables,
@@ -1488,7 +2284,7 @@ impl Durable for Project {
             p.child(Owner::Map(i), v);
         }
         for (i, v) in offline_areas.iter().enumerate() {
-            let OfflineArea { name: _, map: _, extent: _, created: _, synced: _, data } = v;
+            let OfflineArea { id: _, name: _, map: _, extent: _, created: _, synced: _, data } = v;
             p.child(Owner::Area(i), data);
         }
         for (i, v) in tables.iter().enumerate() {
@@ -1531,7 +2327,7 @@ impl Durable for Project {
 impl Durable for Table {
     /// Offers classified whole fields once, before any live mutation.
     fn prepare(&self, p: &mut Prepare<'_>) {
-        let Self { id: _, dataset } = self;
+        let Self { id: _, dataset, instance_id: _ } = self;
         let Dataset {
             name: _,
             geometry_type: _,
@@ -1546,6 +2342,7 @@ impl Durable for Table {
         if let Some(v) = provenance {
             p.string(Leaf::Table, v, true, rustgis_map::paths::is_local(v));
         }
+        p.count_numbers(dataset);
     }
 
     /// Resolves a prepared location through owned fields, without allocation or policy.
@@ -1633,6 +2430,31 @@ fn project_text(p: &Project) -> Result<String, String> {
 }
 
 #[cfg(test)]
+mod requires_tests {
+    use super::*;
+
+    fn requires(names: serde_json::Value) -> Requires {
+        serde_json::from_value::<FileFormat>(serde_json::json!({"format": 2, "requires": names})).map(|h| h.requires).unwrap_or_default()
+    }
+
+    /// At most [`MAX_REQUIRES`] entries are read, and a long name keeps only its start.
+    #[test]
+    fn requires_is_read_within_its_bounds() {
+        let names = |n: usize| serde_json::Value::from((0..n).map(|i| format!("c{i}")).collect::<Vec<_>>());
+        assert!(matches!(requires(names(MAX_REQUIRES)), Requires::Names(n) if n.len() == MAX_REQUIRES));
+        assert!(matches!(requires(names(MAX_REQUIRES + 1)), Requires::TooMany));
+        // A name of a million characters is kept as its first 128 bytes and `…`; a long name of
+        // characters of three bytes is cut on a boundary, and a short one kept whole.
+        let Requires::Names(n) = requires(serde_json::json!(["y".repeat(1_000_000), "名".repeat(50), "名".repeat(42)])) else { panic!() };
+        assert_eq!(n[0], format!("{}…", "y".repeat(MAX_CAPABILITY_BYTES)));
+        assert_eq!(n[1], format!("{}…", "名".repeat(42)));
+        assert_eq!(n[2], "名".repeat(42));
+        // The first entry that isn't a name ends the reading.
+        assert!(matches!(requires(serde_json::json!(["a", 1, "b"])), Requires::NotNames));
+    }
+}
+
+#[cfg(test)]
 mod limit_tests {
     use super::*;
 
@@ -1698,9 +2520,30 @@ mod limit_tests {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod login_binding_tests {
     use super::*;
+
+    #[test]
+    fn a_near_limit_encoded_legend_survives_save_and_recovery_unbinding() {
+        use rustgis_data::{login_address, ogc::Legend};
+        let document = login_address::bind("0123456789abcdef", "https://maps.test", "https://maps.test/wms").unwrap();
+        let prefix = "https://maps.test/legend?name=";
+        let raw = format!("{prefix}{}x", " ".repeat(rustgis_map::tiles::MAX_LEGEND_URL - prefix.len() - 1));
+        let bound = login_address::inherit(&document, &raw);
+        let mut tile = rustgis_map::TileLayer::new("Legend", rustgis_map::tiles::TileKind::Raster, "https://maps.test/{z}/{x}/{y}.png");
+        tile.legends = rustgis_map::tiles::checked_legends([Legend { url: bound.clone(), ..Default::default() }]);
+        assert_eq!(tile.legends.len(), 1);
+        let mut project = Project::default();
+        project.map_mut().tiles.push(tile);
+        let (saved, _) = project.saved_text(None).unwrap();
+        for text in [saved, project.recovery_text().unwrap()] {
+            assert!(!text.contains(login_address::PREFIX));
+            let opened = Project::from_json(&text).unwrap();
+            let legends = &opened.map().tiles[0].legends;
+            assert_eq!(legends.len(), 1, "unbinding must not make an accepted legend too long");
+            assert_eq!(legends[0].url, login_address::inner(&bound));
+        }
+    }
 
     #[test]
     fn saves_and_imports_strip_runtime_capabilities_including_recorded_urls() {

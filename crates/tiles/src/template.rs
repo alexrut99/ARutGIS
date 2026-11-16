@@ -149,12 +149,16 @@ pub fn expand(template: &str, t: TileId, tile_size: u32, tms: bool, subdomains: 
     let n = 1u64 << t.z.min(30);
     let flipped = n.saturating_sub(1).saturating_sub(u64::from(t.y));
     let (y, neg_y) = if tms { (flipped, u64::from(t.y)) } else { (u64::from(t.y), flipped) };
-    let pick = |opts: &[&str]| -> String {
+    // A chosen host or switch value that carries a URL delimiter would move the split between the
+    // authority and the rest of the address (a subdomain of `192.168.1.5/x?` reaches another host),
+    // so the delimiters are percent-encoded where the value goes in.
+    let pick = |opts: &[&str], authority: bool| -> String {
         if opts.is_empty() {
             return String::new();
         }
         let i = (u64::from(t.x) + u64::from(t.y)) as usize % opts.len();
-        opts.get(i).copied().unwrap_or_default().to_string()
+        let value = opts.get(i).copied().unwrap_or_default();
+        if authority { value.replace('/', "%2F").replace('?', "%3F").replace('#', "%23").replace('@', "%40") } else { value.to_string() }
     };
     let mut out = String::with_capacity(template.len() + 16);
     let mut rest = template;
@@ -167,6 +171,7 @@ pub fn expand(template: &str, t: TileId, tile_size: u32, tms: bool, subdomains: 
             break;
         };
         let token = after.get(..close).unwrap_or_default();
+        let authority = out.split_once("://").is_some_and(|(_, rest)| !rest.contains(['/', '?', '#']));
         let value = match token {
             "z" | "zoom" => Some(t.z.to_string()),
             "x" => Some(t.x.to_string()),
@@ -176,7 +181,7 @@ pub fn expand(template: &str, t: TileId, tile_size: u32, tms: bool, subdomains: 
             "s" => {
                 let subs: Vec<&str> =
                     if subdomains.is_empty() { vec!["a", "b", "c"] } else { subdomains.iter().map(String::as_str).collect() };
-                Some(pick(&subs))
+                Some(pick(&subs, authority))
             }
             "bbox-epsg-3857" => {
                 let e = t.extent();
@@ -185,7 +190,7 @@ pub fn expand(template: &str, t: TileId, tile_size: u32, tms: bool, subdomains: 
             "width" | "height" => Some(tile_size.to_string()),
             "r" => Some(String::new()),
             "ratio" => Some("1".into()),
-            _ => token.strip_prefix("switch:").map(|opts| pick(&opts.split(',').map(str::trim).collect::<Vec<_>>())),
+            _ => token.strip_prefix("switch:").map(|opts| pick(&opts.split(',').map(str::trim).collect::<Vec<_>>(), authority)),
         };
         match value {
             Some(v) => out.push_str(&v),
@@ -195,35 +200,88 @@ pub fn expand(template: &str, t: TileId, tile_size: u32, tms: bool, subdomains: 
         rest = after.get(close + 1..).unwrap_or_default();
     }
     out.push_str(rest);
+    if crate::cache::ceiling_for(template) == crate::address::Reach::Public
+        && crate::cache::ceiling_for(&out) != crate::address::Reach::Public
+    {
+        crate::cache::restrict_to_public(&out);
+    }
     out
 }
 
 /// Resolves `href` against the document at `base` (for addresses inside a style or TileJSON).
+/// An invalid bound base stays refused by request validation rather than resolving anonymously.
 pub fn join(base: &str, href: &str) -> String {
-    let href = crate::logins::inner(href);
+    let (plain_base, anonymous_base) = crate::s3::split_anonymous(base);
+    let (plain_href, anonymous_href) = crate::s3::split_anonymous(href);
+    if anonymous_base || anonymous_href {
+        if crate::s3::split_anonymous(plain_base).1 {
+            return base.to_string();
+        }
+        if crate::s3::split_anonymous(plain_href).1 {
+            return href.to_string();
+        }
+        // An anonymous child narrows authority, including when its parent chose an account.
+        let base = crate::logins::inner(rustgis_data::s3_address::inner(plain_base));
+        return crate::s3::anonymous(&join(base, plain_href));
+    }
+    // Only the supplying document's base carries authority. A link may name a resource,
+    // but neither a service-login nor an S3 selector in it can choose an account.
+    let href = match rustgis_data::login_address::parse(href) {
+        Ok(Some(bound)) => bound.url,
+        Err(_) => return href.to_string(),
+        Ok(None) => href,
+    };
+    let href = match rustgis_data::s3_address::parse(href) {
+        Ok(Some(bound)) => bound.url,
+        Err(_) => return href.to_string(),
+        Ok(None) => href,
+    };
+    match rustgis_data::s3_address::parse(base) {
+        Ok(Some(bound)) => {
+            let joined = join(bound.url, href);
+            return crate::address::inherit(base, &joined).unwrap_or_else(|_| {
+                // As for bound service logins, keep the actual derived address even when
+                // it exceeds the parser's limit. Request validation then refuses it; never
+                // substitute the parent document or drop the selected account.
+                format!("{}{}:{}:{}:{joined}", rustgis_data::s3_address::PREFIX, bound.binding, bound.endpoint.len(), bound.endpoint)
+            });
+        }
+        Err(_) => return base.to_string(),
+        Ok(None) => {}
+    }
     match rustgis_data::login_address::parse(base) {
         Ok(Some(bound)) => return crate::logins::inherit(base, &join(bound.url, href)),
         Err(_) => return base.to_string(),
         Ok(None) => {}
     }
-    if href.contains("://") {
-        return href.to_string();
-    }
-    let Some((scheme, rest)) = base.split_once("://") else { return href.to_string() };
-    let host_end = rest.find('/').unwrap_or(rest.len());
-    let host = rest.get(..host_end).unwrap_or(rest);
-    if let Some(path) = href.strip_prefix("//") {
-        return format!("{scheme}://{path}");
-    }
-    // The path (with `.` and `..` resolved, RFC 3986) and what follows it.
+    // URL-like text in the query or fragment is data, not an absolute reference.
     let (href_path, tail) = match href.find(['?', '#']) {
         Some(i) => (href.get(..i).unwrap_or(href), href.get(i..).unwrap_or("")),
         None => (href, ""),
     };
+    if href_path.contains("://") {
+        return href.to_string();
+    }
+    let Some((scheme, rest)) = base.split_once("://") else { return href.to_string() };
+    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let host = rest.get(..host_end).unwrap_or(rest);
+    if let Some(path) = href.strip_prefix("//") {
+        return format!("{scheme}://{path}");
+    }
     if href.starts_with('/') {
         return format!("{scheme}://{host}{}{tail}", remove_dots(href_path));
     }
     let path = rest.get(host_end..).unwrap_or("").split(['?', '#']).next().unwrap_or("");
+    if href_path.is_empty() {
+        // RFC 3986 §5.2.2: an empty reference path keeps the document, and keeps its
+        // query only when the reference supplies none. A base fragment is never inherited.
+        let query = if href.starts_with('?') {
+            ""
+        } else {
+            rest.split('#').next().and_then(|r| r.find('?').and_then(|i| r.get(i..))).unwrap_or("")
+        };
+        return format!("{scheme}://{host}{path}{query}{tail}");
+    }
     let dir = path.rfind('/').map_or("/", |i| path.get(..=i).unwrap_or("/"));
     format!("{scheme}://{host}{}{tail}", remove_dots(&format!("{dir}{href_path}")))
 }
@@ -256,6 +314,40 @@ fn remove_dots(path: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Empty-path references keep the document path and inherit only an absent query.
+    #[test]
+    fn empty_path_links_keep_the_bound_document_path() {
+        let url = "https://s3.example/dir/style.json?old=1#old";
+        for base in [
+            url.to_string(),
+            rustgis_data::s3_address::bind("0123456789abcdef", "https://s3.example", url).unwrap(),
+            rustgis_data::login_address::bind("0123456789abcdef", "https://s3.example", url).unwrap(),
+            crate::s3::anonymous(url),
+        ] {
+            for (href, expected) in [
+                ("?f=json", "https://s3.example/dir/style.json?f=json"),
+                ("?next=https://other.example/tiles", "https://s3.example/dir/style.json?next=https://other.example/tiles"),
+                ("#https://other.example/tiles", "https://s3.example/dir/style.json?old=1#https://other.example/tiles"),
+                ("#new", "https://s3.example/dir/style.json?old=1#new"),
+                ("", "https://s3.example/dir/style.json?old=1"),
+                ("?", "https://s3.example/dir/style.json?"),
+                ("#", "https://s3.example/dir/style.json?old=1#"),
+            ] {
+                let joined = join(&base, href);
+                let expected = if let Some(bound) = rustgis_data::s3_address::parse(&base).unwrap() {
+                    rustgis_data::s3_address::bind(bound.binding, bound.endpoint, expected).unwrap()
+                } else if let Some(bound) = rustgis_data::login_address::parse(&base).unwrap() {
+                    rustgis_data::login_address::bind(bound.binding, bound.origin, expected).unwrap()
+                } else if crate::s3::split_anonymous(&base).1 {
+                    crate::s3::anonymous(expected)
+                } else {
+                    expected.to_string()
+                };
+                assert_eq!(joined, expected, "reference {href:?} keeps the document's authority wrapper");
+            }
+        }
+    }
+
     #[test]
     fn derived_links_keep_only_the_document_binding() {
         let base = rustgis_data::login_address::bind("0123456789abcdef", "https://a.test", "https://a.test/style.json").unwrap();
@@ -270,6 +362,29 @@ mod tests {
         assert_eq!(join("https://a.test/style.json", &supplied), "https://a.test/tile");
         assert_eq!(rustgis_data::login_address::parse(&join(&base, &supplied)).unwrap().unwrap().binding, "0123456789abcdef");
         assert_eq!(join("rustgis-login:broken", "/tile"), "rustgis-login:broken");
+    }
+
+    /// A document may name a resource, but cannot choose another saved S3 account for it.
+    #[test]
+    fn document_s3_selectors_do_not_choose_an_account() {
+        let endpoint = "https://s3-links.example";
+        let base = rustgis_data::s3_address::bind("0123456789abcdef", endpoint, &format!("{endpoint}/bucket/style.json")).unwrap();
+        for url in [format!("{endpoint}/bucket/tile"), "https://other.example/tile".into()] {
+            let supplied = rustgis_data::s3_address::bind("fedcba9876543210", endpoint, &url).unwrap();
+            assert_eq!(join("https://public.example/style.json", &supplied), url, "the supplied selector is removed");
+            let joined = join(&base, &supplied);
+            let selected = rustgis_data::s3_address::parse(&joined).unwrap();
+            if url.starts_with(endpoint) {
+                assert_eq!(selected.unwrap().binding, "0123456789abcdef", "only the document's own account is inherited");
+            } else {
+                assert!(selected.is_none(), "a different server has no inherited account");
+            }
+        }
+        for malformed in ["rustgis-s3:broken", "rustgis-login:broken"] {
+            let joined = join(&base, malformed);
+            assert_eq!(joined, malformed, "malformed selectors remain refused, not relative paths");
+            assert!(crate::address::check(&joined, None).is_err());
+        }
     }
 
     #[test]
@@ -300,6 +415,18 @@ mod tests {
         let wms = expand("https://x/wms?BBOX={bbox-epsg-3857}&WIDTH={width}", TileId { z: 0, x: 0, y: 0 }, 256, false, &[]);
         assert_eq!(wms, "https://x/wms?BBOX=-20037508.343,-20037508.343,20037508.343,20037508.343&WIDTH=256");
         assert_eq!(expand("https://x/{z}/{x}/{y}{r}.png", t, 256, false, &[]), "https://x/3/5/2.png");
+    }
+
+    /// A subdomain value with a delimiter stays in the host it was given for (#2055).
+    #[test]
+    fn a_subdomain_value_cannot_move_the_host_split() {
+        let t = TileId { z: 3, x: 5, y: 2 };
+        let hostile = ["192.168.1.5/x?".to_string()];
+        assert_eq!(
+            expand("https://{s}.tiles.example/{z}/{x}/{y}.png", t, 256, false, &hostile),
+            "https://192.168.1.5%2Fx%3F.tiles.example/3/5/2.png"
+        );
+        assert_eq!(expand("https://{switch:x,a@b}.x/{z}", t, 256, false, &[]), "https://a%40b.x/3", "a switch value is encoded too");
     }
 
     #[test]
@@ -345,5 +472,32 @@ mod tests {
         assert_eq!(join("https://a.com/styles/x", "/planet"), "https://a.com/planet");
         assert_eq!(join("https://a.com/x", "//b.com/y"), "https://b.com/y");
         assert_eq!(join("https://a.com/x", "https://c.com/z"), "https://c.com/z");
+        assert_eq!(join("https://a.com/x", "tiles.json?next=https://b.com"), "https://a.com/tiles.json?next=https://b.com");
+        assert_eq!(join("https://a.com/x", "/tiles.json#https://b.com"), "https://a.com/tiles.json#https://b.com");
+        assert_eq!(join("https://tiles.example?token=x", "/tile/0"), "https://tiles.example/tile/0");
+        assert_eq!(join("https://tiles.example#view", "tile/0"), "https://tiles.example/tile/0");
+    }
+
+    #[test]
+    fn direct_anonymous_sources_keep_one_marker() {
+        let anonymous = crate::s3::anonymous("https://tiles.example/{z}/{x}/{y}");
+        assert_eq!(join(&anonymous, &anonymous), anonymous);
+        assert_eq!(join("https://tiles.example/style.json", &anonymous), anonymous);
+        assert_eq!(join(&anonymous, "tile/0"), crate::s3::anonymous("https://tiles.example/{z}/{x}/tile/0"));
+        let malformed_child = crate::s3::anonymous(&anonymous);
+        let joined = join(&crate::s3::anonymous("https://tiles.example/style.json"), &malformed_child);
+        assert!(crate::address::check(&joined, None).is_err(), "a malformed child was replaced with {joined}");
+        assert_eq!(joined, malformed_child);
+        let malformed_base = crate::s3::anonymous(&crate::s3::anonymous("https://tiles.example/style.json"));
+        assert!(crate::address::check(&join(&malformed_base, "tile/0"), None).is_err());
+    }
+    #[test]
+    fn switches_in_paths_and_queries_keep_delimiters() {
+        let t = TileId { z: 0, x: 0, y: 0 };
+        assert_eq!(
+            expand("https://tiles.example/{switch:a/b,c}/{z}?q={switch:x/y,z}", t, 256, false, &[]),
+            "https://tiles.example/a/b/0?q=x/y"
+        );
+        assert_eq!(expand("https://{switch:a/b,c}.example/{z}", t, 256, false, &[]), "https://a%2Fb.example/0");
     }
 }

@@ -21,6 +21,13 @@ pub struct Control {
     total: AtomicU64,
     /// Someone can stop the run while it goes ([`Control::stoppable`]).
     stoppable: bool,
+    /// Cancelled as soon as its run starts ([`Control::cancelled_once_started`]).
+    cancel_at_start: bool,
+    /// How often the work looked at the flag ([`Control::looked`]).
+    looked: AtomicU64,
+    /// Cancelled at its `n`th look ([`Control::cancelled_at_look`]); 0 for never.
+    #[cfg(any(test, feature = "testing"))]
+    cancel_at_look: u64,
 }
 
 impl Control {
@@ -32,6 +39,53 @@ impl Control {
     /// tools take no work cap ([`uncapped`]). Not in the browser, whose one thread a run holds.
     pub fn stoppable() -> Arc<Control> {
         Arc::new(Control { stoppable: !cfg!(target_arch = "wasm32"), ..Control::default() })
+    }
+
+    /// A control that [`crate::run_under`] cancels as soon as the work has started, past the
+    /// check before it: the work's own looks at the flag ([`Control::looked`]) decide whether it
+    /// stops. For tests that a long command checks for Cancel (#1562), with no timing.
+    pub fn cancelled_once_started() -> Arc<Control> {
+        Arc::new(Control { cancel_at_start: true, ..Control::default() })
+    }
+
+    /// A control cancelled at the work's `n`th look at its flag ([`check`], [`Pace`], the data
+    /// writers' progress checks), to stop a command at each of its checks in turn and look at what
+    /// Cancel leaves behind (#1562); `u64::MAX` never cancels, and counts the looks. Several
+    /// threads share the count, so which of their looks is the `n`th can differ between runs.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn cancelled_at_look(n: u64) -> Arc<Control> {
+        Arc::new(Control { cancel_at_look: n, ..Control::default() })
+    }
+
+    /// How often the work under a [`Control::cancelled_once_started`] or
+    /// [`Control::cancelled_at_look`] control looked at its flag: the tool's checks, and the data
+    /// writers' (not those of whoever runs it, before and after). Always 0 for other controls.
+    pub fn looked(&self) -> u64 {
+        self.looked.load(Ordering::Relaxed)
+    }
+
+    /// Cancels a [`Control::cancelled_once_started`] control: called by [`crate::run_under`] once
+    /// the work is about to start.
+    pub(crate) fn cancel_if_started(&self) {
+        if self.cancel_at_start {
+            self.cancel();
+        }
+    }
+
+    /// The flag, looked at by the work: counted for a test's control only, so an ordinary run's
+    /// threads don't share a counter.
+    fn looked_at(&self) -> bool {
+        #[cfg(any(test, feature = "testing"))]
+        let at = self.cancel_at_look;
+        #[cfg(not(any(test, feature = "testing")))]
+        let at = 0;
+        if self.cancel_at_start || at > 0 {
+            let looks = self.looked.fetch_add(1, Ordering::Relaxed) + 1;
+            if looks >= at && at > 0 {
+                self.cancel();
+            }
+        }
+        self.is_cancelled()
     }
 
     /// Asks the tool to stop at its next check.
@@ -55,7 +109,7 @@ impl Control {
 /// their steps count here, and they stop when the run is cancelled.
 impl rustgis_data::progress::Probe for Control {
     fn cancelled(&self) -> bool {
-        self.is_cancelled()
+        self.looked_at()
     }
     fn begin(&self, total: u64) {
         self.done.store(0, Ordering::Relaxed);
@@ -75,7 +129,7 @@ struct Progress {
 
 impl rustgis_data::progress::Probe for Progress {
     fn cancelled(&self) -> bool {
-        self.control.as_ref().is_some_and(|c| c.is_cancelled()) || rustgis_data::source::remote::check_still(&self.still).is_err()
+        self.control.as_ref().is_some_and(|c| c.looked_at()) || rustgis_data::source::remote::check_still(&self.still).is_err()
     }
     fn begin(&self, total: u64) {
         if let Some(control) = &self.control {
@@ -145,7 +199,7 @@ impl Drop for Installed {
 
 /// Whether the run on this thread was asked to stop.
 pub(crate) fn cancelled() -> bool {
-    CURRENT.with(|c| c.borrow().as_ref().is_some_and(|c| c.is_cancelled()))
+    CURRENT.with(|c| c.borrow().as_ref().is_some_and(|c| c.looked_at()))
         || rustgis_data::source::remote::check_still(&rustgis_data::source::remote::current_still()).is_err()
 }
 
@@ -157,7 +211,7 @@ pub(crate) fn uncapped() -> bool {
 
 /// The work units (a distance, a ray step, a multiply-add) between two looks at the cancel flag
 /// inside an item of a loop ([`Pace`]): a few milliseconds.
-const PACE_WORK: usize = 1 << 22;
+pub(crate) const PACE_WORK: usize = 1 << 22;
 
 /// Looks at the cancel flag about every [`PACE_WORK`] units of work, within an item that may
 /// take long on its own (a row of a wide grid without a work cap), so Cancel stops the run soon.
@@ -223,6 +277,46 @@ pub(crate) fn advance(n: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A control cancelled once its run starts passes the check before the work, is cancelled for
+    /// the work's own looks, and counts them: work that looks stops, work that doesn't is seen.
+    #[test]
+    fn a_control_cancelled_once_started_counts_the_works_looks() {
+        let control = Control::cancelled_once_started();
+        let looks = crate::run_under("Looks", &control, || {
+            check()?;
+            Ok::<_, String>(())
+        });
+        assert!(looks.unwrap_err().contains("Looks was cancelled"));
+        assert_eq!(control.looked(), 1);
+        let blind = Control::cancelled_once_started();
+        let res = crate::run_under("Blind", &blind, || Ok::<_, String>(()));
+        assert!(res.is_err(), "cancelled all the same, by whoever ran it");
+        assert_eq!(blind.looked(), 0, "but the work never looked");
+        // An ordinary control isn't cancelled by starting.
+        let plain = Control::new();
+        assert!(crate::run_under("Plain", &plain, || Ok::<_, String>(())).is_ok());
+    }
+
+    /// A control cancelled at the `n`th look lets the looks before it pass, and `u64::MAX` only
+    /// counts them.
+    #[test]
+    fn a_control_cancelled_at_a_look_stops_there() {
+        let control = Control::cancelled_at_look(3);
+        let mut passed = 0;
+        let res = crate::run_under("Loop", &control, || {
+            for _ in 0..10 {
+                check()?;
+                passed += 1;
+            }
+            Ok::<_, String>(())
+        });
+        assert!(res.unwrap_err().contains("Loop was cancelled"));
+        assert_eq!((passed, control.looked()), (2, 3));
+        let counting = Control::cancelled_at_look(u64::MAX);
+        assert!(crate::run_under("Count", &counting, || (0..5).try_for_each(|_| check()).map_err(String::from)).is_ok());
+        assert_eq!(counting.looked(), 5);
+    }
 
     /// Revocation during real file construction must reach the data writer's final rename,
     /// even though the person did not press Cancel. Its prior file and the next run survive.

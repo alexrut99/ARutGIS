@@ -15,6 +15,10 @@ use crate::{CmdResult, Session};
 pub struct Wrote {
     pub(crate) answer: Value,
     pub(crate) notes: Vec<String>,
+    /// Drawing diagnostics available before the session finalizer, with their original severity.
+    pub(crate) diagnostics: Vec<(rustgis_data::diagnostics::Severity, String)>,
+    /// Source failures to report if delivery cannot update their live layers.
+    pub(crate) refused_notes: Vec<String>,
     /// A physical write completed, even if authority to deliver its result is later refused.
     pub(crate) written_path: Option<String>,
     /// What it does to the session once written, after its notes, and adds to its answer (a
@@ -23,6 +27,16 @@ pub struct Wrote {
     /// Authority retained for delivery from the native export worker.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) owner: Option<crate::policy::Continuation>,
+    /// The coordinate systems the worker thread used, as (definition, label), for the session to
+    /// say which needed a missing datum grid (`Session::say_grid_notes`).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) crs_used: Vec<(String, String)>,
+}
+
+impl Wrote {
+    fn completion_notes(&self) -> Vec<String> {
+        self.notes.iter().chain(self.diagnostics.iter().map(|(_, text)| text)).chain(&self.refused_notes).cloned().collect()
+    }
 }
 
 /// What an export does to the session once its file is written, and adds to its answer; or the
@@ -37,11 +51,15 @@ type Start = fn(&Session, &Value) -> Result<Work, String>;
 
 /// The exports the app writes on another thread ([`export_start`]), each with what it is called
 /// (in its progress, and a cancelled run's error) and what it reads of the session.
-const IN_BACKGROUND: &[(&str, &str, Start)] = &[
+pub(crate) const IN_BACKGROUND: &[(&str, &str, Start)] = &[
+    ("data.convert", "Data Interop", super::workflows::convert_work),
     ("share.exportLayer", "Export Features", super::share::layer_work),
     ("share.exportRaster", "Export Raster", super::raster::export_work),
     ("share.exportMap", "Export Map", super::share::map_work),
+    ("map.exportOrbit", "Export Orbit", super::view::orbit_work),
     ("layout.export", "Export Layout", super::layout::export_work),
+    ("report.export", "Export Report", super::report::export_work),
+    ("source.publish", "Publish to Source", super::publish::publish_work),
 ];
 
 /// `command` and what it is called, when the app writes its file on another thread (see
@@ -63,7 +81,8 @@ pub(crate) fn write_here(s: &mut Session, p: &Value, command: &str) -> CmdResult
         let work = start(s, p)?;
         written_under(name, &control, work)
     })?;
-    s.check_continuation(&owner).map_err(|why| completion_refused(wrote.written_path.as_deref(), why))?;
+    s.check_continuation(&owner)
+        .map_err(|why| completion_with_notes(command, wrote.written_path.as_deref(), &wrote.completion_notes(), why))?;
     said(s, wrote)
 }
 
@@ -73,6 +92,22 @@ pub(crate) fn completion_refused(written_path: Option<&str>, why: String) -> Str
         Some(path) => format!("Exported {path}; completion was refused: {why}"),
         None => why,
     }
+}
+
+/// A committed export's format notices remain part of its refusal diagnostic; its finalizer
+/// stays blocked, so reporting the write cannot update a revoked layer's record.
+fn completion_with_notes(command: &str, written_path: Option<&str>, notes: &[String], why: String) -> String {
+    let Some(path) = written_path else { return why };
+    let mut message = if command == "source.publish" {
+        format!("Published {path}; completion was refused: {why}; the layer's record wasn't updated; add the file again to compare it")
+    } else {
+        completion_refused(Some(path), why)
+    };
+    for note in notes {
+        message.push('\n');
+        message.push_str(note);
+    }
+    message
 }
 
 /// `work` under `control`, as [`rustgis_analysis::run_under`] runs it, except that a file once
@@ -88,9 +123,18 @@ fn written_under(name: &str, control: &std::sync::Arc<rustgis_analysis::control:
 
 /// Says what an export wrote, and gives its answer (or the failure its `then` says).
 fn said(s: &mut Session, wrote: Wrote) -> CmdResult {
-    let Wrote { mut answer, notes, then, .. } = wrote;
+    let Wrote { mut answer, notes, diagnostics, then, written_path, .. } = wrote;
+    let mark = s.notice_mark();
+    say(s, diagnostics);
+    if written_path.is_some() {
+        s.retain_written_notices(mark);
+    }
     for note in notes {
-        s.notify(note, false);
+        if written_path.is_some() {
+            s.notify_written(note, false);
+        } else {
+            s.notify(note, false);
+        }
     }
     if let Some(then) = then {
         then(s, &mut answer)?;
@@ -122,17 +166,21 @@ pub(crate) fn drawn(
             Some((l.instance_id(), l.name.clone(), src.error.clone()?, src.clone()))
         })
         .collect();
+    let refused_notes = failed
+        .first()
+        .map(|(_, name, error, _)| {
+            let n = failed.len();
+            if n == 1 {
+                format!("{path}: {name} isn't in the file, as its source couldn't be read: {error}")
+            } else {
+                format!("{path}: {n} layers aren't in the file, as their sources couldn't be read; the first, {name}: {error}")
+            }
+        })
+        .into_iter()
+        .collect();
     let written_path = written.is_ok().then(|| path.clone());
     let answer = written.as_ref().map_or(Value::Null, Value::clone);
     let then: Then = Box::new(move |s: &mut Session, _: &mut Value| {
-        use rustgis_data::diagnostics::Severity;
-        for (severity, text) in notices {
-            match severity {
-                Severity::Error => s.notify(text, true),
-                Severity::Warning => s.warn(text),
-                Severity::Info => s.notify(text, false),
-            }
-        }
         let mut missing = Vec::new();
         for (instance, name, error, copied) in failed {
             let live = s.project.maps.iter_mut().flat_map(|m| m.layers.iter_mut()).find(|l| l.instance_id() == instance);
@@ -147,24 +195,61 @@ pub(crate) fn drawn(
         // One notice for them all, with a count, naming the first.
         if let Some((name, error)) = missing.first() {
             let n = missing.len();
+            let mark = s.notice_mark();
             s.warn(if n == 1 {
                 format!("{path}: {name} isn't in the file, as its source couldn't be read: {error}")
             } else {
                 format!("{path}: {n} layers aren't in the file, as their sources couldn't be read; the first, {name}: {error}")
             });
+            if written.is_ok() {
+                s.retain_written_notices(mark);
+            }
         }
         written?;
-        s.notify(format!("Exported {path}"), false);
+        s.notify_written(format!("Exported {path}"), false);
         Ok(())
     });
     Ok(Wrote {
         answer,
         notes: Vec::new(),
+        diagnostics: notices,
+        refused_notes,
         written_path,
         then: Some(then),
         #[cfg(not(target_arch = "wasm32"))]
         owner: None,
+        #[cfg(not(target_arch = "wasm32"))]
+        crs_used: Vec::new(),
     })
+}
+
+/// What drawing an export on `copy` (a copy of the session) said, each notice with its severity,
+/// to say again where the export lands; past the notices a session keeps, how many earlier ones
+/// there were. `path` names the file in that count.
+pub(crate) fn copy_notices(copy: &mut Session, path: &str) -> Vec<(rustgis_data::diagnostics::Severity, String)> {
+    let kept = std::mem::take(&mut copy.notices);
+    let earlier = copy.notices_given().saturating_sub(kept.len() as u64);
+    let mut said = Vec::new();
+    if earlier > 0 {
+        said.push((
+            rustgis_data::diagnostics::Severity::Warning,
+            format!("{path}: {earlier} earlier notices from drawing it aren't shown"),
+        ));
+    }
+    said.extend(kept.into_iter().map(|n| (n.severity, n.text)));
+    said
+}
+
+/// Says `notices` (what an export said on a copy of the session) in `s`, each as it was said.
+pub(crate) fn say(s: &mut Session, notices: Vec<(rustgis_data::diagnostics::Severity, String)>) {
+    use rustgis_data::diagnostics::Severity;
+    for (severity, text) in notices {
+        match severity {
+            Severity::Error => s.notify(text, true),
+            Severity::Warning => s.warn(text),
+            Severity::Info => s.notify(text, false),
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -216,7 +301,7 @@ impl ExportRun {
             crate::render::rustgis_tiles::cache::with_still(still, || written_under(name, control, work))
         }))
         .unwrap_or_else(|_| Err(format!("{name} failed unexpectedly")))
-        .map(|w| Wrote { owner: Some(owner), ..w })
+        .map(|w| Wrote { owner: Some(owner), crs_used: rustgis_data::raster::crs::take_used(), ..w })
     }
 }
 
@@ -260,9 +345,16 @@ pub fn export_land(s: &mut Session, started: Started, done: Result<Wrote, String
             }
         }
         let written_path = done.as_ref().ok().and_then(|wrote| wrote.written_path.clone());
+        if let Ok(wrote) = &done {
+            s.crs_used_elsewhere.extend(wrote.crs_used.iter().cloned());
+        }
+        let notes = done.as_ref().ok().map(Wrote::completion_notes).unwrap_or_default();
         s.finish_export(&owner, |s| done.and_then(|wrote| said(s, wrote)))
-            .map_err(|why| completion_refused(written_path.as_deref(), why))?
+            .map_err(|why| completion_with_notes(command, written_path.as_deref(), &notes, why))?
     })();
+    // The coordinate systems its worker used that needed a missing datum grid, as the command
+    // run here says them after it.
+    s.say_grid_notes();
     // Its failure said once, under the command, as `Session::run` says one.
     if let Err(e) = &landed {
         let text = Session::redacted(e);
@@ -280,7 +372,6 @@ pub fn export_land(s: &mut Session, started: Started, done: Result<Wrote, String
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use rustgis_analysis::control::Control;
@@ -294,11 +385,15 @@ mod tests {
             late.cancel();
             Ok(Wrote {
                 answer: serde_json::json!({"path": "x"}),
+                diagnostics: Vec::new(),
+                refused_notes: Vec::new(),
                 notes: vec!["Exported x".into()],
                 written_path: Some("x".into()),
                 then: None,
                 #[cfg(not(target_arch = "wasm32"))]
                 owner: None,
+                #[cfg(not(target_arch = "wasm32"))]
+                crs_used: Vec::new(),
             })
         });
         let wrote = written_under("Export Raster", &control, work).unwrap();

@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use super::{b, f, ps};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::render::rustgis_tiles::s3;
-use crate::render::rustgis_tiles::stac::{self, Item, Search};
+use crate::render::rustgis_tiles::stac::{self, Item, Search, area};
 use crate::{CmdResult, CommandSpec as C, Session};
 
 pub fn commands() -> Vec<C> {
@@ -15,12 +15,12 @@ pub fn commands() -> Vec<C> {
             .view()
             .params(r#"{"url"?: "a STAC API (default: Earth Search, https://earth-search.aws.element84.com/v1; Planetary Computer: https://planetarycomputer.microsoft.com/api/stac/v1), or a static catalog's catalog.json or collection.json (its child catalogs and collections are listed)", "connection"?: "as service.add: the saved web-service connection whose login the request uses"}"#),
         C::new("stac.search", "STAC Search", "Home › Add › Web Data › STAC Search", search).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Network)).params(
-            r#"{"url"?: "a STAC API (default: Earth Search), or a static catalog's catalog.json or collection.json (walked from there, at most 400 documents)", "collections"?: id | [ids] (APIs), "bbox"?: [west, south, east, north] | "view" (the map's extent), "datetime"?: "2024-06-01" | "2024-06-01/2024-06-30", "limit"?: 1–200 (default 10), "maxCloud"?: percent, "sortby"?: "eo:cloud_cover" | "-datetime" (APIs that sort), "phase"?: "pre" | "post" (static catalogs of events), "properties"?: bool (every property of each item, not only its date and cloud cover; default false), "footprints"?: bool (adds the items' footprints as a layer, default true), "connection"?: "as service.add: the saved web-service connection whose login the request uses"}"#,
+            r#"{"url"?: "a STAC API (default: Earth Search), or a static catalog's catalog.json or collection.json (walked from there, at most 400 documents)", "collections"?: id | [ids] (APIs), "bbox"?: [west, south, east, north] | "view" (the map's extent), "intersects"?: GeoJSON (a geometry, a feature or a collection of features, as stac.area returns) | "selection" (the selected features of "layer"): the search area, which replaces bbox; only the highest dimension present is kept (polygons, then lines, then points) and what is left out is reported, "layer"?: the layer (name or id) whose selection "selection" uses (default the active layer), "buffer"?: the distance to widen an intersects point or line into a polygon (default 0), "unit"?: "Meters" | "Feet" | "Kilometers" | "Miles" (the buffer's unit, default Meters), "datetime"?: "2024-06-01" | "2024-06-01/2024-06-30", "limit"?: 1–200 (default 10), "maxCloud"?: percent, "sortby"?: "eo:cloud_cover" | "-datetime" (APIs that sort), "phase"?: "pre" | "post" (static catalogs of events), "properties"?: bool (every property of each item, not only its date and cloud cover; default false), "footprints"?: bool (adds the items' footprints as a layer, default true), "connection"?: "as service.add: the saved web-service connection whose login the request uses"}"#,
         ),
         C::new("stac.addFootprints", "Add STAC Footprints", "Home › Add › Web Data › STAC Search", add_footprints_cmd).roles(&[]).effects(crate::policy::Effects::NONE)
             .params(r#"{"footprints": GeoJSON FeatureCollection (items' footprints, as STAC Search finds them), "name"?: text}"#),
         C::new("stac.addCube", "Add STAC Data Cube", "Home › Add › Web Data › STAC Search", add_cube).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Network)).params(
-            r#"{"url"?: a STAC API (default: Earth Search), or the collection.json of a static collection laid out by date (JAXA Earth's), "collection": id, "asset": key (a band, such as NDVI), "bbox"?: [west, south, east, north] | "view" (default: the map's extent), "start", "end": dates, "maxCloud"?: percent, "range"?: [low, high] (the values shown from black to white, in the asset's own units after its raster:bands scale and offset, the same for every date and tile; default: each file's 2nd–98th percentile), "name"?: text, "connection"?: "as service.add: the saved web-service connection whose login the request uses"} → a tile layer per tile of the grid the items cover, each a file per date following the time slider, which turns on over their dates when it is off (desktop)"#,
+            r#"{"url"?: a STAC API (default: Earth Search), or the collection.json of a static collection laid out by date (JAXA Earth's), "collection": id, "asset": key (a band, such as NDVI), "bbox"?: [west, south, east, north] | "view" (default: the map's extent), "start", "end": dates, "maxCloud"?: percent, "range"?: [low, high] (the values shown from black to white, in the asset's own units after its raster:bands scale and offset, the same for every date and tile; default: each file's 2nd–98th percentile) | "auto" (one range for every date and tile, the 2nd–98th percentiles of a sample: the newest file of up to four tiles, read at an overview), "name"?: text, "attribution"?: text, at most 500 characters (the credit its tile layers show, as in tiles.add), "connection"?: "as service.add: the saved web-service connection whose login the request uses"} → a tile layer per tile of the grid the items cover, each a file per date following the time slider, which turns on over their dates when it is off (desktop)"#,
         ),
         C::new("stac.addAsset", "Add STAC Asset", "Home › Add › Web Data › STAC Search", add_asset).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Network)).params(
             r#"{"item": a STAC item (as stac.search returns it) | "url": an item's address (Planetary Computer assets are signed), "asset"?: key (default: visual, else the first GeoTIFF, else the first data asset), "name"?: text, "connection"?: "as service.add"}"#,
@@ -63,11 +63,12 @@ pub fn search_params(s: &Session, p: &Value) -> Result<Search, String> {
         limit: f(p, "limit").map(|l| l.clamp(1.0, stac::MAX_ITEMS as f64) as usize).unwrap_or(10),
         max_cloud: f(p, "maxCloud"),
         sortby: ps(p, "sortby").map(str::to_string),
+        intersects: None,
     })
 }
 
 /// The map's extent in longitude/latitude, within the globe.
-fn view(s: &Session) -> Result<[f64; 4], String> {
+pub fn view(s: &Session) -> Result<[f64; 4], String> {
     let e = super::workspace::view_extent(s);
     if e.is_empty() {
         return Err("the map's extent isn't known; give bbox".into());
@@ -128,20 +129,58 @@ pub(super) fn collections(s: &mut Session, p: &Value) -> CmdResult {
         } else {
             stac::collections_url(&api)
         };
-        let bytes = crate::render::rustgis_tiles::cache::download_blocking(&url)?;
-        collections_json(&api, &bytes)
+        let fetched = crate::render::rustgis_tiles::cache::download_blocking_with_origin(&url)?;
+        collections_json_from_origin(s, &api, &fetched.bytes, &fetched.origin)
     }
 }
 
-pub(super) fn collections_json(api: &str, bytes: &[u8]) -> CmdResult {
+pub(super) fn collections_json(s: &mut Session, api: &str, bytes: &[u8]) -> CmdResult {
+    collections_json_from_origin(s, api, bytes, &crate::render::rustgis_tiles::address::Origin::named(api))
+}
+
+fn collections_json_from_origin(
+    s: &mut Session,
+    api: &str,
+    bytes: &[u8],
+    origin: &crate::render::rustgis_tiles::address::Origin,
+) -> CmdResult {
     if stac::catalog::is_static(api) {
-        let c = stac::catalog::parse_children(bytes, api)?;
-        return Ok(
-            json!({"count": c.len(), "static": true, "collections": c.iter().map(|c| json!({"id": c.url, "title": c.title})).collect::<Vec<_>>()}),
-        );
+        let listing = stac::catalog::parse_children_noted(bytes, origin)?;
+        if listing.refused > 0 {
+            s.warn(format!("{} catalog links were refused by the document's network reach", listing.refused));
+        }
+        if listing.skipped > 0 {
+            s.warn(format!("{} catalog links were left out because their addresses are missing, invalid or not HTTP(S)", listing.skipped));
+        }
+        if listing.omitted > 0 {
+            s.warn(format!("{} catalog links were left out because the listing limit was reached", listing.omitted));
+        }
+        let c = listing.links;
+        let mut out = json!({"count": c.len(), "static": true, "collections": c.iter().map(|c| json!({"id": c.url, "title": c.title})).collect::<Vec<_>>()});
+        if listing.refused > 0 || listing.omitted > 0 || listing.skipped > 0 {
+            out["truncated"] = json!(true);
+        }
+        return Ok(out);
     }
     let c = stac::parse_collections(bytes)?;
     Ok(json!({"count": c.len(), "collections": c.iter().map(|c| json!({"id": c.id, "title": c.title})).collect::<Vec<_>>()}))
+}
+
+/// The search `p` describes, limited to the shape it names (`intersects`, widened by `buffer`),
+/// which replaces its bbox.
+pub fn search_with_area(s: &mut Session, p: &Value) -> Result<(Search, Option<area::Area>), String> {
+    let mut search = search_params(s, p)?;
+    let area = super::stac_area::from_params(s, p)?;
+    if let Some(a) = &area {
+        if super::stac_area::names_bbox(p) {
+            s.warn("bbox (or view) is not used: the search area replaces it");
+        }
+        search.bbox = None;
+        search.intersects = Some(a.geometry.clone());
+    } else if p.get("buffer").is_some_and(|b| !b.is_null()) {
+        s.warn("buffer is not used: it widens the search area (intersects), and none was given");
+    }
+    Ok((search, area))
 }
 
 fn search(s: &mut Session, p: &Value) -> CmdResult {
@@ -149,19 +188,58 @@ fn search(s: &mut Session, p: &Value) -> CmdResult {
     if stac::catalog::is_static(&api) {
         return search_static(s, p, &api);
     }
-    let url = stac::search_url(&api, &search_params(s, p)?)?;
+    let (search, area) = search_with_area(s, p)?;
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (s, url);
+        let _ = (s, area, search);
         Err("in the web app, search STAC with Home › Add › Web Data › STAC Search".into())
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let bytes = crate::render::rustgis_tiles::cache::download_blocking(&url)?;
-        let (items, next) = stac::parse_items(&bytes, &url)?;
+        // A shape goes in the body of a POST, which has no limit that matters; a server that
+        // refuses it is asked again in the query, when the shape is short enough for one.
+        let (fetched, posted) = if search.intersects.is_some() {
+            let post = stac::search_post_url(&api);
+            let body = stac::search_body(&search)?.to_string();
+            match crate::render::rustgis_tiles::cache::post_json_named_blocking_with_origin(&post, &body) {
+                Ok(fetched) => (fetched, true),
+                Err(e) => {
+                    let url = stac::search_url(&api, &search).map_err(|_| e.clone())?;
+                    (crate::render::rustgis_tiles::cache::download_blocking_with_origin(&url).map_err(|_| e)?, false)
+                }
+            }
+        } else {
+            let url = stac::search_url(&api, &search)?;
+            (crate::render::rustgis_tiles::cache::download_blocking_with_origin(&url)?, false)
+        };
+        let bytes = fetched.bytes;
+        let origin = fetched.origin;
+        let (items, next) = stac::parse_items_from_origin(&bytes, &origin)?;
+        // A POST's next link is a request with a body, which is not an address to give back.
+        let next = if posted {
+            // `parse_items` drops a POST link, so the answer itself says whether there are more.
+            let more = stac::has_next(&bytes) || stac::parse_matched(&bytes).is_some_and(|m| m > items.len() as u64);
+            if more {
+                s.warn(format!("more items meet the search area than the {} loaded: raise limit or narrow the search", items.len()));
+            }
+            None
+        } else {
+            // `parse_items` drops a next link the reach refuses: said, so the missing page isn't taken for none.
+            if stac::next_refused(&bytes, &origin) {
+                s.warn("the answer's next page link is refused (it points where this search may not read), so only this page is loaded");
+            }
+            next
+        };
+        // An API without the sort extension may ignore a sort instead of refusing it.
+        if let Some(note) = sort_ignored(&items, search.sortby.as_deref()).or_else(|| sort_unchecked(&items, search.sortby.as_deref())) {
+            s.warn(note);
+        }
         let all = b(p, "properties").unwrap_or(false);
         let mut out =
             json!({"count": items.len(), "items": items.iter().map(|i| stac::item_json_with(i, all)).collect::<Vec<_>>(), "next": next});
+        if let Some(a) = &area {
+            out["intersects"] = area::to_geojson(&a.geometry);
+        }
         if b(p, "footprints").unwrap_or(true)
             && let Some(id) = add_footprints(s, &items, "STAC footprints")?
         {
@@ -174,10 +252,37 @@ fn search(s: &mut Session, p: &Value) -> CmdResult {
     }
 }
 
+/// What to warn when the items an API answered are visibly not in the order asked for (an API
+/// without the sort extension may ignore a sort rather than refuse it); none when they are in
+/// order or it can't be told. Only the desktop searches here (the web app searches from its pane).
+#[cfg(not(target_arch = "wasm32"))]
+fn sort_ignored(items: &[Item], sortby: Option<&str>) -> Option<String> {
+    (stac::sort_followed(items, sortby) == Some(false)).then(|| {
+        format!(
+            "sortby {} was not followed: the items are not in that order, so this API may not sort (its first {} items are shown in its own order)",
+            sortby.unwrap_or("").trim(),
+            items.len()
+        )
+    })
+}
+
+/// What to say when a sort was asked for and the items can't show whether the API followed it
+/// (the sort is on a field that isn't compared, or the dates can't be compared): the order is
+/// the API's, and not known to be the one asked for.
+#[cfg(not(target_arch = "wasm32"))]
+fn sort_unchecked(items: &[Item], sortby: Option<&str>) -> Option<String> {
+    stac::sort_unchecked(items, sortby).then(|| {
+        format!(
+            "sortby {} could not be checked: the items' order can't be told, so it is not known whether this API sorted them",
+            sortby.unwrap_or("").trim()
+        )
+    })
+}
+
 /// A search of a static catalog: a walk from its document, keeping the items that match.
 fn search_static(s: &mut Session, p: &Value, root: &str) -> CmdResult {
     crate::render::rustgis_tiles::address::check(root, None)?;
-    let search = search_params(s, p)?;
+    let (search, area) = search_with_area(s, p)?;
     // A static catalog has no search: it is walked in its own order, and its nodes are its
     // collections.
     let mut ignored = Vec::new();
@@ -196,7 +301,7 @@ fn search_static(s: &mut Session, p: &Value, root: &str) -> CmdResult {
     let filter = stac::catalog::Filter::from_search(&search, ps(p, "phase"))?;
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (s, filter, root, note);
+        let _ = (s, filter, root, note, area);
         Err("in the web app, search STAC with Home › Add › Web Data › STAC Search".into())
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -204,12 +309,23 @@ fn search_static(s: &mut Session, p: &Value, root: &str) -> CmdResult {
         let walk = stac::catalog::walk_blocking(root, filter, search.limit);
         let complete = walk.complete();
         let (read, failed) = (walk.reads, walk.failed);
+        let refused = walk.refused();
+        if refused > 0 {
+            s.warn(format!("{refused} catalog links were refused by the document's network reach"));
+        }
+        let skipped = walk.skipped();
+        if skipped > 0 {
+            s.warn(format!("{skipped} catalog links were left out because their addresses are missing, invalid or not HTTP(S)"));
+        }
         let items = walk.into_items();
         let all = b(p, "properties").unwrap_or(false);
         let mut out = json!({"count": items.len(), "items": items.iter().map(|i| stac::item_json_with(i, all)).collect::<Vec<_>>(),
-            "complete": complete, "read": read, "failed": failed});
+            "complete": complete, "read": read, "failed": failed, "refused": refused, "skipped": skipped});
         if let Some(n) = note {
             out["note"] = json!(n);
+        }
+        if let Some(a) = &area {
+            out["intersects"] = area::to_geojson(&a.geometry);
         }
         if b(p, "footprints").unwrap_or(true)
             && let Some(id) = add_footprints(s, &items, "STAC footprints")?
@@ -238,11 +354,16 @@ fn item(p: &Value) -> Result<Item, String> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let bytes = crate::render::rustgis_tiles::cache::download_blocking(url)?;
-        let mut i = stac::parse_item(&bytes, url)?;
-        i.url.get_or_insert_with(|| url.to_string());
-        Ok(i)
+        item_downloaded(crate::render::rustgis_tiles::cache::download_blocking_fetched(url)?, url)
     }
+}
+
+/// Revalidates the item at its fresh transport-observed origin, including any redirects.
+#[cfg(not(target_arch = "wasm32"))]
+fn item_downloaded(fetched: crate::render::rustgis_tiles::cache::Fetched, requested: &str) -> Result<Item, String> {
+    let mut item = stac::parse_item_from_origin(&fetched.bytes, &fetched.origin)?;
+    item.url.get_or_insert_with(|| requested.to_string());
+    Ok(item)
 }
 
 fn add_asset(s: &mut Session, p: &Value) -> CmdResult {
@@ -258,6 +379,10 @@ fn add_asset(s: &mut Session, p: &Value) -> CmdResult {
     #[cfg(not(target_arch = "wasm32"))]
     let href = stac::sign_blocking(&href)?;
     let mut add = json!({"url": href, "name": name});
+    // This value comes from the freshly fetched item (or a conservative JSON parser), never a caller's reach claim.
+    if i.origin_reach == crate::render::rustgis_tiles::address::Reach::Public {
+        add["fromDocument"] = json!(true);
+    }
     if let Some(connection) = p.get("connection") {
         add["connection"] = connection.clone();
     }
@@ -716,7 +841,7 @@ pub fn stac_cube(s: &mut Session, p: &Value) -> Result<StacCube, String> {
     let info = cog::info_blocking(&first)?;
     let layout = &info.layout;
     if layout.transform.pixel_height > 0.0 {
-        return Err(format!("{first} is stored bottom up, which a trend doesn't read yet"));
+        return Err(crate::sources::message_with_address(&first, "stored bottom up, which a trend doesn't read yet"));
     }
     // The level whose cells are nearest the size asked, by ratio (`1000` takes MODIS's 926.6 m
     // overview, not its 463 m one); the full images by default.
@@ -736,9 +861,12 @@ pub fn stac_cube(s: &mut Session, p: &Value) -> Result<StacCube, String> {
         // image's size divided by `f` (rounded up), or its cells aren't those blocks.
         let fits = |full: u32, ov: u32| ov.checked_mul(f as u32) == Some(full);
         if !(1.0..=64.0).contains(&f) || !fits(full.width, lv.width) || !fits(full.height, lv.height) {
-            return Err(format!(
-                "{first}'s overview ({} × {}) isn't its full image ({} × {}) divided by a whole number, so its cells can't be averaged from it: take \"resampling\": \"nearest\"",
-                lv.width, lv.height, full.width, full.height
+            return Err(crate::sources::message_with_address(
+                &first,
+                &format!(
+                    "its overview ({} × {}) isn't its full image ({} × {}) divided by a whole number, so its cells can't be averaged from it: take \"resampling\": \"nearest\"",
+                    lv.width, lv.height, full.width, full.height
+                ),
             ));
         }
         (0, f as u32)
@@ -747,16 +875,18 @@ pub fn stac_cube(s: &mut Session, p: &Value) -> Result<StacCube, String> {
     };
     let read_tile_rows = layout.levels.get(read).map_or(1, |l| l.tile_height).div_ceil(factor).max(1);
     // The area, in the files' coordinates: the box's edges, each at 32 points, as a curved grid
-    // (MODIS's sinusoidal) bends them.
+    // (MODIS's sinusoidal) bends them. A point the system refuses (one it can't bring back,
+    // #1925) is an error: the points left would bound less than the box.
     let tr = layout.crs.transformer()?;
     let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
     let [w, so, e, n] = bbox;
     for k in 0..=32 {
         let t = f64::from(k) / 32.0;
         for (lon, lat) in [(w + (e - w) * t, so), (w + (e - w) * t, n), (w, so + (n - so) * t), (e, so + (n - so) * t)] {
-            if let Some(c) = tr.from_lonlat(rustgis_geom::Coord::new(lon, lat)) {
-                (x0, y0, x1, y1) = (x0.min(c.x), y0.min(c.y), x1.max(c.x), y1.max(c.y));
-            }
+            let c = tr.from_lonlat(rustgis_geom::Coord::new(lon, lat)).ok_or_else(|| {
+                format!("the area reaches ({lon:.3}, {lat:.3}), which {} can't hold; choose a smaller area", layout.crs.label())
+            })?;
+            (x0, y0, x1, y1) = (x0.min(c.x), y0.min(c.y), x1.max(c.x), y1.max(c.y));
         }
     }
     if !(x0 < x1 && y0 < y1) {
@@ -886,15 +1016,23 @@ impl super::cube::TimeCube for StacCube {
             // file's header is fetched once however many pieces and dates read it.
             let info = cog::info_blocking(href)?;
             if info.layout.crs != self.crs {
-                return Err(format!("{href} is in another coordinate system than the first file"));
+                return Err(crate::sources::message_with_address(href, "in another coordinate system than the first file"));
             }
-            let lv = info.layout.levels.get(self.level).ok_or_else(|| format!("{href} has fewer overviews than the first file"))?;
+            let lv = info
+                .layout
+                .levels
+                .get(self.level)
+                .ok_or_else(|| crate::sources::message_with_address(href, "has fewer overviews than the first file"))?;
             let lt = info.layout.transform_of(lv);
-            let (dx, dy) = offset_in(&grid, &lt).ok_or_else(|| format!("{href} is on another grid of pixels than the first file"))?;
+            let (dx, dy) = offset_in(&grid, &lt)
+                .ok_or_else(|| crate::sources::message_with_address(href, "on another grid of pixels than the first file"))?;
             // Averaged, a cell is a block of `f` × `f` of the file's pixels: the file's corner
             // has to fall on a block's, or the blocks would straddle cells.
             if dx.rem_euclid(i64::from(f)) != 0 || dy.rem_euclid(i64::from(f)) != 0 {
-                return Err(format!("{href}'s pixels don't fall in whole cells of the area: take \"resampling\": \"nearest\""));
+                return Err(crate::sources::message_with_address(
+                    href,
+                    "its pixels don't fall in whole cells of the area: take \"resampling\": \"nearest\"",
+                ));
             }
             // The piece's columns and rows in the file's pixels, within the file.
             let (fc0, fc1) = (dx.max(0), (dx + wf).min(i64::from(lv.width)));
@@ -958,7 +1096,10 @@ fn add_cube(s: &mut Session, p: &Value) -> CmdResult {
     {
         let bound = crate::service_logins::request_params(s, p)?;
         let p = bound.as_ref();
-        let range = match p.get("range").filter(|v| !v.is_null()) {
+        // "auto": worked out from a sample of the files once they are found (an entry of the cube
+        // catalog that gives none, as JAXA Earth's don't).
+        let auto = p.get("range").and_then(Value::as_str).is_some_and(|r| r.trim() == "auto");
+        let range = match p.get("range").filter(|v| !v.is_null() && !auto) {
             None => None,
             Some(v) => {
                 // Two finite numbers, nothing else: a value that isn't one is refused, not skipped.
@@ -966,68 +1107,31 @@ fn add_cube(s: &mut Session, p: &Value) -> CmdResult {
                     v.as_array().filter(|a| a.len() == 2).and_then(|a| a.iter().map(|x| x.as_f64().filter(|x| x.is_finite())).collect());
                 match r.as_deref() {
                     Some([lo, hi]) if lo < hi => Some((*lo, *hi)),
-                    _ => return Err("range is [low, high], low below high".into()),
+                    _ => return Err("range is [low, high], low below high, or \"auto\"".into()),
                 }
             }
         };
-        let CubeFiles {
-            tiles,
-            scale,
-            scales: _,
-            nodata: _,
-            items,
-            named_tiles,
-            without,
-            duplicates,
-            scales_differ,
-            coded,
-            collection,
-            asset,
-        } = cube_files(s, p, MAX_CUBE_ITEMS)?;
+        // The credit each tile layer of the cube shows (a catalog entry's, as JAXA's terms ask).
+        if p.get("attribution").is_some_and(|v| !v.is_null() && !v.is_string()) {
+            return Err("attribution is text, at most 500 characters".into());
+        }
+        let attribution = ps(p, "attribution").map(str::trim).filter(|a| !a.is_empty()).map(str::to_string);
+        // A project keeps 500 characters of a tile layer's credit (TileLayer::repair): a longer one
+        // is refused, not cut on the way.
+        if let Some(n) = attribution.as_ref().map(|a| a.chars().count()).filter(|n| *n > 500) {
+            return Err(format!("attribution is {n} characters; a tile layer's credit is at most 500"));
+        }
+        let CubeFiles { tiles, scale, scales, nodata, items, named_tiles, without, duplicates, scales_differ, coded, collection, asset } =
+            cube_files(s, p, MAX_CUBE_ITEMS)?;
         // A tile layer's look has no way to name them, so on the map they are values.
         if coded > 0 {
             s.warn(format!(
                 "{collection}: {coded} file(s) mark failed retrievals with codes, which the map draws as values (inside its range or stretch); Trend Analysis and cube summaries skip them"
             ));
         }
-        // One range can't hold if the files store their values alike no longer (a processing
-        // change of scale or offset partway).
-        if range.is_some() && scales_differ {
-            return Err(format!(
-                "the {asset} files don't all have the same scale and offset, so one range can't fit them all: leave range out"
-            ));
-        }
-        // The range in the files' stored values.
-        let look = match (range, scale) {
-            (Some(_), Some((k, o))) if k == 0.0 || !k.is_finite() || !o.is_finite() => {
-                return Err(format!(
-                    "the {asset} files' metadata gives a scale of {k} and an offset of {o}, so a range in the band's units can't be set: leave range out"
-                ));
-            }
-            (Some((lo, hi)), Some((k, o))) => {
-                let (a, b) = ((lo - o) / k, (hi - o) / k);
-                format!("#range={},{}", a.min(b), a.max(b))
-            }
-            (Some((lo, hi)), None) => format!("#range={lo},{hi}"),
-            (None, _) => String::new(),
-        };
-        let base = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).map_or_else(|| format!("{collection} {asset}"), str::to_string);
-        let mut dates: Vec<f64> = Vec::new();
-        let many = tiles.len() > 1;
-        let mut added = Vec::new();
-        // What the map had: a cube that can't be added whole puts its tile layers back as they
-        // were (those it replaced, the same cube added before, included) and takes out the layers
-        // it added. The rest (the view a file framed, the slider) comes back with the project
-        // snapshot the command runs under (`Session::guarded`), as for any command that fails.
-        let (tiles_before, layers_before): (Vec<rustgis_map::TileLayer>, Vec<u32>) =
-            (s.map().tiles.clone(), s.map().layers.iter().map(|l| l.id).collect());
-        let undo = |s: &mut Session| {
-            let m = s.map_mut();
-            m.tiles = tiles_before.clone();
-            m.layers.retain(|l| layers_before.contains(&l.id));
-        };
-        // A tile layer per grid tile, each reading its first file's header, within the map's room
-        // for tile layers: a catalog without grid tiles (keyed by footprint) could make hundreds.
+        // Refused before anything is read for a range. A tile layer per grid tile, each reading its
+        // first file's header, within the map's room for tile layers: a catalog without grid tiles
+        // (keyed by footprint) could make hundreds.
         let room = rustgis_map::tiles::MAX_TILE_LAYERS.saturating_sub(s.map().tiles.len());
         if tiles.len() > room {
             // Items naming no grid tile are told apart by footprint, which can differ scene by scene.
@@ -1054,9 +1158,102 @@ fn add_cube(s: &mut Session, p: &Value) -> CmdResult {
                 bad.chars().take(200).collect::<String>()
             ));
         }
+        // The cube's dates, all its tiles' (as the slider will step through them), within the
+        // slider's steps, its own dates included when it has them: refused before the sample too.
+        let mut dates: Vec<f64> = tiles.values().flat_map(|by_day| by_day.keys()).map(|d| *d as f64 * 86_400_000.0).collect();
+        dates.sort_by(f64::total_cmp);
+        dates.dedup();
+        // At most MAX_CUBE_ITEMS dates, well under the slider's steps; were it ever more, the cube
+        // is refused rather than left with files the slider can't reach.
+        if dates.len() > rustgis_map::time::MAX_STEPS {
+            return Err(format!("{} dates; the time slider takes {} at most", dates.len(), rustgis_map::time::MAX_STEPS));
+        }
+        if let Some(t) = s.map().time.as_ref().filter(|t| !t.dates.is_empty()) {
+            let mut all: Vec<f64> = t.dates.iter().chain(&dates).copied().collect();
+            all.sort_by(f64::total_cmp);
+            all.dedup();
+            if all.len() > rustgis_map::time::MAX_STEPS {
+                return Err(format!(
+                    "the time slider's dates and the cube's make {}, more than its {} steps: take a shorter period",
+                    all.len(),
+                    rustgis_map::time::MAX_STEPS
+                ));
+            }
+        }
+        // A range from the files themselves: one for every date and tile, as a range given is.
+        let mut sampled = None;
+        let range = if !auto {
+            range
+        } else if scales_differ {
+            s.warn(format!(
+                "the {asset} files don't all have the same scale and offset, so no one range fits them all: each file is stretched on its own"
+            ));
+            None
+        } else if let Some((k, o)) = scale.filter(|(k, o)| *k == 0.0 || !k.is_finite() || !o.is_finite()) {
+            s.warn(format!(
+                "the {asset} files' metadata gives a scale of {k} and an offset of {o}, so no range in the band's units fits them: each file is stretched on its own"
+            ));
+            None
+        } else {
+            match sample_range(&tiles, &scales, scale, &nodata) {
+                Ok(Sample::Range(r)) => {
+                    sampled = Some(r);
+                    Some((r[0], r[1]))
+                }
+                // Classes drawn in their own colours take no range.
+                Ok(Sample::Classes) => {
+                    s.warn(format!("{collection}: the {asset} files are classes drawn in their own colours, so no range is set for them"));
+                    None
+                }
+                Ok(Sample::Empty) => {
+                    s.warn(format!("{collection}: the sample of the {asset} files holds no values to set a range by, so each file is stretched on its own"));
+                    None
+                }
+                Err(e) => {
+                    s.warn(format!(
+                        "{collection}: the {asset} files couldn't be sampled for a range ({e}), so each file is stretched on its own"
+                    ));
+                    None
+                }
+            }
+        };
+        // One range can't hold if the files store their values alike no longer (a processing
+        // change of scale or offset partway).
+        if range.is_some() && scales_differ {
+            return Err(format!(
+                "the {asset} files don't all have the same scale and offset, so one range can't fit them all: leave range out"
+            ));
+        }
+        // The range in the files' stored values.
+        let look = match (range, scale) {
+            (Some(_), Some((k, o))) if k == 0.0 || !k.is_finite() || !o.is_finite() => {
+                return Err(format!(
+                    "the {asset} files' metadata gives a scale of {k} and an offset of {o}, so a range in the band's units can't be set: leave range out"
+                ));
+            }
+            (Some((lo, hi)), Some((k, o))) => {
+                let (a, b) = ((lo - o) / k, (hi - o) / k);
+                format!("#range={},{}", a.min(b), a.max(b))
+            }
+            (Some((lo, hi)), None) => format!("#range={lo},{hi}"),
+            (None, _) => String::new(),
+        };
+        let base = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).map_or_else(|| format!("{collection} {asset}"), str::to_string);
+        let many = tiles.len() > 1;
+        let mut added = Vec::new();
+        // What the map had: a cube that can't be added whole puts its tile layers back as they
+        // were (those it replaced, the same cube added before, included) and takes out the layers
+        // it added. The rest (the view a file framed, the slider) comes back with the project
+        // snapshot the command runs under (`Session::guarded`), as for any command that fails.
+        let (tiles_before, layers_before): (Vec<rustgis_map::TileLayer>, Vec<u32>) =
+            (s.map().tiles.clone(), s.map().layers.iter().map(|l| l.id).collect());
+        let undo = |s: &mut Session| {
+            let m = s.map_mut();
+            m.tiles = tiles_before.clone();
+            m.layers.retain(|l| layers_before.contains(&l.id));
+        };
         for (tile, by_day) in &tiles {
             let urls: Vec<(f64, String)> = by_day.iter().map(|(d, u)| (*d as f64 * 86_400_000.0, format!("{u}{look}"))).collect();
-            dates.extend(urls.iter().map(|(d, _)| *d));
             let Some((_, first)) = urls.first() else { continue };
             let name = if many { format!("{base} {tile}") } else { base.clone() };
             let r = match super::layer::add_url(s, &json!({"url": first, "name": name, "cube": true, "connection": p.get("connection")})) {
@@ -1076,6 +1273,9 @@ fn add_cube(s: &mut Session, p: &Value) -> CmdResult {
                 Some(t) => {
                     t.time_urls = urls;
                     t.name = name;
+                    if let Some(a) = &attribution {
+                        t.attribution = a.clone();
+                    }
                     added.push(r);
                 }
                 None => {
@@ -1087,46 +1287,15 @@ fn add_cube(s: &mut Session, p: &Value) -> CmdResult {
                 }
             }
         }
-        dates.sort_by(f64::total_cmp);
-        dates.dedup();
-        // At most MAX_CUBE_ITEMS dates, well under the slider's steps; were it ever more, the cube
-        // is refused rather than left with files the slider can't reach.
-        if dates.len() > rustgis_map::time::MAX_STEPS {
-            undo(s);
-            return Err(format!("{} dates; the time slider takes {} at most", dates.len(), rustgis_map::time::MAX_STEPS));
-        }
-        // The slider over the cube's dates: on over them when it is off; when it is on, taking
-        // them in (its own dates and the cube's, or its span widened to theirs), so every file
-        // can be reached.
-        let slider = match s.map().time.as_ref() {
-            None => {
-                let d: Vec<Value> = dates.iter().map(|d| json!(d)).collect();
-                json!({"dates": d})
-            }
-            Some(t) if !t.dates.is_empty() => {
-                let mut all: Vec<f64> = t.dates.iter().chain(&dates).copied().collect();
-                all.sort_by(f64::total_cmp);
-                all.dedup();
-                if all.len() > rustgis_map::time::MAX_STEPS {
-                    undo(s);
-                    return Err(format!(
-                        "the time slider's dates and the cube's make {}, more than its {} steps: take a shorter period",
-                        all.len(),
-                        rustgis_map::time::MAX_STEPS
-                    ));
-                }
-                json!({"dates": all, "date": t.current})
-            }
-            Some(t) => {
-                let (first, last) = (dates.first().copied().unwrap_or(t.start), dates.last().copied().unwrap_or(t.end));
-                json!({"start": t.start.min(first), "end": t.end.max(last), "date": t.current})
-            }
-        };
-        if let Err(e) = super::time::set(s, &slider) {
+        if let Err(e) = cube_slider(s, &mut dates, &json!({})) {
             undo(s);
             return Err(e);
         }
         let mut out = json!({"items": items, "tiles": tiles.len(), "dates": dates.len(), "layers": added.len()});
+        if let Some(r) = sampled {
+            out["range"] = json!(r);
+            out["rangeFrom"] = json!("sample");
+        }
         if without > 0 {
             out["skipped"] = json!(without);
         }
@@ -1137,9 +1306,166 @@ fn add_cube(s: &mut Session, p: &Value) -> CmdResult {
     }
 }
 
+/// Turns the time slider on over a data cube's dates (sorted and deduplicated here), or, when it
+/// is on, takes them in (its own dates and the cube's, or its span widened to theirs), so every
+/// file can be reached. `fresh`: what else a slider turned on here is set to (AlphaEarth's years
+/// shown as years). Refused, the slider unchanged, when the dates are more than its steps: a cube
+/// left with files the slider can't reach would say nothing of them.
+pub(crate) fn cube_slider(s: &mut Session, dates: &mut Vec<f64>, fresh: &Value) -> Result<(), String> {
+    dates.sort_by(f64::total_cmp);
+    dates.dedup();
+    if dates.len() > rustgis_map::time::MAX_STEPS {
+        return Err(format!("{} dates; the time slider takes {} at most", dates.len(), rustgis_map::time::MAX_STEPS));
+    }
+    let slider = match s.map().time.as_ref() {
+        None => {
+            let mut q = if fresh.is_object() { fresh.clone() } else { json!({}) };
+            q["dates"] = json!(dates);
+            q
+        }
+        Some(t) if !t.dates.is_empty() => {
+            let mut all: Vec<f64> = t.dates.iter().chain(dates.iter()).copied().collect();
+            all.sort_by(f64::total_cmp);
+            all.dedup();
+            if all.len() > rustgis_map::time::MAX_STEPS {
+                return Err(format!(
+                    "the time slider's dates and the cube's make {}, more than its {} steps: take a shorter period",
+                    all.len(),
+                    rustgis_map::time::MAX_STEPS
+                ));
+            }
+            json!({"dates": all, "date": t.current})
+        }
+        Some(t) => {
+            let (first, last) = (dates.first().copied().unwrap_or(t.start), dates.last().copied().unwrap_or(t.end));
+            let (a, z) = (t.start.min(first), t.end.max(last));
+            // Its steps over the span widened (an hourly slider over years): past what it lists,
+            // the cube's later dates couldn't be reached.
+            let n = rustgis_data::time::steps(a, z, t.unit, t.interval, rustgis_map::time::MAX_STEPS + 1).len();
+            if n > rustgis_map::time::MAX_STEPS {
+                return Err(format!(
+                    "the time slider's steps over the cube's period would be more than its {}: make its step longer (time.set unit) or take a shorter period",
+                    rustgis_map::time::MAX_STEPS
+                ));
+            }
+            // Each of the cube's dates shown at some step: a step longer than the dates' spacing
+            // (two years over yearly files) shows the later of two in one window, never the other.
+            let mut w = t.clone();
+            (w.start, w.end) = (a, z);
+            let mut shown = vec![false; dates.len()];
+            for step in w.steps() {
+                w.current = step;
+                let (from, to) = w.window();
+                let i = dates.partition_point(|d| *d < to);
+                if let Some(seen) = i.checked_sub(1).filter(|&j| dates.get(j).is_some_and(|d| *d >= from)).and_then(|j| shown.get_mut(j)) {
+                    *seen = true;
+                }
+            }
+            let unseen: Vec<String> =
+                dates.iter().zip(&shown).filter(|(_, s)| !**s).map(|(d, _)| rustgis_data::time::format(*d, "YYYY-MM-DD")).collect();
+            if !unseen.is_empty() {
+                let more = if unseen.len() > 5 { format!(" and {} more", unseen.len() - 5) } else { String::new() };
+                return Err(format!(
+                    "the time slider's step never shows {} of the cube's {} dates on their own ({}{more}): make its step shorter (time.set unit, interval) or turn it off first",
+                    unseen.len(),
+                    dates.len(),
+                    unseen.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            json!({"start": a, "end": z, "date": t.current})
+        }
+    };
+    super::time::set(s, &slider).map(|_| ())
+}
+
+/// The files a cube's range is sampled from, at most, and the most pixels a side read from each.
+#[cfg(not(target_arch = "wasm32"))]
+const SAMPLE_FILES: usize = 4;
+#[cfg(not(target_arch = "wasm32"))]
+const SAMPLE_SIDE: u32 = 512;
+
+/// A band's range from a sample of a cube's files (`"range": "auto"`), as GeoLibre's JAXA Earth
+/// panel sets one: the newest file of up to four of its tiles (spread over them), each read at its
+/// finest overview no larger than 512 pixels a side (the middle of its coarsest one otherwise),
+/// its values scaled as its metadata says, its codes for no value left out, and the 2nd to 98th
+/// percentiles of them all ([`cubes::percentile_range`]).
+#[cfg(not(target_arch = "wasm32"))]
+fn sample_range(
+    tiles: &std::collections::BTreeMap<String, std::collections::BTreeMap<i64, String>>,
+    scales: &std::collections::HashMap<String, (f64, f64)>,
+    scale: Option<(f64, f64)>,
+    nodata: &std::collections::HashMap<String, Vec<f64>>,
+) -> Result<Sample, String> {
+    use crate::render::rustgis_tiles::{cog, cubes};
+    let newest: Vec<&String> = tiles.values().filter_map(|by_day| by_day.values().next_back()).collect();
+    let n = newest.len();
+    let picked: Vec<&String> = (0..n.min(SAMPLE_FILES)).filter_map(|i| newest.get(i * n / n.min(SAMPLE_FILES))).copied().collect();
+    let mut values = Vec::new();
+    for href in picked {
+        let info = cog::info_blocking(href)?;
+        let l = &info.layout;
+        if l.palette.is_some() {
+            return Ok(Sample::Classes);
+        }
+        let level = l.levels.iter().position(|v| v.width.max(v.height) <= SAMPLE_SIDE).or(l.levels.len().checked_sub(1));
+        let Some((level, lv)) = level.and_then(|i| l.levels.get(i).map(|lv| (i, lv))) else {
+            return Err(format!("{href}: it has no image to sample"));
+        };
+        let (w, h) = (lv.width.min(SAMPLE_SIDE), lv.height.min(SAMPLE_SIDE));
+        let (c0, r0) = ((lv.width - w) / 2, (lv.height - h) / 2);
+        let read = cog::read_values_blocking(&info, href, level, 0, (c0, c0 + w), (r0, r0 + h))?;
+        let (k, o) = scales.get(href).copied().or(scale).unwrap_or((1.0, 0.0));
+        let fill: Vec<f32> = nodata.get(href).map(|f| f.iter().map(|v| *v as f32).collect()).unwrap_or_default();
+        values.extend(read.into_iter().filter(|v| v.is_finite() && !fill.contains(v)).map(|v| f64::from(v) * k + o));
+    }
+    if values.is_empty() {
+        return Ok(Sample::Empty);
+    }
+    // Values there, but spread wider than a number holds (a scale from hostile metadata).
+    cubes::percentile_range(values).map(Sample::Range).ok_or_else(|| "its values spread wider than one range can hold".to_string())
+}
+
+/// What a sample of a cube's files gives for its range.
+#[cfg(not(target_arch = "wasm32"))]
+enum Sample {
+    Range([f64; 2]),
+    /// No value in it.
+    Empty,
+    /// The files are a palette's classes, drawn in their own colours.
+    Classes,
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use rustgis_data::raster::GeoTransform;
+
+    /// A search sorted by date warns when the API's items are not in that order, and only then.
+    #[test]
+    fn a_sort_the_api_ignored_is_warned_and_one_it_followed_is_not() {
+        let features: Vec<_> = ["2024-06-03T00:00:00Z", "2024-06-02T00:00:00Z", "2024-06-01T00:00:00Z"]
+            .iter()
+            .enumerate()
+            .map(
+                |(n, d)| serde_json::json!({"type": "Feature", "id": format!("i{n}"), "bbox": [0, 0, 1, 1], "properties": {"datetime": d}}),
+            )
+            .collect();
+        let body = serde_json::json!({"type": "FeatureCollection", "features": features}).to_string();
+        let items = crate::render::rustgis_tiles::stac::parse_items(body.as_bytes(), "https://x.org/v1/search").unwrap().0;
+        // Newest first, as answered: nothing to say. Asked oldest first: the API did not sort.
+        assert_eq!(super::sort_ignored(&items, Some("-datetime")), None);
+        assert_eq!(super::sort_ignored(&items, None), None);
+        assert_eq!(super::sort_ignored(&items, Some("platform")), None);
+        let note = super::sort_ignored(&items, Some(" datetime ")).unwrap();
+        assert!(note.contains("sortby datetime was not followed") && note.contains("3 items"), "{note}");
+        // A sort the items can't show is said so, and only then: not for one the items show, no
+        // sort, or one item.
+        let unknown = super::sort_unchecked(&items, Some(" platform ")).unwrap();
+        assert!(unknown.contains("sortby platform could not be checked"), "{unknown}");
+        assert_eq!(super::sort_unchecked(&items, Some("-datetime")), None);
+        assert_eq!(super::sort_unchecked(&items, Some("datetime")), None, "ignored is the other note's to say");
+        assert_eq!(super::sort_unchecked(&items, None), None);
+        assert_eq!(super::sort_unchecked(&items[..1], Some("platform")), None);
+    }
 
     /// A piece's rows: as many as fit, whole tiles of rows when one fits, at least one; none when
     /// a single row is too many. Piauí at ~1 km over 25 years of 16-day composites (645 × 984
@@ -1170,7 +1496,6 @@ mod tests {
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-#[allow(clippy::unwrap_used)]
 mod deferred_asset_tests {
     use super::*;
 
@@ -1209,6 +1534,7 @@ mod deferred_asset_tests {
         assert_eq!(requests.len(), 1);
         let request = requests.remove(0);
         let mut params = request.params().clone();
+        assert_eq!(params["fromDocument"], true);
         let download = s.download_started_for(&request).unwrap();
         assert!(
             s.download_landed(
@@ -1229,5 +1555,46 @@ mod deferred_asset_tests {
         assert_eq!(layer.connection, connection);
         assert_eq!(layer.name, "Downloaded asset");
         assert_eq!(layer.dataset.features.len(), 1);
+    }
+    #[test]
+    fn refetched_assets_use_the_observed_item_origin_instead_of_its_hostname() {
+        use crate::render::rustgis_tiles::{address::Origin, cache::Fetched};
+        let requested = "https://catalog.corp.example/item.json";
+        let bytes = json!({"type":"Feature","id":"scene","geometry":null,"properties":{},
+            "assets":{"data":{"href":"http://10.0.0.5/scene.geojson","roles":["data"]}},"links":[]})
+        .to_string()
+        .into_bytes();
+        let local = Origin::connected(requested, "10.0.0.5".parse().unwrap()).unwrap();
+        let item = item_downloaded(Fetched { bytes: bytes.clone(), origin: local }, requested).unwrap();
+        assert_eq!(item.asset_href(Some("data")).unwrap().1, "http://10.0.0.5/scene.geojson");
+        let public = Origin::connected("https://redirected.example/item.json", "93.184.216.34".parse().unwrap()).unwrap();
+        let item = item_downloaded(Fetched { bytes, origin: public }, requested).unwrap();
+        assert!(item.asset_href(Some("data")).is_err());
+    }
+
+    #[test]
+    fn partial_collection_listings_report_omissions_and_duplicates_stay_quiet() {
+        let api = "https://public.example/catalog.json";
+        let mut session = Session::new(crate::Project::default());
+        for (count, refused) in [(1999, false), (2001, true)] {
+            let mut links: Vec<Value> =
+                (0..count).map(|i| json!({"rel":"child","href":format!("https://public.example/{i}.json")})).collect();
+            links.extend([links[0].clone(), links[1].clone()]);
+            if refused {
+                links.push(json!({"rel":"child","href":"http://10.0.0.5/private.json"}));
+                links.push(json!({"rel":"child","href":"ftp://files.example/catalog.json"}));
+            }
+            let text = json!({"type":"Catalog","id":"test","links":links}).to_string();
+            let mark = session.notice_mark();
+            let result = collections_json(&mut session, api, text.as_bytes()).unwrap();
+            assert_eq!(result["count"], count.min(2000));
+            assert_eq!(result.get("truncated").and_then(Value::as_bool).unwrap_or(false), refused);
+            let notices = session.notices_since(mark);
+            assert_eq!(notices.len(), if refused { 3 } else { 0 });
+            if refused {
+                assert!(notices.iter().any(|n| n.text.contains("1 catalog links were refused")));
+                assert!(notices.iter().any(|n| n.text.contains("1 catalog links were left out because their addresses")));
+            }
+        }
     }
 }

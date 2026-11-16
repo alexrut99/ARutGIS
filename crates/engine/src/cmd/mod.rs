@@ -4,6 +4,7 @@ pub mod arcgis;
 pub mod catalogs;
 pub mod clipboard;
 pub mod connections;
+pub mod copernicus;
 pub mod cube;
 pub mod cube_catalog;
 pub mod deeplearning;
@@ -15,6 +16,8 @@ pub mod edit;
 pub mod effects;
 pub mod embeddings;
 pub mod exports;
+pub mod extensions;
+pub mod field;
 pub mod geocode;
 pub mod geolibre;
 pub mod gp;
@@ -36,6 +39,7 @@ pub mod plugins;
 pub mod portals;
 pub mod presentation;
 pub mod project;
+pub mod publish;
 pub mod qgis;
 pub mod raster;
 pub mod reads;
@@ -51,12 +55,16 @@ pub mod sharing;
 pub mod sources;
 pub mod sql;
 pub mod stac;
+pub mod stac_area;
+pub mod table_stats;
+pub(crate) mod terrain_blocks;
 pub mod thai_sheets;
 pub mod tile_export;
 pub mod tiles;
 pub mod time;
 pub mod view;
 pub mod webdata;
+pub(crate) mod whole;
 pub mod workflows;
 pub mod workspace;
 pub mod zarr;
@@ -112,19 +120,76 @@ pub fn all() -> Vec<CommandSpec> {
     v.extend(sql::commands());
     v.extend(pg::commands());
     v.extend(gpkg::commands());
+    v.extend(publish::commands());
     v.extend(plugins::commands());
+    v.extend(extensions::commands());
     v.extend(sharing::commands());
     v.extend(stac::commands());
+    v.extend(stac_area::commands());
     v.extend(portals::commands());
     v.extend(catalogs::commands());
     v.extend(webdata::commands());
     v.extend(embeddings::commands());
     v.extend(earthdata::commands());
+    v.extend(copernicus::commands());
     v.extend(arcgis::commands());
     v.extend(nldi::commands());
     v.extend(time::commands());
     v.extend(thai_sheets::commands());
     v
+}
+
+/// Parse a user-supplied CRS and report an explicit WKT compatibility choice, or a shift its WKT
+/// gives that isn't applied.
+pub(crate) fn parse_crs(s: &mut Session, text: &str) -> Result<rustgis_data::raster::Crs, String> {
+    let crs = rustgis_data::raster::Crs::parse(text)?;
+    if let Some(note) = rustgis_data::raster::wkt::typed_crs_note(text, crs) {
+        s.warn(format!("crs: {note}"));
+    }
+    Ok(crs)
+}
+
+/// `text`, given as a command's `key`, when it has at most `limit` characters; else an error
+/// saying how long it is and what `of` takes. A name or a text a command is given is refused rather
+/// than cut without a word (#1888), as `layer.rename` refuses a long name (#1817). Characters are
+/// counted, not bytes.
+pub(crate) fn within(key: &str, of: &str, text: &str, limit: usize) -> Result<String, String> {
+    let n = text.chars().count();
+    if n > limit {
+        return Err(format!("{key} is {n} characters: {of} takes at most {limit}"));
+    }
+    Ok(text.to_string())
+}
+
+/// The `name` a command is given, trimmed, when it has at most `max` characters; else an error, as
+/// [`within`] gives. None when no name or a blank one is given.
+pub(crate) fn name_given(p: &Value, of: &str, max: usize) -> Result<Option<String>, String> {
+    ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).map(|n| within("name", of, n, max)).transpose()
+}
+
+/// `items`, given as a command's `key`, when there are at most `limit`; else an error saying how
+/// many there are and how many `of` takes, rather than the rest dropped without a word (#1888).
+pub(crate) fn at_most<T>(key: &str, of: &str, items: &[T], limit: usize) -> Result<(), String> {
+    if items.len() > limit {
+        return Err(format!("{key} has {} entries: {of} takes at most {limit}", items.len()));
+    }
+    Ok(())
+}
+
+/// Report a CRS already validated by a pure options parser, after its options were applied.
+pub(crate) fn say_crs_note(s: &mut Session, text: &str) {
+    if let Ok(crs) = rustgis_data::raster::Crs::parse(text)
+        && let Some(note) = rustgis_data::raster::wkt::typed_crs_note(text, crs)
+    {
+        s.warn(format!("crs: {note}"));
+    }
+}
+
+/// What a save to a database table calls itself in a notice: the layer and the table, or the one
+/// name when they are the same (`wells: 1 date-time…`, not `wells: wells: 1 date-time…`).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn saved_target(layer: &str, table: &str) -> String {
+    if layer == table { layer.to_string() } else { format!("{layer}: {table}") }
 }
 
 pub(crate) fn ps<'a>(p: &'a Value, k: &str) -> Option<&'a str> {
@@ -161,6 +226,31 @@ pub(crate) fn numbered_within(base: &str, max: usize, taken: impl Fn(&str) -> bo
         name = base.chars().take(max.saturating_sub(suffix.len())).chain(suffix.chars()).collect();
     }
     name
+}
+
+/// [`numbered_within`] for an item's name, with the notice to give when the number that tells it
+/// apart cuts the name. It is the same notice `task.new` gives (#1888). `command` is the command's
+/// title, such as "New Report", and `item` is what has that name already, such as "a report".
+/// `whose` says where the name came from: "the name given", or another phrase for a name the
+/// command made or read from a file. `base` is within `max` characters.
+pub(crate) fn numbered_saying(
+    command: &str,
+    item: &str,
+    whose: &str,
+    base: &str,
+    max: usize,
+    taken: impl Fn(&str) -> bool,
+) -> (String, Option<String>) {
+    let name = numbered_within(base, max, taken);
+    // The number cut the name when less of `base` is left before it than was given.
+    let cut = match name.rsplit_once(' ') {
+        Some((kept, number)) if name != base && kept.chars().count() < base.chars().count() => Some(format!(
+            "{command}: {item} has that name already, so {whose} is cut to {} characters to fit \" {number}\"",
+            kept.chars().count()
+        )),
+        _ => None,
+    };
+    (name, cut)
 }
 
 /// A copy's name: the one `given` (trimmed), else `<original> copy` with the original cut so
@@ -338,6 +428,12 @@ pub(crate) fn need_layer(s: &Session) -> Option<&'static str> {
         Some(_) => None,
         None => Some("select a layer in the Layers pane first"),
     }
+}
+
+/// A layer is active, or the command's parameters name a standalone table (`"table"`,
+/// [`Session::named_table`]).
+pub(crate) fn need_layer_or_table(s: &Session) -> Option<&'static str> {
+    if s.condition_table.is_some() { None } else { need_layer(s) }
 }
 
 /// A feature (vector) layer is active.

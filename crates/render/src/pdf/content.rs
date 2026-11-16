@@ -1,6 +1,7 @@
 //! A [`Drawing`](crate::vector::Drawing)'s items as a page's content stream: paths, glyph runs
 //! (in the document's [`Fonts`]), pictures, gradients (shadings, their transparency a soft mask)
-//! and groups (clipped, or transparency groups for an opacity or blend mode).
+//! and groups (clipped, or transparency groups for an opacity or blend mode; a layer's, marked
+//! content in its optional content group, from the document's [`Layers`]).
 //!
 //! The drawing's pixels (y down) are mapped onto the page once, at the start; every item is
 //! written in them. Colour, transparency and line settings are written only when they change.
@@ -12,15 +13,22 @@ use std::io::Write as _;
 use rustgis_map::effects::Blend;
 use tiny_skia::{Color, FillRule, LineCap, LineJoin, Path, PathSegment, Transform};
 
-use super::Doc;
 use super::fonts::Fonts;
+use super::{Doc, Layers};
 use crate::vector::{Brush, Clip, GlyphRun, Group, Image, Item, Stroke};
 
 /// Writes the content of a page `size` (drawing pixels) shown at `page` (points); its content
 /// stream's and resource dictionary's object numbers.
-pub(super) fn page(doc: &mut Doc, fonts: &mut Fonts, size: (f32, f32), page: (f64, f64), items: &[Item]) -> (usize, usize) {
+pub(super) fn page(
+    doc: &mut Doc,
+    fonts: &mut Fonts,
+    layers: &mut Layers,
+    size: (f32, f32),
+    page: (f64, f64),
+    items: &[Item],
+) -> (usize, usize) {
     let (contents, resources) = (doc.reserve(), doc.reserve());
-    let mut w = Writer { doc, fonts, res: Resources::default(), resources };
+    let mut w = Writer { doc, fonts, layers, res: Resources::default(), resources, parent: None, siblings: HashMap::new() };
     let mut out = Vec::new();
     // Drawing pixels, y down from the top, to points, y up from the bottom.
     let (sx, sy) = (page.0 / f64::from(size.0), page.1 / f64::from(size.1));
@@ -41,6 +49,8 @@ struct Resources {
     state_list: Vec<String>,
     xobjects: Vec<usize>,
     shadings: Vec<String>,
+    /// Optional content groups, by object number.
+    properties: Vec<usize>,
 }
 
 impl Resources {
@@ -65,6 +75,13 @@ impl Resources {
             s.push_str(" /XObject <<");
             for id in &self.xobjects {
                 let _ = write!(s, " /X{id} {id} 0 R");
+            }
+            s.push_str(" >>");
+        }
+        if !self.properties.is_empty() {
+            s.push_str(" /Properties <<");
+            for id in &self.properties {
+                let _ = write!(s, " /OC{id} {id} 0 R");
             }
             s.push_str(" >>");
         }
@@ -106,8 +123,13 @@ struct State {
 struct Writer<'a> {
     doc: &'a mut Doc,
     fonts: &'a mut Fonts,
+    layers: &'a mut Layers,
     res: Resources,
     resources: usize,
+    /// The layer being written in (its place in `layers`), and how many layers of each name it
+    /// has had on this page so far: the second of two elements named alike is a layer of its own.
+    parent: Option<usize>,
+    siblings: HashMap<(Option<usize>, String), usize>,
 }
 
 impl Writer<'_> {
@@ -204,7 +226,6 @@ impl Writer<'_> {
     }
 
     /// Fills `path` with `fill` and strokes it with `stroke` in one, both opaque.
-    #[allow(clippy::too_many_arguments)]
     fn fill_and_stroke(
         &mut self,
         out: &mut Vec<u8>,
@@ -236,9 +257,8 @@ impl Writer<'_> {
         end(out, st, saved);
     }
 
-    /// Sets a run of glyphs in the document's Type 3 fonts, each at its pen position.
+    /// Sets a run of glyphs in the document's fonts, each at its pen position.
     fn glyphs(&mut self, out: &mut Vec<u8>, st: &mut State, run: &GlyphRun) {
-        let mut placed = Vec::with_capacity(run.glyphs.len());
         // The glyphs' characters, in order, are the text as it was written:
         // - A SARA AM (ำ) is drawn in two glyphs, a ring over the consonant and an AA after it (a
         //   tone mark between them): the ring is drawn with the AA, as one glyph that stands for
@@ -251,41 +271,78 @@ impl Writer<'_> {
         let widthless = |g: &crate::vector::Glyph| g.ch != none && ab_glyph::Font::h_advance_unscaled(font, g.id) == 0.0;
         let ems = |from: &crate::vector::Glyph, g: &crate::vector::Glyph| (g.id, (g.x - from.x) / run.size, (from.y - g.y) / run.size);
         let mut ring: Option<&crate::vector::Glyph> = None;
-        // The mark placed last, when another may still be drawn with it.
+        // The mark set last, when another may still be drawn with it.
         let mut mark: Option<&crate::vector::Glyph> = None;
-        let place = |placed: &mut Vec<_>, fonts: &mut Fonts, doc: &mut Doc, g: &crate::vector::Glyph, also, with| {
-            let p = fonts.place(doc, font, g.id, (g.ch, also), -g.y / run.size, with);
-            placed.extend(p.map(|p| (g.x, p, g.ch == none)));
-        };
+        // Each thing to set: a glyph, the character after its own that it stands for, and the
+        // glyph drawn with it.
+        let mut shapes: Vec<(&crate::vector::Glyph, char, Option<(ab_glyph::GlyphId, f32, f32)>)> = Vec::with_capacity(run.glyphs.len());
         for g in &run.glyphs {
             if g.ch == none {
                 if let Some(alone) = ring.replace(g) {
-                    place(&mut placed, self.fonts, self.doc, alone, none, None);
+                    shapes.push((alone, none, None));
                 }
                 continue;
             }
             if let Some(under) = mark.take().filter(|_| widthless(g)) {
                 // The two as one, in place of the first alone.
-                placed.pop();
-                place(&mut placed, self.fonts, self.doc, under, g.ch, Some(ems(under, g)));
+                shapes.pop();
+                shapes.push((under, g.ch, Some(ems(under, g))));
                 continue;
             }
             let with = if g.ch == '\u{0E33}' { ring.take().map(|r| ems(g, r)) } else { None };
-            let before = placed.len();
-            place(&mut placed, self.fonts, self.doc, g, none, with);
-            if placed.len() > before && widthless(g) {
+            shapes.push((g, none, with));
+            if widthless(g) {
                 mark = Some(g);
             }
         }
         if let Some(alone) = ring {
-            place(&mut placed, self.fonts, self.doc, alone, none, None);
+            shapes.push((alone, none, None));
+        }
+        // An embedded face sets a run of glyphs each alone on the baseline, standing for its one
+        // character. A run with a glyph a shaper moved, two drawn as one, or one that stands for
+        // no character goes whole to the face's outlines (Type 3 fonts), whose glyphs can say so.
+        let real =
+            self.fonts.is_real(font) && shapes.iter().all(|(g, also, with)| g.ch != none && *also == none && with.is_none() && g.y == 0.0);
+        // A halo (#1815): in an embedded face, the same text filled and stroked (rendering mode
+        // 2), so an editor sees it as text too, marked as an artifact; in outlines (a Type 3
+        // glyph is filled only), its glyphs' outlines filled and stroked, as before.
+        let halo = run.halo.filter(|w| w.is_finite() && *w > 0.0);
+        if let Some(w) = halo
+            && !real
+        {
+            if let Some(path) = run.outline() {
+                self.fill_and_stroke(out, st, &path, run.color, FillRule::Winding, (run.color, &GlyphRun::halo_stroke(w)), run.transform);
+            }
+            return;
+        }
+        let mut placed = Vec::with_capacity(shapes.len());
+        for (g, also, with) in shapes {
+            let p = self.fonts.place(self.doc, font, g.id, (g.ch, also), -g.y / run.size, with, real);
+            placed.extend(p.map(|p| (g.x, p, g.ch == none)));
         }
         if placed.is_empty() {
             return;
         }
         self.alpha(out, st, run.color.alpha());
         set_color(out, &mut st.fill, run.color, "rg");
+        if let Some(w) = halo {
+            // A text's stroke is in user space, not the text matrix's: the run's scale applied.
+            let t = run.transform;
+            let scale = (t.sx * t.sy - t.kx * t.ky).abs().sqrt();
+            set_color(out, &mut st.stroke, run.color, "RG");
+            stroke_state(out, st, &GlyphRun::halo_stroke(w * scale));
+        }
+        let decorative = halo.is_some() || run.decorative;
+        if decorative {
+            // The copy is decoration, marked so (an artifact) for readers that leave artifacts out
+            // of what they copy and find. (An empty `ActualText` would hide it from every reader's
+            // text, but VectorCraft then drops the halo altogether.)
+            out.extend_from_slice(b"/Artifact BMC\n");
+        }
         out.extend_from_slice(b"BT\n");
+        if halo.is_some() {
+            out.extend_from_slice(b"2 Tr\n");
+        }
         // Glyph space is y up: flipped into the run's y-down space.
         write_matrix(out, run.transform.pre_scale(1.0, -1.0));
         out.extend_from_slice(b" Tm\n");
@@ -320,7 +377,7 @@ impl Writer<'_> {
             if shift.abs() >= 0.05 {
                 num(out, shift, 1);
             }
-            let _ = write!(out, "<{:02X}>", p.code);
+            let _ = if p.wide { write!(out, "<{:04X}>", p.code) } else { write!(out, "<{:02X}>", p.code) };
             pen = x + p.advance * size;
             if silent {
                 out.extend_from_slice(b"] TJ\nEMC\n");
@@ -330,7 +387,14 @@ impl Writer<'_> {
         if open {
             out.extend_from_slice(b"] TJ\n");
         }
+        // (The rendering mode is text state, kept past ET: set back for the text that follows.)
+        if halo.is_some() {
+            out.extend_from_slice(b"0 Tr\n");
+        }
         out.extend_from_slice(b"ET\n");
+        if decorative {
+            out.extend_from_slice(b"EMC\n");
+        }
     }
 
     /// Places a picture: an image object (with its alpha as a soft mask) drawn where it lies.
@@ -366,50 +430,111 @@ impl Writer<'_> {
     }
 
     /// Writes a group inside its clip, moved by its transform: as a transparency group when it has
-    /// an opacity or a blend mode, else straight into the content.
+    /// an opacity or a blend mode, else straight into the content. A layer's items are marked as
+    /// its optional content group's (#1815). The layers inside a group that only clips and moves
+    /// (a map frame's map layers and labels) are marked outside its clip, each run of its items
+    /// clipped and moved on its own, which draws the same: a vector editor can't put a layer
+    /// inside a clipping group, so it would flatten them.
     fn group(&mut self, out: &mut Vec<u8>, st: &mut State, g: &Group) {
+        let outer = self.open_layer(out, g);
+        let composite = g.opacity < 0.999 || g.blend != Blend::Normal;
+        let is_layer = |i: &Item| matches!(i, Item::Group(c) if c.layer.is_some());
+        if self.layers.on && !composite && g.items.iter().any(is_layer) {
+            for run in g.items.chunk_by(|a, b| !is_layer(a) && !is_layer(b)) {
+                match run {
+                    [Item::Group(c)] if c.layer.is_some() => {
+                        let inner = self.open_layer(out, c);
+                        self.clipped(out, st, g, |w, out, st| w.items(out, st, &c.items));
+                        self.close_layer(out, inner);
+                    }
+                    _ => self.clipped(out, st, g, |w, out, st| w.items(out, st, run)),
+                }
+            }
+        } else {
+            self.clipped(out, st, g, |w, out, st| {
+                if composite {
+                    w.transparency_group(out, g);
+                } else {
+                    w.items(out, st, &g.items);
+                }
+            });
+        }
+        self.close_layer(out, outer);
+    }
+
+    /// Writes what `f` writes inside `g`'s clip, moved by its transform; nothing when the
+    /// transform folds it flat.
+    fn clipped(&mut self, out: &mut Vec<u8>, st: &mut State, g: &Group, f: impl FnOnce(&mut Self, &mut Vec<u8>, &mut State)) {
         let saved = st.clone();
         out.extend_from_slice(b"q\n");
         if let Some(clip) = &g.clip {
             clip_ops(out, clip);
         }
         // A transform that folds its items flat leaves nothing to see.
-        if g.transform.invert().is_none() {
-            out.extend_from_slice(b"Q\n");
-            return;
-        }
-        if !g.transform.is_identity() {
-            write_matrix(out, g.transform);
-            out.extend_from_slice(b" cm\n");
-        }
-        let composite = g.opacity < 0.999 || g.blend != Blend::Normal;
-        if composite {
-            // A transparency group, isolated (drawn on transparency, as the renderer draws a
-            // layer offscreen), composited with the group's opacity and blend mode.
-            let form = self.doc.reserve();
-            let mut inner = Vec::new();
-            self.items(&mut inner, &mut State::default(), &g.items);
-            // Room for anything the group's items can draw, in their own space: the page seen
-            // through every transform above the group is not known here.
-            let dict = format!(
-                "/Type /XObject /Subtype /Form /BBox [-1000000 -1000000 1000000 1000000] /Group << /S /Transparency /CS /DeviceRGB /I true >> /Resources {} 0 R",
-                self.resources
-            );
-            self.doc.stream(form, &dict, &inner, false);
-            self.res.xobjects.push(form);
-            let mut entries = String::new();
-            let a = fnum(g.opacity);
-            let _ = write!(entries, "/ca {a} /CA {a}");
-            if g.blend != Blend::Normal {
-                let _ = write!(entries, " /BM /{}", blend_name(g.blend));
+        if g.transform.invert().is_some() {
+            if !g.transform.is_identity() {
+                write_matrix(out, g.transform);
+                out.extend_from_slice(b" cm\n");
             }
-            let gs = self.res.state(entries);
-            let _ = writeln!(out, "/G{gs} gs /X{form} Do");
-        } else {
-            self.items(out, st, &g.items);
+            f(self, out, st);
         }
         out.extend_from_slice(b"Q\n");
         *st = saved;
+    }
+
+    /// `g`'s items as a transparency group, isolated (drawn on transparency, as the renderer
+    /// draws a layer offscreen), composited with its opacity and blend mode.
+    fn transparency_group(&mut self, out: &mut Vec<u8>, g: &Group) {
+        let form = self.doc.reserve();
+        let mut inner = Vec::new();
+        self.items(&mut inner, &mut State::default(), &g.items);
+        // Room for anything the group's items can draw, in their own space: the page seen
+        // through every transform above the group is not known here.
+        let dict = format!(
+            "/Type /XObject /Subtype /Form /BBox [-1000000 -1000000 1000000 1000000] /Group << /S /Transparency /CS /DeviceRGB /I true >> /Resources {} 0 R",
+            self.resources
+        );
+        self.doc.stream(form, &dict, &inner, false);
+        self.res.xobjects.push(form);
+        let mut entries = String::new();
+        let a = fnum(g.opacity);
+        let _ = write!(entries, "/ca {a} /CA {a}");
+        if g.blend != Blend::Normal {
+            let _ = write!(entries, " /BM /{}", blend_name(g.blend));
+        }
+        let gs = self.res.state(entries);
+        let _ = writeln!(out, "/G{gs} gs /X{form} Do");
+    }
+
+    /// Begins marking `g`'s layer, if it is one (and the document writes layers): the layer
+    /// written in before, for [`Writer::close_layer`].
+    fn open_layer(&mut self, out: &mut Vec<u8>, g: &Group) -> Option<Option<usize>> {
+        let name = g.layer.as_deref().filter(|_| self.layers.on)?;
+        let outer = self.parent;
+        // Without an id, the second of two layers named alike is another layer.
+        let n = match g.layer_id {
+            Some(_) => 0,
+            None => {
+                let n = self.siblings.entry((outer, name.to_string())).or_insert(0);
+                *n += 1;
+                *n - 1
+            }
+        };
+        let (at, id) = self.layers.group(self.doc, outer, name, g.layer_id, n);
+        if !self.res.properties.contains(&id) {
+            self.res.properties.push(id);
+        }
+        let _ = writeln!(out, "/OC /OC{id} BDC");
+        self.parent = Some(at);
+        Some(outer)
+    }
+
+    /// Ends the layer [`Writer::open_layer`] began, if it did.
+    fn close_layer(&mut self, out: &mut Vec<u8>, outer: Option<Option<usize>>) {
+        if let Some(outer) = outer {
+            out.extend_from_slice(b"EMC\n");
+            self.parent = outer;
+        }
     }
 
     /// Sets the fill and stroke alpha to `a` where it isn't already.
@@ -691,6 +816,8 @@ mod tests {
             color: Color::from_rgba8(20, 20, 20, 255),
             transform: Transform::from_translate(210.0, 40.0),
             glyphs,
+            halo: None,
+            decorative: false,
         });
         let mut pic = Pixmap::new(4, 4).unwrap();
         pic.fill(Color::from_rgba8(0, 160, 0, 200));
@@ -776,7 +903,15 @@ mod tests {
         let x = font.h_advance_unscaled(a) / upm * 20.0 + 5.0;
         let mut d = Drawing::new(100.0, 100.0);
         let glyphs = vec![Glyph { id: a, x: 0.0, y: 0.0, ch: 'A' }, Glyph { id: v, x, y: 0.0, ch: 'V' }];
-        d.glyphs(GlyphRun { font, size: 20.0, color: Color::BLACK, transform: Transform::from_translate(10.0, 50.0), glyphs });
+        d.glyphs(GlyphRun {
+            font,
+            size: 20.0,
+            color: Color::BLACK,
+            transform: Transform::from_translate(10.0, 50.0),
+            glyphs,
+            halo: None,
+            decorative: false,
+        });
         let objs = objects(&write(&[Page::drawing(d, 10.0, 10.0)], ""));
         let content = objs.iter().map(|o| String::from_utf8_lossy(&o.1).into_owned()).find(|c| c.contains("TJ")).unwrap();
         assert!(content.contains("1 0 0 -1 10 50 Tm\n") && content.contains("[<00>-250<01>] TJ"), "{content}");

@@ -7,6 +7,66 @@ use rustgis_engine::data::ogc::{self, Pages, Step};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
 
+/// A dialog-owned read-ahead job. Replacing or dropping its connection cancels parsing;
+/// its result cannot be applied to a different connection's listing.
+pub struct ListingRead {
+    pub control: std::sync::Arc<rustgis_engine::analysis::control::Control>,
+    pub slot: Slot<Result<rustgis_engine::cmd::reads::Read, String>>,
+    /// A search result belongs to its original filter, even if typing continues meanwhile.
+    pub filter: Option<String>,
+}
+
+impl Drop for ListingRead {
+    fn drop(&mut self) {
+        self.control.cancel();
+    }
+}
+
+impl ListingRead {
+    /// Runs the already admitted supplied-document read on its own desktop thread. Completion
+    /// is polled by the owning connection; thread refusal is an ordinary dialog error.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn start(s: &mut rustgis_engine::Session, p: &Value) -> Result<Self, String> {
+        let read = rustgis_engine::cmd::reads::read_ahead(s, "service.layers", p)?;
+        let control = rustgis_engine::analysis::control::Control::stoppable();
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let (work_control, done) = (control.clone(), slot.clone());
+        std::thread::Builder::new()
+            .name("service-listing".into())
+            .spawn(move || {
+                let result = read.run(&work_control);
+                *done.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(result);
+            })
+            .map_err(|error| i18n::fmt("Could not start service discovery: {error}", &[("error", &error.to_string())]))?;
+        Ok(Self { control, slot, filter: p.get("filter").and_then(Value::as_str).map(str::to_string) })
+    }
+}
+
+/// Installs a listing only on the connection that owns its completed read, or starts its next
+/// advertised fetch. Failed and cancelled reads clear the busy state beside their error.
+pub fn listed(conn: &mut crate::ServiceConn, result: rustgis_engine::CmdResult, filter: Option<String>) {
+    conn.pending = None;
+    if let Some(filter) = filter {
+        conn.search = Some(crate::ServiceSearch { filter, listing: result });
+        conn.added = None;
+        return;
+    }
+    match result {
+        Ok(value) => {
+            conn.error = None;
+            conn.failure = None;
+            conn.pending = value.get("next").and_then(Value::as_str).map(str::to_string);
+            if let Some(next) = &conn.pending {
+                conn.slot = crate::fetch_detailed_into(next);
+            }
+            conn.listing = Some(value);
+            conn.added = None;
+            conn.search = None;
+        }
+        Err(error) => conn.error = Some(error),
+    }
+}
+
 pub struct Import {
     params: Value,
     refresh: bool,
@@ -37,6 +97,12 @@ pub struct ServiceSource {
 /// Uses the same translated tileset progress text when discovery starts and when it retires.
 pub(crate) fn reading_tileset(name: &str) -> String {
     i18n::fmt("Reading the tileset of {name}", &[("name", name)])
+}
+
+/// The line a queued add owns until it succeeds, fails or is cancelled.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn adding(name: &str) -> String {
+    i18n::fmt("Adding {name}…", &[("name", name)])
 }
 
 /// Uses the same translated coverage progress text when discovery starts and when it retires.
@@ -97,7 +163,6 @@ pub(crate) fn add_layer(
 
 /// [`add_layer`] for a saved connection: `connection` is its id, recorded on the resulting layer;
 /// `origin` is its display name for Recent. Both survive deferred documents and downloads.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn add_layer_from(
     app: &mut RustGisApp,
     src: &ServiceSource,
@@ -208,7 +273,13 @@ pub(crate) fn add_layer_from(
             app.ui.service_steps.push(crate::ServiceStep::Tiles { resolve, dialog, origin, opened: app.session.opened });
             Ok(reading_tileset(&title))
         }
-        None => crate::connectiontree::run_named(app, "service.add", p, origin.as_deref()).map(|_| added(&title)),
+        None => {
+            #[cfg(not(target_arch = "wasm32"))]
+            if app.reads_off_frame {
+                return crate::readjob::run_service(app, p, &title, origin.as_deref()).map(|_| adding(&title));
+            }
+            crate::connectiontree::run_named(app, "service.add", p, origin.as_deref()).map(|_| added(&title))
+        }
     }
 }
 
@@ -402,12 +473,6 @@ pub fn poll(app: &mut RustGisApp, ctx: &egui::Context) {
     }
 }
 
-/// An address as a message names it: redacted on its own first, so a query naming a secret takes
-/// only itself away when the whole message is redacted, not the reason that follows it.
-pub(crate) fn address_in_message(url: &str) -> String {
-    rustgis_engine::Session::redacted(url).as_str().to_string()
-}
-
 /// The add-service dialog's line for a layer on its way: what the dialog shows when a layer's
 /// download starts, and what [`RustGisApp::landed_in_dialog`] looks for when it lands (#1453).
 pub(crate) fn downloading(name: &str) -> String {
@@ -450,15 +515,31 @@ pub(crate) fn read_pages(app: &mut RustGisApp, landed: Landed) {
     go_on(app, landed, rustgis_engine::render::rustgis_tiles::cache::MAX_DOWNLOAD, step);
 }
 
-/// An ArcGIS layer's description fetched in the background: at most `max` bytes, its download
-/// given up on natively after [`ogc::DESCRIPTION_TIMEOUT`].
-fn fetch_description(url: &str, max: usize) -> Slot<Result<Vec<u8>, String>> {
+/// How its ArcGIS service draws the layer being read, from its description, goes with it to be
+/// added (#2080); why it couldn't be read is said (#2152), also before anything is fetched for a
+/// query asking for a window of its own, which has no description.
+fn drawn(app: &mut RustGisApp, landed: &mut Landed, step: &mut Step) {
+    let Step::Fetch(pages) = step else { return };
+    match pages.take_drawing_info() {
+        Some(Ok(drawing)) => {
+            if let Some(params) = landed.params.as_object_mut() {
+                params.insert("drawingInfo".to_string(), drawing);
+            }
+        }
+        Some(Err(note)) => noted(app, landed, Some(note)),
+        None => {}
+    }
+}
+
+/// A bounded description or retryable feature page fetched off the frame. Native downloads
+/// end at the timeout; the browser's late answer is discarded by the polling read.
+fn fetch_within(url: &str, max: usize, timeout: std::time::Duration) -> Slot<Result<Vec<u8>, String>> {
     let slot: Slot<Result<Vec<u8>, String>> = Slot::default();
     let land = slot.clone();
     rustgis_engine::render::rustgis_tiles::cache::download_within(
         url,
         max,
-        ogc::DESCRIPTION_TIMEOUT,
+        timeout,
         Box::new(move |r| *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(r)),
     );
     slot
@@ -472,21 +553,20 @@ pub fn poll_pages(app: &mut RustGisApp, ctx: &egui::Context) {
     }
     for read in std::mem::take(&mut app.ui.service_pages) {
         if !app.session.download_is_pending(read.landed.id) {
-            let url = &address_in_message(&read.landed.url);
-            let why = i18n::fmt("{url}: downloaded after its project was closed, so it wasn't added", &[("url", url)]);
+            let url = rustgis_engine::sources::address_in_message(&read.landed.url);
+            let why = i18n::fmt("{url}: downloaded after its project was closed, so it wasn't added", &[("url", &url)]);
             app.session.request_failed(&read.landed.params, &why);
             app.landed_in_dialog(&read.landed.params, Err(&why));
             app.session.notify(why, false);
             continue;
         }
         let answer = read.slot.lock().unwrap_or_else(|e| e.into_inner()).take();
-        // A layer's description that doesn't come in time is given up on, and the layer's query
-        // fetched as it is (natively its download ends then too; the browser's fetch keeps its
-        // own time, and what it brings is dropped).
+        // A description that takes too long is given up on; a feature page can be retried at a
+        // smaller size. Native downloads end then too; a browser's late answer is dropped.
         let describing = read.pages.describing();
         let answer = answer.or_else(|| {
-            (describing && read.asked.elapsed() >= ogc::DESCRIPTION_TIMEOUT)
-                .then(|| Err("the layer's description took too long".to_string()))
+            let timeout = if describing { Some(ogc::DESCRIPTION_TIMEOUT) } else { read.pages.page_timeout() };
+            timeout.filter(|timeout| read.asked.elapsed() >= *timeout).map(|_| Err("timeout: service page".to_string()))
         });
         match answer {
             Some(answer) => {
@@ -516,13 +596,15 @@ fn next_request(app: &mut RustGisApp, params: &Value, pages: &Pages) -> Result<S
 
 /// The next answer fetched, or the collection added (with a note when some features were left
 /// unread), or why it couldn't be fetched said.
-pub(crate) fn go_on(app: &mut RustGisApp, landed: Landed, left: usize, step: Step) {
+pub(crate) fn go_on(app: &mut RustGisApp, mut landed: Landed, left: usize, mut step: Step) {
     if let Err(e) = app.session.download_continues(landed.id) {
         app.session.request_failed(&landed.params, &e);
         app.landed_in_dialog(&landed.params, Err(&e));
         app.session.notify(e, true);
         return;
     }
+    // Only for a download still going: one cancelled says nothing of how it would be drawn.
+    drawn(app, &mut landed, &mut step);
     let still = app.session.download_still(landed.id);
     rustgis_engine::render::rustgis_tiles::cache::with_optional_still(still, || {
         match step {
@@ -534,7 +616,7 @@ pub(crate) fn go_on(app: &mut RustGisApp, landed: Landed, left: usize, step: Ste
                 app.session.request_failed(&landed.params, &e);
                 app.session.download_failed(landed.id);
                 let url = &landed.url;
-                let e = if e.starts_with(url.as_str()) { e } else { format!("{url}: {e}") };
+                let e = rustgis_engine::sources::message_with_address(url, &e);
                 app.landed_in_dialog(&landed.params, Err(&e));
                 app.session.notify(e, true);
             }
@@ -542,8 +624,11 @@ pub(crate) fn go_on(app: &mut RustGisApp, landed: Landed, left: usize, step: Ste
                 let next = next_request(app, &landed.params, &pages);
                 let slot = match next {
                     // A layer's description: small, and soon given up on.
-                    Ok(url) if pages.describing() => fetch_description(&url, left.min(ogc::DESCRIPTION_MAX)),
-                    Ok(url) => fetch_into_limited(&url, left),
+                    Ok(url) if pages.describing() => fetch_within(&url, left.min(ogc::DESCRIPTION_MAX), ogc::DESCRIPTION_TIMEOUT),
+                    Ok(url) => match pages.page_timeout() {
+                        Some(timeout) => fetch_within(&url, left, timeout),
+                        None => fetch_into_limited(&url, left),
+                    },
                     Err(e) => Slot::new(std::sync::Mutex::new(Some(Err(e)))),
                 };
                 app.ui.service_pages.push(PageRead { landed, pages, left, slot, asked: web_time::Instant::now() });
@@ -559,8 +644,9 @@ pub(crate) fn go_on(app: &mut RustGisApp, landed: Landed, left: usize, step: Ste
 /// Says what was left unread of a service layer's features, by its name.
 fn noted(app: &mut RustGisApp, landed: &Landed, note: Option<String>) {
     if let Some(note) = note {
-        let name = landed.params.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).unwrap_or(&landed.url);
-        app.session.notify(format!("{name}: {note}"), false);
+        let name = landed.params.get("name").and_then(Value::as_str).filter(|n| !n.is_empty());
+        let shown = name.map(str::to_string).unwrap_or_else(|| rustgis_engine::sources::address_in_message(&landed.url));
+        app.session.notify(i18n::fmt("{name}: {note}", &[("name", &shown), ("note", &note)]), false);
     }
 }
 
@@ -632,7 +718,7 @@ mod tests {
                     assert_eq!(seen.len(), 2, "{:?}", app.session.notices);
                     assert!(seen[1].contains("REQUEST=GetCoverage"));
                     assert_eq!(logins::apply(&seen[1]).unwrap().is_some(), !anonymous);
-                    let (_, _, params, _) = app.ui.downloads.first().expect("the coverage download was dispatched");
+                    let params = &app.ui.downloads.first().expect("the coverage download was dispatched").params;
                     assert_eq!(params.get("connection").and_then(Value::as_str), (!anonymous).then_some(id.as_str()));
                     assert_eq!(params.get("anonymous").and_then(Value::as_bool).unwrap_or(false), anonymous);
                 } else {

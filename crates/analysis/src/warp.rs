@@ -283,25 +283,26 @@ pub fn warp(r: &Raster, fit: &Fit, o: &Options) -> Result<Raster, String> {
 
 /// The bounds `[min x, min y, max x, max y]` of a `w` × `h` image whose pixel positions `place`
 /// puts in output coordinates: its edge and a lattice inside it (a pole inside the image is no
-/// extreme of its edge). `None` when too little of it can be placed.
+/// extreme of its edge). Refuses an unplaceable edge instead of returning partial bounds;
+/// interior samples that cannot be placed are skipped.
 fn footprint(w: f64, h: f64, place: &dyn Fn(f64, f64) -> Option<(f64, f64)>) -> Option<[f64; 4]> {
     let (mut min_x, mut min_y, mut max_x, mut max_y) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
     let mut placed = 0;
     let mut add = |c: f64, row: f64| {
-        if let Some((x, y)) = place(c, row) {
-            (min_x, min_y, max_x, max_y) = (min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y));
-            placed += 1;
-        }
+        let (x, y) = place(c, row)?;
+        (min_x, min_y, max_x, max_y) = (min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y));
+        placed += 1;
+        Some(())
     };
     for i in 0..=EDGE_POINTS {
         let t = i as f64 / EDGE_POINTS as f64;
         for (c, row) in [(t * w, 0.0), (t * w, h), (0.0, t * h), (w, t * h)] {
-            add(c, row);
+            add(c, row)?;
         }
     }
     for i in 0..=INTERIOR_POINTS {
         for j in 0..=INTERIOR_POINTS {
-            add(i as f64 / INTERIOR_POINTS as f64 * w, j as f64 / INTERIOR_POINTS as f64 * h);
+            let _ = add(i as f64 / INTERIOR_POINTS as f64 * w, j as f64 / INTERIOR_POINTS as f64 * h);
         }
     }
     (placed >= 4 && [min_x, min_y, max_x, max_y].iter().all(|v| v.is_finite())).then_some([min_x, min_y, max_x, max_y])
@@ -452,9 +453,11 @@ impl Method {
 /// Projects `r` onto the grid `g`, through longitude/latitude when their coordinate systems
 /// differ: each cell sampled at its centre, or (average, mode) taken from every pixel of `r`
 /// whose centre falls in it. A cell no pixel centre falls in (a grid finer than the raster) takes
-/// the pixel under its centre. Cells off the raster are its no-data (else NaN, or 0 in a
-/// whole-number type), or see-through for a colour image with neither alpha nor no-data, which
-/// gains an alpha band for it.
+/// the pixel under its centre. Outside cells use 0 in every band when alpha is present or
+/// added; otherwise they use explicit no-data. Without either, they use NaN for floating-point
+/// data, RGB data with more than three bands, or when any band has class names, else 0.
+/// A three-band RGB image with neither alpha nor
+/// no-data gains an alpha band for see-through cells.
 pub fn project(r: &Raster, g: &Grid, method: Method, name: String) -> Result<Raster, String> {
     project_on(None, r, g, method, name)
 }
@@ -589,8 +592,8 @@ impl Canvas {
 
     /// How `r` is held: as a `picture` (a scan being georeferenced), a grey byte image gains
     /// alpha as a colour one does; as data, it keeps its one band, and a cell with no value is
-    /// its no-data, else NaN in a floating-point type and 0 in a whole-number one, as GDAL leaves
-    /// it.
+    /// its no-data, else NaN for floating-point or named-class data and 0 in other whole-number
+    /// data. Named class zero must remain distinct from cells outside the coverage.
     fn of(r: &Raster, picture: bool) -> Canvas {
         let nb = r.bands.len();
         let alpha_src = match r.color {
@@ -606,7 +609,8 @@ impl Canvas {
         let add_alpha = ((rgb && nb == 3) || gray) && alpha_src.is_none() && r.nodata.is_none();
         // Cells with no value: no-data where the raster has some. Colours with alpha are zero there.
         let clear = alpha_src.is_some() || add_alpha;
-        let none = if picture || rgbi || r.data_type.starts_with("Float") { f32::NAN } else { 0.0 };
+        let labelled = r.bands.iter().any(|b| !b.classes.is_empty());
+        let none = if picture || rgbi || labelled || r.data_type.starts_with("Float") { f32::NAN } else { 0.0 };
         let outside = if clear { 0.0 } else { r.nodata.map_or(none, |d| d as f32) };
         let color = match (add_alpha, rgb) {
             (true, true) => ColorHint::Rgb { alpha: true },
@@ -635,8 +639,8 @@ impl Canvas {
         }
     }
 
-    /// The output raster on `g`, its bands named as the source's.
-    fn finish(&self, r: &Raster, g: &Grid, bands: Vec<Vec<f32>>, name: String) -> Result<Raster, String> {
+    /// The output on `g`, keeping band labels and credits, and class names when values are preserved.
+    fn finish(&self, r: &Raster, g: &Grid, bands: Vec<Vec<f32>>, method: Method, name: String) -> Result<Raster, String> {
         let mut out = Raster::new(
             name,
             g.width as u32,
@@ -651,7 +655,15 @@ impl Canvas {
         .map_err(|e| e.to_string())?;
         for (i, band) in out.bands.iter_mut().enumerate() {
             band.name = r.bands.get(i).map_or_else(|| "Alpha".to_string(), |b| b.name.clone());
+            band.wavelength = r.bands.get(i).and_then(|b| b.wavelength);
+            if matches!(method, Method::Sample(Resampling::Nearest) | Method::Mode)
+                && let Some(source) = r.bands.get(i)
+            {
+                band.classes = source.classes.clone();
+            }
         }
+        out.copyright = r.copyright.clone();
+        out.keep_rounded_mark(r);
         Ok(out)
     }
 }
@@ -756,7 +768,7 @@ fn sampled(
     let sampler = Sampler { r, method, alpha: canvas.alpha_src, round: !r.data_type.starts_with("Float") };
     let mut bands = canvas.bands(ow, oh)?;
     if ow == 0 {
-        return canvas.finish(r, g, bands, name);
+        return canvas.finish(r, g, bands, Method::Sample(method), name);
     }
     let x_at = |ox: usize| g.min_x + (ox as f64 + 0.5) * g.cell_x;
     // A cell's work in `MIN_ROW_WORK`'s units (some 30 ns): its pixels read per band, and its
@@ -787,7 +799,7 @@ fn sampled(
             }
         },
     )?;
-    canvas.finish(r, g, bands, name)
+    canvas.finish(r, g, bands, Method::Sample(method), name)
 }
 
 /// `r` on the grid `g`, each cell the mean (or, with `mode`, the most frequent value, with GDAL's
@@ -811,7 +823,7 @@ fn aggregated(
     let nearest = Sampler { r, method: Resampling::Nearest, alpha: None, round };
     let mut bands = canvas.bands(ow, oh)?;
     if ow == 0 {
-        return canvas.finish(r, g, bands, name);
+        return canvas.finish(r, g, bands, if mode { Method::Mode } else { Method::Average }, name);
     }
     let x_at = |i: usize| g.min_x + i as f64 * g.cell_x;
     let each = Aggregate { r, canvas: &canvas, nearest, mode, round };
@@ -847,7 +859,7 @@ fn aggregated(
             each.row(s, &mut line);
         },
     )?;
-    canvas.finish(r, g, bands, name)
+    canvas.finish(r, g, bands, if mode { Method::Mode } else { Method::Average }, name)
 }
 
 /// A thread's scratch in [`aggregated`].
@@ -1435,6 +1447,27 @@ mod tests {
         assert_eq!((out.band_count(), out.value(0, 0, 0), out.value(0, 3, 1)), (1, None, Some(3.5)));
     }
 
+    #[test]
+    fn projected_classes_keep_zero_distinct_from_outside_cells() {
+        let gt = GeoTransform { origin_x: 0.0, origin_y: 2.0, pixel_width: 1.0, pixel_height: -1.0 };
+        let mut r = Raster::new("c", 2, 2, vec![vec![0.0, 1.0, 1.0, 0.0]], gt, Crs::LonLat, None, ColorHint::Gray, "UInt8").unwrap();
+        r.bands[0].classes = vec!["water".into(), "land".into()];
+        let g = Grid::snapped(r.crs, [-1.0, 0.0, 2.0, 2.0], (1.0, 1.0), (0.0, 0.0)).unwrap();
+        for method in [Method::Sample(Resampling::Nearest), Method::Mode] {
+            let out = project(&r, &g, method, "p".into()).unwrap();
+            assert_eq!(out.value(0, 0, 0), None, "outside must not become class zero");
+            assert_eq!(out.value(0, 1, 0), Some(0.0));
+            assert_eq!(out.bands[0].class_name(0.0), Some("water"));
+            assert_eq!(out.bands[0].classes, r.bands[0].classes);
+            for bytes in [rustgis_data::raster::geotiff::write(&out, 0).unwrap(), rustgis_data::raster::cogwrite::write(&out, 0).unwrap()] {
+                let written = rustgis_data::raster::read_bytes("p.tif", &bytes).unwrap();
+                assert_eq!(written.value(0, 0, 0), None);
+                assert_eq!(written.value(0, 1, 0), Some(0.0));
+                assert_eq!(written.bands[0].classes, r.bands[0].classes);
+            }
+        }
+    }
+
     /// Grids with the same cell and origin line up wherever their areas are; a grid too large to
     /// hold is refused before anything is made.
     #[test]
@@ -1456,6 +1489,22 @@ mod tests {
         let far = Grid::snapped(crs, [-1e308, 0.0, 0.0, 10.0], (1e300, 1.0), (1e308, 0.0)).unwrap_err();
         assert!(far.contains("can't make a grid"), "{far}");
         assert!(Grid::snapped(crs, [0.0, 0.0, 10.0, 10.0], (1.0, 1.0), (f64::NAN, 0.0)).is_err());
+    }
+
+    /// Refusing either far edge must not narrow the requested area or the raster's output grid.
+    #[test]
+    fn a_refused_footprint_edge_is_not_a_partial_grid() {
+        let crs = Crs::from_epsg(32617).unwrap();
+        for (bounds, valid) in [([-180.0, -30.0, 18.0, 30.0], false), ([-84.0, 0.0, -78.0, 25.0], true)] {
+            let [west, south, east, north] = bounds;
+            // Small pixels at the centre are placeable, so the edge determines the refusal.
+            let gt =
+                GeoTransform { origin_x: west, origin_y: north, pixel_width: (east - west) / 32.0, pixel_height: (south - north) / 2.0 };
+            let r = Raster::new("area", 32, 2, vec![vec![1.0; 64]], gt, Crs::LonLat, None, ColorHint::Gray, "Float32").unwrap();
+            let area = bounds_in(bounds, crs);
+            let image = footprint_in(&r, crs);
+            assert_eq!((area.is_ok(), image.is_ok()), (valid, valid), "bounds: {area:?}; footprint: {image:?}");
+        }
     }
 
     /// Rows made on several threads are those made on one, bit for bit, for every method: each

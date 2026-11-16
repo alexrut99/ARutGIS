@@ -17,7 +17,8 @@
 //! `{"scroll": [x, y, dy]}` turns the mouse wheel by `dy` points over (x, y) (negative zooms
 //! out) and runs one frame (shots then catch the map mid-zoom),
 //! `{"plugin": path}` loads a `.rgplugin` or a plugin folder for the run (as `rustgis-cli run
-//! --plugin` does), and `{"testPlugin": "panel"}` the plugin tests use, with a panel,
+//! --plugin` does), and `{"testPlugin": "panel"}` the plugin tests use, with a panel
+//! (`"pick"`: one of picks on the map),
 //! `{"titlebar": {"left_inset": 80, "height": 34}}`
 //! draws the header as a macOS unified title bar (`null` turns it off), and
 //! `{"width": w, "height": h}` on the first line sets the size (default 1480×900),
@@ -27,8 +28,13 @@
 //! The window opens the World Atlas sample.
 //! `"readsOffFrame": true` on the first line runs Add Data, Load All, models and scripts on a
 //! thread of their own, as the desktop app does (the status bar shows the run and Cancel).
+//! `"watchFiles": true` on the first line watches linked files for changes, as the desktop app
+//! does; `{"copy": [from, to]}` replaces `to` with a copy of `from` (written beside it, then
+//! renamed over it) and `{"remove": path}` deletes a file, as another program would.
 //! `"recovery": "/abs/dir"` on the first line gives the run that recovery folder, as the desktop
 //! app has one (Settings › Autosave; a copy left there is offered by the recovery dialog).
+//! `"memorySecrets": true` on the first line supplies an isolated in-memory credential store for
+//! Remember/Forget screenshots. It never opens the OS keychain or writes credentials to disk.
 //!
 //! Add `"ribbonSplit": true` to the first line for a compact reusable split-button showcase
 //! instead of the app. Its "Disable arrows", "Disable enclosing UI", and "Long two-line labels"
@@ -154,9 +160,14 @@ fn main() {
     let mut app = RustGisApp::with_sample();
     // As the desktop app does: Add Data, Load All, models and scripts run on a thread of their own.
     app.reads_off_frame = lines.first().and_then(|l| l.get("readsOffFrame")).and_then(Value::as_bool).unwrap_or(false);
+    // As the desktop app does: linked files changed on disk are reported (#1477).
+    app.watch_files = lines.first().and_then(|l| l.get("watchFiles")).and_then(Value::as_bool).unwrap_or(false);
     if let Some(dir) = lines.first().and_then(|l| l.get("recovery")).and_then(Value::as_str) {
         let store = rustgis_ui_egui::FolderStore::open(std::path::Path::new(dir)).expect("recovery folder");
         app = app.with_services(rustgis_ui_egui::Services { recovery: Some(Box::new(store)), ..Default::default() });
+    }
+    if lines.first().and_then(|l| l.get("memorySecrets")).and_then(Value::as_bool) == Some(true) {
+        app.session.database_logins.set_store(Some(std::sync::Arc::new(rustgis_engine::data::secrets::MemorySecrets::new())));
     }
     // One shared wgpu render state: the app's GPU map backend and the harness's renderer must
     // live on the same device for the map's paint callback to be valid.
@@ -231,6 +242,17 @@ fn main() {
                 }
                 Err(e) => eprintln!("render failed: {e}"),
             }
+        } else if let Some([from, to]) = l.get("copy").and_then(Value::as_array).map(Vec::as_slice) {
+            // Another program replacing a file: write beside it, then rename over it.
+            let (from, to) = (from.as_str().unwrap_or_default(), to.as_str().unwrap_or_default());
+            let beside = format!("{to}.ui_shot-copy");
+            if let Err(e) = std::fs::copy(from, &beside).and_then(|_| std::fs::rename(&beside, to)) {
+                eprintln!("copy {from} → {to}: {e}");
+            }
+        } else if let Some(path) = l.get("remove").and_then(Value::as_str) {
+            if let Err(e) = std::fs::remove_file(path) {
+                eprintln!("remove {path}: {e}");
+            }
         } else if let Some(ms) = l.get("sleep").and_then(|v| v.as_u64()) {
             // Real time passing, for work off the frame (downloads, the AI assistant's model).
             let end = std::time::Instant::now() + std::time::Duration::from_millis(ms);
@@ -261,6 +283,7 @@ fn main() {
         } else if let Some(which) = l.get("testPlugin").and_then(|v| v.as_str()) {
             let bytes = match which {
                 "panel" => rustgis_plugins::testing::panel_package("test-panel"),
+                "pick" => rustgis_plugins::testing::pick_package("test-pick"),
                 _ => rustgis_plugins::testing::package("test-plugin", &[]),
             };
             if let Err(e) = rustgis_plugins::Package::from_zip(&bytes).and_then(|pkg| rustgis_plugins::load(pkg, "test")) {

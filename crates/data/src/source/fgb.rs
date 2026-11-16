@@ -20,6 +20,15 @@ use std::sync::Arc;
 
 mod checked;
 
+/// The header's feature count, without scanning date columns or decoding features. GDAL
+/// conversions use it to report features lost before RustGIS reads the converted file; they are
+/// indexed, and an indexed FlatGeobuf always gives its count, so 0 is no features.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn header_feature_count(path: &Path) -> Result<u64> {
+    let reader = open_reader(BufReader::new(std::fs::File::open(path)?))?;
+    Ok(reader.header().features_count())
+}
+
 /// A file or an upload, read and seeked.
 trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
@@ -39,12 +48,72 @@ pub struct FgbSource {
     reproject: Reproject,
     /// The field each of the header's columns is read into, `None` for one left out (binary).
     slots: Vec<Option<usize>>,
+    /// The type of each of the header's columns, to check a feature's properties against
+    /// ([`properties_fit`]).
+    kinds: Vec<ColumnType>,
+    /// Kept after the input so all readers close before the private workspace is removed.
+    #[cfg(not(target_arch = "wasm32"))]
+    _workspace: Option<Arc<super::gdal::ReloadWorkspace>>,
+}
+
+/// A header read whose native date schema may still need a complete scan. It cannot read
+/// features until finished, so a frame can schedule that work without publishing a text schema.
+pub struct FgbOpen {
+    source: FgbSource,
+    date_columns: Vec<usize>,
+}
+
+impl FgbOpen {
+    /// Whether completing this local open visits every feature.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn needs_scan(&self) -> bool {
+        !self.date_columns.is_empty() && !matches!(self.source.input, Input::Remote(_))
+    }
+
+    /// Completes the schema, checking cancellation between features of a local date scan.
+    pub fn finish(self) -> Result<FgbSource> {
+        let Self { source: mut src, date_columns } = self;
+        if !date_columns.is_empty() {
+            match &src.input {
+                Input::Remote(_) => src.info.notes.push(format!(
+                    "{} date/time columns are kept as ISO text to read this remote FlatGeobuf by range without scanning every feature",
+                    date_columns.len()
+                )),
+                Input::Path(path) => src.classify_dates(BufReader::new(std::fs::File::open(path)?), &date_columns)?,
+                Input::Bytes(bytes) => src.classify_dates(Cursor::new(bytes.clone()), &date_columns)?,
+            }
+        }
+        if src.info.geometry_type == GeometryType::None {
+            src.info.geometry_type = src.peek_kind();
+        }
+        Ok(src)
+    }
 }
 
 impl FgbSource {
+    /// Reads a local header without classifying date columns; finish it on a worker when needed.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn prepare_path(path: &Path, name: &str) -> Result<FgbOpen> {
+        Self::prepare(BufReader::new(std::fs::File::open(path)?), Input::Path(path.to_path_buf()), name)
+    }
+
+    /// The same staged open for bytes retained by a project, without copying them.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn prepare_shared(bytes: super::Shared, name: &str) -> Result<FgbOpen> {
+        Self::prepare(Cursor::new(bytes.clone()), Input::Bytes(bytes), name)
+    }
+
     pub fn open_path(path: &Path, name: &str) -> Result<Self> {
         let f = BufReader::new(std::fs::File::open(path)?);
         Self::new(f, Input::Path(path.to_path_buf()), name)
+    }
+
+    /// Opens a private conversion, keeping its files alive for every shared reader.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn open_owned_path(path: &Path, name: &str, workspace: Arc<super::gdal::ReloadWorkspace>) -> Result<Self> {
+        let mut source = Self::open_path(path, name)?;
+        source._workspace = Some(workspace);
+        Ok(source)
     }
 
     pub fn open_bytes(bytes: Vec<u8>, name: &str) -> Result<Self> {
@@ -70,40 +139,55 @@ impl FgbSource {
     /// Opens a FlatGeobuf from its header: schema, extent, coordinate system, and notes (including
     /// Z or M values, which reading drops).
     fn new<R: Read + Seek>(r: R, input: Input, name: &str) -> Result<Self> {
+        Self::prepare(r, input, name)?.finish()
+    }
+
+    /// Reads only metadata; a caller must finish the native date scan before using the source.
+    fn prepare<R: Read + Seek>(r: R, input: Input, name: &str) -> Result<FgbOpen> {
         let reader = open_reader(r)?;
         let h = reader.header();
         let mut notes = Vec::new();
-        // The code is an EPSG one only when the organization is EPSG (or not given, which means EPSG).
-        let epsg_org = h.crs().is_none_or(|c| c.org().is_none_or(|o| o.eq_ignore_ascii_case("epsg")));
-        let code = h.crs().map(|c| c.code()).and_then(|c| u32::try_from(c).ok()).filter(|c| *c > 0 && epsg_org);
-        // Another body's system (an IAU organization, or WKT that says so) is said, or refused when
-        // its coordinates aren't longitude/latitude. It is checked whenever there's no EPSG code
-        // RustGIS converts, because an unknown code is read as longitude/latitude too.
-        let other_body = match h.crs() {
-            Some(c) if code.and_then(Crs::from_epsg).is_none() => {
-                Reproject::planetary("its coordinate system", c.org(), Some(i64::from(c.code())), c.wkt(), &mut notes)
-            }
-            _ => None,
+        // The header's system is read as a GeoPackage row's is ([`super::declared_reproject`]): by
+        // its EPSG code, or by its WKT when the WKT gives another shift to WGS 84 or there is no
+        // EPSG code (#1855). The code is an EPSG one only when the organization is EPSG (or not
+        // given, which means EPSG); 0 is none.
+        let header_crs = h.crs();
+        let organization = header_crs.and_then(|c| c.org());
+        let epsg_org = organization.is_none_or(|o| o.eq_ignore_ascii_case("epsg"));
+        let code = header_crs.map(|c| i64::from(c.code())).filter(|c| *c != 0);
+        let declared = super::DeclaredCrs {
+            what: "its coordinate system",
+            organization,
+            code,
+            epsg: code.and_then(|c| u32::try_from(c).ok()).filter(|_| epsg_org),
+            wkt1: super::defined(header_crs.and_then(|c| c.wkt())),
+            wkt2: None,
         };
-        let reproject = match other_body {
-            Some(r) => r?,
+        let reproject = match super::declared_reproject(declared, &mut notes) {
+            Some(reproject) => reproject?,
+            // Nothing to read it by: longitude/latitude, said when another organization's code
+            // names the system, or a negative code, which can't be an EPSG one.
             None => {
-                if !epsg_org && let Some(org) = h.crs().and_then(|c| c.org()) {
+                if !epsg_org && let Some(org) = organization {
                     notes.push(format!("its coordinate system is defined by {org}, not EPSG; read as longitude/latitude"));
+                } else if let Some(code) = code {
+                    notes.push(format!("its coordinate system's code {code} isn't an EPSG code; read as longitude/latitude"));
                 }
-                // A coordinate system described (by WKT or name) but without an EPSG code can't be converted.
-                if code.is_none() && h.crs().is_some_and(|c| c.wkt().is_some_and(|w| !w.contains("WGS 84") && !w.contains("WGS84"))) {
-                    notes.push("its coordinate system has no EPSG code; read as longitude/latitude".into());
-                }
-                Reproject::from_epsg(code, &mut notes)
+                Reproject::from_crs(Crs::LonLat, &mut notes)
             }
         };
+        let mut date_columns = Vec::new();
         let mut fields = Vec::new();
         let mut slots = Vec::new();
+        let mut kinds = Vec::new();
         let mut left_out = Vec::new();
         for c in h.columns().iter().flat_map(|cols| cols.iter()) {
+            kinds.push(c.type_());
             match field_type(c.type_()) {
                 Some(ty) => {
+                    if c.type_() == ColumnType::DateTime {
+                        date_columns.push(fields.len());
+                    }
                     slots.push(Some(fields.len()));
                     fields.push(Field::new(c.name().to_string(), ty));
                 }
@@ -150,18 +234,79 @@ impl FgbSource {
         if h.has_z() || h.has_m() {
             info.drop_zm((count > 0).then_some(count));
         }
-        let mut src = FgbSource { info, input, reproject, slots };
-        if src.info.geometry_type == GeometryType::None {
-            src.info.geometry_type = src.peek_kind();
-        }
-        Ok(src)
+        let src = FgbSource {
+            info,
+            input,
+            reproject,
+            slots,
+            kinds,
+            #[cfg(not(target_arch = "wasm32"))]
+            _workspace: None,
+        };
+        Ok(FgbOpen { source: src, date_columns })
     }
 
-    /// Reads a request; `scan` ignores the index.
+    /// Classifies local DateTime columns by a complete, cancellable pass. Time-only columns
+    /// stay text; all-date columns become Date. Remote sources retain text to keep range reads.
+    /// Checks Cancel after each decoded feature; reading and verifying one encoded feature
+    /// cannot be interrupted midway.
+    fn classify_dates<R: Read + Seek>(&mut self, reader: R, columns: &[usize]) -> Result<()> {
+        crate::progress::begin(self.info.count.and_then(|n| usize::try_from(n).ok()).unwrap_or(0));
+        let mut states = vec![0u8; self.info.fields.len()];
+        let mut iter = open_reader(reader)?.select_all().map_err(err)?;
+        while let Some(feature) = iter.next().map_err(err)? {
+            crate::progress::step(1)?;
+            let mut props = Props {
+                fields: &self.info.fields,
+                slots: &self.slots,
+                values: vec![Value::Null; self.info.fields.len()],
+                unread_dates: Vec::new(),
+                rounded_dates: Vec::new(),
+            };
+            // Reads skip a feature with unreadable properties and report it in Batch::skipped.
+            // Such a feature must not influence the inferred date type either.
+            if !properties_fit(feature, &self.kinds) || feature.process_properties(&mut props).is_err() {
+                continue;
+            }
+            for &k in columns {
+                if let Some(Value::Text(s)) = props.values.get(k) {
+                    let state = if crate::Date::parse(s).is_some() {
+                        1
+                    } else if crate::DateTime::parse_rounding(s).is_some() {
+                        2
+                    } else if is_clock(s) {
+                        4
+                    } else {
+                        0
+                    };
+                    if let Some(v) = states.get_mut(k) {
+                        *v |= state;
+                    }
+                }
+            }
+        }
+        for &k in columns {
+            if let Some(field) = self.info.fields.get_mut(k) {
+                field.ty = match states.get(k).copied().unwrap_or(0) {
+                    1 => FieldType::Date,
+                    s if s & 4 != 0 => FieldType::Text,
+                    _ => FieldType::DateTime,
+                };
+            }
+        }
+        Ok(())
+    }
+
+    /// Reads a request; `scan` ignores the index. A full geometry scan for a spatial request
+    /// counts features and checks Cancel between them.
     fn read_with<R: Read + Seek>(&self, open: &impl Fn() -> Result<R>, req: &Request, scan: bool) -> Result<Batch> {
         let limit = clamp_limit(req.limit);
+        let native = req.extent.and_then(|e| self.reproject.extent_from_lonlat(&e));
+        // Preserve ordinary candidate counts; a refused view needs a geometry scan to count.
+        if limit == 0 && req.extent.is_some() && native.is_none() {
+            return Err(super::unbounded_count());
+        }
         let reader = open_reader(open()?)?;
-        let native = req.extent.map(|e| self.reproject.extent_from_lonlat(&e));
         let indexed = native.filter(|_| self.info.indexed && !scan);
         // Feature numbers in the file, for ids that stay put between reads: the index search's
         // results, in the order the selection visits them.
@@ -181,12 +326,19 @@ impl FgbSource {
             return self.read_with(open, req, true);
         }
         // Without an index, an extent is tested on each feature: sample the matches as they come.
-        let late = native.is_some() && indexed.is_none();
+        // That includes one the file's system couldn't bound (`native` is `None`).
+        let late = req.extent.is_some() && indexed.is_none();
         let matched = iter.features_count().map(|n| n as u64).or(self.info.count).unwrap_or(0);
         let mut sample = if late || matched == 0 { Sampler::new(limit) } else { Sampler::with_total(limit, matched) };
         let mut out = Batch::default();
         let mut n = 0u64;
+        if late {
+            crate::progress::begin(usize::try_from(matched).unwrap_or(0));
+        }
         while let Some(f) = iter.next().map_err(err)? {
+            if late {
+                crate::progress::step(1)?;
+            }
             n += 1;
             let id = numbers.as_ref().and_then(|v| v.get(usize::try_from(n - 1).unwrap_or(usize::MAX)).copied()).unwrap_or(n);
             // A cheap skip when the sample won't take this feature (the extent isn't tested yet).
@@ -201,11 +353,19 @@ impl FgbSource {
             if !in_request(&geometry, req) || (late && !sample.wants()) {
                 continue;
             }
-            let mut props = Props { fields: &self.info.fields, slots: &self.slots, values: vec![Value::Null; self.info.fields.len()] };
-            if f.process_properties(&mut props).is_err() {
+            let mut props = Props {
+                fields: &self.info.fields,
+                slots: &self.slots,
+                values: vec![Value::Null; self.info.fields.len()],
+                unread_dates: Vec::new(),
+                rounded_dates: Vec::new(),
+            };
+            if !properties_fit(f, &self.kinds) || f.process_properties(&mut props).is_err() {
                 out.skipped += 1;
                 continue;
             }
+            super::add_unread_dates(&mut out.unread_dates, &props.unread_dates);
+            super::add_unread_dates(&mut out.rounded_dates, &props.rounded_dates);
             sample.keep(Feature { id, geometry: Some(geometry), attrs: props.values });
         }
         out.matched = if late || matched == 0 { sample.seen() } else { matched };
@@ -216,7 +376,8 @@ impl FgbSource {
 
     /// Visits the features a complete [`FgbSource::read_with`] of `extent` gives, in the same
     /// order and with the same ids, a chunk at a time. An extent read through the index holds
-    /// the feature numbers it finds (8 bytes each) for the ids, as a read does.
+    /// the feature numbers it finds (8 bytes each) for the ids, as a read does. Counts candidates
+    /// and checks Cancel before filtering, including candidates the view does not keep.
     fn visit_with<R: Read + Seek>(
         &self,
         open: &impl Fn() -> Result<R>,
@@ -225,7 +386,7 @@ impl FgbSource {
     ) -> Result<Batch> {
         let req = Request { extent, limit: usize::MAX };
         let reader = open_reader(open()?)?;
-        let native = extent.map(|e| self.reproject.extent_from_lonlat(&e));
+        let native = extent.and_then(|e| self.reproject.extent_from_lonlat(&e));
         let indexed = native.filter(|_| self.info.indexed);
         let mut numbers: Option<Vec<u64>> = match indexed {
             Some(e) => Some(self.search(open()?, &e)?),
@@ -244,7 +405,9 @@ impl FgbSource {
         }
         let mut out = Batch { complete: true, ..Batch::default() };
         let mut n = 0u64;
+        crate::progress::begin(iter.features_count().unwrap_or(0));
         while let Some(f) = iter.next().map_err(err)? {
+            crate::progress::step(1)?;
             n += 1;
             let id = numbers.as_ref().and_then(|v| v.get(usize::try_from(n - 1).unwrap_or(usize::MAX)).copied()).unwrap_or(n);
             let geometry = f.to_wkb(CoordDimensions::xy()).ok().as_deref().and_then(wkb::decode).and_then(|g| self.reproject.geometry(g));
@@ -255,11 +418,19 @@ impl FgbSource {
             if !in_request(&geometry, &req) {
                 continue;
             }
-            let mut props = Props { fields: &self.info.fields, slots: &self.slots, values: vec![Value::Null; self.info.fields.len()] };
-            if f.process_properties(&mut props).is_err() {
+            let mut props = Props {
+                fields: &self.info.fields,
+                slots: &self.slots,
+                values: vec![Value::Null; self.info.fields.len()],
+                unread_dates: Vec::new(),
+                rounded_dates: Vec::new(),
+            };
+            if !properties_fit(f, &self.kinds) || f.process_properties(&mut props).is_err() {
                 out.skipped += 1;
                 continue;
             }
+            super::add_unread_dates(&mut out.unread_dates, &props.unread_dates);
+            super::add_unread_dates(&mut out.rounded_dates, &props.rounded_dates);
             out.matched += 1;
             chunks.push(Feature { id, geometry: Some(geometry), attrs: props.values })?;
         }
@@ -450,15 +621,22 @@ impl FgbSource {
     }
 
     /// A request on a file by its web address: the index search, then the features the sample
-    /// takes, fetched together before any is read; the others are passed over unread.
+    /// takes, fetched together before any is read; the others are passed over unread. An unbounded
+    /// spatial read scans every candidate within the budget, counting features and checking Cancel.
     fn read_remote(&self, f: &Arc<Remote>, req: &Request) -> Result<Batch> {
         let limit = clamp_limit(req.limit);
-        let native = match req.extent {
-            Some(e) => self.reproject.extent_from_lonlat(&e),
-            None => Extent::new(f64::MIN, f64::MIN, f64::MAX, f64::MAX),
-        };
+        let native = req.extent.and_then(|e| self.reproject.extent_from_lonlat(&e));
+        // Preserve ordinary candidate counts; a refused view needs a geometry scan to count.
+        if limit == 0 && req.extent.is_some() && native.is_none() {
+            return Err(super::unbounded_count());
+        }
+        let late = req.extent.is_some() && native.is_none();
+        let native = native.unwrap_or(Extent::new(f64::MIN, f64::MIN, f64::MAX, f64::MAX));
         let (index, features) = self.sections(f)?;
         let hits = self.remote_search(f, index, &native)?;
+        if late && hits.thin > 1 {
+            return Err(remote::view_budget());
+        }
         let n = hits.items.len();
         // Each hit's bytes: to the next feature when that follows it, else a guess.
         let size = |k: usize| -> u64 {
@@ -469,13 +647,20 @@ impl FgbSource {
         };
         // A sample: runs of consecutive features, every `step`-th run (fewer when their bytes
         // would be more than a read may fetch).
-        let mut step = usize::try_from(stride(n as u64, limit)).unwrap_or(usize::MAX).max(1);
+        // A refused native view must match geometry before any feature is sampled away.
+        let mut step = if late { 1 } else { usize::try_from(stride(n as u64, limit)).unwrap_or(usize::MAX).max(1) };
         // Runs short enough for the sample to be spread over many places.
         let run = (limit / 256).clamp(1, RUN);
         let taken = |k: usize, step: usize| step == 1 || (k / run).is_multiple_of(step);
         loop {
             let bytes: u64 = (0..n).filter(|&k| taken(k, step)).map(size).sum();
-            if bytes <= FEATURE_BUDGET || step >= n.max(1) {
+            if bytes <= FEATURE_BUDGET {
+                break;
+            }
+            if late {
+                return Err(remote::view_budget());
+            }
+            if step >= n.max(1) {
                 break;
             }
             step = step.saturating_mul(2);
@@ -520,8 +705,15 @@ impl FgbSource {
             return Err(DataError::Format("FlatGeobuf: the index search found a different set of features".into()));
         }
         let mut out = Batch::default();
+        let mut sample = Sampler::new(limit);
         let mut k = 0usize;
+        if late {
+            crate::progress::begin(n);
+        }
         while let Some(feat) = iter.next().map_err(err)? {
+            if late {
+                crate::progress::step(1)?;
+            }
             let this = k;
             k += 1;
             if !taken(this, step) {
@@ -534,21 +726,40 @@ impl FgbSource {
                 out.skipped += 1;
                 continue;
             };
-            if !in_request(&geometry, req) {
+            if !in_request(&geometry, req) || (late && !sample.wants()) {
                 continue;
             }
-            let mut props = Props { fields: &self.info.fields, slots: &self.slots, values: vec![Value::Null; self.info.fields.len()] };
-            if feat.process_properties(&mut props).is_err() {
+            let mut props = Props {
+                fields: &self.info.fields,
+                slots: &self.slots,
+                values: vec![Value::Null; self.info.fields.len()],
+                unread_dates: Vec::new(),
+                rounded_dates: Vec::new(),
+            };
+            if !properties_fit(feat, &self.kinds) || feat.process_properties(&mut props).is_err() {
                 out.skipped += 1;
                 continue;
             }
-            out.features.push(Feature { id, geometry: Some(geometry), attrs: props.values });
-            if out.features.len() >= limit {
-                break;
+            super::add_unread_dates(&mut out.unread_dates, &props.unread_dates);
+            super::add_unread_dates(&mut out.rounded_dates, &props.rounded_dates);
+            let feature = Feature { id, geometry: Some(geometry), attrs: props.values };
+            if late {
+                sample.keep(feature);
+            } else {
+                out.features.push(feature);
+                if out.features.len() >= limit {
+                    break;
+                }
             }
         }
-        out.matched = (n as u64).saturating_mul(hits.thin);
-        out.complete = step == 1 && hits.thin == 1;
+        if late {
+            out.matched = sample.seen();
+            out.complete = sample.complete();
+            out.features = sample.items;
+        } else {
+            out.matched = (n as u64).saturating_mul(hits.thin);
+            out.complete = step == 1 && hits.thin == 1;
+        }
         Ok(out)
     }
 }
@@ -599,6 +810,22 @@ fn err(e: flatgeobuf::Error) -> DataError {
     DataError::Format(format!("FlatGeobuf: {e}"))
 }
 
+/// Validates a complete ISO clock by supplying a neutral day. The original stays text,
+/// so fractional digits past microseconds are checked as digits but never removed from values.
+fn is_clock(s: &str) -> bool {
+    let s = s.trim();
+    if s.as_bytes().get(2) != Some(&b':') {
+        return false;
+    }
+    let check = if let Some((head, tail)) = s.split_once('.') {
+        let digits = tail.bytes().take_while(|c| c.is_ascii_digit()).count();
+        format!("{head}.{}{}", tail.get(..digits.min(6)).unwrap_or_default(), tail.get(digits..).unwrap_or_default())
+    } else {
+        s.to_string()
+    };
+    crate::DateTime::parse(&format!("2000-01-01T{check}")).is_some()
+}
+
 /// The field type a column is read as; `None` for binary, which RustGIS has no field type for.
 fn field_type(t: ColumnType) -> Option<FieldType> {
     Some(match t {
@@ -617,12 +844,50 @@ fn field_type(t: ColumnType) -> Option<FieldType> {
     })
 }
 
+/// Whether a feature's property bytes hold what they say, laid out as FlatGeobuf has them: each a
+/// column index (`u16`), then the value, its width fixed by the column's type, or a `u32` length
+/// and that many bytes for text, JSON, date-times and binary. flatgeobuf 6.0.1 slices them as the
+/// file says and panics on a length past the end, which the browser can't catch; the fix
+/// (flatgeobuf#544) isn't released yet. A feature that fails this is skipped as unreadable, as one
+/// whose properties the reader refuses. Remove it once a release with that fix is used.
+fn properties_fit(feature: &flatgeobuf::FgbFeature, kinds: &[ColumnType]) -> bool {
+    let Some(bytes) = feature.fbs_feature().properties().map(|p| p.bytes()) else { return true };
+    let mut at = 0usize;
+    // As the reader does, a single byte left at the end is ignored.
+    while at.saturating_add(1) < bytes.len() {
+        let Some(&[lo, hi]) = bytes.get(at..at + 2) else { return false };
+        at += 2;
+        // An index past the columns is the reader's own error, not a panic.
+        let Some(kind) = kinds.get(usize::from(u16::from_le_bytes([lo, hi]))) else { return true };
+        let width = match *kind {
+            ColumnType::Byte | ColumnType::UByte | ColumnType::Bool => 1,
+            ColumnType::Short | ColumnType::UShort => 2,
+            ColumnType::Int | ColumnType::UInt | ColumnType::Float => 4,
+            ColumnType::Long | ColumnType::ULong | ColumnType::Double => 8,
+            ColumnType::String | ColumnType::Json | ColumnType::DateTime | ColumnType::Binary => {
+                let Some(&[a, b, c, d]) = bytes.get(at..at.saturating_add(4)) else { return false };
+                at += 4;
+                usize::try_from(u32::from_le_bytes([a, b, c, d])).unwrap_or(usize::MAX)
+            }
+            // A type the reader doesn't know: it reads nothing for it, and neither does this.
+            _ => 0,
+        };
+        match at.checked_add(width) {
+            Some(end) if end <= bytes.len() => at = end,
+            _ => return false,
+        }
+    }
+    true
+}
+
 /// Collects a feature's properties into values in field order.
 struct Props<'a> {
     fields: &'a [Field],
     /// The field of each header column (see [`FgbSource::slots`]).
     slots: &'a [Option<usize>],
     values: Vec<Value>,
+    unread_dates: Vec<usize>,
+    rounded_dates: Vec<usize>,
 }
 
 impl PropertyProcessor for Props<'_> {
@@ -647,6 +912,15 @@ impl PropertyProcessor for Props<'_> {
         // Integers in a Double column stay numbers of the column's type.
         let value = match (self.fields.get(idx).map(|f| f.ty), value) {
             (Some(FieldType::Double), Value::Int(i)) => Value::Float(i as f64),
+            (Some(ty @ (FieldType::Date | FieldType::DateTime)), Value::Text(s)) => {
+                let (value, rounded) = Value::parse_stored_counted(&s, ty);
+                if !s.trim().is_empty() && value.is_null() {
+                    super::unread_date(&mut self.unread_dates, idx);
+                } else if rounded {
+                    super::unread_date(&mut self.rounded_dates, idx);
+                }
+                value
+            }
             (_, v) => v,
         };
         if let Some(slot) = self.values.get_mut(idx) {
@@ -685,6 +959,11 @@ fn writable(browser: bool) -> Result<()> {
 /// temporary file and only its index entry in memory, so a whole layer needn't be held. The
 /// writer needs that file whether or not it writes an index, and the web app has no files, so
 /// there a FlatGeobuf is refused rather than written.
+///
+/// A point layer's file takes the type of its first point. Should a later one be of the other
+/// kind (a multipoint after points, or a point after multipoints), the export starts again
+/// (feeding the features again) with each feature's type in the file, which a file of one type
+/// can't hold. Nothing reaches `out` before the last feature, so the first run leaves it empty.
 pub(crate) fn write_features(
     name: &str,
     geometry_type: GeometryType,
@@ -693,6 +972,28 @@ pub(crate) fn write_features(
     out: &mut dyn std::io::Write,
     feed: &mut dyn FnMut(&mut dyn FnMut(&[Feature]) -> Result<()>) -> Result<()>,
 ) -> Result<usize> {
+    for mixed_points in [false, true] {
+        if let Some(left_out) = write_run(name, geometry_type, fields, crs, mixed_points, out, feed)? {
+            return Ok(left_out);
+        }
+    }
+    Err(DataError::Format("FlatGeobuf: the export didn't settle on a geometry type".into()))
+}
+
+/// One run of [`write_features`], each feature's geometry type in the file when `mixed_points`:
+/// how many were left out, or `None` when a point layer turned out to mix points and
+/// multipoints and the export must start again so. With `mixed_points`, a point layer's
+/// geometry of another kind (a line, a polygon) is refused: a file of mixed types is read as
+/// the layer of its first feature's kind.
+fn write_run(
+    name: &str,
+    geometry_type: GeometryType,
+    fields: &[Field],
+    crs: Crs,
+    mixed_points: bool,
+    out: &mut dyn std::io::Write,
+    feed: &mut dyn FnMut(&mut dyn FnMut(&[Feature]) -> Result<()>) -> Result<()>,
+) -> Result<Option<usize>> {
     use flatgeobuf::geozero::wkb::Wkb;
     use flatgeobuf::{FgbCrs, FgbWriter, FgbWriterOptions, GeometryType as G};
     writable(cfg!(target_arch = "wasm32"))?;
@@ -706,6 +1007,7 @@ pub(crate) fn write_features(
     let code = i32::from(crs.epsg());
     let options = FgbWriterOptions {
         crs: FgbCrs { org: (code > 0).then_some("EPSG"), code, wkt: wkt.as_deref(), ..Default::default() },
+        detect_type: !mixed_points,
         ..Default::default()
     };
     let mut w = FgbWriter::create_with_options(name, ty, options).map_err(err)?;
@@ -715,17 +1017,52 @@ pub(crate) fn write_features(
             FieldType::Double => ColumnType::Double,
             FieldType::Boolean => ColumnType::Bool,
             FieldType::Text => ColumnType::String,
+            FieldType::Date | FieldType::DateTime => ColumnType::DateTime,
         };
         w.add_column(&f.name, t, |_, c| c.nullable = true);
     }
-    let mut left_out = 0;
-    feed(&mut |features| {
+    let (mut left_out, mut first_multi, mut again) = (0, None, false);
+    let fed = feed(&mut |features| {
         for feat in features {
             crate::progress::step(1)?;
             let Some(g) = &feat.geometry else {
                 left_out += 1;
                 continue;
             };
+            if geometry_type == GeometryType::Point {
+                let multi = match g {
+                    crate::Geometry::Point(_) => Some(false),
+                    crate::Geometry::MultiPoint(_) => Some(true),
+                    _ => None,
+                };
+                match (multi, mixed_points) {
+                    (Some(m), false) if *first_multi.get_or_insert(m) != m => {
+                        again = true;
+                        // Stops the traversal; the export starts again.
+                        return Err(DataError::Format("FlatGeobuf: starting again".into()));
+                    }
+                    (None, true) => {
+                        return Err(DataError::Format(format!(
+                            "FlatGeobuf: feature {} of a point layer isn't a point or multipoint",
+                            feat.id
+                        )));
+                    }
+                    _ => {}
+                }
+            }
+            // Refuse an invalid date before writing its native column: otherwise another reader
+            // could replace it with null, while this writer reported a successful, lossless export.
+            // A date is what a read takes as one (digits past the microsecond included: the text
+            // is written as it is, and a read rounds it and says so).
+            for (field, value) in fields.iter().zip(&feat.attrs) {
+                if field.ty.is_temporal() && !value.is_null() && Value::parse_stored_counted(&value.to_string(), field.ty).0.is_null() {
+                    return Err(DataError::Format(format!(
+                        "FlatGeobuf: feature {} has an invalid date in '{}'",
+                        feat.id,
+                        crate::io::dbf_notice_name(&field.name)
+                    )));
+                }
+            }
             let mut failed = None;
             w.add_feature_geom(Wkb(wkb::encode(g)), |out| {
                 use flatgeobuf::geozero::PropertyProcessor;
@@ -735,7 +1072,19 @@ pub(crate) fn write_features(
                         Value::Int(x) => out.property(i, &f.name, &ColumnValue::Long(*x)),
                         Value::Float(x) => out.property(i, &f.name, &ColumnValue::Double(*x)),
                         Value::Bool(x) => out.property(i, &f.name, &ColumnValue::Bool(*x)),
+                        // A date field's text as its day (a midnight `…T00:00:00` too), so a read
+                        // still finds a column of dates; a date-time's text as it is.
+                        Value::Text(x) if f.ty == FieldType::Date => match Value::parse_stored_counted(x, f.ty).0 {
+                            Value::Date(d) => out.property(i, &f.name, &ColumnValue::DateTime(&d.to_string())),
+                            _ => out.property(i, &f.name, &ColumnValue::DateTime(x)),
+                        },
+                        Value::Text(x) if f.ty == FieldType::DateTime => out.property(i, &f.name, &ColumnValue::DateTime(x)),
                         Value::Text(x) => out.property(i, &f.name, &ColumnValue::String(x)),
+                        // A midnight in a date field as its day, as text that is one.
+                        Value::DateTime(t) if f.ty == FieldType::Date && t.is_date() => {
+                            out.property(i, &f.name, &ColumnValue::DateTime(&t.date().to_string()))
+                        }
+                        Value::Date(_) | Value::DateTime(_) => out.property(i, &f.name, &ColumnValue::DateTime(&v.to_string())),
                     };
                     if let Err(e) = r {
                         failed = Some(e.to_string());
@@ -748,9 +1097,13 @@ pub(crate) fn write_features(
             }
         }
         Ok(())
-    })?;
+    });
+    if again {
+        return Ok(None);
+    }
+    fed?;
     w.write(out).map_err(err)?;
-    Ok(left_out)
+    Ok(Some(left_out))
 }
 
 #[cfg(test)]
@@ -763,5 +1116,55 @@ mod write_tests {
     fn flatgeobuf_is_refused_in_the_browser_and_written_on_the_desktop() {
         assert!(matches!(writable(true), Err(DataError::Unsupported(m)) if m.contains("browser")));
         assert!(writable(false).is_ok());
+    }
+
+    /// A point layer with points and multipoints (as a GeoJSON file gives) is written whole,
+    /// each feature its own kind; a layer of points alone keeps its one geometry type.
+    #[test]
+    fn a_point_layer_mixing_points_and_multipoints_is_written() {
+        use crate::{Coord, Dataset, Geometry};
+        let mut ds = Dataset::new("m", GeometryType::Point, vec![Field::new("n", FieldType::Integer)]);
+        ds.push(Some(Geometry::Point(Coord::new(1.0, 2.0))), vec![Value::Int(1)]);
+        ds.push(Some(Geometry::MultiPoint(vec![Coord::new(3.0, 4.0), Coord::new(5.0, 6.0)])), vec![Value::Int(2)]);
+        let bytes = write_in(&ds, Crs::LonLat).unwrap();
+        let (back, _) = crate::io::read_bytes("m.fgb", &bytes).unwrap();
+        let mut got: Vec<(Value, Option<Geometry>)> = back.features.iter().map(|f| (f.attrs[0].clone(), f.geometry.clone())).collect();
+        got.sort_by_key(|(n, _)| n.as_f64().map(|n| n as i64));
+        let want: Vec<(Value, Option<Geometry>)> = ds.features.iter().map(|f| (f.attrs[0].clone(), f.geometry.clone())).collect();
+        assert_eq!(got, want);
+        let mut points = Dataset::new("p", GeometryType::Point, vec![]);
+        points.push(Some(Geometry::Point(Coord::new(1.0, 2.0))), vec![]);
+        let header = flatgeobuf::FgbReader::open(std::io::Cursor::new(write_in(&points, Crs::LonLat).unwrap())).unwrap();
+        assert_eq!(header.header().geometry_type(), flatgeobuf::GeometryType::Point);
+    }
+
+    /// Fed a chunk at a time (a layer read in place), the multipoint arrives after the point
+    /// has set the file's type: the export starts again and writes both. A line in a point layer
+    /// isn't written into a file of mixed types, which would read back as a line layer.
+    #[test]
+    fn a_streamed_point_layer_mixing_points_and_multipoints_starts_again() {
+        use crate::{Coord, Geometry};
+        let chunks = [
+            vec![Feature { id: 1, geometry: Some(Geometry::Point(Coord::new(1.0, 2.0))), attrs: vec![] }],
+            vec![Feature { id: 2, geometry: Some(Geometry::MultiPoint(vec![Coord::new(3.0, 4.0), Coord::new(5.0, 6.0)])), attrs: vec![] }],
+        ];
+        let mut runs = 0;
+        let mut out = Vec::new();
+        write_features("m", GeometryType::Point, &[], Crs::LonLat, &mut out, &mut |add| {
+            runs += 1;
+            chunks.iter().try_for_each(|c| add(c))
+        })
+        .unwrap();
+        assert_eq!(runs, 2);
+        let (back, _) = crate::io::read_bytes("m.fgb", &out).unwrap();
+        let mut got: Vec<_> = back.features.iter().filter_map(|f| f.geometry.clone()).collect();
+        got.sort_by_key(|g| matches!(g, Geometry::MultiPoint(_)));
+        assert_eq!(got, chunks.iter().flatten().filter_map(|f| f.geometry.clone()).collect::<Vec<_>>());
+        let line = Feature { id: 3, geometry: Some(Geometry::Line(vec![vec![Coord::new(0.0, 0.0), Coord::new(1.0, 1.0)]])), attrs: vec![] };
+        let with_line = [chunks[0].clone(), chunks[1].clone(), vec![line]];
+        let e = write_features("m", GeometryType::Point, &[], Crs::LonLat, &mut Vec::new(), &mut |add| {
+            with_line.iter().try_for_each(|c| add(c))
+        });
+        assert!(matches!(&e, Err(DataError::Format(m)) if m.contains("feature 3 of a point layer isn't a point")), "{e:?}");
     }
 }

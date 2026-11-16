@@ -67,19 +67,60 @@ same files. New and changed code follows these rules; not every existing reader 
 - An older RustGIS refuses a file or setting newer than it understands, or keeps it unchanged. It
   doesn't save it again without what it couldn't read.
 - A format's version goes up only when a file uses something an older reader would lose or
-  misread. A project is written as the oldest format that keeps all it holds
-  (`Project::format_written`), and `project::FORMAT` is the newest this version reads:
-  - 1: everything up to ARutGIS 0.6.1.
-  - 2 (ARutGIS 0.6.2): a layout's map frame leaves layers of its map out (`exclude`). A layout
-    file with one says `"format": 2` too. Versions before 0.6.2 read a layout file without
-    looking at its format, so such a file holds its layout one level down (`Layout::to_file`):
-    they find no layout in it and refuse it.
+  misread. `project::FORMAT` is the format a project is written as, and `project::READ_FORMAT`
+  the newest this version reads:
+  - 1: everything up to ARutGIS 0.6.1 (RustGIS 0.6).
+  - 2 (ARutGIS 0.7.0, RustGIS 0.7): what a project uses that an older reader would lose is named
+    in its `requires` (`project::CAPABILITIES`), and a reader refuses a project that requires
+    something it doesn't know. A new addition of that kind gets a name there; the format stays 2.
+    ARutGIS's own is `frame-layers`: a layout's map frame leaves layers of its map out
+    (`exclude`). RustGIS doesn't know it, so it refuses such a project by that name.
+  - ARutGIS 0.6.2 and 0.6.3 wrote format 2 for a project with such a frame, and 1 otherwise,
+    with no `requires`. They open a project ARutGIS 0.7.0 saved without looking at what it
+    requires.
+  - A layout file (`.rgislayout`) has a format of its own (`layout::FILE_FORMAT`), read up to
+    it: 3 from ARutGIS 0.7.0 on, whatever the layout holds, since 0.6.3 and older would read past
+    what 0.7.0 saves (a dashed outline, a legend's labels) and save the layout without it. 0.6.2
+    and 0.6.3 wrote 2 for a layout with a frame leaving layers out and no format otherwise, and
+    refuse one past 2. Versions before 0.6.2 read a layout file without looking at its format,
+    so a file holds its layout one level down (`Layout::to_file`): they find no layout in it
+    and refuse it. RustGIS writes the layout itself, with no format: ARutGIS reads that (one
+    that says a format is checked against `READ_FORMAT`, as RustGIS's other files are), and
+    RustGIS refuses ARutGIS's.
 - Where a change allows it, reading a new version ships at least one release before anything
   writes it.
+- A project, map or layer file, a model or a web tool lists in `requires` each capability it needs
+  that an older reader would lose or misread: a reader refuses one it doesn't know, naming it.
+  Task, presentation and notebook readers, and models inside a task's steps, don't check
+  `requires` yet. A release reads
+  `.rgis` format 2 before any writes it (`READ_FORMAT` and `CAPABILITIES` in
+  `crates/engine/src/project.rs`), so what is added to format 2 after that comes with a capability
+  name, added to `CAPABILITIES` where it is read.
+- `schema/project.schema.json` is the JSON Schema of the project file, generated from the types
+  it is saved from by `cargo xtask schema`. A pull request that changes what a project saves
+  regenerates it and commits it in the same pull request; CI's `cargo xtask schema --check` fails
+  otherwise. A pull request that changes how it is read adds or updates a fixture project in
+  `schema/fixtures/`, which must open and validate against the schema. A schema change alone
+  doesn't raise the format: the rules above say when that happens.
 - RustGIS releases, file formats, the plugin ABI and the GeoLibre runner protocol are versioned
   separately.
 - A program RustGIS installs from elsewhere, such as the native GeoLibre runner, is pinned to a
   known release and moved forward by a pull request.
+
+Keep historical projects and preferences in the
+[release fixtures](../crates/engine/testdata/releases/README.md). These are the original bytes
+written by the release named in each filename: never regenerate, reformat or resave them.
+Each release adds a small project and preferences file written by that release and extends
+`released_projects_and_preferences_still_open`. Record a skip in the fixtures' README when a
+release has no such file format. Current-writer examples do not replace these historical files.
+
+New project saves and map/layer exports write format 2. Their `requires` header names only
+features present in the saved payload: `terrain-block`, `terrain-water`,
+`shaded-relief-effects` (cast shadows, sky visibility, fill light or rock colour) and
+`normalized-legend-urls` for normalized legend addresses. Project
+requirements include offline map snapshots. Earlier format-2 readers refuse unknown required
+capabilities instead of opening and later saving away those settings; legacy format-1 files
+still open.
 
 ## New dependencies
 

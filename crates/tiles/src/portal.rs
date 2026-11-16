@@ -176,7 +176,10 @@ impl Portal {
                     Some(u) => {
                         let host = host_of(u).to_ascii_lowercase();
                         if !host_ok(&host) {
-                            return Err(format!("'{u}': a Socrata site is its domain, such as data.cityofnewyork.us"));
+                            return Err(rustgis_data::diagnostics::message_with_address(
+                                u,
+                                "a Socrata site is its domain, such as data.cityofnewyork.us",
+                            ));
                         }
                         web(&host)?;
                         // A discovery API itself searches every site; a site keeps the search to it.
@@ -194,7 +197,10 @@ impl Portal {
                     Some(u) => {
                         let host = host_of(u).to_ascii_lowercase();
                         if !host_ok(&host) {
-                            return Err(format!("'{u}': an ArcGIS Hub site is its address, such as hub.arcgis.com"));
+                            return Err(rustgis_data::diagnostics::message_with_address(
+                                u,
+                                "an ArcGIS Hub site is its address, such as hub.arcgis.com",
+                            ));
                         }
                         web(&host)?
                     }
@@ -907,16 +913,7 @@ fn day_of_ms(ms: f64) -> String {
     if !ms.is_finite() || !(0.0..=1e15).contains(&ms) {
         return String::new();
     }
-    // Days to a civil date (Howard Hinnant's algorithm).
-    let z = (ms / 86_400_000.0).floor() as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
+    let (y, m, d) = rustgis_data::date::civil_from_days((ms / 86_400_000.0).floor() as i64);
     format!("{y:04}-{m:02}-{d:02}")
 }
 

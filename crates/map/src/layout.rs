@@ -4,13 +4,15 @@
 //! Element positions are in millimetres from the page's top-left corner. A map frame shows a map
 //! of the project at its own centre and scale, independent of the map view.
 
+use std::collections::BTreeMap;
+
 use rustgis_data::GeometryType;
 use rustgis_geom::Coord;
-use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
 use crate::raster::{Colorizer, Normalizer, RasterLayer, RasterMask, RasterRenderer, RasterStyle};
+use crate::symbology::Dash;
 use crate::{Camera, Layer, Map, Rgba};
 
 /// Logical points per millimetre (96 points per inch).
@@ -120,6 +122,11 @@ pub struct Grid {
     /// digits (`43` for 543,000 m); off, the whole value.
     #[serde(default, skip_serializing_if = "is_false")]
     pub short: bool,
+    /// A measured grid labelled as MGRS: each 100 km square named with its grid zone designation
+    /// (`32T MT`), and the lines by their kilometres' last two digits (`05`). Its system is a WGS 84 UTM
+    /// zone: the one named, else the map's own when it is one, else the zone at the frame's centre.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mgrs: bool,
     /// The labels outside the frame, past its edges, as ArcGIS and topographic maps print them;
     /// off, just inside it.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -383,6 +390,26 @@ pub fn utm_epsg(lon: f64, lat: f64) -> u32 {
     if lat < 0.0 { 32_700 + zone } else { 32_600 + zone }
 }
 
+/// The WGS 84 UTM zone a coordinate system names by its EPSG code (`EPSG:32632`, `32632`, any
+/// case, also `epsg 32632`): its zone and whether it is the northern hemisphere's. `None` for any
+/// other system, and for a UTM zone given as WKT or a PROJ string, which MGRS labels don't read.
+pub fn utm_zone_of(crs: &str) -> Option<(u8, bool)> {
+    let t = crs.trim();
+    let digits = match t.get(..5) {
+        Some(p) if p.eq_ignore_ascii_case("EPSG:") || p.eq_ignore_ascii_case("EPSG ") => t.get(5..)?.trim(),
+        _ => t,
+    };
+    if !(digits.len() == 5 && digits.bytes().all(|b| b.is_ascii_digit())) {
+        return None;
+    }
+    let code: u32 = digits.parse().ok()?;
+    let zone = u8::try_from(code % 100).ok()?;
+    match code / 100 {
+        326 | 327 if (1..=60).contains(&zone) => Some((zone, code / 100 == 326)),
+        _ => None,
+    }
+}
+
 impl Default for Grid {
     fn default() -> Grid {
         Grid {
@@ -414,6 +441,7 @@ impl Default for Grid {
             dms_parts: DmsParts::Auto,
             thousands: false,
             dash: GridDash::Solid,
+            mgrs: false,
         }
     }
 }
@@ -478,14 +506,16 @@ impl Grid {
         // Off by rounding error from the stepped loop: put back on the step.
         let v = if step > 0.0 { (v / step).round() * step } else { v };
         // (Short labels of a step of 100 km or more would all read 0: whole ones.)
-        if self.short && !whole && step < 100_000.0 {
+        if (self.short || self.mgrs) && !whole && step < 100_000.0 {
             let km = (v / 1000.0).rem_euclid(100.0);
             // (99.9999… after rounding error is 0 again.)
             let km = if (km - 100.0).abs() < 1e-6 { 0.0 } else { km };
-            return match self.decimals {
+            let s = match self.decimals {
                 Some(n) => format!("{km:.prec$}", prec = usize::from(n.min(MAX_GRID_DECIMALS))),
                 None => decimal(km, step / 1000.0),
             };
+            // MGRS prints its two digits always: `05`, `00`.
+            return if self.mgrs && km < 10.0 { format!("0{s}") } else { s };
         }
         let s = self.places(v.abs(), step);
         let s = if self.thousands { thousands(&s) } else { s };
@@ -848,15 +878,23 @@ pub const MAX_LEGEND_EXCLUDED: usize = 1000;
 /// The most layers a map frame leaves out.
 pub const MAX_FRAME_EXCLUDED: usize = 1000;
 
-/// The saved format of a layout, and of a project, that uses nothing an older RustGIS would lose.
-pub const PLAIN_FORMAT: u32 = 1;
-
-/// The saved format of a layout with a map frame that leaves layers out, and of its project.
-pub const FRAME_LAYERS_FORMAT: u32 = 2;
-
-/// What a RustGIS older than 0.6.2 says of a layout file it would lose something of (see
+/// The format a layout file (`.rgislayout`) is written as, from ARutGIS 0.7.0 on, whatever the
+/// layout holds: 0.7.0 saves what older versions don't know (a dashed outline, a legend's own
+/// labels and look, an MGRS grid), which they would read past, and save the layout without.
+/// ARutGIS 0.6.2 and 0.6.3 wrote 2 for a layout with a map frame that leaves layers out and no
+/// format otherwise, and refuse a format past 2; older ones don't look at it (see
 /// [`Layout::to_file`]).
-const NEEDS_NEWER: &str = "this layout needs ARutGIS 0.6.2 or later: update ARutGIS to open it";
+pub const FILE_FORMAT: u32 = 3;
+
+/// What a RustGIS that doesn't look at a layout file's format says of one (see
+/// [`Layout::to_file`]).
+const NEEDS_NEWER: &str = "this layout needs ARutGIS 0.7.0 or later: update ARutGIS to open it";
+
+/// The most layers a legend labels.
+pub const MAX_LEGEND_LABELS: usize = 1000;
+
+/// The most characters of a legend's label for a layer.
+pub const MAX_LEGEND_LABEL_CHARS: usize = 200;
 
 /// Which way a line element runs across its box.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1899,8 +1937,9 @@ pub enum ElementKind {
         #[serde(default, skip_serializing_if = "is_zero")]
         pitch: f64,
         /// Layers of the map this frame doesn't draw, by name (its web layers too): a locator
-        /// without the map's detail. A layout with any is saved as [`FRAME_LAYERS_FORMAT`], which
-        /// an older RustGIS refuses rather than draw every layer and save the layout without them.
+        /// without the map's detail. A project with any requires `frame-layers` of its reader,
+        /// so one that doesn't know them refuses it rather than draw every layer and save the
+        /// layout without them.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         exclude: Vec<String>,
     },
@@ -1973,6 +2012,10 @@ pub enum ElementKind {
         /// the features it stands for are drawn as before.
         #[serde(default)]
         hide_other: bool,
+        /// Include the grey fallback for Graduated Colors' missing numeric values. Absent in
+        /// older layouts, whose appearance is preserved; this changes only the legend.
+        #[serde(default, skip_serializing_if = "is_false")]
+        show_no_data: bool,
         /// Layers (by name, any case) the legend leaves out though the map draws them: a mask, a
         /// highlight, a basemap-like layer. Empty, it lists every layer it would otherwise.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1984,12 +2027,18 @@ pub enum ElementKind {
         /// as they can be, a layer's name staying with the row under it.
         #[serde(default = "one_column", skip_serializing_if = "is_one_column")]
         columns: usize,
+        /// The label it shows for a layer instead of the layer's name, by the layer's name (any
+        /// case, as the map spells it): its row, or the name over its classes (#1654). The layer
+        /// keeps its name everywhere else. A layer not in it shows its name.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        labels: BTreeMap<String, String>,
     },
     /// The colour scale of a raster layer in a frame's map: a gradient bar for a stretch, steps
     /// for classes, a block per value for unique values and colour tables (#326).
     Colorbar {
         frame: u32,
-        /// The raster layer (by name); `None` is the top visible raster of the frame's map.
+        /// The raster layer (by name); `None` is the frame map's top shown raster with a colour scale
+        /// that isn't drawn by classes ([`colorbar_layer`]).
         #[serde(default)]
         layer: Option<String>,
         /// Drawn beside the bar, e.g. the units: `Elevation (m)`.
@@ -2033,6 +2082,11 @@ pub enum ElementKind {
         /// (trimmed, bounded, none when not a name).
         #[serde(default, deserialize_with = "crate::symbology::de_font", skip_serializing_if = "Option::is_none")]
         font_name: Option<String>,
+        /// Turned about the centre of its box, in degrees clockwise as a frame's `bearing` is
+        /// (90 reads top to bottom, -90 bottom to top), -180 to 180 ([`rotation()`]); the element's
+        /// box stays the unturned one. Left out when 0, so layouts saved before keep their bytes.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        rotation: f64,
     },
     Picture {
         /// Base64 PNG or JPEG.
@@ -2063,9 +2117,21 @@ pub enum ElementKind {
         /// Its corners rounded by this much, in millimetres (0: square corners).
         #[serde(default, skip_serializing_if = "is_zero")]
         radius: f64,
+        /// Dashed: the pattern along the outline, in points, as a line layer's stroke takes it
+        /// ([`Dash`]); `None` is solid. Left out when solid, so layouts saved before keep their bytes.
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::symbology::de_dash")]
+        dash: Option<Dash>,
     },
     /// An ellipse filling the element's box: a circle in a square one.
-    Ellipse { fill: Rgba, outline: Rgba, width: f64 },
+    Ellipse {
+        fill: Rgba,
+        outline: Rgba,
+        width: f64,
+        /// Dashed: the pattern along the outline, in points, as a line layer's stroke takes it
+        /// ([`Dash`]); `None` is solid. Left out when solid, so layouts saved before keep their bytes.
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::symbology::de_dash")]
+        dash: Option<Dash>,
+    },
     /// A legend's symbol patch on its own, as a legend converted to graphics leaves it: a layer's
     /// symbol (a copy, which no longer follows the layer) in the shape a legend draws it in,
     /// filling the element's box.
@@ -2086,6 +2152,11 @@ pub enum ElementKind {
         /// Arrowheads: none makes it a plain line.
         #[serde(default)]
         head: LineHead,
+        /// Dashed: the pattern along the line, in points, as a line layer's stroke takes it
+        /// ([`Dash`]); `None` is solid. Only the shaft is dashed: arrowheads stay solid. Left out
+        /// when solid, so layouts saved before keep their bytes.
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::symbology::de_dash")]
+        dash: Option<Dash>,
     },
 }
 
@@ -2106,6 +2177,7 @@ impl ElementKind {
             letter_spacing: 0.0,
             font: FontFamily::Sans,
             font_name: None,
+            rotation: 0.0,
         }
     }
 
@@ -2240,6 +2312,28 @@ impl Element {
         x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
     }
 
+    /// A text's own `rotation`, in degrees clockwise (RustGIS turns a text this way, #1763); 0
+    /// for any other element. It adds to the element's [`rotation`](Element::rotation), which
+    /// turns every kind of element: [`turned`](Element::turned) is the two together.
+    pub fn rotation(&self) -> f64 {
+        match self.kind {
+            ElementKind::Text { rotation, .. } => rotation,
+            _ => 0.0,
+        }
+    }
+
+    /// How far the element is turned in all, in degrees anticlockwise: by its own `rotation`
+    /// and, a text, by the turn kept on the text (clockwise).
+    pub fn turned(&self) -> f64 {
+        let text = self.rotation();
+        if text == 0.0 { self.rotation } else { normalize_rotation(self.rotation - text) }
+    }
+
+    /// [`unturn`](Element::unturn), by the name RustGIS's own code calls it.
+    pub fn unturned(&self, x: f64, y: f64) -> (f64, f64) {
+        self.unturn(x, y)
+    }
+
     pub fn center(&self) -> (f64, f64) {
         (self.x + self.w / 2.0, self.y + self.h / 2.0)
     }
@@ -2247,7 +2341,7 @@ impl Element {
     /// A page point (mm) turned back by the element's rotation about its centre: where it is
     /// on the element's own, unturned box.
     pub fn unturn(&self, x: f64, y: f64) -> (f64, f64) {
-        turn((x, y), self.center(), -self.rotation)
+        turn((x, y), self.center(), -self.turned())
     }
 
     /// The corners of the element on the page, turned as it is: top-left, top-right,
@@ -2255,12 +2349,12 @@ impl Element {
     pub fn corners(&self) -> [(f64, f64); 4] {
         let c = self.center();
         [(self.x, self.y), (self.x + self.w, self.y), (self.x + self.w, self.y + self.h), (self.x, self.y + self.h)]
-            .map(|p| turn(p, c, self.rotation))
+            .map(|p| turn(p, c, self.turned()))
     }
 
     /// The box (x, y, w, h, in mm) the element covers on the page, turned as it is.
     pub fn bounds(&self) -> (f64, f64, f64, f64) {
-        if self.rotation == 0.0 {
+        if self.turned() == 0.0 {
             return (self.x, self.y, self.w, self.h);
         }
         let k = self.corners();
@@ -2288,6 +2382,17 @@ pub fn normalize_rotation(degrees: f64) -> f64 {
     let a = (degrees + 180.0).rem_euclid(360.0) - 180.0;
     // -180 and 180 are the same turn: kept as 180.
     if a <= -180.0 + 1e-9 { 180.0 } else { a }
+}
+
+/// An angle in degrees as a text's own `rotation` keeps it: within -180..=180 (450 is 90, 270 is
+/// -90), 0 when it isn't a number.
+pub fn rotation(degrees: f64) -> f64 {
+    if !degrees.is_finite() {
+        return 0.0;
+    }
+    let a = degrees.rem_euclid(360.0);
+    // `rem_euclid` of a tiny negative angle can round to 360 itself.
+    if a > 180.0 { a - 360.0 } else { a }
 }
 
 /// How [`Layout::align`] lines elements up.
@@ -2463,20 +2568,19 @@ impl Layout {
         self.elements.iter_mut().find(|e| e.id == id)
     }
 
-    /// The saved format the layout needs: [`PLAIN_FORMAT`] unless it uses what only a newer
-    /// reader keeps.
-    pub fn format(&self) -> u32 {
-        let leaves_out = |e: &Element| matches!(&e.kind, ElementKind::MapFrame { exclude, .. } if !exclude.is_empty());
-        if self.elements.iter().any(leaves_out) { FRAME_LAYERS_FORMAT } else { PLAIN_FORMAT }
+    /// Whether a map frame of the layout leaves layers of its map out (`exclude`): what a project
+    /// holding it requires of its reader (`frame-layers`).
+    pub fn leaves_layers_out(&self) -> bool {
+        self.elements.iter().any(|e| matches!(&e.kind, ElementKind::MapFrame { exclude, .. } if !exclude.is_empty()))
     }
 
-    /// The text of a layout file (`.rgislayout`).
+    /// The text of a layout file (`.rgislayout`): `{"format", "layout", "width"}`, the layout one
+    /// level down.
     ///
-    /// A layout an older RustGIS would lose something of ([`Layout::format`]) is written one
-    /// level down, as `{"format", "layout", "width"}`. RustGIS before 0.6.2 reads a layout file
-    /// without looking at its format: it would draw the layers a frame leaves out and save the
-    /// layout without the choice. Written this way it finds no layout at the top and refuses the
-    /// file, giving `width` (a sentence where it expects a number) as its reason.
+    /// ARutGIS 0.6.2 and 0.6.3 refuse a format ([`FILE_FORMAT`]) newer than they read. RustGIS
+    /// before them reads a layout file without looking at its format, and would save the layout
+    /// again without what it didn't know. Written this way it finds no layout at the top and
+    /// refuses the file, giving `width` (a sentence where it expects a number) as its reason.
     pub fn to_file(&self) -> serde_json::Result<String> {
         #[derive(Serialize)]
         struct Nested<'a> {
@@ -2484,28 +2588,33 @@ impl Layout {
             layout: &'a Layout,
             width: &'static str,
         }
-        match self.format() {
-            PLAIN_FORMAT => serde_json::to_string_pretty(self),
-            format => serde_json::to_string_pretty(&Nested { format, layout: self, width: NEEDS_NEWER }),
-        }
+        serde_json::to_string_pretty(&Nested { format: FILE_FORMAT, layout: self, width: NEEDS_NEWER })
     }
 
-    /// The layout in a layout file's text, either way [`Layout::to_file`] writes one. Whether
-    /// this version reads the file's format is the caller's to check first.
+    /// The layout in a layout file's text: one level down, as [`Layout::to_file`] writes it, or
+    /// the layout itself, as RustGIS and ARutGIS before 0.7.0 wrote one. Whether this version
+    /// reads the file's format is the caller's to check first.
     pub fn from_file(text: &str) -> serde_json::Result<Layout> {
+        #[derive(Deserialize)]
+        struct Nested {
+            layout: Layout,
+        }
+        if Self::file_is_nested(text) {
+            return Ok(serde_json::from_str::<Nested>(text)?.layout);
+        }
+        serde_json::from_str(text)
+    }
+
+    /// Whether a layout file's text holds its layout one level down, as [`Layout::to_file`]
+    /// writes it: ARutGIS's own, its format counted as [`FILE_FORMAT`] is. Otherwise it is the
+    /// layout itself, as RustGIS writes one, of the format RustGIS's files share.
+    pub fn file_is_nested(text: &str) -> bool {
         #[derive(Deserialize)]
         struct Head {
             #[serde(default)]
             layout: Option<serde::de::IgnoredAny>,
         }
-        #[derive(Deserialize)]
-        struct Nested {
-            layout: Layout,
-        }
-        if text.trim_start().starts_with('{') && serde_json::from_str::<Head>(text)?.layout.is_some() {
-            return Ok(serde_json::from_str::<Nested>(text)?.layout);
-        }
-        serde_json::from_str(text)
+        text.trim_start().starts_with('{') && serde_json::from_str::<Head>(text).is_ok_and(|h| h.layout.is_some())
     }
 
     /// The layers map frame `frame` doesn't draw, by name.
@@ -2764,6 +2873,7 @@ impl Layout {
         let mut seen = std::collections::HashSet::new();
         let mut next = self.elements.iter().map(|e| e.id).filter(|id| *id <= MAX_ID).max().unwrap_or(0).saturating_add(1);
         let mut changed = Vec::with_capacity(self.elements.len());
+        let mut mgrs_off = 0usize;
         for e in &mut self.elements {
             // A picture's image (often large) is never changed here, so it isn't copied.
             let mut before = Element {
@@ -2825,17 +2935,48 @@ impl Layout {
                     }
                     if let Some(g) = grid {
                         g.clamp();
+                        // MGRS labels name a WGS 84 UTM zone's squares, on a measured grid: on a
+                        // graticule, or with another system named (only a hand-edited file has
+                        // either), they are left off, and counted on their own.
+                        let named_other = g.crs.as_deref().is_some_and(|c| !c.trim().is_empty() && utm_zone_of(c).is_none());
+                        if g.mgrs && (g.kind != GridKind::Measured || named_other) {
+                            g.mgrs = false;
+                            mgrs_off = mgrs_off.saturating_add(1);
+                            // (Counted by `mgrs_off` and said in its own notice, so `before` matches:
+                            // not an adjusted element too.)
+                            if let ElementKind::MapFrame { grid: Some(b), .. } = &mut before.kind {
+                                b.mgrs = false;
+                            }
+                        }
                     }
                 }
-                ElementKind::Legend { exclude, look, columns, .. } => {
+                ElementKind::Legend { exclude, look, columns, labels, .. } => {
                     // Names stay whole: a layer's own name isn't cut, and a cut one would no
                     // longer match it.
                     cut |= exclude.len() > MAX_LEGEND_EXCLUDED;
                     exclude.truncate(MAX_LEGEND_EXCLUDED);
                     look.clamp();
                     *columns = (*columns).clamp(1, MAX_LEGEND_COLUMNS);
+                    // The same for the names labelled; a label is cut to its length, and a blank
+                    // one shows the name, as it would without.
+                    labels.retain(|_, label| !label.trim().is_empty());
+                    let labelled = labels.len();
+                    // One label per layer, as a command keeps: of two spellings of a name (any
+                    // case), the first in order stays and the other is cut.
+                    let mut seen = std::collections::HashSet::new();
+                    labels.retain(|name, _| seen.insert(name.to_ascii_lowercase()));
+                    while labels.len() > MAX_LEGEND_LABELS {
+                        labels.pop_last();
+                    }
+                    cut |= labels.len() < labelled;
+                    for label in labels.values_mut() {
+                        let end = label.char_indices().nth(MAX_LEGEND_LABEL_CHARS).map_or(label.len(), |(i, _)| i);
+                        cut |= end < label.len();
+                        label.truncate(end);
+                    }
                 }
-                ElementKind::Text { text, size, letter_spacing, .. } => {
+                ElementKind::Text { text, size, letter_spacing, rotation: turn, .. } => {
+                    *turn = rotation(*turn);
                     *size = finite_or(*size, 12.0).clamp(*crate::graphics::FONT_SIZE.start(), *crate::graphics::FONT_SIZE.end());
                     *letter_spacing = finite_or(*letter_spacing, 0.0).clamp(MIN_LETTER_SPACING, MAX_LETTER_SPACING);
                     let end = text.char_indices().nth(5000).map_or(text.len(), |(i, _)| i);
@@ -2917,6 +3058,7 @@ impl Layout {
             elements_removed: count.saturating_sub(self.elements.len()),
             page_adjusted: usize::from(page_adjusted),
             series_removed: usize::from(series_removed),
+            mgrs_off,
         }
     }
 }
@@ -2926,8 +3068,8 @@ impl Layout {
 pub struct LayoutRepairs {
     /// Elements kept with a value brought into range, a new id, or a reference cleared.
     pub elements_adjusted: usize,
-    /// Elements with a name, text, polygon points or legend exclusions cut to their limits (the
-    /// same element may count as adjusted too).
+    /// Elements with a name, text, polygon points, legend exclusions or legend labels cut to their
+    /// limits (the same element may count as adjusted too).
     pub elements_cut: usize,
     /// Elements removed: beyond the 500 a layout holds, or tied to a map frame it doesn't have.
     pub elements_removed: usize,
@@ -2935,6 +3077,9 @@ pub struct LayoutRepairs {
     pub page_adjusted: usize,
     /// Whether the map series was removed, its map frame missing (0 or 1).
     pub series_removed: usize,
+    /// Map frames whose grid had MGRS labels on a graticule or over a system other than a WGS 84
+    /// UTM zone, turned off.
+    pub mgrs_off: usize,
 }
 
 impl LayoutRepairs {
@@ -3049,12 +3194,22 @@ pub const MAX_COLORBAR_VALUES: usize = 64;
 /// Colours sampled along a continuous colorbar.
 const RAMP_SAMPLES: usize = 256;
 
-/// The raster layer a colorbar shows: `layer` by name, or the top visible raster of the map that
-/// its frame draws (one not among the layers `left_out` of the frame).
+/// The raster layer a colorbar shows: `layer` by name, or the topmost raster the map shows (its
+/// groups visible too) with a colour scale ([`color_scale`]) that isn't drawn by classes: a legend lists those (#1679), and a colorbar
+/// of their codes would be the only key a land cover had. An RGB composite or a land cover over a
+/// DEM leaves it to the DEM. A raster on a ramp (Stretch, a tinted hillshade) whose pixels aren't
+/// read yet keeps its place: it is returned with no colour scale to show, rather than the one of
+/// a raster under it.
+/// A layer among those `left_out` of the colorbar's frame is passed over.
 pub fn colorbar_layer<'a>(map: &'a Map, layer: Option<&str>, left_out: &[String]) -> Option<&'a Layer> {
     match layer {
         Some(n) => map.layer_by_name(n).filter(|l| l.is_raster()),
-        None => map.layers.iter().find(|l| l.visible && l.is_raster() && !left_out.iter().any(|n| n.eq_ignore_ascii_case(&l.name))),
+        None => map.layers.iter().filter(|l| map.shows(l) && !left_out.iter().any(|n| n.eq_ignore_ascii_case(&l.name))).find(|l| {
+            l.raster.as_ref().is_some_and(|r| match r.data {
+                None => matches!(r.style.renderer, RasterRenderer::Stretch { .. } | RasterRenderer::ShadedRelief { ramp: Some(_), .. }),
+                Some(_) => !r.style.renderer.draws_classes() && color_scale(r).is_some(),
+            })
+        }),
     }
 }
 
@@ -3122,11 +3277,12 @@ pub fn color_scale(rl: &RasterLayer) -> Option<ColorScale> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbology::MAX_DASH_STEP;
 
     #[test]
     fn elements_are_arranged_in_the_drawing_order() {
         let mut l = Layout::new("L", 100.0, 100.0);
-        let rect = || ElementKind::Rectangle { fill: Rgba::rgb(0, 0, 0), outline: Rgba::rgb(0, 0, 0), width: 0.0, radius: 0.0 };
+        let rect = || ElementKind::Rectangle { fill: Rgba::rgb(0, 0, 0), outline: Rgba::rgb(0, 0, 0), width: 0.0, radius: 0.0, dash: None };
         let ids: Vec<u32> = (0..4).map(|i| l.add(format!("E{i}"), (10.0, 10.0, 50.0, 50.0), rect())).collect();
         let order = |l: &Layout| l.elements.iter().map(|e| e.id).collect::<Vec<_>>();
         // All four overlap: the one drawn last is the one a click picks.
@@ -3178,7 +3334,7 @@ mod tests {
     /// A map frame's left-out layers are saved only when it has some, and a layout with any is
     /// of the format an older reader refuses; a layout without stays as every reader takes it.
     #[test]
-    fn a_frame_leaving_layers_out_is_saved_as_a_newer_format() {
+    fn a_layout_file_is_one_older_versions_refuse() {
         let frame = |exclude: Vec<String>| ElementKind::MapFrame {
             map: "Map".into(),
             center: Coord::new(0.0, 0.0),
@@ -3194,27 +3350,42 @@ mod tests {
         };
         let mut l = Layout::new("Layout", 297.0, 210.0);
         let whole = l.add("Map Frame", (10.0, 10.0, 200.0, 150.0), frame(Vec::new()));
-        assert_eq!(l.format(), PLAIN_FORMAT);
+        assert!(!l.leaves_layers_out());
         let saved = serde_json::to_string(&l).unwrap();
         assert!(!saved.contains("exclude"), "{saved}");
-        // Its file is the layout itself, as every version wrote one.
-        let file = l.to_file().unwrap();
-        assert_eq!(serde_json::from_str::<Layout>(&file).unwrap(), l);
-        assert_eq!(Layout::from_file(&file).unwrap(), l);
+        // The layout itself, as every version before 0.7.0 wrote one, is read.
+        assert_eq!(Layout::from_file(&saved).unwrap(), l);
+        // Its file says its format and holds it one level down, whatever it holds: a reader that
+        // doesn't look at a format (RustGIS before 0.6.2 read the text as a layout, as here)
+        // refuses it, saying why; this version reads it whole.
+        let refused = |l: &Layout| {
+            let file = l.to_file().unwrap();
+            let older = serde_json::from_str::<Layout>(&file).unwrap_err().to_string();
+            assert!(older.contains("this layout needs ARutGIS 0.7.0 or later"), "{older}");
+            let head: serde_json::Value = serde_json::from_str(&file).unwrap();
+            assert_eq!((head["format"].as_u64(), head.get("elements")), (Some(u64::from(FILE_FORMAT)), None));
+            assert_eq!(&Layout::from_file(&file).unwrap(), l);
+        };
+        refused(&l);
         let locator = l.add("Locator", (220.0, 10.0, 60.0, 60.0), frame(vec!["Parcels".into(), "Roads".into()]));
-        assert_eq!(l.format(), FRAME_LAYERS_FORMAT);
+        assert!(l.leaves_layers_out());
         let again: Layout = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
         assert_eq!(again, l);
         assert_eq!(again.frame_exclude(locator), ["Parcels", "Roads"]);
         assert!(again.frame_exclude(whole).is_empty());
-        // Its file is one a reader that doesn't look at a format (RustGIS before 0.6.2 read the
-        // text as a layout, as here) refuses, saying why; this version reads it whole.
-        let file = l.to_file().unwrap();
-        let older = serde_json::from_str::<Layout>(&file).unwrap_err().to_string();
-        assert!(older.contains("this layout needs ARutGIS 0.6.2 or later"), "{older}");
-        assert_eq!(serde_json::from_str::<serde_json::Value>(&file).unwrap()["format"], 2);
-        assert_eq!(Layout::from_file(&file).unwrap(), l);
+        refused(&l);
+        // One as ARutGIS 0.6.2 and 0.6.3 wrote a layout with such a frame is read too.
+        let earlier = format!(
+            r#"{{"format": 2, "layout": {}, "width": "this layout needs ARutGIS 0.6.2 or later"}}"#,
+            serde_json::to_string(&l).unwrap()
+        );
+        assert_eq!(Layout::from_file(&earlier).unwrap(), l);
         assert!(Layout::from_file(r#"{"format": 2, "layout": {"name": "half"}}"#).is_err());
+        // Which of the two a file is: its format is counted accordingly.
+        assert!(Layout::file_is_nested(&earlier) && Layout::file_is_nested(&l.to_file().unwrap()));
+        assert!(
+            !Layout::file_is_nested(&serde_json::to_string(&l).unwrap()) && !Layout::file_is_nested("[]") && !Layout::file_is_nested("{")
+        );
         // A legend leaves out its own layers and its frame's, each once.
         let own = ["roads".to_string(), "Lakes".to_string()];
         assert_eq!(&*l.legend_exclude(locator, &own), ["roads", "Lakes", "Parcels"]);
@@ -3269,7 +3440,7 @@ mod tests {
         let repairs = l.clamp();
         assert_eq!(
             repairs,
-            LayoutRepairs { elements_adjusted: 2, elements_cut: 0, elements_removed: 1, page_adjusted: 1, series_removed: 1 },
+            LayoutRepairs { elements_adjusted: 2, elements_cut: 0, elements_removed: 1, page_adjusted: 1, series_removed: 1, mgrs_off: 0 },
             "what changed is counted"
         );
         assert!(l.clamp().is_empty(), "a repaired layout needs nothing more");
@@ -3304,7 +3475,7 @@ mod tests {
         let a = big.add(
             "a",
             (0.0, 0.0, 1.0, 1.0),
-            ElementKind::Rectangle { fill: Rgba::rgb(0, 0, 0), outline: Rgba::rgb(0, 0, 0), width: 1.0, radius: 0.0 },
+            ElementKind::Rectangle { fill: Rgba::rgb(0, 0, 0), outline: Rgba::rgb(0, 0, 0), width: 1.0, radius: 0.0, dash: None },
         );
         assert!(a != big.elements[0].id && a <= MAX_ID + 1);
     }
@@ -3312,7 +3483,7 @@ mod tests {
     #[test]
     fn hairline_rectangles_keep_their_height() {
         let mut l = Layout::new("Layout", 210.0, 297.0);
-        let rule = ElementKind::Rectangle { fill: Rgba::rgb(0, 0, 0), outline: Rgba::rgb(0, 0, 0), width: 0.0, radius: 0.0 };
+        let rule = ElementKind::Rectangle { fill: Rgba::rgb(0, 0, 0), outline: Rgba::rgb(0, 0, 0), width: 0.0, radius: 0.0, dash: None };
         let id = l.add("Rule", (14.0, 33.0, 182.0, 0.15), rule.clone());
         assert_eq!(l.element(id).map(|e| e.h), Some(0.15));
         // A zero height becomes the thinnest element, not a 1 mm box.
@@ -3517,6 +3688,70 @@ mod tests {
         assert_eq!(Grid { outside: false, ..out }.outside_reach(), 0.0);
     }
 
+    /// MGRS labels: the kilometres' last two digits on the lines, saved only when on; a WGS 84 UTM
+    /// zone is read from its EPSG code alone; a file with them on a graticule or naming another
+    /// system has them left off, counted on their own.
+    #[test]
+    fn mgrs_labels_need_a_wgs84_utm_zone() {
+        let g = Grid { kind: GridKind::Measured, mgrs: true, ..Grid::default() };
+        assert_eq!(g.measured_label(543_000.0, 1000.0), "43");
+        assert_eq!(g.measured_label(5_262_500.0, 500.0), "62.5");
+        assert_eq!(g.measured_label(500_000.0, 1000.0), "00", "two digits, as MGRS prints them");
+        assert_eq!(g.measured_label(505_500.0, 500.0), "05.5");
+        assert_eq!(Grid { mgrs: false, short: true, ..g.clone() }.measured_label(505_000.0, 1000.0), "5");
+        assert_eq!(g.measured_label(500_000.0, 100_000.0), "500000");
+        assert!(serde_json::to_value(Grid::default()).unwrap().get("mgrs").is_none());
+        let v = serde_json::to_value(&g).unwrap();
+        assert_eq!(v["mgrs"].as_bool(), Some(true));
+        assert_eq!(serde_json::from_value::<Grid>(v).unwrap(), g);
+        for (crs, zone) in [
+            ("EPSG:32632", Some((32, true))),
+            (" epsg:32760 ", Some((60, false))),
+            ("32601", Some((1, true))),
+            ("EPSG: 32733", Some((33, false))),
+            ("epsg 32632", Some((32, true))),
+            (" EPSG 32733 ", Some((33, false))),
+            ("EPSG:32600", None),
+            ("EPSG:32661", None),
+            ("EPSG:32761", None),
+            ("EPSG:25832", None),
+            ("EPSG:2056", None),
+            ("EPSG:326320", None),
+            ("+proj=utm +zone=32 +datum=WGS84", None),
+            ("", None),
+        ] {
+            assert_eq!(utm_zone_of(crs), zone, "{crs}");
+        }
+        let frame = |crs: Option<&str>, kind: GridKind| {
+            let mut l = Layout::new("Layout", 297.0, 210.0);
+            l.add(
+                "Map Frame",
+                (10.0, 10.0, 200.0, 150.0),
+                ElementKind::MapFrame {
+                    map: "Map".into(),
+                    center: Coord::new(8.7, 47.5),
+                    scale: 25_000.0,
+                    shape: FrameShape::Rectangle,
+                    grid: Some(Grid { crs: crs.map(Into::into), kind, ..g.clone() }),
+                    extent_of: None,
+                    extent_color: INDICATOR_COLOR,
+                    extent_width: INDICATOR_WIDTH,
+                    bearing: 0.0,
+                    pitch: 0.0,
+                    exclude: Vec::new(),
+                },
+            );
+            let r = l.clamp();
+            let ElementKind::MapFrame { grid: Some(g), .. } = &l.elements[0].kind else { panic!() };
+            (g.mgrs, r.mgrs_off, r.elements_adjusted)
+        };
+        assert_eq!(frame(None, GridKind::Measured), (true, 0, 0));
+        assert_eq!(frame(Some("EPSG:32632"), GridKind::Measured), (true, 0, 0));
+        assert_eq!(frame(Some(" "), GridKind::Measured), (true, 0, 0));
+        assert_eq!(frame(Some("EPSG:2056"), GridKind::Measured), (false, 1, 0), "said on its own, not as a value out of range");
+        assert_eq!(frame(None, GridKind::Graticule), (false, 1, 0));
+    }
+
     #[test]
     fn grid_labels_follow_the_format() {
         let g = Grid::default();
@@ -3575,6 +3810,107 @@ mod tests {
         assert_eq!(grid.style, GridStyle::Lines);
     }
 
+    /// Lines and the outlines of rectangles and ellipses keep a dash pattern through a save
+    /// (#1763); solid, nothing is written, so a layout saved before is written back byte for
+    /// byte; a pattern read from a file is brought into range as a line layer's is.
+    #[test]
+    fn dashes_round_trip_and_old_layouts_keep_their_bytes() {
+        let black = Rgba::rgb(0, 0, 0);
+        let mut l = Layout::new("L", 100.0, 100.0);
+        let line = l.add(
+            "Line",
+            (10.0, 10.0, 60.0, 6.0),
+            ElementKind::Line { color: black, width: 1.0, dir: LineDir::Horizontal, head: LineHead::End, dash: None },
+        );
+        let rect = l.add(
+            "Box",
+            (10.0, 30.0, 60.0, 30.0),
+            ElementKind::Rectangle { fill: black, outline: black, width: 1.0, radius: 0.0, dash: None },
+        );
+        let oval = l.add("Oval", (10.0, 70.0, 30.0, 20.0), ElementKind::Ellipse { fill: black, outline: black, width: 1.0, dash: None });
+        let old = serde_json::to_string(&l).unwrap();
+        assert!(!old.contains("dash"), "solid writes no pattern");
+        assert_eq!(serde_json::to_string(&serde_json::from_str::<Layout>(&old).unwrap()).unwrap(), old, "written back byte for byte");
+        let dash_of = |l: &Layout, id: u32| match l.element(id).map(|e| &e.kind) {
+            Some(ElementKind::Line { dash, .. } | ElementKind::Rectangle { dash, .. } | ElementKind::Ellipse { dash, .. }) => {
+                dash.map(|d| d.steps().to_vec())
+            }
+            _ => panic!("a line or a shape"),
+        };
+        let pattern = Dash::new(&[4.0, 2.0, 1.0, 2.0]);
+        for id in [line, rect, oval] {
+            if let Some(ElementKind::Line { dash, .. } | ElementKind::Rectangle { dash, .. } | ElementKind::Ellipse { dash, .. }) =
+                l.element_mut(id).map(|e| &mut e.kind)
+            {
+                *dash = pattern;
+            }
+        }
+        let saved = serde_json::to_string(&l).unwrap();
+        assert!(saved.contains(r#""dash":[4.0,2.0,1.0,2.0]"#), "{saved}");
+        let back: Layout = serde_json::from_str(&saved).unwrap();
+        for id in [line, rect, oval] {
+            assert_eq!(dash_of(&back, id), Some(vec![4.0, 2.0, 1.0, 2.0]));
+        }
+        // From a file, as a line layer's pattern: steps clamped, all-zero read as solid.
+        let file = saved.replacen("[4.0,2.0,1.0,2.0]", "[4,1e9,-2]", 1).replacen("[4.0,2.0,1.0,2.0]", "[0,0]", 1);
+        let read: Layout = serde_json::from_str(&file).unwrap();
+        assert_eq!(dash_of(&read, line), Some(vec![4.0, MAX_DASH_STEP, 0.0]));
+        assert_eq!(dash_of(&read, rect), None);
+        assert_eq!(dash_of(&read, oval), Some(vec![4.0, 2.0, 1.0, 2.0]));
+    }
+
+    /// A text turned 90° or -90° (#1763) keeps its turn through a save; one saved before reads
+    /// upright and is written back byte for byte; a turn read from a file is kept within -180 to
+    /// 180.
+    #[test]
+    fn text_rotation_round_trips_and_old_layouts_keep_their_bytes() {
+        let turn_of = |l: &Layout, id: u32| l.element(id).map(Element::rotation);
+        let mut l = Layout::new("L", 100.0, 100.0);
+        let upright = l.add("Title", (10.0, 10.0, 60.0, 10.0), ElementKind::text("Brasil", 12.0, Rgba::rgb(0, 0, 0), false));
+        let old = serde_json::to_string(&l).unwrap();
+        assert!(!old.contains("rotation"), "an upright text writes no turn");
+        let back: Layout = serde_json::from_str(&old).unwrap();
+        assert_eq!(turn_of(&back, upright), Some(0.0));
+        assert_eq!(serde_json::to_string(&back).unwrap(), old, "written back byte for byte");
+        for turn in [90.0, -90.0] {
+            let mut l = l.clone();
+            if let Some(ElementKind::Text { rotation, .. }) = l.element_mut(upright).map(|e| &mut e.kind) {
+                *rotation = turn;
+            }
+            let back: Layout = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
+            assert_eq!(turn_of(&back, upright), Some(turn));
+        }
+        // Read from a file, a turn is kept within -180..=180.
+        let file = old.replace(r#""bold":false"#, r#""bold":false,"rotation":450"#);
+        let mut read: Layout = serde_json::from_str(&file).unwrap();
+        read.clamp();
+        assert_eq!(turn_of(&read, upright), Some(90.0));
+        assert_eq!(
+            [rotation(270.0), rotation(-270.0), rotation(180.0), rotation(-180.0), rotation(f64::NAN)],
+            [-90.0, 90.0, 180.0, 180.0, 0.0]
+        );
+    }
+
+    /// A turned text is hit, and takes up the page, where it is drawn: its box turned about its
+    /// centre (#1763).
+    #[test]
+    fn a_turned_text_is_hit_on_its_turned_box() {
+        let mut l = Layout::new("L", 100.0, 100.0);
+        let id = l.add("Source", (20.0, 45.0, 60.0, 10.0), ElementKind::text("Fonte: IBGE", 8.0, Rgba::rgb(0, 0, 0), false));
+        // Upright: 60 wide, 10 high, centred on (50, 50).
+        assert_eq!((l.hit(25.0, 50.0), l.hit(50.0, 25.0)), (Some(id), None));
+        if let Some(ElementKind::Text { rotation, .. }) = l.element_mut(id).map(|e| &mut e.kind) {
+            *rotation = 90.0;
+        }
+        // Turned: 10 wide, 60 high, about the same centre.
+        assert_eq!((l.hit(25.0, 50.0), l.hit(50.0, 25.0)), (None, Some(id)));
+        let (x, y, w, h) = l.element(id).unwrap().bounds();
+        assert!((x - 45.0).abs() < 1e-9 && (y - 20.0).abs() < 1e-9 && (w - 10.0).abs() < 1e-9 && (h - 60.0).abs() < 1e-9);
+        // The element keeps its unturned box.
+        let e = l.element(id).unwrap();
+        assert_eq!((e.x, e.y, e.w, e.h), (20.0, 45.0, 60.0, 10.0));
+    }
+
     #[test]
     fn legends_keep_their_look_and_texts() {
         // Saved before legends had a look: as it was, and written back without one.
@@ -3603,9 +3939,11 @@ mod tests {
             title: "L".into(),
             all_classes: false,
             hide_other: false,
+            show_no_data: false,
             exclude: Vec::new(),
             look: Box::new(look.clone()),
             columns: 1,
+            labels: Default::default(),
         };
         let back: ElementKind = serde_json::from_str(&serde_json::to_string(&kind).unwrap()).unwrap();
         assert_eq!(back, kind);

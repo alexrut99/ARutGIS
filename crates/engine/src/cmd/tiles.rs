@@ -48,6 +48,9 @@ pub const NETWORK: &[&str] = &[
     "portal.files",
     "embeddings.search",
     "embeddings.add",
+    "embeddings.addCube",
+    "embeddings.similarity",
+    "embeddings.change",
     "earthdata.collections",
     "earthdata.granules",
     "nldi.flowline",
@@ -60,6 +63,8 @@ pub const NETWORK: &[&str] = &[
     "arcgis.signIn",
     "arcgis.signOut",
     "arcgis.token",
+    // A sign-in reaches Copernicus Data Space's sign-in host.
+    "copernicus.login",
 ];
 
 /// Registers commands for tile-layer sources, drawing properties, coverage and celestial bodies.
@@ -73,7 +78,7 @@ pub fn commands() -> Vec<C> {
         C::new("map.setTiles", "Tile Layer Properties", "Home › Add", set).inputs(set_inputs).roles(&[]).effects(crate::policy::Effects::NONE).params(
             r#"{"name"?: text | "index"?: number (0 = top) | "id"?: catalog id, "visible"?: bool, "opacity"?: 0–1, "blend"?: "normal"|"multiply"|"screen"|"overlay"|"darken"|"lighten"|"difference", "move"?: "up"|"down"|"top"|"bottom" (past the next layer in the drawing order of all the map's layers, a feature or raster layer too), "to"?: number (its place in that order among the other layers, 0 = top; the Layers pane lists it), "rename"?: text, "bands"?: [red, green, blue] | [band] (a cloud-optimised GeoTIFF's bands shown, from 1; [] for its own), "range"?: [low, high] (the values shown from black to full colour; null: each band's 2nd–98th percentile), "dequantize"?: "aef" (AlphaEarth's quantised embeddings) | "none", "legend"?: as map.addTiles's, or null for none, "hiddenLayers"?: [source layer name] (vector tiles' source layers not drawn or identified, as map.tiles's sourceLayers names them; replaces the list, [] or null for none), "singleImage"?: bool (as map.addTiles's), "tileSize"?: 256|512|1024 (a WMS or map service asked for in Web Mercator: its tiles' size)}"#,
         ),
-        C::new("map.tiles", "Tile Layers", "Home › Add", |s, _| Ok(list(s, false))).inputs(listing_inputs).roles(&[]).effects(crate::policy::Effects::NONE).view(),
+        C::new("map.tiles", "Tile Layers", "Home › Add", |s, _| Ok(list(s, !s.policy_user()))).inputs(listing_inputs).roles(&[]).effects(crate::policy::Effects::NONE).view(),
         // As `layer.expand` for a layer's classes: what the pane shows, not an edit to undo.
         C::new("map.expandTiles", "Expand Tile Legend", "Layers", |s, p| {
             let i = find(s, p)?.ok_or("name or index is required")?;
@@ -150,13 +155,16 @@ fn body(s: &mut Session, p: &Value) -> CmdResult {
 /// drops the credentials from their addresses.
 pub(crate) fn list(s: &Session, redact: bool) -> Value {
     let picked = s.selected_tile();
+    let shown = |address: &str| {
+        if redact { crate::sources::redact_output(address) } else { crate::sources::strip_capabilities(address) }
+    };
     Value::Array(
         s.map()
             .tiles
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let url = if redact { crate::sources::redact(&t.url) } else { t.url.clone() };
+                let url = shown(&t.url);
                 let mut o = json!({"index": i, "name": t.name, "id": t.id, "kind": t.kind.code(), "url": url, "visible": t.visible, "error": t.error,
                     "opacity": t.opacity, "blend": t.blend.code(), "overlay": t.overlay, "attribution": t.attribution, "minZoom": t.min_zoom, "maxZoom": t.max_zoom});
                 // Its place in the drawing order: over this map layer, or (none) under them all.
@@ -174,7 +182,7 @@ pub(crate) fn list(s: &Session, redact: bool) -> Value {
                     let legends: Vec<_> = t
                         .legends
                         .iter()
-                        .map(|l| rustgis_data::ogc::Legend { url: if redact { crate::sources::redact(&l.url) } else { l.url.clone() }, ..l.clone() })
+                        .map(|l| rustgis_data::ogc::Legend { url: shown(&l.url), ..l.clone() })
                         .collect();
                     o["legends"] = json!(legends);
                     o["expanded"] = json!(t.expanded);
@@ -232,7 +240,10 @@ pub(crate) fn add_with_metadata_wait(s: &mut Session, p: &Value, metadata_wait: 
     // (`start`, `end`) turns on when it is off.
     let dated = rustgis_data::time::is_template(url);
     if dated && !matches!(kind, TileKind::Raster | TileKind::Vector | TileKind::Cog) {
-        return Err(format!("{url}: dated addresses work for raster, vector and GeoTIFF tile layers, not {}", kind.code()));
+        return Err(crate::sources::message_with_address(
+            url,
+            &format!("dated addresses work for raster, vector and GeoTIFF tile layers, not {}", kind.code()),
+        ));
     }
     let at = if dated { dated_start(s, p)? } else { 0.0 };
     let mut t = TileLayer::new(
@@ -297,7 +308,7 @@ pub(crate) fn add_with_metadata_wait(s: &mut Session, p: &Value, metadata_wait: 
     if let Some(v) = p.get("legend").filter(|v| !v.is_null()) {
         t.legends = legends(s, ps(p, "connection"), v)?;
     }
-    t.repair()?;
+    let repairs = t.repair_counted()?;
     // A layer its service draws on request: one picture of the view, or tiles of the size given
     // (#1162). Added by its address as from its service: one picture unless tiles are asked for
     // (`singleImage: false`, or a tile size).
@@ -336,7 +347,7 @@ pub(crate) fn add_with_metadata_wait(s: &mut Session, p: &Value, metadata_wait: 
     let at = if top { 0 } else { m.tiles.iter().position(|o| !o.overlay && o.over.is_none()).unwrap_or(m.tiles.len()) };
     let mut out = json!({"name": t.name, "kind": t.kind.code(), "index": at});
     if t.time_url.is_some() {
-        out["url"] = json!(crate::sources::redact(&t.url));
+        out["url"] = json!(crate::sources::redact_output(&t.url));
         out["dated"] = json!(true);
     }
     // A file added as data (a catalog's archive, kept where the user put it, excepted) frames the
@@ -344,6 +355,7 @@ pub(crate) fn add_with_metadata_wait(s: &mut Session, p: &Value, metadata_wait: 
     let pmtiles = t.kind == TileKind::PmTiles && t.id.is_empty();
     let archive = pmtiles || (t.kind == TileKind::MbTiles && t.id.is_empty());
     let frame_tile = (view || archive).then(|| t.clone());
+    let repaired_name = t.name.clone();
     m.tiles.insert(at, t);
     // A file's header is read now (natively), so a script's next command sees the map moved; a
     // file slower than a second to answer (a network mount) is framed when it does, as a web
@@ -365,6 +377,9 @@ pub(crate) fn add_with_metadata_wait(s: &mut Session, p: &Value, metadata_wait: 
         if archive {
             out["zoomed"] = json!(zoomed);
         }
+    }
+    for notice in crate::project::tile_notices(repairs, &repaired_name) {
+        s.notify_text(notice, false);
     }
     Ok(out)
 }
@@ -483,7 +498,7 @@ pub(crate) fn follow_style_view(s: &mut Session, wait: web_time::Duration) -> bo
             Ok(None) => return false,
             Err(e) => {
                 s.style_view = None;
-                s.notify(format!("{url}: {e}"), true);
+                s.notify(crate::sources::message_with_address(&url, &e), true);
                 return false;
             }
         }
@@ -496,7 +511,7 @@ pub(crate) fn follow_style_view(s: &mut Session, wait: web_time::Duration) -> bo
     match super::navigate::go_to_view(s, center, view.zoom, view.bearing, view.pitch) {
         Ok(()) => true,
         Err(e) => {
-            s.notify(format!("{url}: {e}"), true);
+            s.notify(crate::sources::message_with_address(&url, &e), true);
             false
         }
     }
@@ -526,8 +541,7 @@ fn follow_archive(s: &mut Session, t: &TileLayer, wait: web_time::Duration) -> b
     if whole_world(&e) {
         return false;
     }
-    s.zoom_to(&e);
-    true
+    s.zoom_to(&e)
 }
 
 /// The tile layer a command names by `index`, `name` or `id`.
@@ -666,13 +680,34 @@ pub(crate) fn render_inputs(map: &rustgis_map::Map) -> super::Inputs {
         inputs.review_places.push(crate::sources::redact(&tile.url));
         inputs.review_places.extend(tile.legends.iter().map(|l| crate::sources::redact(&l.url)));
     }
+    if let Some(url) = terrain_tiles(map) {
+        inputs.state["terrain"] = json!(url);
+        inputs.review_places.push(crate::sources::redact(url));
+    }
     inputs
 }
 
-/// Source reach of tiles a referenced map draws, including their web legend pictures.
-/// The map's built-in basemap is a drawn palette and has no external source.
+/// The address a map's terrain reads its heights from, when they come as elevation tiles: a
+/// tilted frame fetches them as it fetches a tile layer's.
+pub(super) fn terrain_tiles(map: &rustgis_map::Map) -> Option<&str> {
+    match &map.view.terrain.as_ref()?.source {
+        rustgis_map::view::TerrainSource::Tiles { url, .. } => Some(url),
+        rustgis_map::view::TerrainSource::Layer(_) => None,
+    }
+}
+
+/// Source reach of a map's terrain: elevation tiles come from the network, a DEM layer's
+/// heights are the layer's own.
+pub(crate) fn terrain_reach(map: &rustgis_map::Map) -> crate::policy::Effects {
+    let reach = crate::policy::Effects::NONE;
+    if terrain_tiles(map).is_some() { reach.with(crate::policy::Effect::Network) } else { reach }
+}
+
+/// Source reach of tiles a referenced map draws, including their web legend pictures and the
+/// elevation tiles of its terrain. The map's built-in basemap is a drawn palette and has no
+/// external source.
 pub(crate) fn render_reach(map: &rustgis_map::Map) -> crate::policy::Effects {
-    map.tiles.iter().fold(crate::policy::Effects::NONE, |reach, tile| reach.union(render_tile_reach(tile)))
+    map.tiles.iter().fold(terrain_reach(map), |reach, tile| reach.union(render_tile_reach(tile)))
 }
 
 /// A resolved frame's tile uses the same drawing and source rules as an ordinary map export.
@@ -716,6 +751,17 @@ fn blend(p: &Value) -> Result<Option<Blend>, String> {
     ps(p, "blend").map(|m| Blend::from_code(m).ok_or_else(|| format!("unknown blend mode '{m}'"))).transpose()
 }
 
+/// Whether opening this repaired tile converts it to a raster, outside the retained-tile cap.
+pub(crate) fn cog_tile_is_raster(t: &TileLayer) -> bool {
+    let (file, look) = cog::split(&t.url);
+    t.kind == TileKind::Cog
+        && t.time_url.is_none()
+        && t.time_urls.is_empty()
+        && !look.aef
+        && !look.cube
+        && !rustgis_data::time::is_template(file)
+}
+
 /// Turns a map's plain COG tile layers into raster layers read in place, each where it was drawn,
 /// with its name, visibility, opacity, blend, look, connection and anonymity: those of projects saved before GeoTIFFs read
 /// in place were raster layers, and those `map.addTiles` (kind `cog`) still adds, as a project or
@@ -727,14 +773,7 @@ pub(crate) fn cog_tiles_to_rasters(m: &mut rustgis_map::Map) {
     use rustgis_map::raster::RasterLayer;
     let mut i = 0;
     while let Some(t) = m.tiles.get(i) {
-        let (file, look) = cog::split(&t.url);
-        if t.kind != TileKind::Cog
-            || t.time_url.is_some()
-            || !t.time_urls.is_empty()
-            || look.aef
-            || look.cube
-            || rustgis_data::time::is_template(file)
-        {
+        if !cog_tile_is_raster(t) {
             i += 1;
             continue;
         }
@@ -796,7 +835,6 @@ pub(crate) fn address_look(look: &Look) -> rustgis_map::raster::AddressLook {
 
 /// A change of a COG layer's look a command asks for (`bands`, `range`, `dequantize`), applied to
 /// the look it has; `None` when it asks for none.
-#[allow(clippy::type_complexity)]
 fn cog_look(p: &Value) -> Result<Option<Box<dyn Fn(Look) -> Look>>, String> {
     if p.get("bands").is_none() && p.get("range").is_none() && p.get("dequantize").is_none() {
         return Ok(None);
@@ -862,8 +900,11 @@ fn legends(s: &mut Session, connection: Option<&str>, v: &Value) -> Result<Vec<r
         }
         // Kept as a tile layer keeps it, or refused: an address the layer wouldn't keep.
         rustgis_map::tiles::checked_legends([legend.clone()]).pop().ok_or_else(|| {
-            let url: String = legend.url.chars().take(200).collect();
-            format!("{url}: a legend is a web address (http or https) of at most {} bytes", rustgis_map::tiles::MAX_LEGEND_URL)
+            crate::sources::shortened_message_with_address(
+                &legend.url,
+                200,
+                &format!("a legend is a web address (http or https) of at most {} bytes", rustgis_map::tiles::MAX_LEGEND_URL),
+            )
         })
     };
     let list = match v {
@@ -894,6 +935,12 @@ fn set(s: &mut Session, p: &Value) -> CmdResult {
     let i = find(s, p)?.ok_or("name or index is required")?;
     let mode = blend(p)?;
     let look = cog_look(p)?;
+    // Before the legends are prepared: a refused name must leave no login activated.
+    let rename = ps(p, "rename")
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(|r| super::within("rename", "a tile layer's name", r, 120))
+        .transpose()?;
     let mut new_legends = match p.get("legend") {
         None => None,
         Some(Value::Null) => Some(Vec::new()),
@@ -964,13 +1011,18 @@ fn set(s: &mut Session, p: &Value) -> CmdResult {
     if let Some(m) = mode {
         t.blend = m;
     }
-    if let Some(r) = ps(p, "rename").map(str::trim).filter(|r| !r.is_empty()) {
-        t.name = r.chars().take(120).collect();
+    if let Some(r) = rename {
+        t.name = r;
     }
     if let Some(url) = new_url {
-        // A dated layer keeps the look at every date: its template takes it too.
+        // A dated layer keeps the look at every date: its template takes it too, and a data
+        // cube's file of each date (the slider would bring the old look back at the next step).
+        let look = cog::split(&url).1;
         if let Some(template) = t.time_url.as_mut() {
-            *template = cog::with_look(template, &cog::split(&url).1);
+            *template = cog::with_look(template, &look);
+        }
+        for (_, u) in &mut t.time_urls {
+            *u = cog::with_look(u, &look);
         }
         t.url = url;
     }
@@ -991,7 +1043,7 @@ fn set(s: &mut Session, p: &Value) -> CmdResult {
     if let Some(old) = old_name.filter(|o| *o != new_name) {
         super::layer::legends_follow_layer(s, &old, Some(&new_name));
     }
-    Ok(list(s, false))
+    Ok(list(s, !s.policy_user()))
 }
 
 #[cfg(test)]
@@ -1065,6 +1117,26 @@ mod tests {
         let p = Project::from_json(&text).unwrap();
         assert_eq!(p.map().tiles[0].blend, Blend::Multiply);
         assert_eq!(text.matches("\"blend\"").count(), 1, "{text}");
+    }
+
+    /// A refused legend's address is shortened for the error without cutting its omission
+    /// marker in half: the address before it is cut instead, and the query stays out.
+    #[test]
+    fn a_refused_legend_keeps_whole_omission_markers() {
+        let mut s = Session::new(Project::default());
+        let tail = ": a legend is a web address (http or https) of at most 4096 bytes";
+        // A kept query and a secret one (source redaction removes it first) both say they went.
+        for query in ["page=2&layer=x", "token=hidden"] {
+            let legend = format!("ftp://h.example/{}?{query}", "a".repeat(190));
+            let tiles = json!({"url": "https://basemap.example.org/{z}/{x}/{y}.png", "name": "T", "legend": legend});
+            let error = s.run("map.addTiles", &tiles).unwrap_err();
+            assert!(!error.contains(query) && error.ends_with(&format!("a…[query omitted]{tail}")), "{error}");
+            assert_eq!(error.split(": a legend").next().map(|a| a.chars().count()), Some(200), "{error}");
+            assert_eq!(Session::redacted(&error).as_str(), error);
+        }
+        // Shorter, the same secret query is still said to have gone.
+        let tiles = json!({"url": "https://basemap.example.org/{z}/{x}/{y}.png", "name": "T", "legend": "ftp://h.example/a?token=hidden"});
+        assert_eq!(s.run("map.addTiles", &tiles).unwrap_err(), format!("ftp://h.example/a[query omitted]{tail}"));
     }
 
     /// A login wrapper given as a legend or a download's address is that session's own, or refused.

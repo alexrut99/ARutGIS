@@ -24,6 +24,8 @@ impl FeatureSource for Chunks {
             matched: self.ds.features.len() as u64,
             complete: false,
             skipped: 0,
+            unread_dates: Vec::new(),
+            rounded_dates: Vec::new(),
         })
     }
     fn streams_chunks(&self) -> bool {
@@ -63,7 +65,7 @@ fn settle(map: &mut Map, view: &View) {
         if !pending {
             return;
         }
-        std::thread::sleep(std::time::Duration::from_millis(1));
+        std::thread::sleep(std::time::Duration::from_millis(1)); // test-wait: legacy polling for streamed map reads
     }
     panic!("the background reads did not land");
 }
@@ -103,6 +105,8 @@ fn complete_chunks_preserve_painter_order_filters_transparency_labels_and_select
                 matched: self.0.ds.features.len() as u64,
                 complete: false,
                 skipped: 0,
+                unread_dates: Vec::new(),
+                rounded_dates: Vec::new(),
             })
         }
         fn streams_chunks(&self) -> bool {
@@ -145,14 +149,7 @@ fn complete_chunks_preserve_painter_order_filters_transparency_labels_and_select
     l.renderer = Renderer::Single(Symbol { fill: Rgba::new(210, 60, 25, 120), ..Symbol::default_for(GeometryType::Polygon, l.id) });
     let view = View { width: 320.0, height: 240.0, pixels_per_point: 1.0, camera: m.camera, sky: false };
     for extrusion in [None, Some(true), Some(false)] {
-        m.layers[0].extrusion = extrusion.map(|shadows| rustgis_map::effects::Extrusion {
-            height: 1500.0,
-            field: None,
-            factor: 1.0,
-            face_culling: true,
-            lighting: true,
-            shadows,
-        });
+        m.layers[0].extrusion = extrusion.map(|shadows| rustgis_map::effects::Extrusion { height: 1500.0, shadows, ..Default::default() });
         let expected = render(&mut m.clone(), &view).unwrap();
         for size in [1, 3, 11, 100] {
             let mut actual = m.clone();
@@ -549,9 +546,11 @@ fn layout_export_keeps_all_drawn_legend_classes() {
             title: "classes".into(),
             all_classes: false,
             hide_other: false,
+            show_no_data: false,
             exclude: vec![],
             look: Default::default(),
             columns: 1,
+            labels: Default::default(),
         },
     );
     let expected = layout::render(&page, &mut [base.clone()], 96.0, &layout::PageInfo::default()).unwrap();
@@ -563,7 +562,7 @@ fn layout_export_keeps_all_drawn_legend_classes() {
     }
     let mut failed = base.clone();
     failed.layers[0] = streamed(&base.layers[0], 0);
-    assert!(layout::render(&page, &mut [failed], 96.0, &layout::PageInfo::default()).is_none());
+    assert!(layout::render(&page, &mut [failed], 96.0, &layout::PageInfo::default()).is_err());
 }
 
 #[test]
@@ -663,6 +662,7 @@ fn extrusion_spool_failures_retain_the_actual_source_diagnostic() {
         face_culling: true,
         lighting: true,
         shadows: true,
+        ..Default::default()
     });
     let view = View { width: 120.0, height: 90.0, pixels_per_point: 1.0, camera: Camera::new(Coord::new(0.0, 0.0), 80.0), sky: false };
     for stage in ["create", "insert", "draw"] {
@@ -721,6 +721,8 @@ fn pitched_mixed_sources_keep_windows_and_pending_on_the_owner() {
                 matched: self.chunks.ds.features.len() as u64,
                 complete: true,
                 skipped: 0,
+                unread_dates: Vec::new(),
+                rounded_dates: Vec::new(),
             })
         }
     }
@@ -1173,7 +1175,7 @@ fn layout_export_rejects_unopened_local_shapefiles_and_required_masks() {
                 map.layer_mut(point).unwrap().mask = Some("MASK".into());
             }
             assert!(
-                layout::render(&page, std::slice::from_mut(&mut map), 96.0, &layout::PageInfo::default()).is_none(),
+                layout::render(&page, std::slice::from_mut(&mut map), 96.0, &layout::PageInfo::default()).is_err(),
                 "missing complete source must fail the page: pitch {pitch}, masked {masked}"
             );
             assert!(map.layer(owner).unwrap().source.as_ref().unwrap().error.is_some());
@@ -1183,7 +1185,7 @@ fn layout_export_rejects_unopened_local_shapefiles_and_required_masks() {
         source.path = Some(dir.path().join("unused.shp").display().to_string());
         unused.layer_mut(mask).unwrap().source = Some(source);
         assert!(
-            layout::render(&page, &mut [unused], 96.0, &layout::PageInfo::default()).is_some(),
+            layout::render(&page, &mut [unused], 96.0, &layout::PageInfo::default()).is_ok(),
             "an unused hidden Shapefile must not fail export"
         );
 
@@ -1192,7 +1194,7 @@ fn layout_export_rejects_unopened_local_shapefiles_and_required_masks() {
         source.path = Some(dir.path().join("missing.gpkg").display().to_string());
         ordinary.layer_mut(point).unwrap().source = Some(source);
         assert!(
-            layout::render(&page, &mut [ordinary], 96.0, &layout::PageInfo::default()).is_some(),
+            layout::render(&page, &mut [ordinary], 96.0, &layout::PageInfo::default()).is_ok(),
             "ordinary sources retain upstream best-effort behavior"
         );
     }
@@ -1412,6 +1414,7 @@ fn streamed_extrusions_keep_their_charts_on_top() {
         face_culling: true,
         lighting: true,
         shadows: false,
+        ..Default::default()
     });
     l.diagram = Some(rustgis_map::DiagramSettings {
         kind: rustgis_map::DiagramKind::Pie,
@@ -1437,4 +1440,76 @@ fn streamed_extrusions_keep_their_charts_on_top() {
         let n = magentas(&got.pixmap);
         assert!(n * 10 >= whole * 9, "chunks of {size}: {n} chart px, {whole} resident");
     }
+}
+
+/// A frame stopped while a streamed layer is read reads no further chunk (#1750), and the stop
+/// isn't taken for a failure of the source.
+#[test]
+fn a_stopped_frame_reads_no_further_chunk_and_leaves_its_source_unfailed() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    /// Chunks that set the frame's stop flag once the first is drawn.
+    struct StopAfterFirst {
+        chunks: Chunks,
+        stop: Arc<AtomicBool>,
+    }
+    impl FeatureSource for StopAfterFirst {
+        fn info(&self) -> &SourceInfo {
+            self.chunks.info()
+        }
+        fn read(&self, r: &Request) -> rustgis_data::Result<Batch> {
+            self.chunks.read(r)
+        }
+        fn streams_chunks(&self) -> bool {
+            true
+        }
+        fn visit_chunks(
+            &self,
+            e: Option<Extent>,
+            n: usize,
+            visit: &mut dyn FnMut(Vec<Feature>) -> rustgis_data::Result<()>,
+        ) -> rustgis_data::Result<Batch> {
+            self.chunks.visit_chunks(e, n, &mut |chunk| {
+                let r = visit(chunk);
+                self.stop.store(true, Ordering::Relaxed);
+                r
+            })
+        }
+    }
+    let mut m = Map::new("m");
+    if let Some(d) = world_dataset("Countries", sample_data::COUNTRIES) {
+        m.add_dataset(d);
+    }
+    let ds = m.layers[0].dataset.clone();
+    assert!(ds.features.len() > 100);
+    let info = SourceInfo {
+        name: ds.name.clone(),
+        format: "test",
+        geometry_type: ds.geometry_type,
+        fields: ds.fields.clone(),
+        extent: ds.extent(),
+        count: Some(ds.features.len() as u64),
+        crs: "EPSG:4326".into(),
+        indexed: true,
+        notes: Vec::new(),
+        zm_dropped: false,
+    };
+    let stop = Arc::new(AtomicBool::new(false));
+    let mut layer = m.layers[0].clone();
+    layer.dataset.features = ds.features.iter().take(1).cloned().collect::<Vec<_>>().into();
+    layer.source = Some(SourceLayer::from_path(
+        "test.shp",
+        None,
+        Box::new(StopAfterFirst { chunks: Chunks { info, ds, size: 20 }, stop: stop.clone() }),
+    ));
+    m.layers[0] = layer;
+    let view = View { width: 64.0, height: 48.0, pixels_per_point: 1.0, camera: Camera::world(), sky: false };
+    settle(&mut m, &view);
+    stop.store(false, Ordering::Relaxed);
+    let _guard = crate::cancel::install(stop.clone());
+    crate::cancel::DRAWN.set(0);
+    assert!(render(&mut m, &view).is_none(), "a stopped frame is no frame");
+    let drawn = crate::cancel::DRAWN.get();
+    assert!(drawn <= 20, "{drawn} features drawn: the read went on past the first chunk");
+    assert!(m.layers[0].source.as_ref().is_some_and(|s| s.error.is_none()), "a stop isn't a source error");
 }

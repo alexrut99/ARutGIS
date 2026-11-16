@@ -237,16 +237,22 @@ The GeoLibre and Whitebox tools run as they do in the app, through the `geolibre
 (see [Analysis](user-guide/analysis.md)). `rustgis.load_plugins()`, or
 `Session(plugins=True)`, loads the [plugins](plugins.md) installed for the desktop app.
 
+`Session(threads=4)` sets the most threads one piece of work uses (1 to 1024, never more than the
+cores), for the whole process, every session in it included; `s.run("gp.threads", threads=None)`
+goes back to the default, the cores up to 16 (see [Environments](user-guide/analysis.md#analysis-workflows)).
+
 ### Saved connections and secrets
 
 `rustgis.Session(use_saved_secrets=True)` loads the desktop app's saved connection definitions
-and lets `connection.login` and project sources use their remembered database passwords and S3
-keys, and files on NASA's Earthdata data servers the remembered Earthdata Login token (which,
+and lets `connection.login` and project sources use their remembered database passwords, S3
+keys and web-service logins (Basic authentication or an API key in a header or query parameter),
+and files on NASA's Earthdata data servers the remembered Earthdata Login token (which,
 like a token given with `earthdata.login`, then serves every session of the process).
 Secrets are read lazily from the system keychain, only when a command needs one, under
-the desktop's rules: the same connection ID, kind and address or S3 endpoint. Parameters given
-to a command, and environment credentials selected by a connection, take precedence over saved
-secrets. Changes to the connection definitions aren't saved back to the desktop preferences.
+the desktop's rules: the same connection ID, kind and address or S3 endpoint; web-service logins
+require the same connection ID, exact origin and login definition. Parameters given to a command,
+and environment credentials selected by a connection, take precedence over saved secrets.
+Changes to the connection definitions aren't saved back to the desktop preferences.
 
 The default is `False`: nothing reads the keychain or desktop preferences, so scripts and CI
 remain opt-in. If the keychain is unavailable, locked or refuses access, the session emits one
@@ -262,6 +268,14 @@ diagnostic. On macOS, Keychain may ask once per item whether the Python executab
 **Always Allow** stops that question for that executable and item. Until such a question is
 answered (or a locked Secret Service on Linux responds), the command that asked waits, and so do
 other RustGIS calls in the process, even on other sessions; other Python threads keep running.
+
+For web-service connections, `s.run("connection.login", id="c1", apiKey="…")` keeps the key
+only for the session; `remember=True` opts a Basic password, header key or query key into the
+OS store. If saving fails, the session login still works and a warning says it was not remembered.
+`s.run("connection.forgetLogin", id="c1")` deletes only the saved login, leaving the session's
+login usable. `connection.logout` retains the saved login but blocks automatic reuse for the
+rest of the session until an explicit `connection.login`. See
+[Web-service logins](user-guide/data.md#web-service-logins) for matching and HTTP confirmation.
 
 ## Data in and out
 
@@ -302,9 +316,13 @@ to choose coordinate columns.
 
 Every format the app reads works here: GeoJSON, CSV, Shapefile, GeoPackage, GeoParquet,
 FlatGeobuf, KML/KMZ, GPX, GeoTIFF and the rest of [Supported Data
-Formats](user-guide/data-formats.md). A large file read in place keeps only the features of the
-last view in memory; run `layer.loadAll` on it before `to_geojson` or `to_geopandas` to get all
-of them.
+Formats](user-guide/data-formats.md). A layer read in place (a large file, a database table)
+keeps only the features of the last view in memory; `to_geojson` and `to_geopandas` read all of
+its features from the source each time they're called (unless asked for the selected features
+only), as Load All Features does, and rows that can't be read are left out and said in
+`s.notices()`. `to_file` can be cheaper for a large layer: to GeoJSON, CSV,
+FlatGeobuf, GeoPackage or GeoParquet it writes a chunk at a time where the source allows;
+otherwise it reads the layer whole too.
 
 Open an existing project with `Session(project="atlas.rgis")` or `s.open("atlas.rgis")`.
 `s.project_json()` returns JSON with the same credential removal as Save, with notices available

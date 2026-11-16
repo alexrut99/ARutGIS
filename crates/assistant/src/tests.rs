@@ -8,6 +8,9 @@ use crate::chatgpt;
 use crate::provider::*;
 use crate::tools;
 
+/// Plugin reloads invalidate the process-wide published tool schemas used by approval fixtures.
+pub(crate) static PLUGIN_REGISTRY_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Direct behavior fixtures explicitly accept a displayed engine review; Agent tests below
 /// still exercise their own pending/decision path.
 fn run_tool_call(s: &mut Session, call: &ToolCall) -> Result<String, String> {
@@ -109,6 +112,9 @@ fn first_keyed_provider_is_the_first_key_provider_and_never_a_sign_in() {
     // TrustedRouter comes after it, for the same reason.
     assert_eq!(first_keyed(keyed(&["trustedrouter", "requesty"])), Some("requesty"));
     assert_eq!(first_keyed(keyed(&["trustedrouter"])), Some("trustedrouter"));
+    // Opper comes after Requesty, so its key never takes the place of another provider's either.
+    assert_eq!(first_keyed(keyed(&["opper", "requesty"])), Some("requesty"));
+    assert_eq!(first_keyed(keyed(&["opper"])), Some("opper"));
     assert_eq!(first_keyed(keyed(&[])), None);
 }
 
@@ -736,6 +742,15 @@ fn geoprocessing_and_reading_data() {
     let r = v["rows"].as_array().cloned().unwrap_or_default();
     assert_eq!(r.len(), 3);
     assert!(r[0]["pop_max"].as_i64() >= r[1]["pop_max"].as_i64());
+    // Date-times order by instant, not by their text: 00:30+02:00 is before 23:00Z the day before.
+    s.run("edit.addField", &json!({"layer": "Cities", "name": "seen", "type": "datetime"})).unwrap();
+    for (row, when) in [(0, "2026-03-05T00:30:00+02:00"), (1, "2026-03-04T23:00:00Z")] {
+        s.run("edit.setValue", &json!({"layer": "Cities", "row": row, "field": "seen", "value": when})).unwrap();
+    }
+    let latest =
+        run_tool_call(&mut s, &t("read_features", json!({"layer": "Cities", "order_by": "seen DESC", "limit": 1}))).unwrap_or_default();
+    let v: Value = serde_json::from_str(&latest).unwrap_or(Value::Null);
+    assert_eq!(v["rows"][0]["_row"], json!(1), "{latest}");
     assert!(run_tool_call(&mut s, &t("read_features", json!({"layer": "Cities", "fields": ["nope"]}))).is_err());
     assert!(run_tool_call(&mut s, &t("read_features", json!({"layer": "Cities", "fields": [1, null]}))).is_err());
     let cmds = run_tool_call(&mut s, &t("search_commands", json!({"query": "basemap"}))).unwrap_or_default();
@@ -997,6 +1012,16 @@ fn trustedrouter_lists_its_models_with_a_bearer_key() {
     assert_eq!(p.model, "trustedrouter/auto");
     let req = models_request(&cfg("trustedrouter"));
     assert_eq!(req.url, "https://api.trustedrouter.com/v1/models");
+    assert!(req.headers.iter().any(|(k, v)| k == "Authorization" && v == "Bearer k"));
+}
+
+#[test]
+fn opper_lists_its_models_with_a_bearer_key() {
+    let p = preset("opper").expect("Opper preset");
+    assert_eq!((p.api, p.keyless, p.login), (Api::OpenAi, false, false));
+    assert_eq!(p.key_env, &["OPPER_API_KEY"]);
+    let req = models_request(&cfg("opper"));
+    assert_eq!(req.url, "https://api.opper.ai/v3/compat/models");
     assert!(req.headers.iter().any(|(k, v)| k == "Authorization" && v == "Bearer k"));
 }
 
@@ -3137,6 +3162,7 @@ fn zip_of(files: &[(&str, &str)]) -> Vec<u8> {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn skills_are_added_switched_removed_shared_and_shipped_in_plugins() {
+    let _plugins = PLUGIN_REGISTRY_TEST.lock().unwrap_or_else(|poison| poison.into_inner());
     use crate::skills::{self, Places, Source};
     let skill = |name: &str| format!("---\nname: {name}\ndescription: >\n  The {name}\n  skill.\n---\n# {name}\nDo {name}.\n");
     let root = tempfile::tempdir().unwrap();
@@ -4650,6 +4676,7 @@ fn peer_replacement_cancels_approvals_and_stale_replies() {
 /// The existing real Wasm fixture crosses Agent pending/decide and MCP, by id and display name.
 #[test]
 fn permission_policy_real_plugin_approval_and_changed_first_card() {
+    let _plugins = PLUGIN_REGISTRY_TEST.lock().unwrap_or_else(|poison| poison.into_inner());
     use rustgis_engine::plugins;
     let mut s = sample();
     let mut package = plugins::Package::from_zip(&plugins::testing::package("assistant-policy-real", &["edit"])).unwrap();

@@ -4,7 +4,7 @@
 //! and web tools. Each share is recorded as a shared item (Status › Jobs) that the Manage
 //! commands update in place, written to a path or a registered data store.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -37,10 +37,14 @@ const MAX_FEATURES: usize = 200_000;
 const MAX_PAGE_PICTURES: usize = 64 << 20;
 /// Largest glTF geometry buffer of a web scene.
 const MAX_SCENE_BYTES: usize = 128 << 20;
+/// Highest an extrusion reaches in a web scene (metres): its base and height together stay within it.
+const SCENE_TOP: f64 = 1e6;
 /// Most nodes in a link chart.
 const MAX_NODES: usize = 3000;
 /// Most links in a link chart (its page lays them all out every frame).
 const MAX_LINKS: usize = 20_000;
+/// Most links a link chart draws from one feature.
+const MAX_FEATURE_LINKS: usize = 200;
 /// Most shared items and data stores kept.
 const MAX_ITEMS: usize = 1000;
 /// Largest file an upload copies.
@@ -175,14 +179,24 @@ pub fn commands() -> Vec<C> {
             crate::model::check_file(&v)?;
             let name = v["name"].as_str().unwrap_or("Tool").chars().take(200).collect::<String>();
             // A model file (`*.model.json`) holds a graph; a web tool its steps.
+            let mark = s.notice_mark();
             let imported = if let Some(graph) = v.get("graph") {
                 s.run("model.new", &json!({"name": name, "graph": graph, "imported": true}))?
             } else {
                 let steps = v.get("steps").cloned().ok_or("not a RustGIS model or web tool (no graph or steps)")?;
                 s.run("model.new", &json!({"name": name, "steps": steps, "imported": true}))?
             };
-            if v.get("name").map_or(Some("Tool"), Value::as_str) != imported.get("model").and_then(Value::as_str) {
-                s.notify("1 model name was trimmed, shortened, replaced or made unique during import.", false);
+            // A name `model.new` cut to tell it apart is said once, by it (#1923), unless this cut
+            // it first: `model.new` saw only the first 200 characters, so that cut is said here.
+            let said = s.notices_since(mark).iter().any(|n| n.text.starts_with("ModelBuilder: a model has that name already"));
+            let cut_here = v["name"].as_str().is_some_and(|n| n.chars().count() > 200);
+            if (cut_here || !said) && v.get("name").map_or(Some("Tool"), Value::as_str) != imported.get("model").and_then(Value::as_str) {
+                // A cut to the 200 says how much it cut.
+                let text = match v["name"].as_str() {
+                    Some(n) if cut_here => format!("1 model name was cut from {} to 200 characters, a model name's limit, during import.", n.chars().count()),
+                    _ => "1 model name was trimmed, shortened, replaced or made unique during import.".to_string(),
+                };
+                s.notify(text, false);
             }
             Ok(imported)
         }).roles(&[crate::ParamRole { key: "text", role: crate::Role::Document(crate::Document::Model) }]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Reserved).with(crate::policy::Effect::Files))
@@ -190,18 +204,49 @@ pub fn commands() -> Vec<C> {
     ]
 }
 
-/// The shared item bytes of a kind: its name, bytes and source.
+/// The shared item bytes of a kind: its name, bytes and source. Rasters drawn into it without
+/// their cast shadows are said (see [`super::share::saying_shadows`]).
 pub fn share_bytes(s: &mut Session, kind: &str, p: &Value) -> Result<(String, Vec<u8>, String), String> {
+    let (name, bytes, source, notes) = share_output(s, kind, p)?;
+    for note in notes {
+        s.notify(note, false);
+    }
+    Ok((name, bytes, source))
+}
+
+/// Shared-item construction notes are deferred when a front end still needs to deliver bytes.
+pub(crate) fn share_output(s: &mut Session, kind: &str, p: &Value) -> Result<(String, Vec<u8>, String, Vec<String>), String> {
+    let what = match kind {
+        "webMap" => "The web map",
+        "webLayer" => "The web layer",
+        _ => "The shared item",
+    };
+    let notes = match kind {
+        "webMap" | "geodataService" | "webScene" if s.constructions.len > 0 => {
+            let m = map_of(s, p)?;
+            s.constructions.output_notes(m.layers.iter().filter(|l| shared_layer(kind, l)).map(|l| (m.instance_id(), l)))?
+        }
+        "webLayer" | "locator" => {
+            let l = layer_of(s, p)?;
+            s.constructions.export_notes(s.map().instance_id(), &l)?
+        }
+        _ => Vec::new(),
+    };
+    let (name, bytes, source) = super::share::saying_shadows(s, what, |s| share_bytes_inner(s, kind, p))?;
+    Ok((name, bytes, source, notes))
+}
+
+fn share_bytes_inner(s: &mut Session, kind: &str, p: &Value) -> Result<(String, Vec<u8>, String), String> {
     match kind {
         "webMap" => {
             let mut m = map_of(s, p)?;
-            m.layers.iter_mut().filter(|l| shared_layer("webMap", l)).try_for_each(load_whole)?;
+            m.layers.iter_mut().filter(|l| shared_layer("webMap", l)).try_for_each(|l| load_whole(s, l))?;
             let html = web_map_html(&m, &m.name)?;
             Ok((m.name.clone(), html.into_bytes(), m.name))
         }
         "webLayer" => {
             let mut l = layer_of(s, p)?;
-            load_whole(&mut l)?;
+            load_whole(s, &mut l)?;
             Ok((l.name.clone(), web_layer_zip(s, &l)?, l.name.clone()))
         }
         "webStyle" => {
@@ -218,7 +263,7 @@ pub fn share_bytes(s: &mut Session, kind: &str, p: &Value) -> Result<(String, Ve
         }
         "geodataService" => {
             let mut m = map_of(s, p)?;
-            m.layers.iter_mut().filter(|l| shared_layer("geodataService", l)).try_for_each(load_whole)?;
+            m.layers.iter_mut().filter(|l| shared_layer("geodataService", l)).try_for_each(|l| load_whole(s, l))?;
             let mut layers: Vec<&Dataset> = m.layers.iter().filter(|l| shared_layer("geodataService", l)).map(|l| &l.dataset).collect();
             layers.extend(s.project.tables.iter().map(|t| &t.dataset));
             Ok((m.name.clone(), ogc_zip(&m.name, &layers, &[])?, m.name.clone()))
@@ -248,19 +293,34 @@ pub fn share_bytes(s: &mut Session, kind: &str, p: &Value) -> Result<(String, Ve
         }
         "webScene" => {
             let mut m = map_of(s, p)?;
-            m.layers.iter_mut().filter(|l| shared_layer("webScene", l)).try_for_each(load_whole)?;
-            Ok((m.name.clone(), gltf(&m, s.view_size)?, m.name.clone()))
+            m.layers.iter_mut().filter(|l| shared_layer("webScene", l)).try_for_each(|l| load_whole(s, l))?;
+            let scene = gltf(&m, s.view_size)?;
+            for note in scene.notes() {
+                s.notify(note, false);
+            }
+            Ok((m.name.clone(), scene.bytes, m.name.clone()))
         }
         "linkChart" => {
-            let rel = ps(p, "relationship").map(str::to_string);
-            let html = link_chart(s, rel.as_deref())?;
-            // Every relationship is recorded with an empty source (a relationship may be called
-            // "Relationships").
-            let name = rel.clone().unwrap_or_else(|| "Relationships".into());
-            Ok((name, html.into_bytes(), rel.unwrap_or_default()))
+            let (item, note) = link_chart_item(s, p)?;
+            if let Some(note) = note {
+                s.notify(note, false);
+            }
+            Ok(item)
         }
         k => Err(format!("unknown share '{k}'")),
     }
+}
+
+/// A link chart's shared item, and what its limits leave out when they do (#1947), for whoever
+/// shares it to say: `share` says it last, after "Shared …", so the status bar keeps it.
+fn link_chart_item(s: &Session, p: &Value) -> Result<((String, Vec<u8>, String), Option<String>), String> {
+    let rel = ps(p, "relationship").map(str::to_string);
+    let (html, left) = link_chart(s, rel.as_deref())?;
+    // Every relationship is recorded with an empty source (a relationship may be called
+    // "Relationships").
+    let name = rel.clone().unwrap_or_else(|| "Relationships".into());
+    let note = left.map(|left| format!("{name}: {left}"));
+    Ok(((name, html.into_bytes(), rel.unwrap_or_default()), note))
 }
 
 /// A map to share, its layer groups folded into their layers (the shared formats have none).
@@ -270,10 +330,13 @@ fn map_of(s: &Session, p: &Value) -> Result<Map, String> {
     Ok(m)
 }
 
-/// A streamed layer shares its whole source, not the features read for the current view.
-fn load_whole(l: &mut Layer) -> Result<(), String> {
+/// A streamed layer shares its whole source, not the features read for the current view; what
+/// that read couldn't read as it is (rows left out, dates read as null or rounded) is said.
+fn load_whole(s: &mut Session, l: &mut Layer) -> Result<(), String> {
     if l.is_streamed() {
-        l.dataset = l.load_all()?;
+        let (ds, unread) = l.load_all_counted()?;
+        l.dataset = ds;
+        super::whole::Unread::of(l.name.clone(), unread).say(s);
     }
     Ok(())
 }
@@ -305,7 +368,8 @@ fn target(input: &impl super::InputSource, p: &Value, name: &str, ext: &str) -> 
 }
 
 fn share(s: &mut Session, p: &Value, kind: &str) -> CmdResult {
-    let (name, bytes, source) = share_bytes(s, kind, p)?;
+    let written = s.notice_mark();
+    let ((name, bytes, source), chart_note) = if kind == "linkChart" { link_chart_item(s, p)? } else { (share_bytes(s, kind, p)?, None) };
     let ext = KINDS.iter().find(|k| k.0 == kind).map_or("bin", |k| k.1);
     let path = target(s, p, &name, ext)?;
     // A share of another kind (or an uploaded file) at that path isn't replaced.
@@ -313,6 +377,7 @@ fn share(s: &mut Session, p: &Value, kind: &str) -> CmdResult {
         return Err(format!("{path} already holds the shared {} '{}'; choose another name or path", other.kind, other.name));
     }
     rustgis_data::io::write_atomic(Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))?;
+    s.retain_written_notices(written);
     let t = now();
     let shared = &mut s.project.shared;
     let id = match shared.iter_mut().find(|i| i.path == path) {
@@ -339,10 +404,16 @@ fn share(s: &mut Session, p: &Value, kind: &str) -> CmdResult {
             id
         }
     };
-    s.notify(format!("Shared {name} to {path}"), false);
+    let written = s.notice_mark();
+    s.notify_written(format!("Shared {name} to {path}"), false);
     // After it, so the status bar, which shows the last notice, keeps saying it.
     note_label_classes(s, kind, p);
     note_export(s, kind, p, &path);
+    // What a link chart's limits leave out, last of all, so the status bar shows it.
+    if let Some(note) = chart_note {
+        s.notify(note, false);
+    }
+    s.retain_written_notices(written);
     Ok(json!({"item": id, "path": path, "bytes": bytes.len()}))
 }
 
@@ -920,11 +991,59 @@ fn find(s: &mut Session, p: &Value) -> CmdResult {
     Ok(json!({"matches": out}))
 }
 
+/// A glTF scene's bytes, and what it approximates or leaves out.
+#[derive(Default)]
+struct SceneBytes {
+    bytes: Vec<u8>,
+    fanned: usize,
+    out_of_range: usize,
+    limited: usize,
+    skipped_outer: usize,
+    holes_dropped: usize,
+    single_vertex_lines: usize,
+    /// Per layer, in scene order: its name and how many features had their base or height held
+    /// to [`SCENE_TOP`].
+    held: Vec<(String, usize)>,
+}
+
+impl SceneBytes {
+    /// The same counted explanations accompany a usable scene and an empty-result error.
+    fn notes(&self) -> Vec<String> {
+        let mut notes = Vec::new();
+        if self.fanned > 0 {
+            notes.push(super::items::fanned_caps_note(self.fanned));
+        }
+        if self.out_of_range > 0 {
+            notes.push(format!("{} feature(s) left out of the scene: a coordinate is too far from the map's centre", self.out_of_range));
+        }
+        if self.limited > 0 {
+            notes.push(format!("{} feature(s) left out of the scene: the {MAX_FEATURES} feature limit was reached", self.limited));
+        }
+        if self.skipped_outer > 0 {
+            notes.push(format!("Skipped {} polygon(s) whose outer ring has fewer than 3 vertices", self.skipped_outer));
+        }
+        if self.holes_dropped > 0 {
+            notes.push(format!("Dropped {} hole(s) with fewer than 3 vertices", self.holes_dropped));
+        }
+        if self.single_vertex_lines > 0 {
+            notes.push(format!("Skipped {} line part(s) with a single vertex", self.single_vertex_lines));
+        }
+        for (layer, n) in &self.held {
+            notes.push(format!(
+                "{n} feature(s) of '{layer}' had their extrusion base or height held to the web scene's limit: base plus height stays within 1,000 km"
+            ));
+        }
+        notes
+    }
+}
+
 /// A glTF 2.0 scene (embedded buffer): polygon layers extruded by their extrusion setting (flat
 /// otherwise), lines and points, coloured by their symbology. Metres east (x), up (y) and south
 /// (z) of the map's centre, with a camera where the map view (`view` points across) looks
-/// from: its bearing and pitch, as far off as MapLibre's camera would be.
-fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
+/// from: its bearing and pitch, as far off as MapLibre's camera would be. Also the number of
+/// polygon caps that are fans (the triangulator gave up, or fell back to one), and counted
+/// explanations of features or parts left out.
+fn gltf(m: &Map, view: (f64, f64)) -> Result<SceneBytes, String> {
     let c = m.center_lonlat();
     let origin = rustgis_geom::lonlat_to_merc(c);
     let k = c.y.to_radians().cos().abs().max(0.01);
@@ -935,14 +1054,14 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
     let mut buffer: Vec<u8> = Vec::new();
     let (mut views, mut accessors, mut meshes, mut nodes, mut materials) = (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut budget = MAX_FEATURES;
+    let mut scene = SceneBytes::default();
     for l in m.layers.iter().rev().filter(|l| l.visible && !l.is_raster()) {
         // Per colour, its positions and (for triangles) indices.
         // Ordered, so the same scene always writes the same file.
         let mut tri: std::collections::BTreeMap<[u8; 4], (Vec<[f32; 3]>, Vec<u32>)> = Default::default();
         let mut lines: std::collections::BTreeMap<[u8; 4], Vec<[f32; 3]>> = Default::default();
         let ex = l.extrusion.as_ref();
-        let hf = ex.and_then(|e| e.field.as_deref()).and_then(|f| l.dataset.field_index(f));
-        let (base_h, factor) = ex.map_or((0.0, 0.0), |e| (e.height, e.factor));
+        let columns = ex.map(|e| e.columns(&l.dataset)).unwrap_or_default();
         let rows = l.visible_rows();
         let styler = l.styler(Some(m.scale()));
         // The bytes built so far: a feature only adds to its own colour, so each step adds what
@@ -953,14 +1072,41 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
             tri.get(k).map_or(0, |(p, i)| p.len() * 12 + i.len() * 4) + lines.get(k).map_or(0, |v| v.len() * 12)
         };
         let (mut built, mut last): (usize, Option<([u8; 4], usize)>) = (0, None);
+        let mut held = 0usize;
         for (row, ft) in l.dataset.features.iter().enumerate() {
             if let Some((k, before)) = last.take() {
                 built += size(&tri, &lines, &k).saturating_sub(before);
             }
-            if budget == 0 || rows.get(row) != Some(&true) {
+            if rows.get(row) != Some(&true) {
                 continue;
             }
             let Some(g) = &ft.geometry else { continue };
+            if budget == 0 {
+                scene.limited += 1;
+                continue;
+            }
+            // A position too far for 32 bits would make the scene invalid: the feature is left out,
+            // and said. Only what would be drawn counts (not a degenerate ring or a one-vertex line).
+            let far = |c: &Coord| {
+                let (x, z) = xy(*c);
+                !x.is_finite() || !z.is_finite()
+            };
+            let drawn = |r: &&Vec<Coord>| r.len() - usize::from(r.len() > 1 && r.first() == r.last()) >= 3;
+            let too_far = match g {
+                Geometry::Polygon(polys) => polys
+                    .iter()
+                    .filter(|rings| rings.first().is_some_and(|r| drawn(&r)))
+                    .flat_map(|rings| rings.iter().filter(drawn))
+                    .flatten()
+                    .any(far),
+                Geometry::Line(parts) => parts.iter().filter(|p| p.len() >= 2).flatten().any(far),
+                Geometry::Point(p) => far(p),
+                Geometry::MultiPoint(ps_) => ps_.iter().any(far),
+            };
+            if too_far {
+                scene.out_of_range += 1;
+                continue;
+            }
             budget -= 1;
             // The geometry built so far, with the buffer already written, stays under the cap
             // (checked as it grows, so a few huge polygons can't run away first).
@@ -968,8 +1114,19 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
                 return Err("the scene would be too large; share fewer features".into());
             }
             let sym = styler.symbol(row);
-            let h = (hf.and_then(|fi| l.dataset.value(row, fi).as_f64()).filter(|v| v.is_finite()).unwrap_or(base_h) * factor)
-                .clamp(0.0, 1e6) as f32;
+            // A layer without an extrusion stands flat on the ground; the base and the height
+            // together stay within SCENE_TOP (the base is never NaN, so the height's cap is a
+            // number); a feature held to it is counted once it draws something.
+            let (h, foot, clipped) = ex.map_or((0.0, 0.0, false), |e| {
+                let (base, height) = (e.base_metres_at(&l.dataset, row, columns), e.metres_at(&l.dataset, row, columns));
+                let foot = base.clamp(0.0, SCENE_TOP);
+                let h = height.clamp(0.0, SCENE_TOP - foot);
+                // Held when the sum passes the top: `SCENE_TOP - foot` can round below a height
+                // that, added to the base, reaches the top exactly.
+                (h as f32, foot as f32, base > foot || base + height > SCENE_TOP)
+            });
+            // The walls stand from the base, the cap sits on them.
+            let top = foot + h;
             let key = [sym.fill.r(), sym.fill.g(), sym.fill.b(), sym.fill.a()];
             last = Some((key, size(&tri, &lines, &key)));
             match g {
@@ -989,16 +1146,43 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
                             .collect();
                         // A polygon whose outer ring is degenerate is skipped (a hole never
                         // stands in for it); degenerate holes are dropped.
-                        let Some(outer) = open.first().filter(|r| r.len() >= 3) else { continue };
+                        let Some(outer) = open.first().filter(|r| r.len() >= 3) else {
+                            scene.skipped_outer += 1;
+                            continue;
+                        };
+                        scene.holes_dropped += open.iter().skip(1).filter(|r| r.len() < 3).count();
                         let open: Vec<Vec<(f64, f64)>> =
                             std::iter::once(outer.clone()).chain(open.iter().skip(1).filter(|r| r.len() >= 3).cloned()).collect();
                         let Some(outer) = open.first() else { continue };
-                        let Some(tris) = rustgis_geom::triangulate::triangulate(outer, open.get(1..).unwrap_or(&[])) else { continue };
-                        let (pos, idx) = tri.entry(key).or_default();
                         let flat: Vec<(f64, f64)> = open.iter().flatten().copied().collect();
+                        // Past the triangulator's limits, the cap is a fan over the outer ring, as in
+                        // OBJ and STL (the polygon's walls and the rest stay in the scene); its holes'
+                        // positions aren't written for it.
+                        let found = rustgis_geom::triangulate::triangulate_reporting(outer, open.get(1..).unwrap_or(&[]));
+                        let (cap, triangles) = match &found {
+                            Some((tris, _)) => (flat.len(), tris.len()),
+                            None => (outer.len(), outer.len().saturating_sub(2)),
+                        };
+                        // What this polygon adds (its cap's positions and indices, and its walls),
+                        // checked before it is built, so a fan over a huge ring can't run away.
+                        let walls = if h > 0.0 { flat.len() * (4 * 12 + 6 * 4) } else { 0 };
+                        let grown = size(&tri, &lines, &key).saturating_sub(last.map_or(0, |(_, before)| before));
+                        if buffer.len() + built + grown + cap * 12 + triangles * 12 + walls > MAX_SCENE_BYTES {
+                            return Err("the scene would be too large; share fewer features".into());
+                        }
+                        // The fallback fan follows the ring, which may run either way: it is wound
+                        // counter-clockwise (in x, z) like the triangulator's answer, so it faces up too.
+                        let (tris, fan) = found.unwrap_or_else(|| {
+                            let ccw =
+                                outer.iter().zip(outer.iter().cycle().skip(1)).map(|(a, b)| a.0 * b.1 - b.0 * a.1).sum::<f64>() >= 0.0;
+                            let fan = (1..outer.len().saturating_sub(1)).map(|i| if ccw { [0, i, i + 1] } else { [0, i + 1, i] }).collect();
+                            (fan, true)
+                        });
+                        scene.fanned += usize::from(fan);
+                        let (pos, idx) = tri.entry(key).or_default();
                         let base = pos.len() as u32;
-                        for (x, z) in &flat {
-                            pos.push([*x as f32, h, *z as f32]);
+                        for (x, z) in flat.get(..cap).unwrap_or(&[]) {
+                            pos.push([*x as f32, top, *z as f32]);
                         }
                         for t in &tris {
                             // Seen from above (+y), with z pointing south: reverse the winding.
@@ -1012,7 +1196,7 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
                                     let (a, b) = (flat.get(first + i).copied(), flat.get(first + (i + 1) % n).copied());
                                     let (Some(a), Some(b)) = (a, b) else { continue };
                                     let w = pos.len() as u32;
-                                    for (p, y) in [(a, 0.0), (b, 0.0), (b, h), (a, h)] {
+                                    for (p, y) in [(a, foot), (b, foot), (b, top), (a, top)] {
                                         pos.push([p.0 as f32, y, p.1 as f32]);
                                     }
                                     idx.extend([w, w + 1, w + 2, w, w + 2, w + 3]);
@@ -1025,29 +1209,35 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
                 Geometry::Line(parts) => {
                     let seg = lines.entry(key).or_default();
                     for part in parts {
+                        scene.single_vertex_lines += usize::from(part.len() == 1);
                         for w in part.windows(2) {
                             let ((ax, az), (bx, bz)) = (xy(w[0]), xy(w[1]));
-                            seg.push([ax, h, az]);
-                            seg.push([bx, h, bz]);
+                            seg.push([ax, top, az]);
+                            seg.push([bx, top, bz]);
                         }
                     }
                 }
                 Geometry::Point(p) => {
                     let (x, z) = xy(*p);
                     let seg = lines.entry(key).or_default();
-                    // A vertical stick, as tall as the feature (or 50 m).
-                    seg.push([x, 0.0, z]);
-                    seg.push([x, h.max(50.0), z]);
+                    // A vertical stick from the base, as tall as the feature (or 50 m).
+                    seg.push([x, foot, z]);
+                    seg.push([x, top.max(foot + 50.0), z]);
                 }
                 Geometry::MultiPoint(ps_) => {
                     let seg = lines.entry(key).or_default();
                     for p in ps_ {
                         let (x, z) = xy(*p);
-                        seg.push([x, 0.0, z]);
-                        seg.push([x, h.max(50.0), z]);
+                        seg.push([x, foot, z]);
+                        seg.push([x, top.max(foot + 50.0), z]);
                     }
                 }
             }
+            // A feature adds only to its own colour: it drew something when that grew.
+            held += usize::from(clipped && last.is_some_and(|(k, before)| size(&tri, &lines, &k) > before));
+        }
+        if held > 0 {
+            scene.held.push((l.name.clone(), held));
         }
         let mut primitives = Vec::new();
         let material = |key: [u8; 4], materials: &mut Vec<Value>| -> usize {
@@ -1101,7 +1291,9 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
         }
     }
     if nodes.is_empty() {
-        return Err("the map has no features to put in a scene".into());
+        let notes = scene.notes();
+        let why = if notes.is_empty() { String::new() } else { format!(": {}", notes.join("; ")) };
+        return Err(format!("the map has no features to put in a scene{why}"));
     }
     // As drawn: a camera set from outside a command may not be clamped yet.
     let mut at = m.camera;
@@ -1123,7 +1315,8 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<Vec<u8>, String> {
         "extras": {"origin": [c.x, c.y], "units": "metres east, up and south of origin (longitude, latitude)",
             "bearing": at.bearing, "pitch": at.pitch},
     });
-    serde_json::to_vec(&doc).map_err(|e| e.to_string())
+    scene.bytes = serde_json::to_vec(&doc).map_err(|e| e.to_string())?;
+    Ok(scene)
 }
 
 /// The glTF camera of a scene and the node placing it: looking at the map's centre (the scene's
@@ -1155,7 +1348,9 @@ fn viewpoint(m: &Map, at: &rustgis_map::Camera, view: (f64, f64)) -> (Value, Val
 
 /// A link chart: the features joined by the map's relationships, as a node-link diagram (a
 /// self-contained page with a force layout; drag nodes, hover for names).
-fn link_chart(s: &Session, rel: Option<&str>) -> Result<String, String> {
+/// The page, and what the chart's limits leave out of it when they do: said by whoever shares
+/// it, and on the page (#1947).
+fn link_chart(s: &Session, rel: Option<&str>) -> Result<(String, Option<String>), String> {
     let rels = link_relationships(s, rel)?;
     let find = |name: &str| link_layer(s, name).and_then(|(m, l)| s.project.maps.iter().position(|p| std::ptr::eq(p, m)).map(|i| (i, l)));
     let mut nodes: Vec<Value> = Vec::new();
@@ -1171,10 +1366,23 @@ fn link_chart(s: &Session, rel: Option<&str>) -> Result<String, String> {
             .or_else(|| ds.fields.iter().position(|f| !f.ty.is_numeric()));
         fi.map(|i| ds.value(row, i).to_string()).unwrap_or_else(|| format!("{} {}", l.name, row + 1))
     };
-    'rels: for (gi, r) in rels.iter().enumerate() {
-        if nodes.len() >= MAX_NODES {
-            break;
+    // A feature's node, made while the chart has room for one.
+    let node = |index: &mut HashMap<(usize, u32, usize), usize>, nodes: &mut Vec<Value>, mi: usize, l: &Layer, row: usize, gi: usize| {
+        if let Some(&i) = index.get(&(mi, l.id, row)) {
+            return Some(i);
         }
+        if nodes.len() >= MAX_NODES {
+            return None;
+        }
+        nodes.push(json!({"name": label(l, row), "layer": l.name, "group": gi}));
+        index.insert((mi, l.id, row), nodes.len() - 1);
+        Some(nodes.len() - 1)
+    };
+    // What the chart would show without its limits, to say what they leave out: each related
+    // feature once, and each relation.
+    let mut related: HashSet<(usize, u32, usize)> = HashSet::new();
+    let mut relations = 0u64;
+    for (gi, r) in rels.iter().enumerate() {
         let (Some((om, o)), Some((dm, d))) = (find(&r.origin), find(&r.destination)) else { continue };
         let (Some(ok), Some(dk)) = (o.dataset.field_index(&r.origin_key), d.dataset.field_index(&r.destination_key)) else { continue };
         let mut by_key: HashMap<String, Vec<usize>> = HashMap::new();
@@ -1191,31 +1399,56 @@ fn link_chart(s: &Session, rel: Option<&str>) -> Result<String, String> {
                 by_key.entry(v).or_default().push(row);
             }
         }
+        // The features a key relates to are counted once, however many features share it.
+        let mut counted: HashSet<String> = HashSet::new();
         for orow in 0..o.dataset.features.len() {
             let Some(key) = key_of(&o.dataset, orow, ok) else { continue };
             let Some(drows) = by_key.get(&key) else { continue };
-            if nodes.len() >= MAX_NODES {
-                break 'rels;
+            related.insert((om, o.id, orow));
+            // Counted in 64 bits: relations can pass `usize` in the browser (32 bits).
+            relations += drows.len() as u64;
+            if counted.insert(key) {
+                related.extend(drows.iter().map(|&drow| (dm, d.id, drow)));
             }
-            let mut node = |mi: usize, l: &Layer, row: usize, nodes: &mut Vec<Value>| -> usize {
-                *index.entry((mi, l.id, row)).or_insert_with(|| {
-                    nodes.push(json!({"name": label(l, row), "layer": l.name, "group": gi}));
-                    nodes.len() - 1
-                })
-            };
-            let a = node(om, o, orow, &mut nodes);
-            for &drow in drows.iter().take(200) {
-                if nodes.len() >= MAX_NODES || links.len() >= MAX_LINKS {
-                    break 'rels;
+            if links.len() >= MAX_LINKS {
+                continue;
+            }
+            // The feature is drawn with its first link, never alone: each link needs room for
+            // whichever of its ends the chart doesn't hold yet. A feature without room is left
+            // out; one already in the chart may still be linked.
+            // Up to 200 links drawn from it: destinations the chart has no room for don't count
+            // toward them, so a later one it can draw still is.
+            let origin = (om, o.id, orow);
+            let mut a = index.get(&origin).copied();
+            if a.is_none() && nodes.len() >= MAX_NODES {
+                continue;
+            }
+            let mut drawn_here = 0;
+            for &drow in drows {
+                if drawn_here >= MAX_FEATURE_LINKS || links.len() >= MAX_LINKS {
+                    break;
                 }
-                let b = node(dm, d, drow, &mut nodes);
-                links.push(json!({"source": a, "target": b, "relationship": r.name}));
+                let destination = (dm, d.id, drow);
+                let new = usize::from(a.is_none()) + usize::from(destination != origin && !index.contains_key(&destination));
+                if nodes.len() + new > MAX_NODES {
+                    continue;
+                }
+                let (Some(from), Some(to)) =
+                    (a.or_else(|| node(&mut index, &mut nodes, om, o, orow, gi)), node(&mut index, &mut nodes, dm, d, drow, gi))
+                else {
+                    continue;
+                };
+                a = Some(from);
+                links.push(json!({"source": from, "target": to, "relationship": r.name}));
+                drawn_here += 1;
             }
         }
     }
     if links.is_empty() {
         return Err("no features are related through those relationships".into());
     }
+    let left = (nodes.len() < related.len() || (links.len() as u64) < relations)
+        .then(|| format!("{} of the {} related features and {} of the {} links", nodes.len(), related.len(), links.len(), relations));
     let title = rel.unwrap_or("Relationships");
     let mut legend = String::new();
     let layers: Vec<String> = {
@@ -1227,7 +1460,11 @@ fn link_chart(s: &Session, rel: Option<&str>) -> Result<String, String> {
     for (i, l) in layers.iter().enumerate() {
         let _ = write!(legend, "<span><i style=\"background:hsl({},60%,50%)\"></i>{}</span>", i * 137 % 360, html_escape(l));
     }
-    Ok(format!(
+    // Whoever opens the page sees that it shows part of what's related.
+    if let Some(left) = &left {
+        let _ = write!(legend, "<br><small>Shows {}.</small>", html_escape(left));
+    }
+    let html = format!(
         r#"<!doctype html><html><head><meta charset="utf-8"><title>{title}</title>
 <style>html,body{{margin:0;height:100%;font-family:system-ui,sans-serif;background:#fafbfc}}svg{{width:100%;height:100%}}line{{stroke:#9aa5b1;stroke-opacity:.6}}circle{{stroke:#fff;stroke-width:1.5;cursor:grab}}
 #k{{position:fixed;left:8px;top:8px;background:#fffe;padding:6px 10px;border-radius:6px;font-size:13px;box-shadow:0 1px 4px #0002}}#k span{{margin-right:10px}}#k i{{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:4px}}</style></head>
@@ -1254,7 +1491,13 @@ const moving=N.reduce((m,a)=>Math.max(m,Math.abs(a.vx),Math.abs(a.vy)),0);if(mov
         nodes = script_json(&Value::Array(nodes)),
         links = script_json(&Value::Array(links)),
         layers = script_json(&json!(layers)),
-    ))
+    );
+    let said = left.map(|left| {
+        format!(
+            "the link chart shows {left}; a link chart takes at most {MAX_NODES} features, {MAX_LINKS} links and {MAX_FEATURE_LINKS} links from one feature in each relationship"
+        )
+    });
+    Ok((html, said))
 }
 
 /// Resolves saved/default and literal locator paths without reading their contents.

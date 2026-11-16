@@ -152,9 +152,9 @@ impl Engine {
     }
 
     /// Layer `layer` of the active map as GeoJSON text: an id, or a name (a name that is a number
-    /// is read as an id after the names). Its features as they are in memory (a large file read
-    /// in place holds the features of the last view; run `layer.loadAll` first for all of them),
-    /// or only its selected ones when `selected`.
+    /// is read as an id after the names). All its features (a layer read in place, which holds
+    /// only the features of the last view, is read whole from its source, and rows that couldn't
+    /// be read are said), or only its selected ones when `selected`.
     #[pyo3(signature = (layer, selected=false))]
     fn layer_geojson(&self, py: Python<'_>, layer: LayerRef, selected: bool) -> PyResult<String> {
         let result = self.with_session(py, |session| {
@@ -166,14 +166,48 @@ impl Engine {
                     .or_else(|| name.trim().parse::<u32>().ok().and_then(|id| map.layer(id)))
                     .ok_or_else(|| format!("no layer named '{name}'")),
             }?;
+            if !selected && found.is_streamed() {
+                // Source metadata was reported when this layer opened. A fresh whole read may
+                // discover further notes, which must survive this boundary without replaying those.
+                let opened_notes: Vec<String> = found
+                    .source
+                    .as_ref()
+                    .and_then(|source| source.info())
+                    .map(|info| info.notes.iter().map(|note| format!("{}: {note}", info.name)).collect())
+                    .unwrap_or_default();
+                let (ds, report) = found.load_all_reported().map_err(|e| format!("{}: {e}", found.name))?;
+                let name = found.name.clone();
+                match report.skipped {
+                    0 => {}
+                    1 => session.warn(format!("{name}: 1 row couldn't be read and was left out")),
+                    n => session.warn(format!("{name}: {n} rows couldn't be read and were left out")),
+                }
+                for message in report.messages.into_iter().filter(|message| !opened_notes.contains(message)) {
+                    session.notify(message, false);
+                }
+                if let Some(note) = rustgis_engine::data::zm_export_note([&ds], &format!("{name} as GeoJSON")) {
+                    session.notify(note, false);
+                }
+                return Ok(rustgis_engine::data::io::to_geojson(&ds).to_string());
+            }
             if !selected {
-                return Ok(rustgis_engine::data::io::to_geojson(&found.dataset).to_string());
+                let text = rustgis_engine::data::io::to_geojson(&found.dataset).to_string();
+                let note = rustgis_engine::data::zm_export_note([&found.dataset], &format!("{} as GeoJSON", found.name));
+                if let Some(note) = note {
+                    session.notify(note, false);
+                }
+                return Ok(text);
             }
             let mut ds = rustgis_engine::data::Dataset::new(found.name.clone(), found.geometry_type(), found.dataset.fields.clone());
+            ds.zm_dropped = found.dataset.zm_dropped;
             for f in found.selection.iter().filter_map(|r| found.dataset.features.get(*r)) {
                 ds.push(f.geometry.clone(), f.attrs.clone());
             }
-            Ok::<String, String>(rustgis_engine::data::io::to_geojson(&ds).to_string())
+            let text = rustgis_engine::data::io::to_geojson(&ds).to_string();
+            if let Some(note) = rustgis_engine::data::zm_export_note([&ds], &format!("{} as GeoJSON", ds.name)) {
+                session.notify(note, false);
+            }
+            Ok::<String, String>(text)
         });
         self.flush(py);
         result.map_err(RustGISError::new_err)

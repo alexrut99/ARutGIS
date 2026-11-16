@@ -127,6 +127,7 @@ const MENUS: &[(&str, &[Entry])] = &[
             Item("Tools", Command("ui.pane.geoprocessing", ""), None),
             Item("Symbology", Command("ui.pane.symbology", ""), None),
             Item("Labeling", Command("ui.pane.labeling", ""), None),
+            Item("Layer Properties", Command("ui.pane.layerProperties", ""), None),
             Item("Bookmarks", Command("ui.pane.bookmarks", ""), None),
             Item("History", Command("ui.pane.history", ""), None),
             Item("AI Assistant", Command("ui.pane.assistant", ""), None),
@@ -481,7 +482,6 @@ pub fn text_key(action: Action) -> Option<KeyboardShortcut> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use rustgis_engine::{Project, Session};

@@ -361,6 +361,14 @@ pub fn status_bar(app: &mut RustGisApp, ui: &mut Ui) {
                     sep(ui, &t);
                     crate::readjob::status(app, ui, &t);
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                source_open_status(app, ui, &t);
+                crate::geocodeui::status(app, ui);
+                // Downloads and windows being read off the frame, each with its Cancel.
+                if !app.ui.downloads.is_empty() || window_reads_under_way(app) {
+                    sep(ui, &t);
+                    downloads_status(app, ui, &t);
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // The CPU/GPU backend toggle, then the frame rate (live while the map moves,
                     // "— fps" when idle), then the last render's cost.
@@ -438,27 +446,157 @@ pub fn status_bar(app: &mut RustGisApp, ui: &mut Ui) {
                             sep(ui, &t);
                         }
                     }
-                    if ui.small_button(tl!("Diagnostics")).on_hover_text(tl!("Review messages and failed network requests")).clicked() {
+                    if ui.small_button(tl!("Messages")).on_hover_text(tl!("Review messages and failed network requests")).clicked() {
                         app.ui.open_right(crate::RightPane::DiagnosticLog);
                     }
                     // Cut to the room left (the whole notice on hover), so it doesn't run
                     // over the selection count and coordinates. A click opens its history.
                     if let Some(running) = crate::pluginstart::running(app) {
                         ui.add(egui::Label::new(egui::RichText::new(running).size(11.5).color(t.accent)).truncate());
-                    } else if let Some(n) = app.session.notices.last()
+                    } else if let Some(waiting) = crate::pluginpanel::pick_hint(app) {
+                        // A plugin's pick says what it waits for on the map.
+                        ui.add(egui::Label::new(egui::RichText::new(waiting).size(11.5).color(t.accent)).truncate());
+                    } else if let Some((n, text)) = app.session.notices.last().map(|n| (n, notice_text(n)))
                         && ui.add(
-                            egui::Button::new(egui::RichText::new(&n.text).size(11.5).color(if n.error { t.red } else { t.text_dim }))
+                            egui::Button::new(egui::RichText::new(&text).size(11.5).color(if n.error { t.red } else { t.text_dim }))
                                 .frame(false)
                                 .small()
                                 .truncate(),
                         )
-                        .on_hover_text(crate::i18n::fmt("{message}\n{open}", &[("message", &n.text), ("open", tl_raw!("Open Diagnostics"))]))
+                        .on_hover_text(notice_hover(n))
                         .clicked() {
                         app.ui.open_right(crate::RightPane::DiagnosticLog);
                     }
                 });
             });
         });
+}
+
+/// Restored local FlatGeobuf layers classify dates off the frame, including hidden maps.
+/// This status keeps progress and Cancel available until those scans finish.
+#[cfg(not(target_arch = "wasm32"))]
+fn source_open_status(app: &RustGisApp, ui: &mut Ui, t: &Tokens) {
+    let sources: Vec<_> = app
+        .session
+        .project
+        .maps
+        .iter()
+        .flat_map(|m| &m.layers)
+        .filter_map(|l| l.source.as_ref())
+        .filter_map(|s| s.opening_progress().map(|p| (s, p)))
+        .collect();
+    if sources.is_empty() {
+        return;
+    }
+    sep(ui, t);
+    ui.spinner();
+    ui.label(egui::RichText::new(tl!("Reading dates…")).size(11.5).color(t.text_dim));
+    let (done, total) =
+        sources.iter().fold((0u64, 0u64), |(done, total), (_, (d, n, _))| (done.saturating_add(*d), total.saturating_add(*n)));
+    if total > 0 && sources.iter().all(|(_, (_, n, _))| *n > 0) {
+        ui.add(egui::ProgressBar::new((done as f32 / total as f32).min(1.0)).show_percentage().desired_width(120.0).desired_height(12.0));
+    }
+    if ui.add_enabled(sources.iter().any(|(_, (_, _, cancelled))| !cancelled), egui::Button::new(tl!("Cancel")).small()).clicked() {
+        for (source, _) in sources {
+            source.cancel_opening();
+        }
+    }
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+}
+
+/// Whether work is running that the status bar shows with its progress and Cancel: an export, a
+/// file or a layer being read, a download.
+pub(crate) fn background_busy(app: &RustGisApp) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    if app.export_job.is_some() || crate::readjob::showing(app) || sources_opening(app) {
+        return true;
+    }
+    !app.ui.downloads.is_empty() || window_reads_under_way(app)
+}
+
+/// That work's progress and Cancel, as the status bar draws them, for a shell without one.
+pub(crate) fn background_status(app: &mut RustGisApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    #[cfg(not(target_arch = "wasm32"))]
+    if app.export_job.is_some() {
+        crate::exportjob::status(app, ui, &t);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::readjob::showing(app) {
+        crate::readjob::status(app, ui, &t);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    source_open_status(app, ui, &t);
+    if !app.ui.downloads.is_empty() || window_reads_under_way(app) {
+        downloads_status(app, ui, &t);
+    }
+}
+
+/// Whether a restored layer's dates are still being read ([`source_open_status`] shows them).
+#[cfg(not(target_arch = "wasm32"))]
+fn sources_opening(app: &RustGisApp) -> bool {
+    app.session.project.maps.iter().flat_map(|m| &m.layers).filter_map(|l| l.source.as_ref()).any(|s| s.opening_progress().is_some())
+}
+
+/// Whether windows are being read off the frame (none in the browser).
+fn window_reads_under_way(app: &RustGisApp) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    return !app.ui.window_reads.is_empty();
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = app;
+        false
+    }
+}
+
+/// The downloads under way in the status bar, each with how far it has come and its Cancel
+/// (`RustGisApp::cancel_download`): one in the bar itself, several as a menu of them.
+fn downloads_status(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
+    let under_way = app.downloads_under_way();
+    let mut cancel = None;
+    ui.spinner();
+    match under_way.as_slice() {
+        [] => {}
+        [one] => download_row(ui, t, one, &mut cancel),
+        many => {
+            ui.menu_button(crate::i18n::fmt("{n} downloads", &[("n", &many.len().to_string())]), |ui| {
+                for d in many {
+                    ui.horizontal(|ui| download_row(ui, t, d, &mut cancel));
+                }
+            });
+        }
+    }
+    // The bar moves while the bytes come in on their threads.
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+    if let Some(id) = cancel {
+        app.cancel_download(id);
+    }
+}
+
+/// One download in the status bar: what it is doing, its address (cut short, whole on hover), its
+/// progress and its Cancel. A file's whole download shows a bar once the server said its size and
+/// the megabytes read before; a window's read ("Reading…", as its start notice says) isn't
+/// counted, nor is a download in the browser.
+fn download_row(ui: &mut Ui, t: &Tokens, d: &crate::UnderWay, cancel: &mut Option<u64>) {
+    let received = d.progress.as_ref().map_or(0, |p| p.received());
+    let fraction = d.progress.as_ref().and_then(|p| p.fraction());
+    let doing = match (&d.progress, fraction) {
+        (None, _) => tl!("Reading…").to_string(),
+        (Some(_), None) if received > 0 => {
+            crate::i18n::fmt("Downloading… {mb} MB", &[("mb", &format!("{:.1}", received as f64 / 1_048_576.0))])
+        }
+        (Some(_), _) => tl!("Downloading…").to_string(),
+    };
+    ui.label(egui::RichText::new(doing).size(11.5).color(t.text_dim));
+    let short: String =
+        if d.shown.chars().count() > 48 { format!("{}…", d.shown.chars().take(47).collect::<String>()) } else { d.shown.clone() };
+    ui.label(egui::RichText::new(short).size(11.5)).on_hover_text(&d.shown);
+    if let Some(f) = fraction {
+        ui.add(egui::ProgressBar::new(f).show_percentage().desired_width(120.0).desired_height(12.0));
+    }
+    if ui.small_button(tl!("Cancel")).on_hover_text(tl!("Stop this download; nothing is added")).clicked() {
+        *cancel = Some(d.id);
+    }
 }
 
 fn sep(ui: &mut Ui, t: &Tokens) {
@@ -652,6 +790,23 @@ pub fn shortcuts(app: &mut RustGisApp, ctx: &egui::Context) {
             }
             continue;
         }
+        // Esc cancels a held box gesture before leaving the drawing tool on another press.
+        if id == "tool.set"
+            && p.get("tool").and_then(serde_json::Value::as_str) == Some("explore")
+            && app.session.tool == rustgis_engine::Tool::RotatedBox
+            && crate::boxedit::drawing(app)
+        {
+            crate::boxedit::cancel(app);
+            continue;
+        }
+        if id == "tool.set"
+            && p.get("tool").and_then(serde_json::Value::as_str) == Some("explore")
+            && app.session.tool == rustgis_engine::Tool::Circle
+            && crate::circleedit::drawing(app)
+        {
+            crate::circleedit::cancel(app);
+            continue;
+        }
         // With Edit Vertices, Delete removes the chosen vertex rather than the feature.
         if id == "edit.delete"
             && app.session.active_layout.is_none()
@@ -748,13 +903,30 @@ pub fn shortcuts(app: &mut RustGisApp, ctx: &egui::Context) {
             }
             continue;
         }
+        // Rename with no name given (F2) opens the Rename dialog for the active layer, as Command
+        // Search does: the name is typed there. One naming another layer runs the command, which
+        // says the name is missing, rather than renaming the active layer instead.
+        if id == "layer.rename" && p.get("name").is_none() && p.get("layer").is_none() {
+            let _ = app.run("ui.dialog", json!({"name": "renameLayer"}));
+            continue;
+        }
         let _ = app.run_by_user(id, p);
     }
 }
 
 /// Whether a UI command is available on the current platform.
 pub(crate) fn command_available(id: &str, web: bool) -> bool {
-    !web || !matches!(id, "ui.checkUpdate" | "ui.mcpRelay" | "ui.themeLoad" | "ui.themeReload")
+    !web || !matches!(
+        id,
+        "ui.checkUpdate"
+            | "ui.mcpRelay"
+            | "ui.themeLoad"
+            | "ui.themeReload"
+            | "ui.reloadData"
+            | "layer.reloadData"
+            | "map.reloadTiles"
+            | "map.repairTiles"
+    )
 }
 
 /// The `ui.*` commands Command Search lists: (id, label, ribbon location).
@@ -764,6 +936,7 @@ pub(crate) const UI_COMMANDS: &[(&str, &str, &str)] = &[
     ("ui.customizeShortcuts", "Keyboard Shortcuts", "Settings › Customize"),
     ("ui.addData", "Add Data…", "Home › Add"),
     ("ui.addDelimited", "Add Delimited Text…", "Home › Add › Add Data"),
+    ("ui.addDxf", "Import DXF…", "Home › Add › Add Data"),
     ("ui.addUrl", "Add Data From URL…", "Home › Add › Add Data"),
     ("ui.addZarr", "Add Zarr Variable…", "Home › Add › Add Data"),
     ("ui.addService", "Add From Service…", "Home › Add › Add Data"),
@@ -775,11 +948,13 @@ pub(crate) const UI_COMMANDS: &[(&str, &str, &str)] = &[
     ("ui.stac.usgsLidar", "USGS LiDAR…", "Home › Add › Web Data › United States"),
     ("ui.pane.sources", "Data Sources", "Home › Add"),
     ("ui.plugins", "Plugin Manager…", "Plugins"),
+    ("ui.extensions", "Extensions…", "Plugins › Extensions"),
     ("ui.mcpRelay", "MCP Relay", "Help › Help"),
     ("ui.pane.geoprocessing", "Tools Pane", "View › Windows"),
     ("ui.pane.symbology", "Symbology Pane", "Style › Drawing"),
     ("ui.pane.labeling", "Labeling Pane", "View › Windows"),
-    ("ui.pane.diagnosticLog", "Diagnostics", "View › Windows"),
+    ("ui.pane.layerProperties", "Layer Properties Pane", "View › Windows"),
+    ("ui.pane.diagnosticLog", "Messages", "View › Windows"),
     ("ui.pane.assistant", "AI Assistant", "Analyze › AI"),
     ("ui.pane.sql", "SQL Pane", "Analyze › Workflows"),
     ("ui.pane.directions", "Directions", "Home › Navigate"),
@@ -807,13 +982,15 @@ enum SearchAction {
     OpenItem(&'static str),
     SaveItem(&'static str),
     Pane(crate::RightPane),
+    /// A tab of the Layer Properties pane, by its `ui.pane.layerProperties` name.
+    PropertiesTab(&'static str),
     Workflow(&'static str),
 }
 
 /// Routes commands requiring user input to their dialogs rather than executing empty params.
 fn search_action(id: &str) -> Option<SearchAction> {
     use crate::RightPane;
-    use SearchAction::{Command, Dialog, OpenItem, Pane, SaveItem, Workflow};
+    use SearchAction::{Command, Dialog, OpenItem, Pane, PropertiesTab, SaveItem, Workflow};
     Some(match id {
         "project.open" => Command("ui.open"),
         "project.save" => Command("ui.save"),
@@ -827,6 +1004,7 @@ fn search_action(id: &str) -> Option<SearchAction> {
         "map.package" => SaveItem("mapPackage"),
         "map.rename" => Dialog("renameMap"),
         "map.goToXY" => Dialog("goToXY"),
+        "map.exportOrbit" => Dialog("exportOrbit"),
         "map.findPlace" => Dialog("findPlace"),
         "map.thaiSheet" | "map.goToThaiSheet" | "layer.thaiSheetGrid" => Dialog("thaiSheets"),
         "map.camera" | "map.setScale" => Dialog("camera"),
@@ -861,8 +1039,9 @@ fn search_action(id: &str) -> Option<SearchAction> {
         "layer.rename" => Dialog("renameLayer"),
         "layer.defineProjection" => Dialog("defineProjection"),
         "layer.repairSource" => Dialog("repairSource"),
+        "layer.reloadData" => Command("ui.reloadData"),
         "ui.importShapefile" => Dialog("addShapefile"),
-        "layer.definitionQuery" => Dialog("definitionQuery"),
+        "layer.definitionQuery" => PropertiesTab("query"),
         "layer.symbology" | "raster.symbology" | "layer.color" | "layer.outline" | "layer.lineStrokes" | "layer.fillLayers"
         | "layer.ramp" => Pane(RightPane::Symbology),
         "select.byAttributes" => Dialog("selectByAttributes"),
@@ -939,7 +1118,7 @@ fn search_action(id: &str) -> Option<SearchAction> {
         "osm.download" => Dialog("osm"),
         "overture.add" => Dialog("overture"),
         "boundaries.add" => Dialog("boundaries"),
-        "embeddings.add" | "embeddings.search" => Dialog("embeddings"),
+        "embeddings.add" | "embeddings.addCube" | "embeddings.search" => Dialog("embeddings"),
         "cube.catalog" | "cube.open" => Dialog("dataCubes"),
         "nationalMap.add" => Dialog("nationalMap"),
         "fieldsOfTheWorld.add" => Dialog("fieldsOfTheWorld"),
@@ -1042,7 +1221,8 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
         // Workflow titles are searchable even when they differ from the engine command's label.
         // A command with the same title that routes to the workflow is listed instead, if it matches.
         if !ql.is_empty() {
-            for &(section, label) in crate::analysispane::SECTIONS {
+            for &(section, label) in crate::analysispane::SECTIONS.iter().filter(|s| crate::analysispane::section_shown(&app.session, s.0))
+            {
                 if (label.to_lowercase().contains(&ql) || section.to_lowercase().contains(&ql) || tl!(label).to_lowercase().contains(&ql))
                     && !app.session.registry.commands.iter().any(|c| {
                         c.label == label
@@ -1055,7 +1235,11 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
             }
         }
         for c in &app.session.registry.commands {
-            if command_matches(c, &ql) {
+            // A command of an extension that is off isn't offered (#1752).
+            if command_available(c.id, cfg!(target_arch = "wasm32"))
+                && app.session.extensions().blocks(c.id).is_none()
+                && command_matches(c, &ql)
+            {
                 hits.push((c.id.to_string(), tl!(c.label).to_string(), crate::i18n::location(c.location)));
             }
         }
@@ -1173,6 +1357,7 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
                 SearchAction::Dialog(name) => app.run("ui.dialog", json!({"name": name})),
                 SearchAction::OpenItem(kind) => app.run("ui.openItem", json!({"kind": kind})),
                 SearchAction::SaveItem(kind) => app.run("ui.saveItem", json!({"kind": kind})),
+                SearchAction::PropertiesTab(tab) => app.run("ui.pane.layerProperties", json!({"tab": tab})),
                 SearchAction::Workflow(section) => app.run("ui.pane.workflows", json!({"section": section})),
                 SearchAction::Pane(pane) => {
                     app.ui.open_right(pane);
@@ -1316,19 +1501,39 @@ pub fn about(app: &mut RustGisApp, ctx: &egui::Context) {
     }
 }
 
+/// Translates deferred engine text in logical order, then shapes the completed message once.
+/// Ordinary notices have already reached their final display form and pass through unchanged.
+fn notice_text(notice: &rustgis_engine::Notice) -> String {
+    notice
+        .translated(crate::i18n::fmt_raw)
+        .map(|message| crate::i18n::fmt("{message}", &[("message", &message)]))
+        .unwrap_or_else(|| notice.text.clone())
+}
+
+/// A deferred message stays in logical order until the complete tooltip is shaped, including
+/// its translated action label. Feeding status-bar display text back into fmt would shape twice.
+fn notice_hover(notice: &rustgis_engine::Notice) -> String {
+    let message = notice.translated(crate::i18n::fmt_raw).unwrap_or_else(|| notice.text.clone());
+    crate::i18n::fmt("{message}\n{open}", &[("message", &message), ("open", tl_raw!("Open Messages"))])
+}
+
+/// Makes a toast for each notice the session still holds that was given since the last call.
+/// Counted by the session's notice mark, not by its list, which keeps only the last 200 notices
+/// and so stops growing (#1755); more than 200 between two frames toast only the 200 kept.
+fn toast_new_notices(app: &mut RustGisApp, now: f64) {
+    for n in app.session.notices_since(app.map.notices_seen) {
+        app.map.toasts_made += 1;
+        app.map.toasts.push(Toast { text: notice_text(n), error: n.error, at: now, id: app.map.toasts_made });
+    }
+    app.map.notices_seen = app.session.notice_mark();
+}
+
 /// Toasts for recent notices (errors stay longer, and any stays while the pointer is on it, so
 /// its text can be selected and copied).
 pub fn notices(app: &mut RustGisApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let now = ctx.input(|i| i.time);
-    let total = app.session.notices.len();
-    if total > app.map.notices_seen {
-        for n in app.session.notices.iter().skip(app.map.notices_seen) {
-            app.map.toasts_made += 1;
-            app.map.toasts.push(Toast { text: n.text.clone(), error: n.error, at: now, id: app.map.toasts_made });
-        }
-        app.map.notices_seen = total;
-    }
+    toast_new_notices(app, now);
     app.map.toasts.retain(|toast| now - toast.at < if toast.error { 6.0 } else { 3.0 });
     if app.map.toasts.is_empty() {
         return;
@@ -1372,9 +1577,42 @@ fn layout_selection(app: &RustGisApp) -> Option<(usize, Vec<u32>)> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// Command Search's Definition Query opens the Layer Properties pane on its Query tab (#1803),
+    /// the dialog it opened being gone.
+    #[test]
+    fn definition_query_is_found_on_the_query_tab() {
+        assert!(matches!(search_action("layer.definitionQuery"), Some(SearchAction::PropertiesTab("query"))));
+        let mut app = RustGisApp::with_sample();
+        app.session.run("layer.select", &json!({"layer": "Cities"})).unwrap();
+        assert!(super::search_disabled(&app, "layer.definitionQuery").is_none(), "offered for a feature layer");
+    }
+
+    /// Past the 200 notices the session keeps, each new notice it holds still makes one toast (#1755).
+    #[test]
+    fn each_kept_notice_makes_one_toast_past_the_200th() {
+        let mut app = RustGisApp::new(rustgis_engine::Session::new(rustgis_engine::Project::default()));
+        toast_new_notices(&mut app, 0.0);
+        app.map.toasts.clear();
+        for i in 0..205 {
+            app.session.notify(format!("notice {i}"), false);
+            toast_new_notices(&mut app, 0.0);
+            toast_new_notices(&mut app, 0.0);
+            let texts: Vec<&str> = app.map.toasts.iter().map(|t| t.text.as_str()).collect();
+            assert_eq!(texts, [format!("notice {i}")], "notice {i} is toasted once");
+            app.map.toasts.clear();
+        }
+        // Several notices between two frames each make their toast, in order.
+        for i in 0..3 {
+            app.session.notify(format!("batch {i}"), true);
+        }
+        toast_new_notices(&mut app, 0.0);
+        let texts: Vec<&str> = app.map.toasts.iter().map(|t| t.text.as_str()).collect();
+        assert_eq!(texts, ["batch 0", "batch 1", "batch 2"]);
+        assert!(app.map.toasts.iter().all(|t| t.error));
+    }
 
     #[test]
     fn desktop_only_search_actions_are_disabled_only_on_the_web() {

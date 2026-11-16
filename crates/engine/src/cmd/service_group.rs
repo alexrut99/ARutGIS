@@ -99,10 +99,11 @@ fn record_connection(s: &mut Session, layer: u32, request: &Value, anonymous: bo
 }
 
 fn plan(s: &mut Session, p: &Value) -> CmdResult {
-    if p.get("sourceOnly").and_then(Value::as_bool) == Some(true) {
-        return request(s, p);
+    let mut out = if p.get("sourceOnly").and_then(Value::as_bool) == Some(true) { request(s, p)? } else { listing(s, p)? };
+    if !s.policy_user() {
+        crate::sources::redact_url_fields(&mut out);
     }
-    listing(s, p)
+    Ok(out)
 }
 
 fn listing(s: &mut Session, p: &Value) -> CmdResult {
@@ -120,7 +121,7 @@ fn listing(s: &mut Session, p: &Value) -> CmdResult {
     }
     if found.incomplete {
         return Err(
-            "the service lists collections RustGIS cannot read (more than 2000, or unreadable addresses); the group was not changed".into(),
+            "the service lists collections RustGIS cannot read (more than 2000, an address too long to read them all, or unreadable addresses); the group was not changed".into(),
         );
     }
     let previous = target(s, p)?;
@@ -343,6 +344,7 @@ fn refresh(s: &mut Session, p: &Value) -> CmdResult {
     // whose classes no longer read, drawn with a single symbol.
     let mut notes = Vec::new();
     let mut singled = Vec::new();
+    let mut area_notes = Vec::new();
     let mut moved = 0;
     for ((mut child, mut dataset, anonymous), existing) in reads.into_iter().zip(matches) {
         let existing = existing.and_then(|id| s.map_mut().layer_mut(id));
@@ -359,7 +361,7 @@ fn refresh(s: &mut Session, p: &Value) -> CmdResult {
             layer.labels.classes.iter_mut().for_each(|class| class.moved.clear());
             let invalid_renderer = match &layer.renderer {
                 rustgis_map::Renderer::Single(_) => false,
-                rustgis_map::Renderer::Unique { expression: Some(e), .. } => rustgis_data::query::parse(e, &layer.dataset).is_err(),
+                rustgis_map::Renderer::Unique { expression: Some(e), .. } => rustgis_data::query::parse_fields(e, &layer.dataset).is_err(),
                 rustgis_map::Renderer::Unique { field, .. } => layer.dataset.field_index(field).is_none(),
                 rustgis_map::Renderer::Graduated { field, .. } | rustgis_map::Renderer::Proportional { field, .. } => {
                     layer.dataset.field_index(field).and_then(|i| layer.dataset.fields.get(i)).is_none_or(|f| !f.ty.is_numeric())
@@ -372,8 +374,9 @@ fn refresh(s: &mut Session, p: &Value) -> CmdResult {
                 }
             }
             // (Labels by a text expression that still reads need no field.)
-            let reads =
-                |t: &Option<String>, ds: &rustgis_data::Dataset| t.as_deref().is_some_and(|t| rustgis_data::query::parse(t, ds).is_ok());
+            let reads = |t: &Option<String>, ds: &rustgis_data::Dataset| {
+                t.as_deref().is_some_and(|t| rustgis_data::query::parse_fields(t, ds).is_ok())
+            };
             let by_text = |c: &rustgis_map::LabelClass, ds: &rustgis_data::Dataset| reads(&c.by.text, ds);
             if layer.dataset.field_index(&layer.labels.default.field).is_none() {
                 // A field the service dropped isn't kept, even under a text expression (a web style
@@ -404,10 +407,11 @@ fn refresh(s: &mut Session, p: &Value) -> CmdResult {
                 notes.push((layer.name.clone(), lost));
             }
             layer.labels.repoint_missing_fields(&layer.dataset);
-            if layer.definition_query.as_deref().is_some_and(|q| rustgis_data::query::parse(q, &layer.dataset).is_err()) {
+            if layer.definition_query.as_deref().is_some_and(|q| rustgis_data::query::parse_fields(q, &layer.dataset).is_err()) {
                 layer.definition_query = None;
             }
-            layer.display_filters.retain(|f| rustgis_data::query::parse(&f.where_, &layer.dataset).is_ok());
+            layer.display_filters.retain(|f| rustgis_data::query::parse_fields(&f.where_, &layer.dataset).is_ok());
+            area_notes.push(layer.id);
             layer.touch_geometry();
             child.layer = layer.id;
             // Locked labels name the old features by id, and the new ones are numbered afresh.
@@ -430,6 +434,9 @@ fn refresh(s: &mut Session, p: &Value) -> CmdResult {
     }
     if moved > 0 {
         s.notify(format!("{moved} saved label move(s) reset in refreshed service layers"), false);
+    }
+    if let Some(note) = crate::cmd::design::display_area_messages(area_notes.into_iter().filter_map(|id| s.map().layer(id))) {
+        s.notify(note, false);
     }
     if !notes.is_empty() {
         let lost: usize = notes.iter().map(|(_, n)| n).sum();
@@ -513,7 +520,6 @@ fn set_group(s: &mut Session, p: &Value) -> CmdResult {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

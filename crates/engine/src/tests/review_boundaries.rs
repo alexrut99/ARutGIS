@@ -23,6 +23,8 @@ fn permission_review_authentication_changes_are_reserved() {
         ("arcgis.token", json!({"url":"https://auth-review.example.invalid/arcgis/rest/services","token":"RGSYNTH_review_auth"})),
         ("arcgis.signOut", json!({})),
         ("arcgis.cancelSignIn", json!({})),
+        ("copernicus.login", json!({"username":"review@example.invalid","password":"RGSYNTH_review_auth"})),
+        ("copernicus.logout", json!({})),
     ] {
         let call = Call::command(id, params);
         assert!(matches!(s.review(&agent(AgentAccess::Allow), &call), Outcome::Refused(_)), "{id} is reserved even with external access");
@@ -190,6 +192,7 @@ fn permission_review_render_owners_require_tile_network_access() {
     for (id, params) in [
         ("time.export", json!({"path":"review-frames.zip"})),
         ("animation.export", json!({"path":"review-camera.zip"})),
+        ("map.exportOrbit", json!({"path":"review-orbit.zip","frames":2})),
         ("project.thumbnail", json!({"create":true})),
         ("map.thumbnail", json!({"create":true})),
     ] {
@@ -206,12 +209,60 @@ fn permission_review_render_owners_require_tile_network_access() {
     assert!(admitted.is_empty(), "rendering web tiles needs network authority: {admitted:?}");
 }
 
+/// A terrain's elevation tiles are fetched as a tile layer's are: a map whose only web source
+/// they are still needs network authority to be drawn, shows where they come from, and a
+/// remembered consent doesn't cover another address.
+#[test]
+fn permission_review_render_owners_count_terrain_elevation_tiles() {
+    let calls = [
+        ("time.export", json!({"path":"review-frames.zip"})),
+        ("animation.export", json!({"path":"review-camera.zip"})),
+        ("map.exportOrbit", json!({"path":"review-orbit.zip","frames":2})),
+        ("share.exportMap", json!({"path":"review-map.png"})),
+        ("map.thumbnail", json!({"create":true})),
+    ];
+    let mut s = rendering_session();
+    let offline = without_effect(Effect::Network);
+    let refused = |s: &Session| -> Vec<&str> {
+        calls
+            .iter()
+            .filter(|(id, p)| matches!(s.review(&offline, &Call::command(id, p.clone())), Outcome::Refused(_)))
+            .map(|c| c.0)
+            .collect()
+    };
+    assert!(refused(&s).is_empty(), "nothing to fetch yet: {:?}", refused(&s));
+    let terrain = |s: &mut Session, token: &str| {
+        let url = format!("https://terrain-review.invalid/{{z}}/{{x}}/{{y}}.png?token=RGSYNTH_review_{token}");
+        s.map_mut().view.terrain = Some(rustgis_map::view::Terrain {
+            source: rustgis_map::view::TerrainSource::Tiles { url, encoding: rustgis_map::view::TerrainEncoding::Terrarium },
+            exaggeration: 1.0,
+            block: None,
+            water: None,
+        });
+    };
+    terrain(&mut s, "one");
+    assert_eq!(refused(&s).len(), calls.len(), "elevation tiles need network authority: {:?}", refused(&s));
+    let scope = Scope::assistant(1943, Arc::new(Live));
+    for (id, params) in &calls {
+        terrain(&mut s, "one");
+        let call = Call::command(id, params.clone());
+        let Outcome::NeedsApproval(approved) = s.review(&scope, &call) else { panic!("{id} needs approval") };
+        let shown = format!("{:?}", approved.review());
+        assert!(shown.contains("terrain-review.invalid") && !shown.contains("RGSYNTH_review_"), "{id}: {shown}");
+        let remembered = approved.remember().unwrap();
+        terrain(&mut s, "two");
+        let Outcome::NeedsApproval(changed) = s.review(&scope, &call) else { panic!("{id} still needs approval") };
+        assert!(!changed.covered_by(&remembered), "{id}: a consent covered another terrain address");
+    }
+}
+
 #[test]
 fn permission_review_render_owners_bind_raw_tile_routes() {
     let mut unchanged = Vec::new();
     for (id, params) in [
         ("time.export", json!({"path":"review-frames.zip"})),
         ("animation.export", json!({"path":"review-camera.zip"})),
+        ("map.exportOrbit", json!({"path":"review-orbit.zip","frames":2})),
         ("project.thumbnail", json!({"create":true})),
         ("map.thumbnail", json!({"create":true})),
     ] {
@@ -369,4 +420,106 @@ fn permission_review_script_line_limit_refuses_before_any_edit() {
     assert_eq!(serde_json::to_value(&s.project).unwrap(), before);
     s.run("script.run", &json!({"script":prefix})).unwrap();
     assert!(s.map().layer_by_name("Renamed").is_some(), "the exact boundary remains supported");
+}
+
+#[test]
+fn permission_review_archive_actions_bind_the_selected_route_and_stack_position() {
+    for command in ["map.reloadTiles", "map.repairTiles"] {
+        for selector in [json!({"index":0}), json!({"name":"Review archive"}), json!({"id":"review-archive"})] {
+            for reorder in [false, true] {
+                let mut s = world();
+                let mut tile =
+                    rustgis_map::TileLayer::new("Review archive", rustgis_map::TileKind::PmTiles, "/not-opened/review-one.pmtiles");
+                tile.id = "review-archive".into();
+                s.map_mut().tiles =
+                    vec![tile, rustgis_map::TileLayer::new("Other archive", rustgis_map::TileKind::PmTiles, "/not-opened/other.pmtiles")];
+                let mut params = selector.clone();
+                if command == "map.repairTiles" {
+                    params["path"] = json!("/not-opened/replacement.pmtiles");
+                }
+                let call = Call::command(command, params);
+                let scope = Scope::assistant(1464, Arc::new(Live));
+                let Outcome::NeedsApproval(approved) = s.review(&scope, &call) else { panic!("archive action needs review") };
+                let remembered = approved.remember().unwrap();
+                if reorder {
+                    s.map_mut().tiles.swap(0, 1);
+                } else {
+                    s.map_mut().tiles[0].url = "/not-opened/review-two.pmtiles".into();
+                }
+                let Outcome::NeedsApproval(changed) = s.review(&scope, &call) else { panic!("changed action needs review") };
+                assert!(!changed.covered_by(&remembered), "{command}: {selector}, reorder={reorder}");
+                let before = s.map().tiles.clone();
+                let undo = s.undo_depth();
+                assert!(s.run_remembered(scope, &remembered, &call).is_err(), "stale consent must fail before opening any archive");
+                assert_eq!(s.map().tiles, before);
+                assert_eq!(s.undo_depth(), undo);
+            }
+        }
+    }
+}
+
+#[test]
+fn permission_review_archive_places_are_redacted_but_raw_routes_remain_bound() {
+    for command in ["map.reloadTiles", "map.repairTiles"] {
+        let mut s = world();
+        s.map_mut().tiles = vec![
+            rustgis_map::TileLayer::new(
+                "Review archive",
+                rustgis_map::TileKind::PmTiles,
+                "https://archive-review.invalid/private.pmtiles?token=RGSYNTH_archive_one",
+            ),
+            rustgis_map::TileLayer::new("Other archive", rustgis_map::TileKind::PmTiles, "/not-opened/other.pmtiles"),
+        ];
+        // Preserve index > name > id selector precedence, even for a conflicting request.
+        let mut params = json!({"index":0,"name":"Other archive","id":"not-the-target"});
+        if command == "map.repairTiles" {
+            params["path"] = json!("/not-opened/replacement.pmtiles");
+        }
+        let call = Call::command(command, params);
+        let scope = Scope::assistant(1465, Arc::new(Live));
+        let Outcome::NeedsApproval(approved) = s.review(&scope, &call) else { panic!("archive action needs review") };
+        assert!(approved.review().details.iter().flat_map(|d| &d.places).any(|p| p.contains("archive-review.invalid")));
+        assert!(!format!("{:?}", approved.review()).contains("RGSYNTH_archive_"));
+        let remembered = approved.remember().unwrap();
+        s.map_mut().tiles[1].url = "/not-opened/unselected-change.pmtiles".into();
+        let Outcome::NeedsApproval(unselected) = s.review(&scope, &call) else { panic!("still needs review") };
+        assert!(unselected.covered_by(&remembered), "only the executor's selected archive is bound");
+        s.map_mut().tiles[0].url = "https://archive-review.invalid/private.pmtiles?token=RGSYNTH_archive_two".into();
+        let Outcome::NeedsApproval(changed) = s.review(&scope, &call) else { panic!("still needs review") };
+        assert!(!changed.covered_by(&remembered), "redaction must not erase private route identity");
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn permission_review_unchanged_real_archive_reload_and_repair_execute_with_remembered_consent() {
+    let dir = std::env::temp_dir().join(format!("rustgis-review-archive-actions-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let linked = dir.join("linked.pmtiles");
+    let replacement = dir.join("replacement.pmtiles");
+    for path in [&linked, &replacement] {
+        std::fs::write(path, empty_pmtiles([-24.5, 63.3, -13.5, 66.6])).unwrap();
+    }
+    for command in ["map.reloadTiles", "map.repairTiles"] {
+        let mut s = world();
+        s.run("map.addTiles", &json!({"url":linked,"name":"Approved archive","overlay":true})).unwrap();
+        let mut params = json!({"name":"Approved archive"});
+        if command == "map.repairTiles" {
+            params["path"] = json!(replacement);
+        }
+        let call = Call::command(command, params);
+        let scope = Scope::assistant(1466, Arc::new(Live));
+        let Outcome::NeedsApproval(approved) = s.review(&scope, &call) else { panic!("archive action needs review") };
+        assert!(approved.review().details.iter().flat_map(|d| &d.places).any(|p| p.contains("linked.pmtiles")));
+        if command == "map.repairTiles" {
+            assert!(approved.review().details.iter().flat_map(|d| &d.places).any(|p| p.contains("replacement.pmtiles")));
+        }
+        let remembered = approved.remember().unwrap();
+        let Outcome::NeedsApproval(unchanged) = s.review(&scope, &call) else { panic!("still needs review") };
+        assert!(unchanged.covered_by(&remembered));
+        let result = s.run_remembered(scope, &remembered, &call).unwrap();
+        assert_eq!(result["path"], json!(if command == "map.repairTiles" { &replacement } else { &linked }));
+        assert_eq!(s.map().tiles[0].name, "Approved archive");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
 }

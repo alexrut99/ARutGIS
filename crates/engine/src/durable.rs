@@ -23,6 +23,10 @@ pub struct Report {
     pub(crate) not_retained: u32,
     pub(crate) executable_changes: u32,
     pub(crate) reconnect: u32,
+    /// Attribute values written as null: numbers that aren't finite, which JSON can't hold.
+    pub(crate) numbers: u32,
+    /// First affected dataset names; the total count still covers every dataset.
+    pub(crate) number_places: Vec<crate::notice_text::NoticeText>,
 }
 
 impl Report {
@@ -40,6 +44,20 @@ impl Report {
 
     /// One notice for each kind of loss, and none for a clean output.
     pub fn notices(&self) -> Vec<String> {
+        self.notice_texts().into_iter().map(|text| text.english()).collect()
+    }
+
+    /// Publishes counted output losses, retaining new templates for translation in the interface.
+    /// Stored recovery diagnostics and non-interactive callers keep [`Self::notices`] in English.
+    pub fn notify(&self, session: &mut crate::Session) {
+        for text in self.notice_texts() {
+            session.notify_text(text, false);
+        }
+    }
+
+    /// Keeps typed count/name arguments separate from the trusted text of each new notice.
+    fn notice_texts(&self) -> Vec<crate::notice_text::NoticeText> {
+        use crate::notice_text::NoticeText;
         let mut out = Vec::new();
         for (n, text) in [
             (
@@ -60,11 +78,21 @@ impl Report {
             ),
         ] {
             if n > 0 {
-                out.push(format!("{n} {text}"));
+                out.push(format!("{n} {text}").into());
             }
         }
+        if self.numbers > 0 {
+            out.push(NoticeText::format(
+                "{count} attribute value(s) that aren't finite numbers (NaN or infinity) were written as null; affected datasets include {places}",
+                [("count", self.numbers.to_string().into()), ("places", NoticeText::list(self.number_places.clone()))],
+            ));
+        }
         if self.not_remembered {
-            out.push("This output's credential restoration exceeds the memory limit; reopening it will not bring its keys back".into());
+            out.push(
+                "This output's credential restoration exceeds the memory limit; reopening it will not bring its keys back"
+                    .to_string()
+                    .into(),
+            );
         }
         out
     }
@@ -90,6 +118,12 @@ impl Report {
         self.not_retained = self.not_retained.saturating_add(other.not_retained);
         self.executable_changes = self.executable_changes.saturating_add(other.executable_changes);
         self.reconnect = self.reconnect.saturating_add(other.reconnect);
+        self.numbers = self.numbers.saturating_add(other.numbers);
+        for place in &other.number_places {
+            if self.number_places.len() < 3 && !self.number_places.contains(place) {
+                self.number_places.push(place.clone());
+            }
+        }
     }
 }
 
@@ -229,12 +263,13 @@ pub(crate) struct Prepare<'a> {
     pub(crate) report: Report,
     relative_to: Option<&'a str>,
     pub(crate) depth: usize,
+    refusal: Option<String>,
 }
 
 impl<'a> Prepare<'a> {
     /// Makes every replacement and journal allocation before the live borrow is mutated.
     fn new(relative_to: Option<&'a str>, depth: usize) -> Self {
-        Self { owners: Vec::new(), edits: Vec::new(), report: Report::default(), relative_to, depth }
+        Self { owners: Vec::new(), edits: Vec::new(), report: Report::default(), relative_to, depth, refusal: None }
     }
 
     /// Prepares one child under a fixed, typed owning location.
@@ -242,6 +277,60 @@ impl<'a> Prepare<'a> {
         self.owners.push(owner);
         value.prepare(self);
         self.owners.pop();
+    }
+
+    /// Counts the values `dataset` is written without ([`rustgis_data::Dataset::unsaved_numbers`]),
+    /// and refuses the output when a feature has a coordinate that isn't a number: the file would
+    /// hold it as null and couldn't be opened again (#1985). Refused here, before anything is
+    /// written, so a file already there is kept as it was.
+    pub(crate) fn count_numbers(&mut self, dataset: &rustgis_data::Dataset) {
+        let unsaved = dataset.unsaved_coordinates();
+        if unsaved > 0 && self.refusal.is_none() {
+            // The first few by feature id, as the attribute table shows them, so they can be
+            // found: such a feature isn't one without geometry, which a filter would find.
+            let rows: Vec<String> = dataset
+                .features
+                .iter()
+                .filter(|f| f.geometry.as_ref().is_some_and(|g| !g.is_finite()))
+                .take(3)
+                .map(|f| f.id.to_string())
+                .collect();
+            let more = if unsaved > rows.len() { ", …" } else { "" };
+            let word = if unsaved == 1 { "id" } else { "ids" };
+            self.refusal = Some(format!(
+                "not saved: {unsaved} feature(s) in '{}' ({word} {}{more}) have a coordinate that isn't a number (NaN or infinite), which the saved file couldn't hold or be opened again with; delete or redraw their geometry first",
+                crate::project::short_name(&dataset.name),
+                rows.join(", ")
+            ));
+        }
+        self.record_numbers(dataset.unsaved_numbers(), format!("'{}'", crate::project::short_name(&dataset.name)).into());
+    }
+
+    /// Counts saved row and design values. Editable source rows cannot be nulled in output:
+    /// their retained baseline hashes would turn the substitution into a source edit on reopen.
+    fn count_layer_numbers(&mut self, layer: &rustgis_map::Layer) {
+        let count = layer.dataset.unsaved_numbers();
+        if count > 0 && layer.edit_versions().is_some() && self.refusal.is_none() {
+            self.refusal = Some(format!(
+                "project output refused: {count} non-finite attribute value(s) in editable layer '{}' cannot be saved without creating source edits; explicitly clear or replace them first",
+                crate::project::short_name(&layer.name)
+            ));
+        }
+        self.count_numbers(&layer.dataset);
+        let place = crate::notice_text::NoticeText::format(
+            "{name} (design or archived values)",
+            [("name", format!("'{}'", crate::project::short_name(&layer.name)).into())],
+        );
+        self.record_numbers(layer.design.unsaved_numbers(), place);
+    }
+
+    /// Aggregates every value while retaining only a bounded list of affected locations.
+    fn record_numbers(&mut self, count: usize, place: crate::notice_text::NoticeText) {
+        let n = u32::try_from(count).unwrap_or(u32::MAX);
+        self.report.numbers = self.report.numbers.saturating_add(n);
+        if n > 0 && self.report.number_places.len() < 3 && !self.report.number_places.contains(&place) {
+            self.report.number_places.push(place);
+        }
     }
 
     /// Records a single replacement of a whole owning field, never a subfield of an edit.
@@ -289,6 +378,15 @@ impl<'a> Prepare<'a> {
         }
         if let Some(s) = replacement.filter(|s| s != value) {
             self.edit(leaf, Payload::Text(s), kind);
+        }
+    }
+
+    /// Cleans secrets and credentialed addresses inside a saved DuckDB SQL query.
+    pub(crate) fn sql(&mut self, leaf: Leaf, value: &str) {
+        let clean = crate::roles::sql_secrets_removed(value);
+        if clean != value {
+            self.report.addresses = self.report.addresses.saturating_add(1);
+            self.edit(leaf, Payload::Text(clean), Kind::Credential);
         }
     }
 
@@ -348,6 +446,10 @@ impl<'a> Prepare<'a> {
 pub(crate) fn generated_text(source: &str) -> String {
     let public = crate::project::without_recorded_login_bindings(source);
     let source = public.as_deref().unwrap_or(source);
+    // Address scrubbing keeps later prose, but an unknown secret value may run past whitespace.
+    if let Some(strict) = rustgis_data::diagnostics::secret_continuation_cut(source) {
+        return crate::render::rustgis_tiles::logins::scrub(&strict);
+    }
     let (clean, _) = rustgis_data::address::scrub_addresses(source);
     crate::render::rustgis_tiles::logins::scrub(&clean)
 }
@@ -400,6 +502,9 @@ impl<T: Durable> Drop for Transaction<'_, T> {
 fn prepared<'a>(value: &impl Durable, relative_to: Option<&'a str>, depth: usize) -> Result<Prepare<'a>, String> {
     let mut p = Prepare::new(relative_to, depth);
     value.prepare(&mut p);
+    if let Some(reason) = p.refusal.take() {
+        return Err(reason);
+    }
     let mut seen = HashSet::new();
     if p.edits.iter().any(|e| !seen.insert(&e.at)) {
         return Err("internal duplicate output location".into());
@@ -673,7 +778,7 @@ fn public_address_at(address: &str, depth: usize) -> Kept {
 /// A COG address without its look (`…#bands=…`), and the look as written. A reader takes any word
 /// for `dequantize` and `cube`, but a saved look holds only numbers and these keys' own words: any
 /// other, or a key not named here, stays in the address and goes as any other fragment does.
-fn split_look(address: &str) -> (&str, &str) {
+pub(crate) fn split_look(address: &str) -> (&str, &str) {
     let file = crate::render::rustgis_tiles::cog::split(address).0;
     let look = address.get(file.len()..).unwrap_or("");
     let plain = look.split(['#', '&']).filter(|kv| !kv.is_empty()).all(|kv| {
@@ -686,8 +791,8 @@ fn split_look(address: &str) -> (&str, &str) {
 /// Emits preparation losses after the durable projection's journal has restored live fields.
 /// This does not confirm delivery or commit the enclosing command's notices.
 pub(crate) fn notify(s: &mut crate::Session, report: &Report) {
-    for text in report.notices() {
-        s.notify(format!("Prepared output: {text}"), false);
+    for text in report.notice_texts() {
+        s.notify_text(crate::notice_text::NoticeText::format("Prepared output: {message}", [("message", text)]), false);
     }
 }
 
@@ -744,7 +849,14 @@ impl Durable for rustgis_map::Map {
     /// Offers classified whole fields once, before any live mutation.
     fn prepare(&self, p: &mut Prepare<'_>) {
         for s in self.slots() {
-            p.string(Leaf::Map(s.at), s.value, s.address, s.local_path);
+            if matches!(s.at, rustgis_map::SlotPos::Layer { role: rustgis_map::LayerRole::DuckDbSql, .. }) {
+                p.sql(Leaf::Map(s.at), s.value);
+            } else {
+                p.string(Leaf::Map(s.at), s.value, s.address, s.local_path);
+            }
+        }
+        for l in &self.layers {
+            p.count_layer_numbers(l);
         }
     }
 
@@ -762,8 +874,13 @@ impl Durable for rustgis_map::Layer {
     /// Offers classified whole fields once, before any live mutation.
     fn prepare(&self, p: &mut Prepare<'_>) {
         for (role, value, address, path) in self.output_slots() {
-            p.string(Leaf::Layer(role), value, address, path);
+            if role == rustgis_map::LayerRole::DuckDbSql {
+                p.sql(Leaf::Layer(role), value);
+            } else {
+                p.string(Leaf::Layer(role), value, address, path);
+            }
         }
+        p.count_layer_numbers(self);
     }
 
     /// Resolves a prepared location through owned fields, without allocation or policy.

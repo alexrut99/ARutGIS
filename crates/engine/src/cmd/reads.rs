@@ -1,6 +1,8 @@
 //! Reads the desktop app makes on a thread of its own before a command adds what they read
 //! (#1291 step 3): Add Data's whole-file reads (a raster, a raster GDAL converts, a GeoJSON,
-//! delimited text or spreadsheet read whole), Load All Features and native models or scripts. [`read_ahead`]
+//! delimited text or spreadsheet read whole, a ZIP or CityJSON/CityGML model's layers), Repair/Reload Data, Load All
+//! Features, Convert To Annotation's read of a layer read in place, native models or scripts, the
+//! Error Inspector's topology check (#1291), Source File State's hashing of a layer's file and Column Statistics' count of a column. [`read_ahead`]
 //! takes what the read needs of the session, [`ReadAhead::run`] reads on the thread, and [`read_land`]
 //! runs the admitted command under its initiating owner: the command takes
 //! it instead of reading again, so what it adds, says, logs and puts in Undo is the same as when
@@ -42,19 +44,65 @@ pub struct ReadAhead {
     owner: Continuation,
     source: Option<rustgis_map::source::SourceLayer>,
     work: Option<ReadWork>,
+    /// A table write retains its admitted project and table identity across queue waits.
+    table: Option<(u64, u32, u64)>,
+    preview: Option<rustgis_data::Dataset>,
 }
 
 impl ReadAhead {
+    /// The immutable registered invocation retained by this read, for queue presentation only.
+    pub fn command(&self) -> Option<(&'static str, &Value)> {
+        match self.op.op() {
+            CommandOp::Registered { spec, params } => Some((spec.id, params)),
+            _ => None,
+        }
+    }
     /// Whether this command has a read to make before it lands; otherwise landing runs it inline.
     pub fn reads(&self) -> bool {
         self.work.is_some()
+    }
+
+    /// Keeps the rows approved in a UI preview across a queue wait. Ordinary table writes
+    /// still refresh their input when they start.
+    pub fn keep_preview(&mut self, dataset: rustgis_data::Dataset) {
+        self.preview = Some(dataset);
+    }
+
+    /// Refreshes a table write's input immediately before its worker starts, so queued writes
+    /// see earlier writes' output. The admitted operation, owner and table contents identity stay fixed;
+    /// landing still rejects changes made while the worker runs. Other reads keep their input.
+    pub fn refresh_table_input(mut self, s: &Session) -> Result<Self, String> {
+        self.owner.check()?;
+        let CommandOp::Registered { spec, params } = self.op.op() else { return Err("not a registered read command".into()) };
+        if let Some(preview) = &self.preview {
+            let dataset = if let Some(table) = s.named_table(spec, params) {
+                &s.project.table(table).ok_or("no table")?.dataset
+            } else {
+                &s.map().layer(s.layer_id(params)?).ok_or("no layer")?.dataset
+            };
+            if dataset.fields != preview.fields || !dataset.features.shares(&preview.features) {
+                return Err("the data changed after its date preview: choose the format again".into());
+            }
+        }
+        let Some((opened, table, instance)) = self.table else { return Ok(self) };
+        if s.opened != opened
+            || s.named_table(spec, params) != Some(table)
+            || s.project.table(table).is_none_or(|t| t.instance_id() != instance)
+        {
+            return Err("the table changed while the edit was waiting: run the edit again".into());
+        }
+        if self.preview.is_some() {
+            return Ok(self);
+        }
+        self.work = super::edit::table_ahead(s, spec.id, params)?;
+        Ok(self)
     }
 
     /// Reads, blocking until it's done; `control` stops it and counts its progress (see
     /// [`rustgis_analysis::control`]). A read that fails gives its failure to the command, which
     /// says it as it would have; only a cancelled run (or a bug in a reader) is an error here.
     pub fn run(self, control: &std::sync::Arc<rustgis_analysis::control::Control>) -> Result<Read, String> {
-        let ReadAhead { name, op, owner, source, work } = self;
+        let ReadAhead { name, op, owner, source, work, table: _, preview: _ } = self;
         owner.check()?;
         let current = owner.clone();
         let still = std::sync::Arc::new(move || current.check().is_ok());
@@ -82,13 +130,49 @@ pub fn read_ahead(s: &mut Session, command: &str, p: &Value) -> Result<ReadAhead
 }
 
 /// Picks work only for an already admitted command, retaining its exact streamed-source opening.
-pub(crate) fn prepare(s: &Session, op: Authorized<CommandOp>, owner: Continuation) -> Result<ReadAhead, String> {
+pub(crate) fn prepare(s: &mut Session, op: Authorized<CommandOp>, owner: Continuation) -> Result<ReadAhead, String> {
     let CommandOp::Registered { spec, params } = op.op() else { return Err("not a registered read command".into()) };
     let (name, work, source) = match spec.id {
+        "service.layers" => {
+            #[cfg(not(target_arch = "wasm32"))]
+            let work = super::service::listing_ahead(s, params)?;
+            #[cfg(target_arch = "wasm32")]
+            let work = None;
+            ("List Service Layers", work, None)
+        }
+        "service.add" => {
+            #[cfg(not(target_arch = "wasm32"))]
+            let work = super::service::adding_ahead(s, params)?;
+            #[cfg(target_arch = "wasm32")]
+            let work = None;
+            ("Add Service Layer", work, None)
+        }
         "layer.addData" => ("Add Data", super::layer::add_data_ahead(params), None),
         "layer.loadAll" => {
             let layer = s.map().layer(s.layer_id(params)?).ok_or("no such layer")?;
             ("Load All Features", super::layer::load_all_ahead(s, params), layer.source.clone())
+        }
+        "labels.convert" => {
+            let layer = s.map().layer(s.layer_id(params)?).ok_or("no such layer")?;
+            // Nothing to convert: the command says so at once, with no read.
+            let work = super::labels::has_label_text(layer, s.map().scale())
+                .then(|| super::whole::ahead(s, params, "Convert To Annotation"))
+                .flatten();
+            ("Convert To Annotation", work, layer.source.clone())
+        }
+        "layer.repairSource" => {
+            #[cfg(not(target_arch = "wasm32"))]
+            let work = super::repair::repair_ahead(s, params);
+            #[cfg(target_arch = "wasm32")]
+            let work = None;
+            ("Repair Data Source", work, None)
+        }
+        "layer.reloadData" => {
+            #[cfg(not(target_arch = "wasm32"))]
+            let work = super::repair::reload_ahead(s, params);
+            #[cfg(target_arch = "wasm32")]
+            let work = None;
+            ("Reload Data", work, None)
         }
         "model.run" => {
             // A copied session has native authority. Scoped callers keep their admitted
@@ -101,15 +185,30 @@ pub(crate) fn prepare(s: &Session, op: Authorized<CommandOp>, owner: Continuatio
         }
         "script.run" => {
             #[cfg(not(target_arch = "wasm32"))]
-            let work = if owner.native_tool_owner() { super::workflows::script_ahead(s, params) } else { None };
+            let work = super::workflows::script_ahead(s, params, owner.native_tool_owner())?;
             #[cfg(target_arch = "wasm32")]
             let work = None;
             ("Run Script", work, None)
         }
-        _ => return Err("only Add Data, Load All, models and scripts can prepare background work".into()),
+        "map.reloadTiles" | "map.repairTiles" => {
+            #[cfg(not(target_arch = "wasm32"))]
+            let work = Some(super::repair::archive_ahead(s, spec.id, params));
+            #[cfg(target_arch = "wasm32")]
+            let work = None;
+            let name = if spec.id == "map.repairTiles" { "Repair Data Source" } else { "Reload Data" };
+            (name, work, None)
+        }
+        id if super::edit::table_edit_in_background(id).is_some() => ("Edit Table", super::edit::table_ahead(s, spec.id, params)?, None),
+        "topology.validate" => ("Error Inspector", super::design::topology_ahead(s, params), None),
+        "source.syncState" => ("Source File State", super::publish::sync_ahead(s, params), None),
+        "table.statistics" => ("Column Statistics", super::table_stats::stats_ahead(s, params), None),
+        _ => return Err("only Add Data, Load All, Repair/Reload Data, Convert To Annotation, models, scripts, tile archives, service listings, topology, Source File State and Column Statistics prepare background work".into()),
     };
     let name = work.as_ref().map_or(name, |work| work.name);
-    Ok(ReadAhead { name, op, owner, source, work })
+    let table = super::edit::table_edit_in_background(spec.id)
+        .and_then(|_| s.named_table(spec, params))
+        .and_then(|id| s.project.table(id).map(|t| (s.opened, id, t.instance_id())));
+    Ok(ReadAhead { name, op, owner, source, work, table, preview: None })
 }
 
 /// Consumes a completed read under its initiating owner, with ordinary command history and undo.
@@ -117,9 +216,28 @@ pub fn read_land(s: &mut Session, read: Read) -> CmdResult {
     s.finish_read(read)
 }
 
+/// Captures the archive selected now, so a queued UI read cannot retarget an index or name.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn archive_target(s: &Session, p: &Value) -> Option<(usize, rustgis_map::TileLayer)> {
+    let i = super::tiles::find(s, p).ok()??;
+    let tile = s.map().tiles.get(i)?;
+    tile.archive_file()?;
+    Some((i, tile.clone()))
+}
+
 /// `work` as a read for the command to take under `key`.
 pub(crate) fn ahead<T: Send + 'static>(name: &'static str, key: String, work: impl FnOnce() -> T + Send + 'static) -> ReadWork {
     ReadWork { name, key, work: Box::new(move || Box::new(work()) as Box<dyn Any + Send>) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+/// Makes one script line's prepared result available only to its ordinary admitted invocation.
+/// Restore the enclosing read on every path, including a panic raised again for its caller.
+pub(crate) fn taking<T: Send + 'static>(s: &mut Session, key: &str, value: T, run: impl FnOnce(&mut Session) -> CmdResult) -> CmdResult {
+    let previous = s.read_ahead.replace(Ready { key: key.into(), value: Box::new(value) });
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(s)));
+    s.read_ahead = previous;
+    result.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
 }
 
 /// The read placed for `key`, taken: `None` when none was, so the caller reads here.

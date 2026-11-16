@@ -18,7 +18,17 @@ pub struct ExportJob {
     started: exports::Started,
     name: &'static str,
     control: Arc<Control>,
-    slot: crate::Slot<Result<Wrote, String>>,
+    /// What it wrote (or why it failed), and the watched file it wrote into as looked at on its
+    /// thread just before and after.
+    slot: crate::Slot<(Result<Wrote, String>, Option<crate::diskwatch::Write>)>,
+    /// The watched file it writes, if any: what scans see there meanwhile is RustGIS's own write.
+    writes: Option<String>,
+}
+
+/// The watched file the export under way writes into: what scans see there meanwhile is the
+/// export's own work, not another program's.
+pub(crate) fn writing(app: &RustGisApp) -> Option<&str> {
+    app.export_job.as_ref()?.writes.as_deref()
 }
 
 /// Refuses another export while one runs, whichever way it would run (one at a time).
@@ -33,6 +43,10 @@ pub fn idle(app: &RustGisApp) -> Result<(), String> {
 /// time: a second is refused while the first runs.
 pub fn start(app: &mut RustGisApp, command: &'static str, p: Value) -> Result<Value, String> {
     idle(app)?;
+    // Which watched file it writes is known here; the file itself is looked at on its thread,
+    // where a stalled drive holds only the export.
+    let mut write = crate::diskwatch::plan_write(app, command, &p);
+    let writes = write.as_ref().map(|w| w.key().to_string());
     let run = exports::export_start(&mut app.session, command, &p)?;
     let (started, name) = (run.started(), run.name);
     // Cancel stops it.
@@ -45,12 +59,18 @@ pub fn start(app: &mut RustGisApp, command: &'static str, p: Value) -> Result<Va
         .name(name.into())
         .spawn(move || {
             let _diagnostics = diagnostics.enter();
+            if let Some(w) = write.as_mut() {
+                w.observe_before();
+            }
             let wrote = run.run(&ctl);
+            if let Some(w) = write.as_mut() {
+                w.observe_after();
+            }
             // Filled even when its lock is poisoned, or the export would show as running forever.
-            *out.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(wrote);
+            *out.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((wrote, write));
         })
         .map_err(|e| e.to_string())?;
-    app.export_job = Some(ExportJob { started, name, control, slot });
+    app.export_job = Some(ExportJob { started, name, control, slot, writes });
     Ok(json!({"started": name}))
 }
 
@@ -59,12 +79,16 @@ pub fn start(app: &mut RustGisApp, command: &'static str, p: Value) -> Result<Va
 pub fn land(app: &mut RustGisApp) -> bool {
     let Some(job) = &app.export_job else { return false };
     let done = job.slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
-    let Some(done) = done else { return true };
+    let Some((done, write)) = done else { return true };
     let started = job.started.clone();
     app.export_job = None;
     // Its notices (a failure among them) are the command's; the answer was for a script, which
     // waits for its own.
-    let _ = exports::export_land(&mut app.session, started, done);
+    if let Ok(answer) = exports::export_land(&mut app.session, started, done)
+        && let Some(write) = write
+    {
+        crate::diskwatch::wrote(app, write, &answer);
+    }
     false
 }
 
@@ -97,7 +121,6 @@ pub fn status(app: &RustGisApp, ui: &mut Ui, t: &Tokens) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -119,7 +142,7 @@ mod tests {
         app.session.active_layer = app.session.map().layer_by_name("Countries").map(|l| l.id);
         while land(&mut app) {
             assert!(std::time::Instant::now() < end, "the export never landed");
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for background export completion
         }
         assert!(app.export_job.is_none());
         let exported = format!("Exported {}", path.display());
@@ -150,12 +173,59 @@ mod tests {
             let end = std::time::Instant::now() + std::time::Duration::from_secs(120);
             while land(&mut app) {
                 assert!(std::time::Instant::now() < end, "{name} never landed");
-                std::thread::sleep(std::time::Duration::from_millis(5));
+                std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for background export completion
             }
             let exported = format!("Exported {}", path.display());
             assert!(app.session.notices.iter().any(|n| n.text == exported && !n.error), "{:?}", app.session.notices.last());
             assert!(std::fs::metadata(&path).is_ok_and(|m| m.len() > 100), "{file}");
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// View › Scene › Export Orbit opens its dialog with the command's defaults, and the frames it
+    /// asks for are drawn on a thread of their own, the view left where it is.
+    #[test]
+    fn export_orbit_opens_its_dialog_and_draws_on_a_thread() {
+        let mut app = RustGisApp::with_sample();
+        app.run("ui.dialog", json!({"name": "exportOrbit"})).unwrap();
+        assert_eq!(app.dialogs.open, Some("exportOrbit"));
+        assert_eq!([&app.dialogs.a, &app.dialogs.b, &app.dialogs.e], ["60", "360", "50"]);
+        let camera = app.session.map().camera;
+        let dir = std::env::temp_dir().join(format!("rustgis-export-orbit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("orbit.zip");
+        crate::dialogs::PICKED.with(|c| *c.borrow_mut() = Some(path.display().to_string()));
+        // Parameters that aren't an object are refused before the file is picked.
+        for junk in [json!([]), json!(3), json!("orbit")] {
+            assert!(app.run("ui.exportOrbit", junk).unwrap_err().contains("object"));
+        }
+        // So is a number out of its range: the picked file is still there, untaken.
+        for (bad, key) in [
+            (json!({"frames": 5000}), "frames"),
+            (json!({"turn": 0}), "turn"),
+            (json!({"frames": 2000, "width": 4096, "height": 4096}), "million pixels"),
+        ] {
+            assert!(app.run("ui.exportOrbit", bad).unwrap_err().contains(key));
+        }
+        assert!(crate::dialogs::PICKED.with(|c| c.borrow().is_some()));
+        // A picker cancelled answers null (the dialog stays open) and starts nothing.
+        let picked = crate::dialogs::PICKED.with(|c| c.borrow_mut().take());
+        assert_eq!(app.run("ui.exportOrbit", Value::Null).unwrap(), Value::Null);
+        assert!(idle(&app).is_ok());
+        crate::dialogs::PICKED.with(|c| *c.borrow_mut() = picked);
+        let asked = json!({"frames": 3, "turn": 90, "width": 96, "height": 64});
+        assert_eq!(app.run("ui.exportOrbit", asked).unwrap()["started"], "Export Orbit");
+        // A second one is refused while it runs, before its file is picked.
+        assert!(app.run("ui.exportOrbit", Value::Null).unwrap_err().contains("still running"));
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        while land(&mut app) {
+            assert!(std::time::Instant::now() < end, "Export Orbit never landed");
+            std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for background export completion
+        }
+        let exported = format!("Exported {}", path.display());
+        assert!(app.session.notices.iter().any(|n| n.text == exported && !n.error), "{:?}", app.session.notices.last());
+        assert_eq!(rustgis_engine::data::zip::read(&std::fs::read(&path).unwrap()).unwrap().len(), 3);
+        assert_eq!(app.session.map().camera, camera);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -173,7 +243,7 @@ mod tests {
         let end = std::time::Instant::now() + std::time::Duration::from_secs(120);
         while land(&mut app) {
             assert!(std::time::Instant::now() < end, "Export Map never landed");
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: legacy polling for background export completion
         }
         let r = rustgis_engine::data::raster::geotiff::read(std::io::Cursor::new(std::fs::read(&path).unwrap()), "map").unwrap();
         // 400 × 300 points at 192 DPI.

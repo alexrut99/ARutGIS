@@ -11,8 +11,11 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use super::{Batch, FeatureSource, Reproject, Request, SourceInfo, clamp_limit, stride};
-use crate::io::{FeatureSink, Schema, declared_crs, geojson_attrs, geojson_geometry, geojson_has_z, geometry_to_lonlat};
+use super::{Batch, FeatureSource, Reproject, Request, Sampler, SourceInfo, clamp_limit, in_request, stride};
+use crate::io::{
+    FeatureSink, Schema, declared_crs, geojson_attrs, geojson_geometry, geojson_has_z, geometry_to_lonlat, latitude_past_poles,
+    swapped_latitude_note,
+};
 use crate::{DataError, Feature, GeometryType, Result};
 use rustgis_geom::Extent;
 use serde_json::Value as Json;
@@ -59,6 +62,8 @@ struct Scan {
     /// Points, lines and polygons seen.
     kinds: [usize; 3],
     skipped: usize,
+    /// Features, as the file gives them, with a latitude past the poles.
+    swapped: usize,
     /// The places of features whose heights reading drops.
     zm: Vec<u32>,
 }
@@ -90,6 +95,7 @@ impl Scan {
                     self.zm.push(u32::try_from(self.places.len()).unwrap_or(u32::MAX));
                 }
                 let e = g.extent();
+                self.swapped += usize::from(latitude_past_poles(g));
                 self.extent = self.extent.union(&e);
                 if let Some(slot) = self.kinds.get_mut(kind_slot(g.kind())) {
                     *slot += 1;
@@ -183,6 +189,10 @@ impl GeoJsonSource {
                 ));
             }
             failed = pass.failed;
+        } else {
+            // Only coordinates read as they are can be longitude/latitude with the two swapped;
+            // a declared system's features were converted above, and those that don't fit left out.
+            notes.extend(swapped_latitude_note(scan.swapped));
         }
         // The kind most features have, as a layer read whole takes.
         let geometry_type = match scan.kinds.iter().enumerate().max_by_key(|(_, n)| **n) {
@@ -246,18 +256,33 @@ impl FeatureSource for GeoJsonSource {
         self.unreadable + self.failed.len()
     }
 
+    /// Reads a bounded sample; when native bounds are refused, filters geometry before sampling,
+    /// counting records and checking Cancel between them.
     fn read(&self, req: &Request) -> Result<Batch> {
         let limit = clamp_limit(req.limit);
-        // Counted first, then the sample taken: no list of every match.
-        let extent = req.extent.map(|e| self.reproject.extent_from_lonlat(&e));
+        // Counted first, then sampled, unless the native box is refused: no list of every match.
+        let extent = req.extent.and_then(|e| self.reproject.extent_from_lonlat(&e));
+        // Preserve ordinary candidate counts; a refused view needs a geometry scan to count.
+        if limit == 0 && req.extent.is_some() && extent.is_none() {
+            return Err(super::unbounded_count());
+        }
         let matched = self.matches(extent).count();
-        let step = stride(matched as u64, limit).max(1) as usize;
+        // A refused native box needs geometry filtering before sampling, just as an unindexed source does.
+        let late = req.extent.is_some() && extent.is_none();
+        let step = if late { 1 } else { stride(matched as u64, limit).max(1) as usize };
+        let mut sample = Sampler::new(limit);
         let mut f = BufReader::with_capacity(BUFFER, File::open(&self.path)?);
         let mut pos = 0u64;
         let mut buf = Vec::new();
         let mut features = Vec::with_capacity(matched.div_ceil(step).min(limit));
         let mut skipped = 0;
-        for i in self.matches(extent).step_by(step).take(limit) {
+        if late {
+            crate::progress::begin(matched);
+        }
+        for i in self.matches(extent).step_by(step).take(if late { usize::MAX } else { limit }) {
+            if late {
+                crate::progress::step(1)?;
+            }
             let Some(place) = self.places.get(i as usize) else { continue };
             let Some(json) = read_place(&mut f, &mut pos, &mut buf, place) else {
                 skipped += 1;
@@ -278,9 +303,29 @@ impl FeatureSource for GeoJsonSource {
                 },
                 (_, g) => g,
             };
-            features.push(Feature { id: u64::from(i) + 1, geometry, attrs: geojson_attrs(&json, &self.info.fields) });
+            // The boxes are rounded outward to f32, so they can match a feature just outside. A
+            // feature without geometry doesn't match an extent (the boxes leave it out, but there
+            // are none to filter with when the file's system couldn't bound the extent).
+            if geometry.as_ref().map_or(req.extent.is_some(), |g| !in_request(g, req)) {
+                continue;
+            }
+            if late && !sample.wants() {
+                continue;
+            }
+            let feature = Feature { id: u64::from(i) + 1, geometry, attrs: geojson_attrs(&json, &self.info.fields) };
+            if late {
+                sample.keep(feature);
+            } else {
+                features.push(feature);
+            }
         }
-        Ok(Batch { features, matched: matched as u64, complete: step == 1, skipped })
+        let (matched, complete) = if late {
+            features = std::mem::take(&mut sample.items);
+            (sample.seen(), sample.complete())
+        } else {
+            (matched as u64, step == 1)
+        };
+        Ok(Batch { features, matched, complete, skipped, unread_dates: Vec::new(), rounded_dates: Vec::new() })
     }
 }
 

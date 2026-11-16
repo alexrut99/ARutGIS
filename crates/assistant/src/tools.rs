@@ -52,7 +52,7 @@ pub fn defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "run_command",
-            description: "Run a RustGIS command by id with JSON parameters (see search_commands for ids and parameters). Each run is one undo step. Commands that read or write files, use the network or replace the project ask the user first.",
+            description: "Run a RustGIS command by id with JSON parameters (see search_commands for ids and parameters). Project edits are undoable. Source publication and other external file writes cannot be undone. Commands that read or write files, use the network or replace the project ask the user first.",
             schema: json!({
                 "type": "object",
                 "properties": {
@@ -154,6 +154,18 @@ pub fn target(call: &ToolCall) -> Option<(String, Value)> {
     }
 }
 
+/// Whether a successfully executed tool explicitly chose a layer, even if it was already active.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn selects_layer(name: &str, args: &Value) -> bool {
+    match name {
+        "run_command" => args.get("command").and_then(Value::as_str).map(str::trim) == Some("layer.select"),
+        "run" => args.get("script").and_then(Value::as_str).is_some_and(|script| {
+            rustgis_engine::cmd::workflows::script_commands(script).is_ok_and(|lines| lines.iter().any(|(_, id, _)| id == "layer.select"))
+        }),
+        _ => false,
+    }
+}
+
 /// The executor's strict envelope is the only input to engine planning.
 pub fn policy_call(call: &ToolCall) -> Result<Option<Call>, String> {
     let c = match call.name.as_str() {
@@ -230,6 +242,25 @@ pub fn run_with_budget(s: &mut Session, call: &ToolCall, tokens: usize, scope: S
     run_with_budget_inner(s, call, tokens, scope, permit).map_err(|e| public_error(&e))
 }
 
+/// Adapter-owned presentation state for one already-admitted archive command. Execution
+/// authority stays in the engine's ReadAhead/Read, never in this result formatter.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct CommandCompletion {
+    before: Vec<(String, Vec<u32>)>,
+    mark: u64,
+}
+#[cfg(not(target_arch = "wasm32"))]
+impl CommandCompletion {
+    pub(crate) fn capture(s: &Session) -> Self {
+        Self { before: layer_snap(s), mark: s.notice_mark() }
+    }
+    pub(crate) fn finish(self, s: &mut Session, result: Result<Value, String>) -> Result<String, String> {
+        result
+            .map(|value| command_result(s, value, &self.before, self.mark, DEFAULT_OUTPUT_TOKENS))
+            .map_err(|e| public_error(&error_with_notices(e, s, self.mark)))
+    }
+}
+
 /// Retains the initiating scope and one-use permit while assembling ordinary tool results.
 fn run_with_budget_inner(s: &mut Session, call: &ToolCall, tokens: usize, scope: Scope, permit: Option<Permit>) -> Result<String, String> {
     if matches!(call.name.as_str(), "run_command" | "run_tool") {
@@ -279,7 +310,6 @@ fn run_read(s: &mut Session, call: &ToolCall, tokens: usize) -> Result<String, S
         }
         // Fails the way a bug in RustGIS would, for the agent's panic guard.
         #[cfg(test)]
-        #[allow(clippy::panic)]
         "test_panic" => panic!("a test tool panicked"),
         other => return Err(format!("unknown tool '{other}'")),
     };
@@ -300,12 +330,12 @@ const MAX_DEPTH: usize = 16;
 /// to use a connection's login; the model and MCP clients get only the public ones. Active
 /// raw secrets are scrubbed too, including an echo with no wrapper in the result.
 fn public_text(text: String) -> String {
-    rustgis_engine::render::rustgis_tiles::logins::scrub(&text)
+    rustgis_engine::sources::scrub_s3_wrappers(&rustgis_engine::render::rustgis_tiles::logins::scrub(&text))
 }
 
 /// Generated errors may quote arbitrary addresses; successful values remain data.
 fn public_error(text: &str) -> String {
-    rustgis_engine::render::rustgis_tiles::logins::scrub_error(text)
+    rustgis_engine::sources::scrub_s3_wrappers(&rustgis_engine::render::rustgis_tiles::logins::scrub_error(text))
 }
 
 /// Publishes a completed result, reporting withheld subtrees before enforcing the response budget.
@@ -617,6 +647,7 @@ fn words(a: &Value) -> Result<Vec<String>, String> {
     Ok(words)
 }
 
+/// Ranks command descriptions and reports project changes independently of undo snapshots.
 fn search_commands(s: &Session, a: &Value) -> Result<Value, String> {
     let words = words(a)?;
     let limit = limit_arg(a, 12, 40);
@@ -626,12 +657,14 @@ fn search_commands(s: &Session, a: &Value) -> Result<Value, String> {
         .iter()
         // Internal plumbing the model has no use for.
         .filter(|c| !matches!(c.id, "gp.finish" | "info.commands"))
+        // Commands of an extension the user turned off (#1752).
+        .filter(|c| s.extensions().blocks(c.id).is_none())
         .filter_map(|c| {
             let (id, label, loc, params) =
                 (c.id.to_lowercase(), c.label.to_lowercase(), c.location.to_lowercase(), c.params.to_lowercase());
             let sc = score(&words, &[&id, &label, &loc, &params]);
             (sc > 0).then(|| {
-                (sc, json!({"id": c.id, "label": c.label, "location": c.location, "params": c.params, "changesProject": c.mutates}))
+                (sc, json!({"id": c.id, "label": c.label, "location": c.location, "params": c.params, "changesProject": c.changes_project()}))
             })
         })
         .collect();
@@ -766,21 +799,22 @@ fn read_features(s: &Session, a: &Value) -> Result<Value, String> {
             (by, a.get("descending").and_then(Value::as_bool) == Some(true))
         };
         let fi = ds.fields.iter().position(|f| f.name.eq_ignore_ascii_case(&by)).ok_or_else(|| format!("{name} has no field '{by}'"))?;
-        // A total order (a partial one can make `sort_by` panic): numbers, then text, then empty
-        // values.
-        let key = |r: usize| -> (u8, f64, String) {
+        // A total order (a partial one can make `sort_by` panic): numbers and dates (by instant),
+        // then text, then empty values.
+        let key = |r: usize| -> (u8, f64, i64, String) {
             match ds.features.get(r).and_then(|f| f.attrs.get(fi)) {
-                Some(rustgis_engine::data::Value::Null) | None => (2, 0.0, String::new()),
-                Some(v) => match v.as_f64() {
-                    Some(x) => (0, x, String::new()),
-                    None => (1, 0.0, v.to_string().to_lowercase()),
+                Some(rustgis_engine::data::Value::Null) | None => (2, 0.0, 0, String::new()),
+                Some(v) => match (v.as_f64(), v.temporal_key()) {
+                    (Some(x), _) => (0, x, 0, String::new()),
+                    (None, Some(k)) => (0, 0.0, k, String::new()),
+                    (None, None) => (1, 0.0, 0, v.to_string().to_lowercase()),
                 },
             }
         };
-        let mut keyed: Vec<(usize, (u8, f64, String))> = rows.iter().map(|&r| (r, key(r))).collect();
+        let mut keyed: Vec<(usize, (u8, f64, i64, String))> = rows.iter().map(|&r| (r, key(r))).collect();
         // Descending reverses within numbers and within text; empty values stay last.
         keyed.sort_by(|(_, a), (_, b)| {
-            let within = a.1.total_cmp(&b.1).then_with(|| a.2.cmp(&b.2));
+            let within = a.1.total_cmp(&b.1).then(a.2.cmp(&b.2)).then_with(|| a.3.cmp(&b.3));
             a.0.cmp(&b.0).then(if desc { within.reverse() } else { within })
         });
         rows = keyed.into_iter().map(|(r, _)| r).collect();
@@ -809,6 +843,7 @@ fn read_features(s: &Session, a: &Value) -> Result<Value, String> {
                     rustgis_engine::data::Value::Float(x) => json!(x),
                     rustgis_engine::data::Value::Bool(b) => json!(b),
                     rustgis_engine::data::Value::Text(t) => json!(clip(t, 200)),
+                    d @ (rustgis_engine::data::Value::Date(_) | rustgis_engine::data::Value::DateTime(_)) => json!(d.to_string()),
                 };
                 o.insert(field.name.clone(), v);
             }
@@ -904,7 +939,6 @@ pub fn context(s: &Session) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     /// Returned tool and fetch errors are cleaned before active patterns can damage URLs;
     /// successful values and the original call remain outside the generated-error projection.
@@ -1053,6 +1087,17 @@ mod tests {
         }
         let data = public_addresses(json!({"id":"private field"}), 0, &mut Withheld::default());
         assert_eq!(data["[redacted]"], "private field");
+    }
+
+    /// Command discovery distinguishes publishing's project change from a read-only query.
+    #[test]
+    fn publishing_reports_a_project_change_in_command_search() {
+        let s = Session::new(rustgis_engine::Project::default());
+        for (id, changes) in [("source.publish", true), ("source.syncState", false)] {
+            let out = search_commands(&s, &json!({"query":id, "limit":40})).unwrap();
+            let command = out["commands"].as_array().unwrap().iter().find(|c| c["id"] == id).unwrap();
+            assert_eq!(command["changesProject"], changes, "{id}");
+        }
     }
 
     #[test]
