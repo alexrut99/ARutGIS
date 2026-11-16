@@ -143,7 +143,8 @@ pub(crate) fn page_geometry(layout: &Layout, dpi: f64) -> (u32, u32, f64) {
 /// Visible text elements (and legend titles) whose ink crosses the page boundary, or whose
 /// lines the text renderer omits at its box's vertical limit or its 200-line limit. Text is not
 /// clipped horizontally to its element: a line wider than its box alone is not a loss. Dynamic
-/// text uses this page and its first frame, and rotated text is checked after its turn.
+/// text uses this page and its first frame, and rotated text is checked after its turn: its own
+/// and its element's.
 pub fn clipped_text(layout: &Layout, maps: &[Map], dpi: f64, info: &PageInfo) -> Vec<(u32, String)> {
     let (w, h, k) = page_geometry(layout, dpi);
     let ppp = (k / PT_PER_MM) as f32;
@@ -179,6 +180,9 @@ pub fn clipped_text(layout: &Layout, maps: &[Map], dpi: f64, info: &PageInfo) ->
             };
             let px = size.clamp(2.0, 400.0) * 1.33 * ppp;
             let mut cy = r.y() + if title { LEGEND_ROW * ppp / 2.0 } else { px * 0.6 };
+            // As the page draws it: the element's own turn (anticlockwise, a negative angle to
+            // tiny-skia), and a text's on top of it, about the same centre.
+            let rotation = rotation - if e.kind.turns() { e.rotation as f32 } else { 0.0 };
             let turn = Transform::from_rotate_at(rotation, r.x() + r.width() / 2.0, r.y() + r.height() / 2.0);
             // Legend titles are drawn on one line, unlike text elements' explicit line breaks.
             let lines = std::iter::once(s.as_str()).filter(|_| title).chain(s.lines().filter(|_| !title));
@@ -4267,6 +4271,25 @@ mod tests {
         assert!(clipped_text(&l, &[], 96.0, &info).is_empty(), "turned ink fits");
         l.element_mut(id).unwrap().y = 85.0;
         assert_eq!(clipped_text(&l, &[], 96.0, &info).len(), 1, "turned ink is off-page");
+        // The element's own turn counts as the page draws it: alone (clockwise here, its right
+        // end down) it stands the line off the page from where the line fits lying down, and a
+        // text's turn the other way undoes it.
+        let text_turn = |l: &mut Layout, degrees: f64| {
+            if let Some(ElementKind::Text { rotation, .. }) = l.element_mut(id).map(|e| &mut e.kind) {
+                *rotation = degrees;
+            }
+        };
+        text_turn(&mut l, 0.0);
+        l.element_mut(id).unwrap().y = 70.0;
+        assert!(clipped_text(&l, &[], 96.0, &info).is_empty(), "lying down, it fits");
+        l.element_mut(id).unwrap().rotation = -90.0;
+        assert_eq!(clipped_text(&l, &[], 96.0, &info).len(), 1, "the element's turn stands it off the page");
+        text_turn(&mut l, -90.0);
+        assert!(clipped_text(&l, &[], 96.0, &info).is_empty(), "the two turns undo each other");
+        text_turn(&mut l, 0.0);
+        l.element_mut(id).unwrap().y = 40.0;
+        assert!(clipped_text(&l, &[], 96.0, &info).is_empty(), "stood up where there is room");
+        l.element_mut(id).unwrap().rotation = 0.0;
         l.element_mut(id).unwrap().visible = false;
         let frame = l.add(
             "Frame",

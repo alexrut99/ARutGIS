@@ -399,10 +399,12 @@ fn handle_at(app: &RustGisApp, layout: &Layout, page: Rect, s: f32, pos: Pos2) -
     let e = single(app, layout).filter(|e| !e.locked && (e.turned() == 0.0 || !e.kind.turns()))?;
     let r = Rect::from_min_max(to_screen(page, s, (e.x, e.y)), to_screen(page, s, (e.x + e.w, e.y + e.h)));
     let third = r.width().min(r.height()) / 3.0;
-    // A turned text's handles are on its turned box.
-    let reach = HANDLE_PICK.min(if r.contains(screen_turn(pos, r.center(), -e.rotation())) { third } else { third.max(5.0) });
+    // Its handles are on its box as the page draws it: turned by its element's turn and its
+    // text's own together (clockwise on screen), which is none here.
+    let turn = -e.turned();
+    let reach = HANDLE_PICK.min(if r.contains(screen_turn(pos, r.center(), -turn)) { third } else { third.max(5.0) });
     handles(r)
-        .map(|h| screen_turn(h, r.center(), e.rotation()))
+        .map(|h| screen_turn(h, r.center(), turn))
         .iter()
         .enumerate()
         .map(|(i, h)| (i, (h.x - pos.x).abs().max((h.y - pos.y).abs())))
@@ -602,7 +604,7 @@ fn drag_landing(lv: &LayoutView, ui: &Ui, layout: &Layout, s: f32, at: (f64, f64
     };
     let e = layout.element(id)?;
     let d = (at.0 - start.0, at.1 - start.1);
-    if let (Some(hd), true) = (handle, e.rotation() != 0.0) {
+    if let (Some(hd), true) = (handle, e.turned() != 0.0) {
         return Some((id, turned_resize(e, hd, d), None, None));
     }
     let free = lv.no_snap || ui.input(|i| i.modifiers.alt);
@@ -626,7 +628,8 @@ fn drag_landing(lv: &LayoutView, ui: &Ui, layout: &Layout, s: f32, at: (f64, f64
 /// in its own turned frame (unsnapped), then moved so the side the handle doesn't move stays where
 /// it was on the page, though the centre it turns about moved.
 fn turned_resize(e: &Element, h: usize, (dx, dy): (f64, f64)) -> Box4 {
-    let (sin, cos) = e.rotation().to_radians().sin_cos();
+    // (Clockwise on screen: its element's turn and its text's own together.)
+    let (sin, cos) = (-e.turned()).to_radians().sin_cos();
     let local = (dx * cos + dy * sin, -dx * sin + dy * cos);
     let (x, y, w, nh) = resized((e.x, e.y, e.w, e.h), h, local.0, local.1);
     let (mx, my) = (x + w / 2.0 - (e.x + e.w / 2.0), y + nh / 2.0 - (e.y + e.h / 2.0));
@@ -1253,7 +1256,7 @@ fn interact(app: &mut RustGisApp, ui: &mut Ui, resp: &egui::Response, layout: &L
             _ if rotating => ui.ctx().set_cursor_icon(CursorIcon::Grabbing),
             _ if knob => ui.ctx().set_cursor_icon(CursorIcon::Grab),
             (_, Some(h)) => {
-                let rot = app.layout.selected.and_then(|id| layout.element(id)).map_or(0.0, |e| e.rotation());
+                let rot = app.layout.selected.and_then(|id| layout.element(id)).map_or(0.0, |e| -e.turned());
                 ui.ctx().set_cursor_icon(handle_cursor(h, rot))
             }
             (Some(true), _) => ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal),
@@ -3638,6 +3641,21 @@ mod tests {
         let layout = h.state().session.project.layouts[li].clone();
         let right = to_screen(page, s, (140.0, 105.0));
         assert_eq!(handle_at(h.state(), &layout, page, s, right), Some((id, 3)), "upright: its right-hand handle");
+        // A text RustGIS turned (clockwise, by a turn of its own), turned back as far by its
+        // element's, is drawn upright: its handles are on its upright box.
+        let mut layout = layout;
+        let e = layout.element_mut(id).unwrap();
+        e.rotation = 90.0;
+        if let rustgis_engine::map::layout::ElementKind::Text { rotation, .. } = &mut e.kind {
+            *rotation = 90.0;
+        }
+        assert_eq!(e.turned(), 0.0);
+        assert_eq!(handle_at(h.state(), &layout, page, s, right), Some((id, 3)), "drawn upright: its right-hand handle");
+        assert_eq!(
+            handle_at(h.state(), &layout, page, s, to_screen(page, s, (100.0, 145.0))),
+            None,
+            "none where its own turn alone would put one"
+        );
     }
 
     /// Navigating map frames, a selected text on a map frame keeps its handles, where they stick
