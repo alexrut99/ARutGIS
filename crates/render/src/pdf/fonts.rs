@@ -105,7 +105,6 @@ impl Fonts {
     /// rest of its line is and the text reads in order. With `real`, a face embedded as itself
     /// sets the glyph as its own: only for a run of glyphs each alone on the baseline standing
     /// for its one character, which is all an embedded face's codes can say.
-    #[allow(clippy::too_many_arguments)]
     pub fn place(
         &mut self,
         doc: &mut Doc,

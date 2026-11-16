@@ -37463,7 +37463,8 @@ fn map_frames_leave_layers_out() {
             _ => panic!("a legend"),
         };
         let all = s.project.layouts[0].legend_exclude(frame, &own).into_owned();
-        crate::render::layout::legend_sizes_mm(s.map_mut(), 1e8, true, false, (&all, &Default::default()), &Default::default()).unwrap()[0].1
+        crate::render::layout::legend_sizes_mm(s.map_mut(), 1e8, true, false, (&all, &Default::default()), &Default::default()).unwrap()[0]
+            .1
     };
     let short = listed(&mut s);
     // Renaming a layer keeps it left out; removing it drops it, so a later one of its name draws.

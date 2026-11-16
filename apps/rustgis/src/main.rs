@@ -251,7 +251,7 @@ mod running {
         pub why: String,
         /// Another copy holds it, as opposed to a settings folder that can't be written.
         // (ARutGIS's own updater doesn't ask; kept for RustGIS's start-up checks and tests.)
-        #[allow(dead_code)]
+        #[cfg_attr(not(test), expect(dead_code, reason = "ARutGIS's updater doesn't ask; read by the tests"))]
         pub other_copy: bool,
     }
 

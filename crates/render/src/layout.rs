@@ -697,7 +697,6 @@ impl Drop for Without<'_> {
 /// `grid` (and whether the layout writes a decimal comma) drawn on it under the attribution.
 /// `pending` is set when some of its tiles, or a read of its streamed layers or rasters, were
 /// still on their way (in the browser, which doesn't wait for them).
-#[allow(clippy::too_many_arguments)]
 fn frame_canvas(
     map: &mut Map,
     exclude: &[String],
@@ -1566,7 +1565,6 @@ impl GridInk {
     /// The pieces `runs` beside `edge`, `gap` pixels from its line at `line` (inside the frame
     /// when `inward`), centred on `at` along it, turned when `turned`.
     /// Gives the label's box as drawn: left, top, right, bottom, in pixels.
-    #[allow(clippy::too_many_arguments)]
     fn draw_at(
         &self,
         pm: &mut Canvas,
@@ -2042,7 +2040,6 @@ fn label_face(t: &LabelText) -> text::Face {
 
 /// One line of `s` in `face` at `px`, its middle at `cy`: centred on `x`, or starting at it
 /// (`centred` false). Returns how wide its ink is.
-#[allow(clippy::too_many_arguments)]
 fn label_at(pm: &mut Canvas, s: &str, x: f32, cy: f32, px: f32, color: Rgba, face: text::Face, centred: bool) -> f32 {
     let (lo, hi) = text::styled_extent(s, px, face, 0.0);
     let left = if centred { x - (lo + hi) / 2.0 } else { x - lo };
@@ -2801,7 +2798,6 @@ fn plain_type(t: &LabelText) -> bool {
 }
 
 /// A legend's text `s` in type `t` at `pt` points, starting at `x`, its middle at `cy`.
-#[allow(clippy::too_many_arguments)]
 fn legend_text(pm: &mut Canvas, s: &str, x: f32, cy: f32, pt: f32, t: &LabelText, ppp: f32) {
     let color = t.color.unwrap_or(LEGEND_TEXT);
     if plain_type(t) {
@@ -3229,7 +3225,6 @@ pub enum LegendPiece {
 /// that fit), for turning it into graphics: the classes a frame shows at the renderer's scale
 /// denominator `scale` (as [`legend_sizes_mm`] reads them), or every class with `all_classes`.
 /// `None` when a complete source can't be read.
-#[allow(clippy::too_many_arguments)]
 pub fn legend_pieces_mm(
     map: &mut Map,
     scale: f64,
@@ -3364,7 +3359,6 @@ pub fn legend_sizes_mm(
 }
 
 /// Sizes of an optional no-data legend, using the same rows and filters as the drawing.
-#[allow(clippy::too_many_arguments)]
 pub fn legend_sizes_with_no_data_mm(
     map: &mut Map,
     scale: f64,

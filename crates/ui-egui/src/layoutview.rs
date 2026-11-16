@@ -1589,7 +1589,6 @@ fn swatch(ctx: &egui::Context, code: &str, arrow: bool, (w, h): (f32, f32)) -> e
 /// The type of a north arrow's letter or a scale bar's numbers (its options `textSize`,
 /// `textColor`, `bold`…), or, with `wrap`, of a legend's title, layer names or labels (an object
 /// of `size`, `color`, `bold`… under that option).
-#[allow(clippy::too_many_arguments)]
 fn label_type(
     app: &mut RustGisApp,
     ui: &mut Ui,
