@@ -81,7 +81,8 @@ jobs:
           REF: ${{ inputs.ref || github.ref_name }}
         run: |
           set -euo pipefail
-          workflows="release.yml mobile.yml"
+          # (ARutGIS has no Mobile release workflow: it needs signing keys ARutGIS doesn't have.)
+          workflows="release.yml"
 
           # Record the newest existing run id per workflow first. `gh workflow
           # run` returns nothing identifying, so each new run is found by

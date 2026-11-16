@@ -26,8 +26,9 @@ Google Play for Android and on the App Store for iPhone and iPad:
 
 </div>
 
-Releases from v0.7.0 on also carry signed Android APKs (below), for a device without Google
-Play.
+These are RustGIS's apps, as are the signed Android APKs its
+[releases](https://github.com/opengeos/RustGIS/releases/latest) carry from v0.7.0 on, for a device
+without Google Play. ARutGIS's releases don't include phone apps yet.
 
 ## Download
 
@@ -47,7 +48,6 @@ builds of the desktop app and `rustgis-cli`. The same files, grouped by platform
 | Linux x64 / arm64 (Fedora, RHEL, openSUSE) | `rustgis-<version>-1.x86_64.rpm` / `rustgis-<version>-1.aarch64.rpm` |
 | Linux x64 / arm64 (any distribution, no install) | `ARutGIS-<version>-linux-x86_64.AppImage` / `ARutGIS-<version>-linux-aarch64.AppImage` |
 | Linux x64 / arm64 (other) | `ARutGIS-<version>-linux-x86_64.tar.gz` / `ARutGIS-<version>-linux-aarch64.tar.gz` |
-| Android arm64 / x86_64 (phones, tablets and emulators; see [Field Work](user-guide/field-work.md)) | `RustGIS-<version>-android-arm64.apk` / `RustGIS-<version>-android-x86_64.apk` |
 
 On macOS the command-line tool is a separate `rustgis-cli-<version>-macos-<arch>.tar.gz`;
 the other packages include it (the Windows installers and the MSIX add `rustgis-cli` to every
@@ -150,7 +150,7 @@ RUSTGIS_DATA_DIR=/path/to/data cargo build --release
 | Linux (X11 and Wayland) | Supported |
 | macOS | Supported |
 | Windows | Supported |
-| Android | The [field app](user-guide/field-work.md) from [Google Play](https://play.google.com/store/apps/details?id=org.rustgis.mobile), or the signed APKs with each release from v0.7.0 on |
+| Android | The [field app](user-guide/field-work.md) from [Google Play](https://play.google.com/store/apps/details?id=org.rustgis.mobile), or the signed APKs with each RustGIS release from v0.7.0 on (RustGIS's app: ARutGIS's releases don't include one yet) |
 | iOS and iPadOS | The [field app](user-guide/field-work.md) from the [App Store](https://apps.apple.com/app/rustgis/id6834987896) |
 | Web browser | Supported: [web.rustgis.app](https://web.rustgis.app) (WebGPU or WebGL2), installable as an app on iOS, Android and desktops ([how](#install-the-web-app)) |
 

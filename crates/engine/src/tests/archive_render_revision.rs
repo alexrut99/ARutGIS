@@ -148,6 +148,7 @@ fn page(map: &Map) -> map::layout::Layout {
             extent_width: 1.0,
             bearing: 0.0,
             pitch: 0.0,
+            exclude: Vec::new(),
         },
     );
     page

@@ -19,8 +19,6 @@
 <p align="center">
   <a href="https://alexrut99.github.io/ARutGIS/?lang=th"><img alt="เปิด ARutGIS บนเว็บ" src="https://img.shields.io/badge/%E0%B9%80%E0%B8%9B%E0%B8%B4%E0%B8%94%E0%B8%9A%E0%B8%99%E0%B9%80%E0%B8%A7%E0%B9%87%E0%B8%9A-ARutGIS-2563eb?style=for-the-badge" height="36"></a>
   <a href="https://github.com/alexrut99/ARutGIS/releases/latest"><img alt="ดาวน์โหลด ARutGIS" src="https://img.shields.io/badge/%E0%B8%94%E0%B8%B2%E0%B8%A7%E0%B8%99%E0%B9%8C%E0%B9%82%E0%B8%AB%E0%B8%A5%E0%B8%94-ARutGIS-0b1220?style=for-the-badge" height="36"></a>
-  <a href="https://play.google.com/store/apps/details?id=org.rustgis.mobile"><img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="53"></a>
-  <a href="https://apps.apple.com/app/rustgis/id6834987896"><img alt="Download on the App Store" src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" height="36"></a>
 </p>
 
 ## ARutGIS และที่มา
@@ -169,8 +167,8 @@ The [user guide](https://rustgis.app/user-guide/) covers each area in detail,
   installs it in one click and keeps it up to date.
 - **Phones and tablets**: get the field app from [Google Play](https://play.google.com/store/apps/details?id=org.rustgis.mobile) on
   Android or the [App Store](https://apps.apple.com/app/rustgis/id6834987896) on iPhone and iPad (see
-  [Field Work](docs/user-guide/field-work.md)); releases from v0.7.0 on also carry signed Android
-  APKs.
+  [Field Work](docs/user-guide/field-work.md)); RustGIS's releases from v0.7.0 on also carry
+  signed Android APKs. These are RustGIS's apps: ARutGIS's releases don't include phone apps yet.
 - **Package managers**: `winget install OpenGeos.RustGIS`,
   `brew install --cask rustgis` (macOS and Linux), `yay -S rustgis-bin` (AUR), or
   `sudo dnf copr enable giswqs/rustgis && sudo dnf install rustgis` (Fedora).

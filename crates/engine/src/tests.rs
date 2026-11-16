@@ -10543,7 +10543,7 @@ fn a_publication_lists_a_land_covers_classes_instead_of_a_colorbar() {
     assert!(legend >= (12.0 / columns).floor() * row - 1e-6, "{legend} mm in {columns}: {r}");
     assert!(!r["warnings"].to_string().contains("more than fits"), "{r}");
     let map = s.map_mut();
-    let sizes = crate::render::layout::legend_sizes_mm(map, 1e6, false, false, (&[], &Default::default())).unwrap();
+    let sizes = crate::render::layout::legend_sizes_mm(map, 1e6, false, false, (&[], &Default::default()), &Default::default()).unwrap();
     assert!((sizes[0].1 - 12.0 * row).abs() < 1e-6, "{sizes:?}");
     // A stretched raster under it: its colorbar stays, and the classes too.
     {
@@ -10665,7 +10665,7 @@ fn a_publication_keys_the_raster_under_an_rgb_and_says_an_unlisted_colour_table(
         Some(ElementKind::Colorbar { frame, layer, .. }) => match l.element(*frame).map(|f| &f.kind) {
             Some(ElementKind::MapFrame { map, .. }) => {
                 let m = s.project.maps.iter().find(|m| m.name.eq_ignore_ascii_case(map)).unwrap();
-                rustgis_map::layout::colorbar_layer(m, layer.as_deref()).map(|l| l.name.clone())
+                rustgis_map::layout::colorbar_layer(m, layer.as_deref(), &[]).map(|l| l.name.clone())
             }
             _ => panic!("no frame"),
         },
@@ -32735,7 +32735,7 @@ fn layout_elements_align_distribute_and_size_alike() {
         s.project.layouts[li].add(
             "Box",
             (x, y, w, h),
-            ElementKind::Rectangle { fill: Rgba::rgb(255, 255, 255), outline: Rgba::rgb(0, 0, 0), width: 1.0, radius: 0.0 },
+            ElementKind::Rectangle { fill: Rgba::rgb(255, 255, 255), outline: Rgba::rgb(0, 0, 0), width: 1.0, radius: 0.0, dash: None },
         )
     };
     let a = add(&mut s, 10.0, 10.0, 20.0, 10.0);
@@ -37143,15 +37143,16 @@ fn lines_and_outlines_take_a_dash() {
     assert_eq!(dash(&s, arrow), Some(vec![4.0, 2.0]));
 }
 
-/// Text elements turn by `rotation` (#1763): in degrees clockwise, kept within -180 to 180, not
-/// written when 0; a value that isn't a number is refused and changes nothing, as is a turn for an
-/// element that isn't a text.
+/// Elements turn by `rotation`: in degrees anticlockwise about their centre, kept within -180 to
+/// 180, not written when 0; a value that isn't a number is refused and changes nothing, as is a
+/// turn for a line, which has its angle. (RustGIS turns only a text, clockwise, by a `rotation`
+/// kept on the text, #1763: ARutGIS reads that from a layout RustGIS saved, and its own
+/// `rotation` is the element's, which turns every kind.)
 #[test]
 fn text_elements_take_a_rotation() {
-    use rustgis_map::layout::Element;
     let mut s = Session::new(sample::world_project());
     s.run("layout.new", &json!({"name": "Turned"})).unwrap();
-    let turn = |s: &Session, id: u32| s.project.layouts[0].element(id).map(Element::rotation).unwrap();
+    let turn = |s: &Session, id: u32| s.project.layouts[0].element(id).map(|e| e.rotation).unwrap();
     let add = |s: &mut Session, p: Value| s.run("layout.addElement", &p).unwrap()["element"].as_u64().unwrap() as u32;
     let plain = add(&mut s, json!({"kind": "text", "text": "Brasil"}));
     assert_eq!(turn(&s, plain), 0.0);
@@ -37165,7 +37166,10 @@ fn text_elements_take_a_rotation() {
     s.run("layout.update", &json!({"element": plain, "rotation": -270})).unwrap();
     assert_eq!(turn(&s, plain), 90.0);
     let back: rustgis_map::layout::Layout = serde_json::from_str(&serde_json::to_string(&s.project.layouts[0]).unwrap()).unwrap();
-    assert_eq!(back.element(source).map(Element::rotation), Some(-90.0));
+    assert_eq!(back.element(source).map(|e| e.rotation), Some(-90.0));
+    // The turn is the element's: the text's own stays 0, and the two together are the element's.
+    let e = s.project.layouts[0].element(source).unwrap();
+    assert_eq!((e.rotation(), e.turned()), (0.0, -90.0));
     // Not a number: refused, said, and nothing changes.
     let err = s.run("layout.update", &json!({"element": plain, "rotation": "x", "text": "Changed"})).unwrap_err();
     assert!(err.contains("rotation"), "{err}");
@@ -37174,13 +37178,20 @@ fn text_elements_take_a_rotation() {
         matches!(&s.project.layouts[0].element(plain).unwrap().kind, rustgis_map::layout::ElementKind::Text { text, .. } if text == "Brasil")
     );
     assert!(s.run("layout.addElement", &json!({"kind": "text", "rotation": [90]})).unwrap_err().contains("rotation"));
-    // Only a text turns.
-    let rect = add(&mut s, json!({"kind": "rectangle", "x": 10, "y": 10, "w": 20, "h": 20}));
-    assert!(s.run("layout.update", &json!({"element": rect, "rotation": 45})).unwrap_err().contains("rotation"));
-    assert!(s.run("layout.addElement", &json!({"kind": "rectangle", "rotation": 45})).unwrap_err().contains("rotation"));
+    // Every kind turns, but a line, which has its angle.
+    let rect = add(&mut s, json!({"kind": "rectangle", "x": 10, "y": 10, "w": 20, "h": 20, "rotation": 30}));
+    assert_eq!(turn(&s, rect), 30.0);
+    s.run("layout.update", &json!({"element": rect, "rotation": 45})).unwrap();
+    assert_eq!(turn(&s, rect), 45.0);
+    assert!(s.run("layout.addElement", &json!({"kind": "line", "rotation": 45})).unwrap_err().contains("rotation"));
     // null leaves it as it is.
     s.run("layout.update", &json!({"element": plain, "rotation": null})).unwrap();
     assert_eq!(turn(&s, plain), 90.0);
+    // A text RustGIS turned (clockwise, on the text) is drawn and hit turned as much.
+    let saved = serde_json::to_string(&s.project.layouts[0]).unwrap().replace(r#""text":"Brasil""#, r#""text":"Brasil","rotation":30"#);
+    let read: rustgis_map::layout::Layout = serde_json::from_str(&saved).unwrap();
+    let e = read.element(plain).unwrap();
+    assert_eq!((e.rotation, e.rotation(), e.turned()), (90.0, 30.0, 60.0));
 }
 
 /// Text elements take a font family (#517): sans by default and not written then, serif when
@@ -37407,7 +37418,8 @@ fn undo_back_to_the_saved_state_leaves_nothing_unsaved() {
 
 /// A map frame can leave layers of its map out (a locator without the map's detail): checked
 /// against the map it shows, following a renamed or removed layer, left out of its legend too,
-/// and saved as a format an older RustGIS refuses only while a frame leaves something out.
+/// and saved as requiring `frame-layers`, which a reader that doesn't know it refuses, only while
+/// a frame leaves something out.
 #[test]
 fn map_frames_leave_layers_out() {
     let mut s = Session::new(sample::world_project());
@@ -37418,8 +37430,13 @@ fn map_frames_leave_layers_out() {
         let (text, _) = s.project.saved_text(None).unwrap();
         (serde_json::from_str::<Value>(&text).unwrap()["format"].as_u64().unwrap(), text)
     };
+    // Whether the project written says a reader must know of frames that leave layers out.
+    let requires = |s: &mut Session| {
+        let saved: Value = serde_json::from_str(&written(s).1).unwrap();
+        saved["requires"].as_array().is_some_and(|r| r.iter().any(|c| c == "frame-layers"))
+    };
     assert!(left_out(&s).is_empty());
-    assert_eq!((s.project.format_written(), written(&mut s).0), (1, 1), "nothing an older reader would lose");
+    assert!(!requires(&mut s), "nothing a reader that doesn't know of it would lose");
     // Names as the map spells them, once each.
     s.run("layout.update", &json!({"element": frame, "exclude": ["rivers", "RIVERS", "Cities"]})).unwrap();
     assert_eq!(left_out(&s), ["Rivers", "Cities"]);
@@ -37430,10 +37447,11 @@ fn map_frames_leave_layers_out() {
     let many = vec!["Countries"; rustgis_map::layout::MAX_FRAME_EXCLUDED + 1];
     assert!(s.run("layout.update", &json!({"element": frame, "exclude": many})).unwrap_err().contains("a map frame leaves out at most"));
     assert_eq!(left_out(&s), ["Rivers", "Cities"]);
-    // The project is now of the format an older RustGIS refuses, and reads back whole.
+    // The project now requires what a reader that doesn't know of it refuses, and reads back whole.
+    assert!(requires(&mut s));
+    assert!(crate::project::CAPABILITIES.contains(&"frame-layers"), "this version reads what it writes");
     let (format, text) = written(&mut s);
-    assert_eq!((s.project.format_written(), format), (2, 2));
-    assert_eq!(u32::try_from(format).unwrap(), crate::project::FORMAT, "the newest this version reads");
+    assert_eq!(u32::try_from(format).unwrap(), crate::project::FORMAT);
     let back = crate::Project::from_json(&text).unwrap();
     assert_eq!(back.layouts[0].frame_exclude(frame), ["Rivers", "Cities"]);
     // The frame's legend lists what the frame draws: its sizes are those without the layers.
@@ -37445,7 +37463,7 @@ fn map_frames_leave_layers_out() {
             _ => panic!("a legend"),
         };
         let all = s.project.layouts[0].legend_exclude(frame, &own).into_owned();
-        crate::render::layout::legend_sizes_mm(s.map_mut(), 1e8, true, false, &all, &Default::default()).unwrap()[0].1
+        crate::render::layout::legend_sizes_mm(s.map_mut(), 1e8, true, false, (&all, &Default::default()), &Default::default()).unwrap()[0].1
     };
     let short = listed(&mut s);
     // Renaming a layer keeps it left out; removing it drops it, so a later one of its name draws.
@@ -37491,7 +37509,7 @@ fn map_frames_leave_layers_out() {
     // RustGIS reads them.
     s.run("layout.update", &json!({"layout": 0, "element": frame, "exclude": []})).unwrap();
     assert!(left_out(&s).is_empty());
-    assert_eq!((s.project.format_written(), written(&mut s).0), (1, 1));
+    assert!(!requires(&mut s));
     s.run("layout.save", &json!({"layout": 0, "path": file.display().to_string()})).unwrap();
     assert!(!std::fs::read_to_string(&file).unwrap().contains("\"format\""));
     s.run("map.activate", &json!({"name": "World"})).unwrap();
