@@ -403,6 +403,10 @@ fn draw_help(ui: &mut Ui, item: &Item, ds: Option<&Dataset>, width: f32) {
     };
     ui.vertical(|ui| {
         ui.set_max_width(width);
+        // Down as far as the list's items are inside their frames, so the first lines line up: a
+        // Thai field name's tone marks over its vowels (`พื้นที่`) rise above the line, and at the
+        // top of the list they were cut off.
+        ui.add_space(ui.spacing().button_padding.y);
         match item {
             Item::Function(f) => {
                 code(ui, f.signature);
@@ -458,7 +462,7 @@ fn accept(ui: &Ui, id: Id, text: &mut String, offer: &Offer, item: &str) -> Opti
 /// a name or variable (`po▮p`), or of a quoted name with its closing quote (`"Po▮p Est"`; a
 /// doubled `"` is one inside the name). None of an unclosed quoted name: what follows is left.
 fn word_rest(rest: &[char], quote: Option<char>) -> usize {
-    let Some(q) = quote else { return rest.iter().take_while(|c| c.is_alphanumeric() || **c == '_').count() };
+    let Some(q) = quote else { return rest.iter().take_while(|c| query::is_name_char(**c)).count() };
     let mut i = 0;
     while let Some(&c) = rest.get(i) {
         if c == q && q == '"' && rest.get(i + 1) == Some(&'"') {
@@ -779,9 +783,18 @@ mod tests {
     /// what's expected (after).
     #[test]
     fn accepting_writes_the_item_as_the_expression_needs_it() {
-        let ds =
-            Dataset::new("t", GeometryType::Point, vec![Field::new("Pop Est", FieldType::Integer), Field::new("Area!", FieldType::Double)]);
+        let ds = Dataset::new(
+            "t",
+            GeometryType::Point,
+            vec![
+                Field::new("Pop Est", FieldType::Integer),
+                Field::new("Area!", FieldType::Double),
+                Field::new("พื้นที่_ตร_กม", FieldType::Double),
+            ],
+        );
         for (text, item, want) in [
+            // A Thai name's tone marks (`้`, `่`) aren't letters: the whole name is still replaced.
+            ("พื้▮นที่_ตร > 1", "พื้นที่_ตร_กม", "พื้นที่_ตร_กม▮ > 1"),
             ("Pop▮", "\"Pop Est\"", "\"Pop Est\"▮"),
             ("\"Pop▮\" > 1", "\"Pop Est\"", "\"Pop Est\"▮ > 1"),
             ("!Pop▮", "\"Pop Est\"", "!Pop Est!▮"),

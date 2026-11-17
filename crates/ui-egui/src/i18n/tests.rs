@@ -407,3 +407,18 @@ fn context_lookup_fallback_macros_and_formatted_values() {
     set_current(previous);
     result.unwrap();
 }
+
+#[test]
+fn the_expression_help_is_thai() {
+    // The Calculate Field and query boxes' suggestions show what each function, variable and
+    // keyword does: text from the engine's tables, which no `tl!` literal holds for the catalog
+    // check to find.
+    use rustgis_engine::data::query::{Func, Kw, VARS};
+    let mut keys: Vec<&str> = Func::ALL.iter().map(|f| f.spec().description).collect();
+    keys.extend(VARS.iter().map(|v| v.description));
+    keys.extend(Kw::ALL.iter().map(|k| k.description()));
+    let th = LANGUAGES.iter().find(|l| l.code == "th").expect("Thai");
+    let (catalog, _) = parse(th.source);
+    let missing: Vec<&str> = keys.iter().copied().filter(|k| catalog.get(*k).is_none_or(|t| t == k)).collect();
+    assert!(missing.is_empty(), "{} without Thai:\n{}", missing.len(), missing.join("\n"));
+}

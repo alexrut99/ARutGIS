@@ -5277,3 +5277,59 @@ Your settings couldn't be read ({error}), so RustGIS is using its defaults.	อ�
 Your settings couldn't be read, so RustGIS started new ones. The old settings file was kept as {path}.	อ่านการตั้งค่าของคุณไม่ได้ ARutGIS จึงเริ่มการตั้งค่าใหม่ ไฟล์การตั้งค่าเดิมเก็บไว้ที่ {path}
 The desktop interface is on until RustGIS is started again.	หน้าจอแบบเดสก์ท็อปจะเปิดอยู่จนกว่าจะเริ่ม ARutGIS ใหม่
 Projects and JSON data (RustGIS, GeoLibre)	โปรเจกต์และข้อมูล JSON (ARutGIS, GeoLibre)
+a when the condition is true, otherwise b (or null)	a เมื่อเงื่อนไขเป็นจริง มิฉะนั้นเป็น b (หรือ null)
+The first value that isn't null	ค่าแรกที่ไม่ใช่ null
+Null when a equals b, otherwise a	null เมื่อ a เท่ากับ b มิฉะนั้นเป็น a
+Absolute value	ค่าสัมบูรณ์
+Rounded half away from zero to places decimals (0 by default; negative rounds to tens, hundreds…)	ปัดเศษให้เหลือทศนิยม places ตำแหน่ง ค่าครึ่งปัดออกจากศูนย์ (ค่าเริ่มต้น 0; ค่าลบปัดเป็นหลักสิบ หลักร้อย…)
+Rounded down	ปัดลง
+Rounded up	ปัดขึ้น
+Square root	รากที่สอง
+e to the power x	e ยกกำลัง x
+Natural logarithm	ลอการิทึมธรรมชาติ
+Base-10 logarithm	ลอการิทึมฐาน 10
+π	ค่าพาย π
+The smallest number; values that aren't numbers are skipped	จำนวนที่น้อยที่สุด ข้ามค่าที่ไม่ใช่ตัวเลข
+The largest number; values that aren't numbers are skipped	จำนวนที่มากที่สุด ข้ามค่าที่ไม่ใช่ตัวเลข
+x kept within low…high; null when low is above high	x ที่จำกัดให้อยู่ในช่วง low…high; เป็น null เมื่อ low มากกว่า high
+x mapped from the domain d0…d1 to the range r0…r1, clamped to the domain	x ที่แปลงจากช่วงต้นทาง d0…d1 ไปเป็นช่วงปลายทาง r0…r1 โดยจำกัดให้อยู่ในช่วงต้นทาง
+As scale_linear, along a curve: 0.5 grows fast then slowly, 2 slowly then fast	เหมือน scale_linear แต่ตามเส้นโค้ง: exponent 0.5 เพิ่มเร็วแล้วช้าลง, 2 เพิ่มช้าแล้วเร็วขึ้น
+x as text	x ในรูปข้อความ
+x as a whole number (cut toward zero); null if it isn't a number	x เป็นจำนวนเต็ม (ตัดเศษทิ้งเข้าหาศูนย์); เป็น null ถ้าไม่ใช่ตัวเลข
+x as a decimal number; null if it isn't a number	x เป็นจำนวนทศนิยม; เป็น null ถ้าไม่ใช่ตัวเลข
+Number of characters	จำนวนอักขระ
+Upper case	ตัวพิมพ์ใหญ่
+Lower case	ตัวพิมพ์เล็ก
+Without surrounding spaces	ตัดช่องว่างหัวท้ายออก
+Part of s from character start (1 is the first; negative counts from the end); a negative length leaves that many characters off the end	ส่วนหนึ่งของ s เริ่มจากอักขระที่ start (1 คือตัวแรก; ค่าลบนับจากท้าย); length ที่เป็นค่าลบจะตัดอักขระท้ายออกตามจำนวนนั้น
+The first n characters	n อักขระแรก
+The last n characters	n อักขระสุดท้าย
+Every find in s replaced by with	แทนที่ find ทุกตัวใน s ด้วย with
+The values joined as text, nulls skipped	นำค่ามาต่อกันเป็นข้อความ ข้ามค่า null
+A colour as the text 'r,g,b', each channel 0–255	สีในรูปข้อความ 'r,g,b' แต่ละช่องสี 0–255
+A colour as the text 'r,g,b,a', each channel 0–255	สีในรูปข้อความ 'r,g,b,a' แต่ละช่องสี 0–255
+A polygon's area, in square metres or the unit given	พื้นที่ของรูปหลายเหลี่ยม เป็นตารางเมตรหรือหน่วยที่ระบุ
+The length of a polygon's rings, in metres or the unit given	ความยาวเส้นรอบรูปหลายเหลี่ยม เป็นเมตรหรือหน่วยที่ระบุ
+A line's length, in metres or the unit given	ความยาวของเส้น เป็นเมตรหรือหน่วยที่ระบุ
+The scale denominator of the map being drawn; null in queries and Calculate Field	ตัวหารมาตราส่วนของแผนที่ที่กำลังวาด; เป็น null ในคิวรีและการคำนวณฟิลด์
+The feature's position in the layer, from 1	ลำดับของฟีเจอร์ในชั้นข้อมูล เริ่มจาก 1
+The feature's id	รหัส (id) ของฟีเจอร์
+A polygon's area in square metres (holes subtract)	พื้นที่ของรูปหลายเหลี่ยมเป็นตารางเมตร (หักรูภายในออก)
+The length of a polygon's rings in metres	ความยาวเส้นรอบรูปหลายเหลี่ยมเป็นเมตร
+A line's length in metres	ความยาวของเส้นเป็นเมตร
+True when both sides are true	เป็นจริงเมื่อทั้งสองข้างเป็นจริง
+True when either side is true	เป็นจริงเมื่อข้างใดข้างหนึ่งเป็นจริง
+The opposite of a condition; also NOT LIKE, NOT IN, NOT BETWEEN	กลับค่าของเงื่อนไข; ใช้กับ NOT LIKE, NOT IN, NOT BETWEEN ได้ด้วย
+IS NULL, IS NOT NULL: whether the value is missing	IS NULL, IS NOT NULL: ตรวจว่าไม่มีค่าหรือไม่
+The missing value	ค่าว่าง (ไม่มีค่า)
+Text pattern, ignoring letter case: % matches any run of characters, _ one character	รูปแบบข้อความ ไม่สนตัวพิมพ์เล็กใหญ่: % แทนอักขระกี่ตัวก็ได้, _ แทนอักขระหนึ่งตัว
+The same as LIKE	เหมือนกับ LIKE
+Equal to one of the values in brackets	เท่ากับค่าใดค่าหนึ่งในวงเล็บ
+BETWEEN a AND b: at least a and at most b	BETWEEN a AND b: ไม่น้อยกว่า a และไม่มากกว่า b
+The boolean true	ค่าตรรกะ จริง (true)
+The boolean false	ค่าตรรกะ เท็จ (false)
+Starts a choice: CASE WHEN … THEN … ELSE … END	เริ่มการเลือกตามเงื่อนไข: CASE WHEN … THEN … ELSE … END
+In CASE, a condition, or a value to match	ใน CASE: เงื่อนไข หรือค่าที่ใช้เทียบ
+In CASE, the value given for the WHEN before it	ใน CASE: ค่าที่ให้สำหรับ WHEN ก่อนหน้า
+In CASE, the value given when no WHEN matches	ใน CASE: ค่าที่ให้เมื่อไม่มี WHEN ใดตรง
+Ends a CASE	จบ CASE
