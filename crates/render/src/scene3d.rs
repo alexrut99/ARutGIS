@@ -219,7 +219,29 @@ pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, Strin
         (((f64::from(detail.drape_px) * gw / gh).round() as u32).max(16), detail.drape_px)
     };
     let camera = Camera::new(Coord::new(cx, cy), (x1 - x0) / f64::from(dw));
-    let at = Placing { local: &local, inside: &inside, auto_size, ex, scale: camera.scale() };
+    map.view.terrain = None;
+    if map.projection != rustgis_map::Projection::WebMercator {
+        map.set_projection(rustgis_map::Projection::WebMercator);
+    }
+    map.camera = camera;
+    let view = crate::View { width: f64::from(dw), height: f64::from(dh), pixels_per_point: 1.0, camera, sky: false };
+    // Streamed layers read the box first, waited for, as the drape reads them: those the map
+    // draws there, and those the scene stands up that it doesn't (hidden, or out of their range).
+    let lonlat = crate::view_lonlat(&map, &view);
+    let scale = camera.scale();
+    let mut pending = map.sync_sources(&lonlat, scale, true);
+    for l in map
+        .layers
+        .iter_mut()
+        .filter(|l| l.is_streamed() && !(l.visible && l.in_scale_range(scale)) && scene.layers.iter().any(|sl| sl.layer == l.name))
+    {
+        pending |= l.sync_source(&lonlat, true);
+    }
+    if pending {
+        notes.push("streamed layers were still reading the scene's area, so some features may be missing: build it again once the map has drawn them".to_string());
+    }
+    go_on()?;
+    let at = Placing { local: &local, inside: &inside, auto_size, ex, scale };
     for sl in &scene.layers {
         stand_up(&map, sl, &mut built, &at, &mut notes);
     }
@@ -233,12 +255,6 @@ pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, Strin
     sides_mesh(&mut built, base, scene.walls);
 
     // The map draped over the ground.
-    map.view.terrain = None;
-    if map.projection != rustgis_map::Projection::WebMercator {
-        map.set_projection(rustgis_map::Projection::WebMercator);
-    }
-    map.camera = camera;
-    let view = crate::View { width: f64::from(dw), height: f64::from(dh), pixels_per_point: 1.0, camera, sky: false };
     match crate::render_placed(&mut map, &view) {
         Ok(p) => {
             notes.extend(p.gaps);
@@ -482,44 +498,36 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
             (SceneKind::Extrude, Geometry::Polygon(polys)) => {
                 for poly in polys {
                     let Some(outer) = poly.first() else { continue };
-                    let ring = |r: &Vec<Coord>| -> Vec<(f64, f64)> {
-                        let mut v: Vec<(f64, f64)> = r.iter().map(|c| local(*c)).collect();
-                        if v.len() > 1 && v.first() == v.last() {
-                            v.pop();
+                    let ring = |r: &Vec<Coord>| -> Vec<(f64, f64)> { r.iter().map(|c| local(*c)).collect() };
+                    let holes: Vec<Vec<(f64, f64)>> = poly[1..].iter().map(ring).collect();
+                    // Cut to the box: one crossing it or round it stands up as far as it goes, a
+                    // hole cut by its edge a notch in what is left.
+                    for (o, holes) in cut_to_box(&ring(outer), &holes, b.half) {
+                        if shown >= MAX_FEATURES {
+                            over += 1;
+                            continue;
                         }
-                        v
-                    };
-                    // Clipped to the box: one crossing it or round it stands up as far as it goes.
-                    let o = clip_ring(&ring(outer), b.half);
-                    if o.len() < 3 {
-                        continue;
+                        let tall = match height {
+                            Some(_) => match number(row, height) {
+                                Some(h) if h >= 0.0 => h,
+                                _ => {
+                                    missing += 1;
+                                    break;
+                                }
+                            },
+                            None => sl.height_m,
+                        };
+                        let low = o.iter().map(|p| b.ground_at(p.0, p.1)).fold(f64::INFINITY, f64::min);
+                        let z0 = low + sl.offset * ex;
+                        let z1 = z0 + tall * ex;
+                        if !raised(&mut b.solids, &o, &holes, z0, z1, color) {
+                            roofless += 1;
+                        }
+                        b.z_range.1 = b.z_range.1.max(z1);
+                        let (sx, sy) = o.iter().fold((0.0, 0.0), |(a, c), p| (a + p.0, c + p.1));
+                        placed = Some([sx / o.len() as f64, sy / o.len() as f64, z1 + auto_size]);
+                        shown += 1;
                     }
-                    if shown >= MAX_FEATURES {
-                        over += 1;
-                        continue;
-                    }
-                    let tall = match height {
-                        Some(_) => match number(row, height) {
-                            Some(h) if h >= 0.0 => h,
-                            _ => {
-                                missing += 1;
-                                continue;
-                            }
-                        },
-                        None => sl.height_m,
-                    };
-                    let holes: Vec<Vec<(f64, f64)>> =
-                        poly[1..].iter().map(|h| clip_ring(&ring(h), b.half)).filter(|h| h.len() >= 3).collect();
-                    let low = o.iter().map(|p| b.ground_at(p.0, p.1)).fold(f64::INFINITY, f64::min);
-                    let z0 = low + sl.offset * ex;
-                    let z1 = z0 + tall * ex;
-                    if !raised(&mut b.solids, &o, &holes, z0, z1, color) {
-                        roofless += 1;
-                    }
-                    b.z_range.1 = b.z_range.1.max(z1);
-                    let (sx, sy) = o.iter().fold((0.0, 0.0), |(a, c), p| (a + p.0, c + p.1));
-                    placed = Some([sx / o.len() as f64, sy / o.len() as f64, z1 + auto_size]);
-                    shown += 1;
                 }
             }
             _ => {}
@@ -548,7 +556,7 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
     }
     if roofless > 0 {
         notes.push(format!(
-            "{roofless} polygons of {name} have too many corners (over {}) or cross themselves, so they stand up without a roof",
+            "{roofless} polygons of {name} have too many corners (over {}) or touch themselves or their holes, so they stand up without a roof",
             rustgis_geom::triangulate::MAX_VERTICES
         ));
     }
@@ -557,31 +565,30 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
     }
 }
 
-/// A ring cut to the box `half` (half its width and height, about the middle), by each of its
-/// four edges in turn (Sutherland and Hodgman, 1974): what of the ring lies inside the box.
-fn clip_ring(ring: &[(f64, f64)], half: (f64, f64)) -> Vec<(f64, f64)> {
-    let (hw, hh) = half;
-    // Each edge: how far a point is inside it (positive inside).
-    let edges: [&dyn Fn((f64, f64)) -> f64; 4] = [&|p| p.0 + hw, &|p| hw - p.0, &|p| p.1 + hh, &|p| hh - p.1];
-    let mut out: Vec<(f64, f64)> = ring.to_vec();
-    for inside in edges {
-        let input = std::mem::take(&mut out);
-        for (i, &a) in input.iter().enumerate() {
-            let b = input[(i + 1) % input.len()];
-            let (da, db) = (inside(a), inside(b));
-            if da >= 0.0 {
-                out.push(a);
-            }
-            if (da >= 0.0) != (db >= 0.0) {
-                let t = da / (da - db);
-                out.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
-            }
-        }
-        if out.is_empty() {
-            break;
-        }
+/// A polygon (its outer ring and holes, open or closed) cut to the box `half` (half its width
+/// and height, about the middle): the pieces of it inside the box, each its outer ring and holes,
+/// open. A hole the box's edge cuts becomes part of a piece's outline.
+fn cut_to_box(outer: &[(f64, f64)], holes: &[Vec<(f64, f64)>], half: (f64, f64)) -> Vec<(Vec<(f64, f64)>, Vec<Vec<(f64, f64)>>)> {
+    use geo::BooleanOps;
+    let line = |r: &[(f64, f64)]| geo::LineString::from(r.to_vec());
+    if outer.len() < 3 || !outer.iter().chain(holes.iter().flatten()).all(|p| p.0.is_finite() && p.1.is_finite()) {
+        return Vec::new();
     }
-    out
+    let poly = geo::Polygon::new(line(outer), holes.iter().filter(|h| h.len() >= 3).map(|h| line(h)).collect());
+    let bx = geo::Rect::new(geo::coord! { x: -half.0, y: -half.1 }, geo::coord! { x: half.0, y: half.1 }).to_polygon();
+    let open = |r: &geo::LineString<f64>| -> Vec<(f64, f64)> {
+        let mut v: Vec<(f64, f64)> = r.0.iter().map(|c| (c.x, c.y)).collect();
+        if v.len() > 1 && v.first() == v.last() {
+            v.pop();
+        }
+        v
+    };
+    poly.intersection(&bx)
+        .0
+        .iter()
+        .map(|p| (open(p.exterior()), p.interiors().iter().map(open).filter(|h| h.len() >= 3).collect()))
+        .filter(|(o, _)| o.len() >= 3)
+        .collect()
 }
 
 /// An upright tube of `sides` sides about `at`, from `z_top` down to `z_bottom`, closed.
@@ -663,9 +670,10 @@ fn ball(m: &mut Mesh, at: [f64; 3], r: f64, color: [f32; 3]) {
 }
 
 /// A polygon raised from `z0` to `z1`: its roof and its walls. `false` when the roof couldn't be
-/// made (too many corners, or none to cut), the walls stood up still.
+/// made (too many corners, or a ring touching itself or a hole), the walls stood up still.
 fn raised(m: &mut Mesh, outer: &[(f64, f64)], holes: &[Vec<(f64, f64)>], z0: f64, z1: f64, color: [f32; 3]) -> bool {
-    let roof = rustgis_geom::triangulate::triangulate(outer, holes);
+    // A ring finished as a fan (touching itself or a hole) can spill out of it: no roof then.
+    let roof = rustgis_geom::triangulate::triangulate_reporting(outer, holes).filter(|(_, fan)| !fan).map(|(t, _)| t);
     let roofed = roof.is_some();
     if let Some(tris) = roof {
         let c = lit(color, [0.0, 0.0, 1.0]);
@@ -1174,16 +1182,27 @@ mod tests {
     #[test]
     fn a_polygon_round_the_box_is_cut_to_it() {
         let half = (100.0, 50.0);
+        let area = |r: &[(f64, f64)]| {
+            ((0..r.len()).map(|i| r[i].0 * r[(i + 1) % r.len()].1 - r[(i + 1) % r.len()].0 * r[i].1).sum::<f64>() / 2.0).abs()
+        };
+        let big = vec![(-500.0, -500.0), (500.0, -500.0), (500.0, 500.0), (-500.0, 500.0)];
         // All round it: the box.
-        let round = clip_ring(&[(-500.0, -500.0), (500.0, -500.0), (500.0, 500.0), (-500.0, 500.0)], half);
-        let area =
-            |r: &[(f64, f64)]| (0..r.len()).map(|i| r[i].0 * r[(i + 1) % r.len()].1 - r[(i + 1) % r.len()].0 * r[i].1).sum::<f64>() / 2.0;
-        assert!((area(&round) - 200.0 * 100.0).abs() < 1e-6, "{round:?}");
+        let round = cut_to_box(&big, &[], half);
+        assert!(round.len() == 1 && (area(&round[0].0) - 200.0 * 100.0).abs() < 1e-6, "{round:?}");
         // Across it, no corner inside: the part inside.
-        let across = clip_ring(&[(-300.0, -10.0), (300.0, -10.0), (300.0, 10.0), (-300.0, 10.0)], half);
-        assert!((area(&across) - 200.0 * 20.0).abs() < 1e-6, "{across:?}");
+        let across = cut_to_box(&[(-300.0, -10.0), (300.0, -10.0), (300.0, 10.0), (-300.0, 10.0)], &[], half);
+        assert!(across.len() == 1 && (area(&across[0].0) - 200.0 * 20.0).abs() < 1e-6, "{across:?}");
         // Outside it: nothing.
-        assert!(clip_ring(&[(200.0, 0.0), (300.0, 0.0), (300.0, 10.0)], half).len() < 3);
+        assert!(cut_to_box(&[(200.0, 0.0), (300.0, 0.0), (300.0, 10.0)], &[], half).is_empty());
+        // A hole across the box's left edge: a notch in the outline, roofed without a fan.
+        let hole = vec![(-150.0, -20.0), (-50.0, -20.0), (-50.0, 20.0), (-150.0, 20.0)];
+        let cut = cut_to_box(&big, std::slice::from_ref(&hole), half);
+        assert_eq!(cut.len(), 1, "{cut:?}");
+        let (o, hs) = &cut[0];
+        let holes_area: f64 = hs.iter().map(|h| area(h)).sum();
+        assert!((area(o) - holes_area - (200.0 * 100.0 - 50.0 * 40.0)).abs() < 1e-6, "{cut:?}");
+        let (tris, fan) = rustgis_geom::triangulate::triangulate_reporting(o, hs).unwrap();
+        assert!(!fan && !tris.is_empty());
     }
 
     #[test]
@@ -1240,6 +1259,47 @@ mod tests {
         let b = build(m, &s, small()).unwrap();
         assert!(!b.notes.iter().any(|n| n.contains("no depth")), "{:?}", b.notes);
         assert_eq!(b.labels.len(), 1);
+    }
+
+    #[test]
+    fn a_streamed_layer_reads_the_scene_before_it_stands_up() {
+        use rustgis_data::source::{Batch, FeatureSource, Request, SourceInfo};
+        struct All(SourceInfo, Dataset);
+        impl FeatureSource for All {
+            fn info(&self) -> &SourceInfo {
+                &self.0
+            }
+            fn read(&self, _: &Request) -> rustgis_data::Result<Batch> {
+                Ok(Batch {
+                    features: self.1.features.iter().cloned().collect(),
+                    matched: self.1.features.len() as u64,
+                    complete: true,
+                    ..Default::default()
+                })
+            }
+        }
+        let (mut m, s) = hill();
+        let Some(l) = m.layers.iter_mut().find(|l| l.name == "wells") else { panic!("no wells") };
+        let ds = l.dataset.clone();
+        let info = SourceInfo {
+            name: ds.name.clone(),
+            format: "test",
+            geometry_type: ds.geometry_type,
+            fields: ds.fields.clone(),
+            extent: ds.extent(),
+            count: Some(ds.features.len() as u64),
+            crs: "EPSG:4326".into(),
+            indexed: true,
+            notes: Vec::new(),
+            zm_dropped: false,
+        };
+        // Nothing read yet, and hidden in the map (so the drape doesn't read it).
+        l.dataset.features = Vec::new().into();
+        l.visible = false;
+        l.source = Some(rustgis_map::source::SourceLayer::from_path("wells.shp", None, Box::new(All(info, ds))));
+        let b = build(m, &s, small()).unwrap();
+        assert_eq!(b.labels.len(), 1, "{:?}", b.notes);
+        assert!(!b.solids.tris.is_empty());
     }
 
     #[test]
