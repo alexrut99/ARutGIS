@@ -116,14 +116,25 @@ fn set(s: &mut Session, p: &Value) -> CmdResult {
     if given > 1 {
         return Err("give one of extent, bbox and extentOf".into());
     }
-    let view_box = || {
+    // The view's box in Web Mercator, whatever the map is drawn in (its camera is in the map's
+    // own projection): its edges' longitudes and latitudes.
+    let view_box = || -> Result<[f64; 4], String> {
         let (w, h) = s.view_size;
-        let e = map.camera.extent(w.max(1.0), h.max(1.0));
-        [e.min_x, e.min_y, e.max_x, e.max_y]
+        let view = rustgis_render::View { width: w.max(1.0), height: h.max(1.0), pixels_per_point: 1.0, camera: map.camera, sky: false };
+        let e = rustgis_render::view_lonlat(map, &view);
+        if !(e.min_x.is_finite() && e.max_x > e.min_x && e.max_y > e.min_y) {
+            return Err("the map's view can't be placed: give the scene an extent".into());
+        }
+        let clamp = |y: f64| y.clamp(-85.05, 85.05);
+        let (a, c) = (
+            rustgis_geom::lonlat_to_merc(rustgis_geom::Coord::new(e.min_x.max(-180.0), clamp(e.min_y))),
+            rustgis_geom::lonlat_to_merc(rustgis_geom::Coord::new(e.max_x.min(180.0), clamp(e.max_y))),
+        );
+        Ok([a.x, a.y, c.x, c.y])
     };
     let extent = match (p.get("extent"), p.get("bbox"), ps(&Value::Object(p.clone()), "extentOf")) {
         (Some(Value::String(e)), _, _) if e == "dem" => dem_box(map, dem.as_deref().ok_or("extent \"dem\" needs a DEM")?)?,
-        (Some(Value::String(e)), _, _) if e == "view" => view_box(),
+        (Some(Value::String(e)), _, _) if e == "view" => view_box()?,
         (Some(e), _, _) => four(e, "extent")?,
         (_, Some(bb), _) => {
             let [w, so, e, n] = four(bb, "bbox")?;
@@ -141,7 +152,7 @@ fn set(s: &mut Session, p: &Value) -> CmdResult {
             Some(o) => o.extent,
             None => match &dem {
                 Some(d) => dem_box(map, d)?,
-                None => view_box(),
+                None => view_box()?,
             },
         },
     };
@@ -378,8 +389,7 @@ pub(crate) fn export_work(s: &Session, p: &Value) -> Result<super::exports::Work
             let built = rustgis_render::scene3d::build(map.clone(), &scene, rustgis_render::scene3d::Detail::EXPORT)?;
             rustgis_data::progress::check().map_err(|e| e.to_string())?;
             let ppp = (f64::from(h) / 700.0).clamp(1.0, 4.0) as f32;
-            let pm = rustgis_render::scene3d::draw(&built, &scene.camera, scene.ground_opacity, w, h, ppp, smooth)
-                .ok_or("the picture has no pixels")?;
+            let pm = rustgis_render::scene3d::draw(&built, &scene.camera, scene.ground_opacity, w, h, ppp, smooth)?;
             let png = rustgis_render::scene3d::png(&pm)?;
             rustgis_data::io::write_atomic(std::path::Path::new(&path), &png).map_err(|e| format!("{path}: {e}"))?;
             Ok((json!({"path": path, "width": w, "height": h, "bytes": png.len()}), built.notes))
@@ -418,8 +428,7 @@ pub(crate) fn orbit_work(s: &Session, p: &Value) -> Result<super::exports::Work,
                 let mut cam = scene.camera;
                 cam.heading += turn * i as f64 / steps as f64;
                 cam.clamp();
-                let pm =
-                    rustgis_render::scene3d::draw(&built, &cam, scene.ground_opacity, w, h, 1.0, 2).ok_or("the picture has no pixels")?;
+                let pm = rustgis_render::scene3d::draw(&built, &cam, scene.ground_opacity, w, h, 1.0, 2)?;
                 rustgis_render::scene3d::png(&pm)
             })?;
             rustgis_data::io::write_atomic(std::path::Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))?;

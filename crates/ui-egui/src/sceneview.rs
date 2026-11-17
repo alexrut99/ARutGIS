@@ -368,7 +368,7 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
         };
         if app.scene3d.texture.as_ref().is_none_or(|(d, _)| *d != drawn) {
             let start = web_time::Instant::now();
-            if let Some(pm) = scene3d::draw(b, &cam, scene.ground_opacity, w, h, ppp * scale, 1) {
+            if let Ok(pm) = scene3d::draw(b, &cam, scene.ground_opacity, w, h, ppp * scale, 1) {
                 app.scene3d.last_draw = start.elapsed().as_secs_f32();
                 let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pm.data());
                 let tex = ui.ctx().load_texture("scene3d", img, egui::TextureOptions::LINEAR);

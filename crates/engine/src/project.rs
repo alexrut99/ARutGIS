@@ -1735,6 +1735,19 @@ impl Project {
                 ),
             ));
         }
+        // A 3D scene (ARutGIS) that can't be drawn, which only a hand-edited file holds (an
+        // exaggeration out of range, a box in degrees): left out, said, with why, for each map.
+        for m in &mut p.maps {
+            let Some(why) = m.scene.as_ref().and_then(|s| s.check().err()) else { continue };
+            m.scene = None;
+            p.read_notices.push((
+                ReadPart::Maps,
+                NoticeText::format(
+                    "{map}: its 3D scene can't be drawn, so it was left out: {why}",
+                    [("map", m.name.clone().into()), ("why", why.into())],
+                ),
+            ));
+        }
         if let Some(g) = p.gp_env.projected.as_mut()
             && let Some(c) = g.cell_size.filter(|c| !(c.is_finite() && *c > 0.0))
         {

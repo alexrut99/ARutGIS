@@ -128,3 +128,31 @@ fn a_saved_scene_is_read_back() {
     assert_eq!(scene.camera.tilt, 110.0);
     assert!(scene.check().is_ok());
 }
+
+/// A saved scene that can't be drawn (a hand-edited file) is left out on reading, and said.
+#[test]
+fn a_saved_scene_that_cant_be_drawn_is_left_out_and_said() {
+    let mut doc: serde_json::Value = serde_json::from_str(include_str!("../../../../schema/fixtures/scene_3d.rgis")).unwrap();
+    doc["maps"][0]["scene"]["exaggeration"] = json!(-2);
+    let p = crate::Project::from_json(&doc.to_string()).unwrap();
+    assert!(p.maps[0].scene.is_none());
+    let said: Vec<String> = p.read_notices.iter().map(|(_, n)| n.english()).collect();
+    assert!(said.iter().any(|n| n.contains("its 3D scene can't be drawn") && n.contains("exaggeration")), "{said:?}");
+    // A good one says nothing.
+    let p = crate::Project::from_json(include_str!("../../../../schema/fixtures/scene_3d.rgis")).unwrap();
+    assert!(!p.read_notices.iter().any(|(_, n)| n.english().contains("3D scene")));
+}
+
+/// A scene over the map's view is placed in Web Mercator whatever the map is drawn in.
+#[test]
+fn a_scene_over_the_view_of_a_projected_map_is_where_the_view_is() {
+    let mut s = world();
+    s.view_size = (800.0, 600.0);
+    s.run("map.goToXY", &json!({"lon": 100.5, "lat": 13.75, "scale": 200000})).unwrap();
+    s.run("map.viewMode", &json!({"mode": "local"})).unwrap();
+    assert_ne!(s.map().projection, rustgis_map::Projection::WebMercator);
+    let v = s.run("scene.set", &json!({"extent": "view"})).unwrap();
+    let e: Vec<f64> = v["extent"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
+    let mid = rustgis_geom::merc_to_lonlat(rustgis_geom::Coord::new((e[0] + e[2]) / 2.0, (e[1] + e[3]) / 2.0));
+    assert!((mid.x - 100.5).abs() < 0.05 && (mid.y - 13.75).abs() < 0.05, "{mid:?} from {e:?}");
+}

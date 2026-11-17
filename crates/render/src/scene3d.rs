@@ -121,7 +121,6 @@ pub struct Built {
 pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, String> {
     scene.check()?;
     // Cancel (an export's) is looked at between the steps.
-    let go_on = || rustgis_data::progress::check().map_err(|e| e.to_string());
     go_on()?;
     let [x0, y0, x1, y1] = scene.extent;
     let (cx, cy) = scene.center();
@@ -479,8 +478,9 @@ fn stand_up(
                         }
                         v
                     };
-                    let o = ring(outer);
-                    if o.len() < 3 || !o.iter().any(|p| inside(*p)) {
+                    // Clipped to the box: one crossing it or round it stands up as far as it goes.
+                    let o = clip_ring(&ring(outer), b.half);
+                    if o.len() < 3 {
                         continue;
                     }
                     if shown >= MAX_FEATURES {
@@ -497,7 +497,8 @@ fn stand_up(
                         },
                         None => sl.height_m,
                     };
-                    let holes: Vec<Vec<(f64, f64)>> = poly[1..].iter().map(ring).filter(|h| h.len() >= 3).collect();
+                    let holes: Vec<Vec<(f64, f64)>> =
+                        poly[1..].iter().map(|h| clip_ring(&ring(h), b.half)).filter(|h| h.len() >= 3).collect();
                     let low = o.iter().map(|p| b.ground_at(p.0, p.1)).fold(f64::INFINITY, f64::min);
                     let z0 = low + sl.offset * ex;
                     let z1 = z0 + tall * ex;
@@ -535,6 +536,33 @@ fn stand_up(
     if over > 0 {
         notes.push(format!("{name}: only the first {MAX_FEATURES} {what} are stood up; {over} more are left out"));
     }
+}
+
+/// A ring cut to the box `half` (half its width and height, about the middle), by each of its
+/// four edges in turn (Sutherland and Hodgman, 1974): what of the ring lies inside the box.
+fn clip_ring(ring: &[(f64, f64)], half: (f64, f64)) -> Vec<(f64, f64)> {
+    let (hw, hh) = half;
+    // Each edge: how far a point is inside it (positive inside).
+    let edges: [&dyn Fn((f64, f64)) -> f64; 4] = [&|p| p.0 + hw, &|p| hw - p.0, &|p| p.1 + hh, &|p| hh - p.1];
+    let mut out: Vec<(f64, f64)> = ring.to_vec();
+    for inside in edges {
+        let input = std::mem::take(&mut out);
+        for (i, &a) in input.iter().enumerate() {
+            let b = input[(i + 1) % input.len()];
+            let (da, db) = (inside(a), inside(b));
+            if da >= 0.0 {
+                out.push(a);
+            }
+            if (da >= 0.0) != (db >= 0.0) {
+                let t = da / (da - db);
+                out.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
+            }
+        }
+        if out.is_empty() {
+            break;
+        }
+    }
+    out
 }
 
 /// An upright tube of `sides` sides about `at`, from `z_top` down to `z_bottom`, closed.
@@ -718,11 +746,21 @@ enum How<'a> {
     Draped(&'a Pixmap, f32, Option<f32>),
 }
 
+/// Rows of a triangle drawn between looks at Cancel.
+const ROWS_PER_LOOK: usize = 64;
+/// Triangles drawn between looks at Cancel.
+const TRIS_PER_LOOK: usize = 1024;
+
+/// Whether to go on: Cancel (an export's) not pressed.
+fn go_on() -> Result<(), String> {
+    rustgis_data::progress::check().map_err(|e| e.to_string())
+}
+
 impl Target {
-    fn tri(&mut self, v: [Sv; 3], how: How) {
+    fn tri(&mut self, v: [Sv; 3], how: How) -> Result<(), String> {
         let area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[1].y - v[0].y) * (v[2].x - v[0].x);
         if area.is_nan() || area.abs() <= 1e-9 {
-            return;
+            return Ok(());
         }
         // Anticlockwise in the scene seen from above is clockwise on the picture (y down).
         let below = area > 0.0;
@@ -731,11 +769,14 @@ impl Target {
         let miny = v.iter().map(|p| p.y).fold(f32::INFINITY, f32::min).floor().max(0.0) as usize;
         let maxy = (v.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max).ceil() as isize).min(self.h as isize - 1);
         if maxx < 0 || maxy < 0 {
-            return;
+            return Ok(());
         }
         let inv = 1.0 / area;
         let edge = |a: &Sv, b: &Sv, x: f32, y: f32| (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
         for py in miny..=maxy as usize {
+            if (py - miny) % ROWS_PER_LOOK == ROWS_PER_LOOK - 1 {
+                go_on()?;
+            }
             let y = py as f32 + 0.5;
             let row = py * self.w;
             for px in minx..=maxx as usize {
@@ -791,6 +832,7 @@ impl Target {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -817,14 +859,17 @@ fn sample(pm: &Pixmap, u: f32, v: f32) -> [f32; 3] {
 }
 
 /// A mesh's triangles on the picture, cut where they cross the near plane.
-fn draw_mesh(t: &mut Target, eye: &Eye, m: &Mesh, how: How, draped: bool) {
+fn draw_mesh(t: &mut Target, eye: &Eye, m: &Mesh, how: How, draped: bool) -> Result<(), String> {
     let views: Vec<[f64; 3]> = m.pos.iter().map(|p| eye.view(*p)).collect();
     let attrs = |i: usize| -> [f32; 5] {
         let c = m.col[i];
         let uv = if draped { m.uv[i] } else { [0.0, 0.0] };
         [c[0], c[1], c[2], uv[0], uv[1]]
     };
-    for tri in &m.tris {
+    for (n, tri) in m.tris.iter().enumerate() {
+        if n % TRIS_PER_LOOK == TRIS_PER_LOOK - 1 {
+            go_on()?;
+        }
         let idx = tri.map(|i| i as usize);
         let vs = idx.map(|i| (views[i], attrs(i)));
         if vs.iter().all(|(v, _)| v[2] < eye.near) {
@@ -839,9 +884,10 @@ fn draw_mesh(t: &mut Target, eye: &Eye, m: &Mesh, how: How, draped: bool) {
             })
             .collect();
         for k in 1..sv.len().saturating_sub(1) {
-            t.tri([sv[0], sv[k], sv[k + 1]], how);
+            t.tri([sv[0], sv[k], sv[k + 1]], how)?;
         }
     }
+    Ok(())
 }
 
 /// A triangle's part in front of the near plane (depth `near`): none, a triangle or a quad.
@@ -868,12 +914,14 @@ fn clip_near(vs: &[([f64; 3], [f32; 5]); 3], near: f64) -> Vec<([f64; 3], [f32; 
 
 /// Draws a built scene from `cam`, `w` × `h` pixels at `ppp` pixels a point (for its labels and
 /// credits), the ground `opacity` opaque (0 to 1), each pixel worked out from `ss` × `ss`
-/// samples (1: none, 2 or 3 for a smooth image to keep). `None` for a picture of no pixels.
-pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32, ss: u32) -> Option<Pixmap> {
+/// samples (1: none, 2 or 3 for a smooth image to keep). Cancel (an export's) is looked at as it
+/// draws. Errors: a picture of no pixels, or Cancel.
+pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32, ss: u32) -> Result<Pixmap, String> {
     let ss = ss.clamp(1, 4) as usize;
     let (bw, bh) = (w as usize * ss, h as usize * ss);
+    let no_pixels = || "the picture has no pixels".to_string();
     if bw == 0 || bh == 0 {
-        return None;
+        return Err(no_pixels());
     }
     let eye = Eye::of(b, cam, bw as f64, bh as f64);
     let mut t = Target { w: bw, h: bh, rgb: vec![[0.0; 3]; bw * bh], depth: vec![0.0; bw * bh], clear: Vec::new() };
@@ -884,35 +932,38 @@ pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32
         t.rgb[y * bw..(y + 1) * bw].fill(c);
     }
     let opacity = opacity.clamp(0.0, 1.0) as f32;
-    draw_mesh(&mut t, &eye, &b.solids, How::Solid, false);
+    draw_mesh(&mut t, &eye, &b.solids, How::Solid, false)?;
     let white;
     let drape = match &b.drape {
         Some(d) => d,
         None => {
-            white = Pixmap::new(1, 1)?;
+            white = Pixmap::new(1, 1).ok_or_else(no_pixels)?;
             &white
         }
     };
     if opacity >= 1.0 {
-        draw_mesh(&mut t, &eye, &b.ground, How::Draped(drape, b.under, None), true);
-        draw_mesh(&mut t, &eye, &b.sides, How::Solid, false);
+        draw_mesh(&mut t, &eye, &b.ground, How::Draped(drape, b.under, None), true)?;
+        draw_mesh(&mut t, &eye, &b.sides, How::Solid, false)?;
     } else if opacity > 0.0 {
         // Clear ground over what is under it: only its nearest surface on each pixel, as glass,
         // not every fold of the ground behind it.
         t.clear = vec![0.0; bw * bh];
-        draw_mesh(&mut t, &eye, &b.ground, How::Mark, true);
-        draw_mesh(&mut t, &eye, &b.ground, How::Draped(drape, b.under, Some(opacity)), true);
+        draw_mesh(&mut t, &eye, &b.ground, How::Mark, true)?;
+        draw_mesh(&mut t, &eye, &b.ground, How::Draped(drape, b.under, Some(opacity)), true)?;
         // Then the block's nearest side or base, clearer still (what is under the ground is
         // what is looked at), not hiding the ground from an eye below the base.
         t.clear.fill(0.0);
-        draw_mesh(&mut t, &eye, &b.sides, How::Mark, false);
-        draw_mesh(&mut t, &eye, &b.sides, How::Clear(opacity * 0.6), false);
+        draw_mesh(&mut t, &eye, &b.sides, How::Mark, false)?;
+        draw_mesh(&mut t, &eye, &b.sides, How::Clear(opacity * 0.6), false)?;
     }
     // Down to the picture's pixels.
-    let mut pm = Pixmap::new(w, h)?;
+    let mut pm = Pixmap::new(w, h).ok_or_else(no_pixels)?;
     let n = (ss * ss) as f32;
     let data = pm.data_mut();
     for y in 0..h as usize {
+        if y % ROWS_PER_LOOK == ROWS_PER_LOOK - 1 {
+            go_on()?;
+        }
         for x in 0..w as usize {
             let mut c = [0.0f32; 3];
             for sy in 0..ss {
@@ -966,7 +1017,7 @@ pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32
         crate::draw_attribution(&mut canvas, &b.credits, ppp, (0.0, 0.0));
         pm = canvas.into_pixmap();
     }
-    Some(pm)
+    Ok(pm)
 }
 
 /// Moves the point `cam` turns about as a drag of (`dx`, `dy`) pixels over a picture `h` pixels
@@ -1095,6 +1146,40 @@ mod tests {
         let diff: f64 = a.data().iter().zip(c.data()).map(|(x, y)| f64::from((i16::from(*x) - i16::from(*y)).unsigned_abs())).sum::<f64>()
             / a.data().len() as f64;
         assert!(diff < 12.0, "{diff}");
+    }
+
+    #[test]
+    fn a_polygon_round_the_box_is_cut_to_it() {
+        let half = (100.0, 50.0);
+        // All round it: the box.
+        let round = clip_ring(&[(-500.0, -500.0), (500.0, -500.0), (500.0, 500.0), (-500.0, 500.0)], half);
+        let area =
+            |r: &[(f64, f64)]| (0..r.len()).map(|i| r[i].0 * r[(i + 1) % r.len()].1 - r[(i + 1) % r.len()].0 * r[i].1).sum::<f64>() / 2.0;
+        assert!((area(&round) - 200.0 * 100.0).abs() < 1e-6, "{round:?}");
+        // Across it, no corner inside: the part inside.
+        let across = clip_ring(&[(-300.0, -10.0), (300.0, -10.0), (300.0, 10.0), (-300.0, 10.0)], half);
+        assert!((area(&across) - 200.0 * 20.0).abs() < 1e-6, "{across:?}");
+        // Outside it: nothing.
+        assert!(clip_ring(&[(200.0, 0.0), (300.0, 0.0), (300.0, 10.0)], half).len() < 3);
+    }
+
+    #[test]
+    fn a_drawing_stops_when_cancelled() {
+        let (m, s) = hill();
+        let b = build(m, &s, small()).unwrap();
+        struct Cancelled;
+        impl rustgis_data::progress::Probe for Cancelled {
+            fn cancelled(&self) -> bool {
+                true
+            }
+            fn begin(&self, _: u64) {}
+            fn advance(&self, _: u64) {}
+        }
+        let installed = rustgis_data::progress::install(Some(std::sync::Arc::new(Cancelled)));
+        let r = draw(&b, &SceneCamera::default(), 1.0, 400, 300, 1.0, 2);
+        drop(installed);
+        assert!(r.unwrap_err().contains("ancel"));
+        assert!(draw(&b, &SceneCamera::default(), 1.0, 0, 300, 1.0, 1).unwrap_err().contains("no pixels"));
     }
 
     #[test]

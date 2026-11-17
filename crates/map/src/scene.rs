@@ -332,12 +332,13 @@ impl SceneLayer {
     }
 }
 
-/// Reads a map's scene as a project file holds it: one that [`Scene::check`] refuses is left
-/// out (a project file is hostile input), and its camera is kept within its ranges.
+/// Reads a map's scene as a project file holds it, its camera kept within its ranges. One that
+/// [`Scene::check`] refuses is read as it is: the project's reader leaves it out and says so
+/// (a project file is hostile input), and drawing it is refused with the reason.
 pub(crate) fn de_scene<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Scene>, D::Error> {
     let Some(mut scene) = Option::<Scene>::deserialize(d)? else { return Ok(None) };
     scene.camera.clamp();
-    Ok(scene.check().is_ok().then_some(scene))
+    Ok(Some(scene))
 }
 
 #[cfg(test)]
@@ -391,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn a_saved_scene_that_cant_be_drawn_is_left_out() {
+    fn a_saved_scene_keeps_its_camera_in_range() {
         let mut m = crate::Map::new("m");
         m.scene = Some(Scene::new(bkk()));
         m.scene.as_mut().unwrap().camera.tilt = 30.0;
@@ -401,9 +402,10 @@ mod tests {
         v["scene"]["camera"]["tilt"] = serde_json::json!(999.0);
         let back: crate::Map = serde_json::from_value(v.clone()).unwrap();
         assert_eq!(back.scene.unwrap().camera.tilt, MAX_TILT);
+        // One that can't be drawn is read as it is, for the project's reader to say.
         v["scene"]["exaggeration"] = serde_json::json!(-3.0);
         let back: crate::Map = serde_json::from_value(v).unwrap();
-        assert_eq!(back.scene, None);
+        assert!(back.scene.unwrap().check().unwrap_err().contains("exaggeration"));
     }
 
     #[test]
