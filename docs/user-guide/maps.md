@@ -199,8 +199,10 @@ the map's first) as its ground and that raster's extent, or the map's view witho
   as **points** (`"elevation"`, a field of heights above sea level, else on the ground raised by
   `"offset"`), or a polygon layer **raised** (`"height"`, a field, else `"heightM"`). Each is
   coloured by its layer's symbology (or `"color"`), may be labelled by a field (`"label"`), and
-  wells and points are `"size"` metres wide (by default, the area's diagonal over 250). Features
-  missing a number they need are left out, and the scene says how many.
+  wells and points are `"size"` metres wide (by default, the area's diagonal over 250). Only the
+  features the map draws stand up (its definition query, the time slider's window, its display
+  filters). Features missing a number they need are left out, and the scene says how many; a
+  polygon with too many corners for a roof (over 5,000 in the area) stands up as walls, said.
 
 Drag to orbit, right-drag to move along the ground, Ctrl+drag (or the middle button) to go up
 or down, under the ground too, and the wheel to come nearer; the compass shows north. **Reset

@@ -212,8 +212,16 @@ pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, Strin
     };
     let inside = |(x, y): (f64, f64)| x.abs() <= half.0 && y.abs() <= half.1;
     let auto_size = built.diag / 250.0;
+    // The scale the map is draped at: a layer's features are those the drape draws.
+    let (dw, dh) = if gw >= gh {
+        (detail.drape_px, ((f64::from(detail.drape_px) * gh / gw).round() as u32).max(16))
+    } else {
+        (((f64::from(detail.drape_px) * gw / gh).round() as u32).max(16), detail.drape_px)
+    };
+    let camera = Camera::new(Coord::new(cx, cy), (x1 - x0) / f64::from(dw));
+    let at = Placing { local: &local, inside: &inside, auto_size, ex, scale: camera.scale() };
     for sl in &scene.layers {
-        stand_up(&map, sl, &mut built, &local, &inside, auto_size, ex, &mut notes);
+        stand_up(&map, sl, &mut built, &at, &mut notes);
     }
     go_on()?;
     let lowest = built.z_range.0.min(g_lo);
@@ -225,17 +233,10 @@ pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, Strin
     sides_mesh(&mut built, base, scene.walls);
 
     // The map draped over the ground.
-    let (dw, dh) = if gw >= gh {
-        (detail.drape_px, ((f64::from(detail.drape_px) * gh / gw).round() as u32).max(16))
-    } else {
-        (((f64::from(detail.drape_px) * gw / gh).round() as u32).max(16), detail.drape_px)
-    };
     map.view.terrain = None;
     if map.projection != rustgis_map::Projection::WebMercator {
         map.set_projection(rustgis_map::Projection::WebMercator);
     }
-    let res = (x1 - x0) / f64::from(dw);
-    let camera = Camera::new(Coord::new(cx, cy), res);
     map.camera = camera;
     let view = crate::View { width: f64::from(dw), height: f64::from(dh), pixels_per_point: 1.0, camera, sky: false };
     match crate::render_placed(&mut map, &view) {
@@ -364,18 +365,24 @@ fn sides_mesh(b: &mut Built, base: f64, walls: Rgba) {
     b.sides = m;
 }
 
-/// Stands up the features of one of a scene's layers.
-#[expect(clippy::too_many_arguments, reason = "what a layer's features are placed by, all needed at once")]
-fn stand_up(
-    map: &Map,
-    sl: &SceneLayer,
-    b: &mut Built,
-    local: &dyn Fn(Coord) -> (f64, f64),
-    inside: &dyn Fn((f64, f64)) -> bool,
+/// How features are placed in the box.
+struct Placing<'a> {
+    /// Longitude and latitude to the box's metres about its middle.
+    local: &'a dyn Fn(Coord) -> (f64, f64),
+    /// Whether a point of the box's metres is inside it.
+    inside: &'a dyn Fn((f64, f64)) -> bool,
+    /// A well's or a point's width when its layer gives none (metres).
     auto_size: f64,
+    /// The vertical exaggeration.
     ex: f64,
-    notes: &mut Vec<String>,
-) {
+    /// The scale denominator the map is draped at.
+    scale: f64,
+}
+
+/// Stands up the features of one of a scene's layers: those the map draws (its definition
+/// query, the time slider's window and its display filters at the drape's scale).
+fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut Vec<String>) {
+    let Placing { local, inside, auto_size, ex, scale } = *at;
     let name = &sl.layer;
     // A layer or a field taken out of the map since: the layer is left out, said.
     let Some(layer) = map.layer_by_name(name) else {
@@ -407,8 +414,12 @@ fn stand_up(
     };
     let number = |row: usize, f: Option<usize>| f.and_then(|f| ds.value(row, f).as_f64()).filter(|v| v.is_finite());
     let size = sl.size.unwrap_or(auto_size);
-    let (mut shown, mut missing, mut over) = (0usize, 0usize, 0usize);
+    let (mut shown, mut missing, mut over, mut roofless) = (0usize, 0usize, 0usize, 0usize);
+    let drawn = layer.drawn_rows(scale);
     for row in 0..ds.features.len() {
+        if !drawn.get(row).copied().unwrap_or(true) {
+            continue;
+        }
         let Some(g) = ds.features.get(row).and_then(|f| f.geometry.as_ref()) else { continue };
         let color = sl.color.unwrap_or_else(|| {
             let s = layer.renderer.symbol_for(ds, row);
@@ -502,7 +513,9 @@ fn stand_up(
                     let low = o.iter().map(|p| b.ground_at(p.0, p.1)).fold(f64::INFINITY, f64::min);
                     let z0 = low + sl.offset * ex;
                     let z1 = z0 + tall * ex;
-                    raised(&mut b.solids, &o, &holes, z0, z1, color);
+                    if !raised(&mut b.solids, &o, &holes, z0, z1, color) {
+                        roofless += 1;
+                    }
                     b.z_range.1 = b.z_range.1.max(z1);
                     let (sx, sy) = o.iter().fold((0.0, 0.0), |(a, c), p| (a + p.0, c + p.1));
                     placed = Some([sx / o.len() as f64, sy / o.len() as f64, z1 + auto_size]);
@@ -532,6 +545,12 @@ fn stand_up(
             SceneKind::Extrude => "no height",
         };
         notes.push(format!("{missing} {what} of {name} have {why}, so they are left out"));
+    }
+    if roofless > 0 {
+        notes.push(format!(
+            "{roofless} polygons of {name} have too many corners (over {}) or cross themselves, so they stand up without a roof",
+            rustgis_geom::triangulate::MAX_VERTICES
+        ));
     }
     if over > 0 {
         notes.push(format!("{name}: only the first {MAX_FEATURES} {what} are stood up; {over} more are left out"));
@@ -643,9 +662,12 @@ fn ball(m: &mut Mesh, at: [f64; 3], r: f64, color: [f32; 3]) {
     m.tris.extend(tris.into_iter().map(|t| t.map(|i| first + i as u32)));
 }
 
-/// A polygon raised from `z0` to `z1`: its roof and its walls.
-fn raised(m: &mut Mesh, outer: &[(f64, f64)], holes: &[Vec<(f64, f64)>], z0: f64, z1: f64, color: [f32; 3]) {
-    if let Some(tris) = rustgis_geom::triangulate::triangulate(outer, holes) {
+/// A polygon raised from `z0` to `z1`: its roof and its walls. `false` when the roof couldn't be
+/// made (too many corners, or none to cut), the walls stood up still.
+fn raised(m: &mut Mesh, outer: &[(f64, f64)], holes: &[Vec<(f64, f64)>], z0: f64, z1: f64, color: [f32; 3]) -> bool {
+    let roof = rustgis_geom::triangulate::triangulate(outer, holes);
+    let roofed = roof.is_some();
+    if let Some(tris) = roof {
         let c = lit(color, [0.0, 0.0, 1.0]);
         let first = m.pos.len() as u32;
         for p in outer.iter().chain(holes.iter().flatten()) {
@@ -654,7 +676,7 @@ fn raised(m: &mut Mesh, outer: &[(f64, f64)], holes: &[Vec<(f64, f64)>], z0: f64
         m.tris.extend(tris.into_iter().map(|t| t.map(|i| first + i as u32)));
     }
     if z1 - z0 <= 0.0 {
-        return;
+        return roofed;
     }
     for ring in std::iter::once(outer).chain(holes.iter().map(Vec::as_slice)) {
         for i in 0..ring.len() {
@@ -664,6 +686,7 @@ fn raised(m: &mut Mesh, outer: &[(f64, f64)], holes: &[Vec<(f64, f64)>], z0: f64
             m.quad([[a.0, a.1, z1], [a.0, a.1, z0], [b.0, b.1, z0], [b.0, b.1, z1]], n, color);
         }
     }
+    roofed
 }
 
 /// Where the eye is and how it looks, for a picture `w` × `h` pixels.
@@ -1206,5 +1229,37 @@ mod tests {
         s.dem = Some("wells".into());
         let b = build(m, &s, small()).unwrap();
         assert!(b.notes.iter().any(|n| n.contains("the ground is flat")) && b.z_range.1 == 0.0, "{:?}", b.notes);
+    }
+    #[test]
+    fn only_the_features_the_map_draws_are_stood_up() {
+        let (mut m, s) = hill();
+        // The well with no depth filtered out by the layer's definition query: not said missing.
+        if let Some(l) = m.layers.iter_mut().find(|l| l.name == "wells") {
+            l.definition_query = Some("ลึก > 0".into());
+        }
+        let b = build(m, &s, small()).unwrap();
+        assert!(!b.notes.iter().any(|n| n.contains("no depth")), "{:?}", b.notes);
+        assert_eq!(b.labels.len(), 1);
+    }
+
+    #[test]
+    fn a_polygon_too_detailed_for_a_roof_is_said() {
+        let (mut m, mut s) = hill();
+        let (cx, cy) = (11_200_000.0, 1_560_000.0);
+        let n = rustgis_geom::triangulate::MAX_VERTICES + 100;
+        let ring: Vec<Coord> = (0..=n)
+            .map(|i| {
+                let a = std::f64::consts::TAU * i as f64 / n as f64;
+                rustgis_geom::merc_to_lonlat(Coord::new(cx + 500.0 * a.cos(), cy + 500.0 * a.sin()))
+            })
+            .collect();
+        let mut d = Dataset::new("big", GeometryType::Polygon, vec![]);
+        d.push(Some(Geometry::Polygon(vec![vec![ring]])), vec![]);
+        m.add_dataset(d);
+        s.layers = vec![SceneLayer::new("big", SceneKind::Extrude)];
+        let b = build(m, &s, small()).unwrap();
+        assert!(b.notes.iter().any(|n| n.contains("without a roof")), "{:?}", b.notes);
+        // Its walls stood up still.
+        assert!(!b.solids.tris.is_empty());
     }
 }

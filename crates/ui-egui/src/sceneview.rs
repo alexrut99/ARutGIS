@@ -4,7 +4,8 @@
 //! ground, Ctrl+drag to go up or down (under the ground too), the wheel to come nearer.
 //!
 //! The scene is built (the heights read, the map draped, the features stood up) off the frame
-//! natively, again whenever the scene or the map changes; turning it only draws it again.
+//! natively, again whenever the scene or the map changes; turning it only draws it again, also
+//! off the frame natively, the last picture shown until the next is ready.
 
 use std::sync::Arc;
 
@@ -31,6 +32,11 @@ pub struct SceneView {
     failed: Option<Key>,
     /// The picture last drawn, and what it was drawn from.
     texture: Option<(Drawn, egui::TextureHandle)>,
+    /// A picture being drawn off the frame, and what it draws.
+    #[cfg(not(target_arch = "wasm32"))]
+    drawing: Option<(Drawn, crate::Slot<Option<(egui::ColorImage, f32)>>)>,
+    /// A picture that couldn't be drawn: not tried again until what it draws changes.
+    undrawn: Option<Drawn>,
     /// The camera while the mouse moves it, kept to the map's scene when the drag ends.
     live: Option<SceneCamera>,
     /// The last picture's drawing time (seconds): a slow one draws coarser while turning.
@@ -366,15 +372,7 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
             opacity: scene.ground_opacity.to_bits(),
             size: [w, h],
         };
-        if app.scene3d.texture.as_ref().is_none_or(|(d, _)| *d != drawn) {
-            let start = web_time::Instant::now();
-            if let Ok(pm) = scene3d::draw(b, &cam, scene.ground_opacity, w, h, ppp * scale, 1) {
-                app.scene3d.last_draw = start.elapsed().as_secs_f32();
-                let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pm.data());
-                let tex = ui.ctx().load_texture("scene3d", img, egui::TextureOptions::LINEAR);
-                app.scene3d.texture = Some((drawn, tex));
-            }
-        }
+        keep_drawn(app, ui.ctx(), b, drawn, &cam, scene.ground_opacity, ppp * scale);
     }
     if let Some((_, tex)) = &app.scene3d.texture {
         ui.painter().image(tex.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
@@ -411,6 +409,60 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
     let r = Rect::from_min_size(pos2(rect.min.x + 10.0, rect.max.y - g.size().y - 18.0), g.size() + vec2(14.0, 8.0));
     ui.painter().rect_filled(r, 5.0, t.pane.gamma_multiply(0.85));
     ui.painter().galley(r.min + vec2(7.0, 4.0), g, t.text);
+}
+
+/// Draws the picture again when what it shows changed: natively off the frame (one at a time,
+/// the latest wanted next), the last picture shown meanwhile; in the browser on the frame.
+fn keep_drawn(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, drawn: Drawn, cam: &SceneCamera, opacity: f64, ppp: f32) {
+    let [w, h] = drawn.size;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let landed = app.scene3d.drawing.as_ref().and_then(|(d, slot)| slot.lock().ok()?.take().map(|r| (d.clone(), r)));
+        if let Some((d, r)) = landed {
+            app.scene3d.drawing = None;
+            match r {
+                Some((img, secs)) => {
+                    app.scene3d.last_draw = secs;
+                    let tex = ctx.load_texture("scene3d", img, egui::TextureOptions::LINEAR);
+                    app.scene3d.texture = Some((d, tex));
+                }
+                None => app.scene3d.undrawn = Some(d),
+            }
+        }
+        let wanted = app.scene3d.texture.as_ref().is_none_or(|(d, _)| *d != drawn) && app.scene3d.undrawn.as_ref() != Some(&drawn);
+        if wanted && app.scene3d.drawing.is_none() {
+            let slot: crate::Slot<Option<(egui::ColorImage, f32)>> = Default::default();
+            let out = slot.clone();
+            let (b, cam, repaint) = (b.clone(), *cam, ctx.clone());
+            std::thread::spawn(move || {
+                let start = web_time::Instant::now();
+                let r = scene3d::draw(&b, &cam, opacity, w, h, ppp, 1).ok().map(|pm| {
+                    (egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pm.data()), start.elapsed().as_secs_f32())
+                });
+                if let Ok(mut o) = out.lock() {
+                    *o = Some(r);
+                }
+                repaint.request_repaint();
+            });
+            app.scene3d.drawing = Some((drawn, slot));
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let wanted = app.scene3d.texture.as_ref().is_none_or(|(d, _)| *d != drawn) && app.scene3d.undrawn.as_ref() != Some(&drawn);
+        if wanted {
+            let start = web_time::Instant::now();
+            match scene3d::draw(b, cam, opacity, w, h, ppp, 1) {
+                Ok(pm) => {
+                    app.scene3d.last_draw = start.elapsed().as_secs_f32();
+                    let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pm.data());
+                    let tex = ctx.load_texture("scene3d", img, egui::TextureOptions::LINEAR);
+                    app.scene3d.texture = Some((drawn, tex));
+                }
+                Err(_) => app.scene3d.undrawn = Some(drawn),
+            }
+        }
+    }
 }
 
 /// The box's diagonal on the ground (metres).
@@ -633,14 +685,14 @@ mod tests {
         pass.textures_delta.clear();
     }
 
-    /// Frames until the scene has been built (on its thread) since `before`.
+    /// Frames until the scene has been built (on its thread) since `before`, and drawn.
     fn built_after(app: &mut RustGisApp, ctx: &egui::Context, before: Option<usize>) -> usize {
         let end = web_time::Instant::now() + std::time::Duration::from_secs(120);
         loop {
             frame(app, ctx);
             if let Some((_, b)) = &app.scene3d.built {
                 let now = Arc::as_ptr(b) as usize;
-                if Some(now) != before && app.scene3d.building.is_none() {
+                if Some(now) != before && app.scene3d.building.is_none() && app.scene3d.drawing.is_none() && app.scene3d.texture.is_some() {
                     return now;
                 }
             }
