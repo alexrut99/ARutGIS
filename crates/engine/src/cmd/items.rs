@@ -784,7 +784,7 @@ fn package_project(s: &mut Session) -> Result<Vec<u8>, String> {
 }
 
 pub(crate) fn safe(name: &str) -> String {
-    let s: String = name.chars().map(|c| if c.is_alphanumeric() || matches!(c, '-' | '_' | ' ') { c } else { '_' }).collect();
+    let s: String = name.chars().map(|c| if rustgis_data::io::keeps_in_file_name(c) || matches!(c, '-' | ' ') { c } else { '_' }).collect();
     if s.trim().is_empty() { "project".into() } else { s }
 }
 

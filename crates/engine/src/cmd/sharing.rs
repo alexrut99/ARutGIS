@@ -96,7 +96,7 @@ fn now() -> f64 {
 }
 
 fn safe(name: &str) -> String {
-    let s: String = name.chars().map(|c| if c.is_alphanumeric() || matches!(c, '-' | '_') { c } else { '_' }).take(100).collect();
+    let s: String = name.chars().map(|c| if rustgis_data::io::keeps_in_file_name(c) || c == '-' { c } else { '_' }).take(100).collect();
     if s.is_empty() { "shared".into() } else { s }
 }
 

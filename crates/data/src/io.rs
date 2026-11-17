@@ -544,7 +544,7 @@ fn projected_bytes(ds: &Dataset, ext: &str, crs: Crs) -> Result<(Vec<u8>, usize)
         "gpx" => (crate::interop::to_gpx(ds, name_field(ds))?.into_bytes(), gpx_left_out(ds)),
         "shp" | "zip" => {
             let (parts, left_out) = shapefile_parts_in(ds, crs)?;
-            let base: String = ds.name.chars().map(|c| if c.is_alphanumeric() || matches!(c, '-' | '_' | ' ') { c } else { '_' }).collect();
+            let base: String = ds.name.chars().map(|c| if keeps_in_file_name(c) || matches!(c, '-' | ' ') { c } else { '_' }).collect();
             let base = if base.trim().is_empty() { "layer".to_string() } else { base };
             let entries: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(e, b)| (format!("{base}.{e}"), b)).collect();
             (crate::zip::write(&entries).map_err(DataError::Format)?, left_out)
@@ -854,6 +854,13 @@ fn write_new_with(path: &Path, write: impl FnOnce(&std::fs::File, &mut dyn std::
 /// link is written through, and an existing file keeps its permissions. For app-managed files
 /// whose destination link must be replaced instead, use [`replace_atomic`]. On Unix, failure to
 /// inspect or preserve an existing file's permissions is an error and leaves that file unchanged.
+/// Whether `c` stays as it is in a file name made from a layer's, map's or project's name: letters,
+/// digits, `_` and the marks written over and under letters. Thai tone marks and `์` aren't letters
+/// to [`char::is_alphanumeric`]: by it alone, `ดอยอินทนนท์` would be saved as `ดอยอินทนนท_`.
+pub fn keeps_in_file_name(c: char) -> bool {
+    c.is_alphanumeric() || unicode_ident::is_xid_continue(c)
+}
+
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     write_atomic_with(path, |w| w.write_all(bytes))
@@ -6189,6 +6196,22 @@ mod tests {
         let layers = read_zip("x.zip", &crate::zip::write(&mifs(MAX_ZIP_LAYERS + 25)).unwrap()).unwrap();
         let note = &layers[0].1.messages[0];
         assert!(note.contains("m51.mif") && !note.contains("m52.mif") && note.ends_with("; and 5 more"), "{note}");
+    }
+
+    #[test]
+    fn a_thai_layer_name_keeps_its_marks_in_a_zipped_shapefile() {
+        // Its tone marks (`้`, `่`) and `์` aren't letters to `char::is_alphanumeric`: they were
+        // written `_`, as a separator is.
+        let (ds, _) = read_geojson(
+            r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"n":"a"},"geometry":{"type":"Point","coordinates":[1,2]}}]}"#,
+            "พื้นที่ดอยอินทนนท์/ทดสอบ",
+        )
+        .unwrap();
+        let zip = write_bytes(&ds, "zip").unwrap().0;
+        let names: Vec<String> = crate::zip::read(&zip).unwrap().into_iter().map(|(n, _)| n).collect();
+        assert!(names.contains(&"พื้นที่ดอยอินทนนท์_ทดสอบ.shp".to_string()), "{names:?}");
+        assert!("พื้นที่ ์ ๆ ๑".chars().all(|c| c == ' ' || keeps_in_file_name(c)));
+        assert!(!"/\\:*?\"<>|.".chars().any(keeps_in_file_name));
     }
 
     /// A Shapefile's loose files picked or dropped together are zipped into one, which reads as a

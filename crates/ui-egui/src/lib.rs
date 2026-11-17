@@ -4179,8 +4179,10 @@ impl RustGisApp {
                 } else if print {
                     // The system's PDF viewer prints it.
                     let bytes = self.layout_bytes(li, true, 300.0, all)?;
-                    let safe: String =
-                        name.chars().map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_') { c } else { '_' }).collect();
+                    let safe: String = name
+                        .chars()
+                        .map(|c| if rustgis_engine::data::io::keeps_in_file_name(c) || matches!(c, ' ' | '-') { c } else { '_' })
+                        .collect();
                     let path = print_dir()?.join(format!("{safe}.pdf"));
                     rustgis_engine::data::io::write_atomic(&path, &bytes).map_err(|e| e.to_string())?;
                     open_with_system(&path)?;
@@ -4445,7 +4447,7 @@ impl RustGisApp {
                         .map()
                         .name
                         .chars()
-                        .map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_') { c } else { '_' })
+                        .map(|c| if rustgis_engine::data::io::keeps_in_file_name(c) || matches!(c, ' ' | '-') { c } else { '_' })
                         .collect();
                     let path = print_dir()?.join(format!("{safe}.pdf"));
                     rustgis_engine::data::io::write_atomic(&path, &pdf).map_err(|e| e.to_string())?;

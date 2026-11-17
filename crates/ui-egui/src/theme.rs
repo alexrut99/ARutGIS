@@ -974,7 +974,10 @@ pub(crate) fn clip(text: &str) -> String {
 
 /// The stem of a theme's file name; a name of marks and symbols still gets one.
 fn stem_of(name: &str) -> String {
-    let dashed: String = name.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect();
+    let dashed: String = name
+        .chars()
+        .map(|c| if c != '_' && rustgis_engine::data::io::keeps_in_file_name(c) { c.to_ascii_lowercase() } else { '-' })
+        .collect();
     let stem = dashed.trim_matches('-').to_string();
     let reserved = matches!(stem.as_str(), "con" | "prn" | "aux" | "nul")
         || stem

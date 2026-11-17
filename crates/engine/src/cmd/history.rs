@@ -424,11 +424,12 @@ fn project_file(s: &Session) -> String {
     }
 }
 
-/// `name` as a file name on every system: letters, digits, spaces, `-` and `_` kept (so a
+/// `name` as a file name on every system: letters (with their marks), digits, spaces, `-` and `_` kept (so a
 /// project saved under its own name, "World Atlas.rgis", is the file the script opens), anything
 /// else (a separator, `* ? " < > |`, a control character) `_`.
 fn file_stem(name: &str) -> String {
-    let stem: String = name.chars().map(|c| if c.is_alphanumeric() || matches!(c, '-' | '_' | ' ') { c } else { '_' }).collect();
+    let stem: String =
+        name.chars().map(|c| if rustgis_data::io::keeps_in_file_name(c) || matches!(c, '-' | ' ') { c } else { '_' }).collect();
     let stem = stem.trim();
     if stem.is_empty() { "project".into() } else { stem.to_string() }
 }

@@ -282,7 +282,9 @@ pub fn help_job(id: Option<&str>, text: &str, palette: Palette, font: &FontId) -
 /// keyword as a key, `'text'` and numbers as values, punctuation and operators dimmed.
 pub fn expr_job(text: &str, palette: Palette, font: &FontId) -> LayoutJob {
     use rustgis_engine::data::query::Kw;
-    let word = |c: char| c.is_alphanumeric() || matches!(c, '_' | '$' | '@');
+    // A name's vowel and tone marks (`พื้นที่`) go on with it, as the expression reads it: split off,
+    // each mark would be shaped alone and drawn on a dotted circle.
+    let word = |c: char| rustgis_engine::data::query::is_name_char(c) || matches!(c, '$' | '@');
     let mut job = LayoutJob::default();
     let mut rest = text;
     while let Some(c) = rest.chars().next() {
@@ -813,5 +815,16 @@ mod tests {
         );
         // Unclosed: no key out of a string nothing closes.
         assert_eq!(keys(r#""a" | "b"#), [(r#""a""#.to_string(), false), (r#""b"#.to_string(), false)]);
+    }
+
+    #[test]
+    fn a_thai_name_is_coloured_as_one_word() {
+        // Its tone marks (`้`, `่`) aren't letters: a part of their own, egui shaped each alone and
+        // drew it on a dotted circle.
+        let palette = super::Palette::of(&crate::theme::Tokens::light());
+        let job = super::expr_job("พื้นที่_ตร_กม * 2", palette, &egui::FontId::monospace(12.0));
+        let parts: Vec<&str> = job.sections.iter().filter_map(|s| job.text.get(s.byte_range.start.0..s.byte_range.end.0)).collect();
+        // (A part in the same colour as the one before it joins it: the space goes on the name.)
+        assert_eq!(parts, ["พื้นที่_ตร_กม ", "*", " ", "2"]);
     }
 }

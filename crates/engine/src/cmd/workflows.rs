@@ -999,7 +999,7 @@ fn export_model(s: &mut Session, p: &Value) -> CmdResult {
     let (text, report) =
         crate::durable::output_owned(g, |g| serde_json::to_string_pretty(&crate::model::to_file(&name, g)).map_err(|e| e.to_string()))?;
     crate::durable::notify(s, &report);
-    let file: String = name.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
+    let file: String = name.chars().map(|c| if rustgis_data::io::keeps_in_file_name(c) || c == '-' { c } else { '_' }).collect();
     match ps(p, "path") {
         Some(path) => {
             rustgis_data::io::write_atomic(std::path::Path::new(path), text.as_bytes()).map_err(|e| format!("{path}: {e}"))?;
