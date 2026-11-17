@@ -9,6 +9,9 @@ mod scene_losses;
 #[path = "tests/permission_policy.rs"]
 mod permission_policy;
 
+#[path = "tests/scene3d.rs"]
+mod scene3d;
+
 #[path = "tests/review_boundaries.rs"]
 mod review_boundaries;
 
@@ -48255,6 +48258,8 @@ fn cancel_world(dir: &std::path::Path) -> (Session, String) {
     s.run("layer.addData", &json!({"path": out("towns.shp"), "name": "towns"})).unwrap();
     s.run("edit.setValue", &json!({"layer": "towns", "row": 0, "field": "name", "value": "Renamed"})).unwrap();
     s.run("report.new", &json!({"layer": "Cities"})).unwrap();
+    // A 3D scene over the DEM, for its exports.
+    s.run("scene.set", &json!({"dem": dem, "extent": "dem"})).unwrap();
     (s, dem)
 }
 
@@ -48298,6 +48303,8 @@ fn cancel_exports(out: &dyn Fn(&str) -> String, dem: &str) -> Vec<(&'static str,
         ("share.exportRaster", json!({"layer": dem, "path": out("dem.tif")})),
         ("share.exportMap", json!({"path": out("map.png"), "width": 320, "height": 200})),
         ("map.exportOrbit", json!({"path": out("orbit.zip"), "frames": 3, "width": 96, "height": 64})),
+        ("scene.export", json!({"path": out("scene.png"), "width": 96, "height": 64})),
+        ("scene.exportOrbit", json!({"path": out("scene.zip"), "frames": 3, "width": 96, "height": 64})),
         ("layout.export", json!({"path": out("layout.pdf"), "dpi": 72})),
         ("report.export", json!({"path": out("report.pdf"), "dpi": 72})),
         ("source.publish", json!({"layer": "towns"})),

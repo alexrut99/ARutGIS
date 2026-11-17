@@ -1,0 +1,1125 @@
+//! A map's 3D scene (ARutGIS, `rustgis_map::scene`) drawn on the CPU with a depth buffer: the
+//! study area's ground as a block, the map draped over it, and features stood up in it. What
+//! takes long (the heights, the draped map, the features' shapes) is worked out once by
+//! [`build`]; [`draw`] then draws it from any camera, fast enough to turn it with the mouse.
+//!
+//! The scene's space is metres on the ground: x east and y north of the middle of the box, z up
+//! (heights above sea level, exaggerated). Unlike the tilted map, nothing is drawn in order of
+//! depth: every pixel keeps the nearest thing drawn on it, so wells under the ground stay under
+//! it, and show through it when the ground is made clear.
+
+use rustgis_data::Geometry;
+use rustgis_data::raster::Raster;
+use rustgis_geom::{Coord, lonlat_to_merc};
+use rustgis_map::scene::{Scene, SceneCamera, SceneKind, SceneLayer};
+use rustgis_map::{Camera, Map, Rgba};
+use tiny_skia::Pixmap;
+
+use crate::canvas::Canvas;
+
+/// The camera's field of view, top to bottom (degrees).
+const FOV: f64 = 40.0;
+/// The most cells along the longer side of the ground's mesh.
+pub const MAX_CELLS: usize = 400;
+/// The fewest.
+const MIN_CELLS: usize = 16;
+/// The most features of a layer stood up in a scene: past it the rest are left out, said.
+pub const MAX_FEATURES: usize = 20_000;
+/// The most labels written.
+const MAX_LABELS: usize = 2_000;
+/// The light: from the north-west, about 38° up (as the map's hillshades are lit).
+const LIGHT: [f64; 3] = [-0.5, 0.6, 0.62];
+/// How lit the ground's underside is, the map seen through it from below.
+const UNDERSIDE: f32 = 0.7;
+/// How much darker than the sides the base is.
+const BASE_SHADE: f32 = 0.6;
+/// A water level's ring.
+const WATER: [f32; 3] = [0.12, 0.53, 0.90];
+
+/// How finely a scene is built.
+#[derive(Clone, Copy, Debug)]
+pub struct Detail {
+    /// Pixels along the longer side of the map draped over the ground.
+    pub drape_px: u32,
+    /// The most cells along the longer side of the ground's mesh (no more than the DEM's own).
+    pub cells: usize,
+}
+
+impl Detail {
+    /// For turning the scene in the app.
+    pub const SCREEN: Detail = Detail { drape_px: 2048, cells: 220 };
+    /// For an image or an animation written to a file.
+    pub const EXPORT: Detail = Detail { drape_px: 4096, cells: MAX_CELLS };
+}
+
+/// Triangles of one kind: positions in the scene's space (metres), and per vertex either a lit
+/// colour or, draped, a light (first of `col`) and the drape's coordinates.
+#[derive(Default)]
+struct Mesh {
+    pos: Vec<[f32; 3]>,
+    col: Vec<[f32; 3]>,
+    uv: Vec<[f32; 2]>,
+    tris: Vec<[u32; 3]>,
+}
+
+impl Mesh {
+    fn vertex(&mut self, p: [f64; 3], col: [f32; 3]) -> u32 {
+        self.pos.push(p.map(|v| v as f32));
+        self.col.push(col);
+        (self.pos.len() - 1) as u32
+    }
+
+    /// A flat-lit quad a, b, c, d (in turn round it), facing `n`.
+    fn quad(&mut self, q: [[f64; 3]; 4], n: [f64; 3], color: [f32; 3]) {
+        let c = lit(color, n);
+        let i = q.map(|p| self.vertex(p, c));
+        self.tris.push([i[0], i[1], i[2]]);
+        self.tris.push([i[0], i[2], i[3]]);
+    }
+}
+
+/// A label written beside a feature: at a point of the scene.
+struct Label {
+    text: String,
+    at: [f64; 3],
+}
+
+/// A scene worked out for drawing: [`build`].
+pub struct Built {
+    /// Cells across and down the ground's mesh, and its heights (exaggerated metres) at the
+    /// cells' corners, row by row from the north.
+    cols: usize,
+    rows: usize,
+    heights: Vec<f32>,
+    /// Half the box's width and height on the ground (metres).
+    half: (f64, f64),
+    /// The map draped over the ground, north up over the box.
+    drape: Option<Pixmap>,
+    ground: Mesh,
+    sides: Mesh,
+    solids: Mesh,
+    labels: Vec<Label>,
+    /// How lit the ground's underside is.
+    under: f32,
+    /// The box's diagonal on the ground (metres): the camera's distance is a share of it.
+    diag: f64,
+    /// The height the camera turns about by default: the middle of the ground's.
+    mid: f64,
+    /// The lowest and highest the scene reaches (exaggerated metres).
+    pub z_range: (f64, f64),
+    /// What was left out and why, and parts of the draped map that are missing: for a notice.
+    pub notes: Vec<String>,
+    /// The credits of the tile layers draped over the ground.
+    pub credits: Vec<String>,
+}
+
+/// Works out `scene` of `map` for drawing at `detail`: the ground's heights from its DEM, `map`
+/// drawn north up over the box (on the map given, whose camera and terrain are changed: pass a
+/// copy), and its layers' features stood up. Errors: a scene that fails its check, or a DEM with
+/// no heights in the box. A DEM, a layer or a field taken out of the map since the scene named
+/// it is left out, said in [`Built::notes`].
+pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, String> {
+    scene.check()?;
+    // Cancel (an export's) is looked at between the steps.
+    let go_on = || rustgis_data::progress::check().map_err(|e| e.to_string());
+    go_on()?;
+    let [x0, y0, x1, y1] = scene.extent;
+    let (cx, cy) = scene.center();
+    let k = scene.ground_scale();
+    let (gw, gh) = scene.ground_size();
+    let half = (gw / 2.0, gh / 2.0);
+    let ex = scene.exaggeration;
+    let mut notes = Vec::new();
+
+    // The ground's heights.
+    // A DEM taken out of the map since leaves the ground flat, said.
+    let dem: Option<std::sync::Arc<Raster>> = scene.dem.as_ref().and_then(|name| {
+        let r = map.layer_by_name(name).and_then(|l| l.raster.as_ref()).and_then(|r| r.data.clone());
+        if r.is_none() {
+            notes.push(format!("the scene's DEM '{name}' isn't a raster layer in the map, so the ground is flat"));
+        }
+        r
+    });
+    let long = detail.cells.clamp(MIN_CELLS, MAX_CELLS);
+    let mut along = long as f64;
+    if let Some(r) = &dem
+        && let Some([fx0, _, fx1, _]) = crate::terrain::raster_footprint(r)
+        && r.width > 0
+    {
+        // No finer than the DEM's own cells across the box.
+        let per_m = f64::from(r.width) / (fx1 - fx0).max(1e-9);
+        along = along.min(((x1 - x0).max(y1 - y0) * per_m).ceil());
+    }
+    let along = (along as usize).clamp(MIN_CELLS, long);
+    let (cols, rows) = if gw >= gh {
+        (along, ((along as f64 * gh / gw).round() as usize).max(4))
+    } else {
+        (((along as f64 * gw / gh).round() as usize).max(4), along)
+    };
+    let mut heights = vec![f32::NAN; (cols + 1) * (rows + 1)];
+    if let Some(r) = &dem {
+        for j in 0..=rows {
+            for i in 0..=cols {
+                let m = Coord::new(x0 + (x1 - x0) * i as f64 / cols as f64, y1 - (y1 - y0) * j as f64 / rows as f64);
+                if let Some(h) = crate::terrain::dem_height(r, m) {
+                    heights[j * (cols + 1) + i] = (h * ex) as f32;
+                }
+            }
+        }
+        let known = heights.iter().filter(|h| h.is_finite()).count();
+        if known == 0 {
+            return Err(format!("{} has no heights inside the scene's extent", scene.dem.as_deref().unwrap_or_default()));
+        }
+        if known < heights.len() {
+            notes.push(format!(
+                "{} has no heights over part of the scene, drawn at its lowest there",
+                scene.dem.as_deref().unwrap_or_default()
+            ));
+        }
+        let low = heights.iter().copied().filter(|h| h.is_finite()).fold(f32::INFINITY, f32::min);
+        for h in &mut heights {
+            if !h.is_finite() {
+                *h = low;
+            }
+        }
+    } else {
+        heights.fill(0.0);
+    }
+    go_on()?;
+    let (g_lo, g_hi) = heights.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), h| (a.min(f64::from(*h)), b.max(f64::from(*h))));
+
+    let mut built = Built {
+        cols,
+        rows,
+        heights,
+        half,
+        drape: None,
+        ground: Mesh::default(),
+        sides: Mesh::default(),
+        solids: Mesh::default(),
+        labels: Vec::new(),
+        under: UNDERSIDE,
+        diag: gw.hypot(gh),
+        mid: (g_lo + g_hi) / 2.0,
+        z_range: (g_lo, g_hi),
+        notes: Vec::new(),
+        credits: Vec::new(),
+    };
+
+    // The features, before the sides: the base goes below the deepest well.
+    let local = |lonlat: Coord| {
+        let m = lonlat_to_merc(lonlat);
+        ((m.x - cx) * k, (m.y - cy) * k)
+    };
+    let inside = |(x, y): (f64, f64)| x.abs() <= half.0 && y.abs() <= half.1;
+    let auto_size = built.diag / 250.0;
+    for sl in &scene.layers {
+        stand_up(&map, sl, &mut built, &local, &inside, auto_size, ex, &mut notes);
+    }
+    go_on()?;
+    let lowest = built.z_range.0.min(g_lo);
+    // By default a quarter of the relief below what is lowest, at least 50 m.
+    let depth = scene.depth.unwrap_or_else(|| ((g_hi - g_lo) / ex / 4.0).max(50.0));
+    let base = lowest - depth * ex;
+    built.z_range.0 = base;
+    ground_mesh(&mut built);
+    sides_mesh(&mut built, base, scene.walls);
+
+    // The map draped over the ground.
+    let (dw, dh) = if gw >= gh {
+        (detail.drape_px, ((f64::from(detail.drape_px) * gh / gw).round() as u32).max(16))
+    } else {
+        (((f64::from(detail.drape_px) * gw / gh).round() as u32).max(16), detail.drape_px)
+    };
+    map.view.terrain = None;
+    if map.projection != rustgis_map::Projection::WebMercator {
+        map.set_projection(rustgis_map::Projection::WebMercator);
+    }
+    let res = (x1 - x0) / f64::from(dw);
+    let camera = Camera::new(Coord::new(cx, cy), res);
+    map.camera = camera;
+    let view = crate::View { width: f64::from(dw), height: f64::from(dh), pixels_per_point: 1.0, camera, sky: false };
+    match crate::render_placed(&mut map, &view) {
+        Ok(p) => {
+            notes.extend(p.gaps);
+            built.credits = p.credits;
+            built.drape = Some(p.pixmap);
+        }
+        Err(e) => notes.push(format!("the map couldn't be draped over the ground: {e}")),
+    }
+    go_on()?;
+    built.notes = notes;
+    Ok(built)
+}
+
+/// A colour lit from [`LIGHT`] by a face facing `n`.
+fn lit(c: [f32; 3], n: [f64; 3]) -> [f32; 3] {
+    let s = shade(n, 0.45, 0.62) as f32;
+    c.map(|v| (v * s).min(1.0))
+}
+
+/// How much light a face facing `n` takes: `ambient` and `diffuse` of the light along it.
+fn shade(n: [f64; 3], ambient: f64, diffuse: f64) -> f64 {
+    let l = norm(LIGHT);
+    let n = norm(n);
+    ambient + diffuse * dot(n, l).max(0.0) / l[2].max(0.1) * 0.62
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+
+fn norm(a: [f64; 3]) -> [f64; 3] {
+    let l = dot(a, a).sqrt();
+    if l > 0.0 { a.map(|v| v / l) } else { [0.0, 0.0, 1.0] }
+}
+
+fn rgb(c: Rgba) -> [f32; 3] {
+    [c.r(), c.g(), c.b()].map(|v| f32::from(v) / 255.0)
+}
+
+impl Built {
+    /// The ground's height (exaggerated metres) at a point of the scene, from its mesh.
+    pub fn ground_at(&self, x: f64, y: f64) -> f64 {
+        let (hw, hh) = self.half;
+        let fx = ((x + hw) / (2.0 * hw) * self.cols as f64).clamp(0.0, self.cols as f64);
+        let fy = ((hh - y) / (2.0 * hh) * self.rows as f64).clamp(0.0, self.rows as f64);
+        let (i, j) = ((fx.floor() as usize).min(self.cols - 1), (fy.floor() as usize).min(self.rows - 1));
+        let (tx, ty) = (fx - i as f64, fy - j as f64);
+        let h = |i: usize, j: usize| f64::from(self.heights[j * (self.cols + 1) + i]);
+        let top = h(i, j) + (h(i + 1, j) - h(i, j)) * tx;
+        let bottom = h(i, j + 1) + (h(i + 1, j + 1) - h(i, j + 1)) * tx;
+        top + (bottom - top) * ty
+    }
+
+    /// The point of the scene at a corner of the ground's mesh.
+    fn corner(&self, i: usize, j: usize) -> [f64; 3] {
+        let (hw, hh) = self.half;
+        [
+            -hw + 2.0 * hw * i as f64 / self.cols as f64,
+            hh - 2.0 * hh * j as f64 / self.rows as f64,
+            f64::from(self.heights[j * (self.cols + 1) + i]),
+        ]
+    }
+}
+
+/// The ground's top: its mesh, lit by its slope, the map draped over it.
+fn ground_mesh(b: &mut Built) {
+    let (cols, rows) = (b.cols, b.rows);
+    let (dx, dy) = (2.0 * b.half.0 / cols as f64, 2.0 * b.half.1 / rows as f64);
+    let mut m = Mesh::default();
+    for j in 0..=rows {
+        for i in 0..=cols {
+            let p = b.corner(i, j);
+            let h = |i: usize, j: usize| f64::from(b.heights[j * (cols + 1) + i]);
+            let (il, ir) = (i.saturating_sub(1), (i + 1).min(cols));
+            let (ju, jd) = (j.saturating_sub(1), (j + 1).min(rows));
+            let gx = (h(ir, j) - h(il, j)) / (dx * (ir - il) as f64);
+            // Rows run south.
+            let gy = (h(i, ju) - h(i, jd)) / (dy * (jd - ju) as f64);
+            let s = shade([-gx, -gy, 1.0], 0.55, 0.47).clamp(0.3, 1.2) as f32;
+            m.pos.push(p.map(|v| v as f32));
+            m.col.push([s, s, s]);
+            m.uv.push([i as f32 / cols as f32, j as f32 / rows as f32]);
+        }
+    }
+    let at = |i: usize, j: usize| (j * (cols + 1) + i) as u32;
+    for j in 0..rows {
+        for i in 0..cols {
+            // Anticlockwise seen from above.
+            m.tris.push([at(i, j), at(i, j + 1), at(i + 1, j + 1)]);
+            m.tris.push([at(i, j), at(i + 1, j + 1), at(i + 1, j)]);
+        }
+    }
+    b.ground = m;
+}
+
+/// The block's four sides, from the ground's edge down to `base`, and its base.
+fn sides_mesh(b: &mut Built, base: f64, walls: Rgba) {
+    let c = rgb(walls);
+    let mut m = Mesh::default();
+    let (cols, rows) = (b.cols, b.rows);
+    // Each side's corners along it, and the way it faces.
+    let edges: [(Vec<(usize, usize)>, [f64; 3]); 4] = [
+        ((0..=cols).map(|i| (i, 0)).collect(), [0.0, 1.0, 0.0]),
+        ((0..=cols).map(|i| (i, rows)).collect(), [0.0, -1.0, 0.0]),
+        ((0..=rows).map(|j| (0, j)).collect(), [-1.0, 0.0, 0.0]),
+        ((0..=rows).map(|j| (cols, j)).collect(), [1.0, 0.0, 0.0]),
+    ];
+    for (edge, n) in edges {
+        for w in edge.windows(2) {
+            let (a, d) = (b.corner(w[0].0, w[0].1), b.corner(w[1].0, w[1].1));
+            m.quad([a, [a[0], a[1], base], [d[0], d[1], base], d], n, c);
+        }
+    }
+    // The base, unlit (the light is from above): the sides' colour, darker.
+    let (hw, hh) = b.half;
+    let dark = c.map(|v| v * BASE_SHADE);
+    let i = [[-hw, hh, base], [-hw, -hh, base], [hw, -hh, base], [hw, hh, base]].map(|p| m.vertex(p, dark));
+    m.tris.push([i[0], i[1], i[2]]);
+    m.tris.push([i[0], i[2], i[3]]);
+    b.sides = m;
+}
+
+/// Stands up the features of one of a scene's layers.
+#[expect(clippy::too_many_arguments, reason = "what a layer's features are placed by, all needed at once")]
+fn stand_up(
+    map: &Map,
+    sl: &SceneLayer,
+    b: &mut Built,
+    local: &dyn Fn(Coord) -> (f64, f64),
+    inside: &dyn Fn((f64, f64)) -> bool,
+    auto_size: f64,
+    ex: f64,
+    notes: &mut Vec<String>,
+) {
+    let name = &sl.layer;
+    // A layer or a field taken out of the map since: the layer is left out, said.
+    let Some(layer) = map.layer_by_name(name) else {
+        notes.push(format!("the scene stands up '{name}', which isn't a layer of the map any more"));
+        return;
+    };
+    let ds = &layer.dataset;
+    let field = |f: &Option<String>| -> Result<Option<usize>, String> {
+        f.as_deref()
+            .map(|f| ds.field_index(f).ok_or_else(|| format!("{name} has no field '{f}' any more, so it is left out of the scene")))
+            .transpose()
+    };
+    let fields = (|| {
+        Ok::<_, String>((
+            field(&sl.depth)?,
+            field(&sl.top)?,
+            field(&sl.water)?,
+            field(&sl.elevation)?,
+            field(&sl.height)?,
+            field(&sl.label)?,
+        ))
+    })();
+    let (depth, top, water, elevation, height, label) = match fields {
+        Ok(f) => f,
+        Err(e) => {
+            notes.push(e);
+            return;
+        }
+    };
+    let number = |row: usize, f: Option<usize>| f.and_then(|f| ds.value(row, f).as_f64()).filter(|v| v.is_finite());
+    let size = sl.size.unwrap_or(auto_size);
+    let (mut shown, mut missing, mut over) = (0usize, 0usize, 0usize);
+    for row in 0..ds.features.len() {
+        let Some(g) = ds.features.get(row).and_then(|f| f.geometry.as_ref()) else { continue };
+        let color = sl.color.unwrap_or_else(|| {
+            let s = layer.renderer.symbol_for(ds, row);
+            if s.fill.a() > 0 { s.fill } else { s.stroke }
+        });
+        let color = rgb(color);
+        let mut placed: Option<[f64; 3]> = None;
+        match (sl.kind, g) {
+            (SceneKind::Well | SceneKind::Point, Geometry::Point(_) | Geometry::MultiPoint(_)) => {
+                let pts: Vec<Coord> = match g {
+                    Geometry::Point(c) => vec![*c],
+                    Geometry::MultiPoint(v) => v.clone(),
+                    _ => Vec::new(),
+                };
+                for p in pts {
+                    let at = local(p);
+                    if !inside(at) {
+                        continue;
+                    }
+                    if shown >= MAX_FEATURES {
+                        over += 1;
+                        continue;
+                    }
+                    let ground = b.ground_at(at.0, at.1);
+                    if sl.kind == SceneKind::Well {
+                        let Some(d) = number(row, depth).filter(|d| (0.0..=rustgis_map::scene::MAX_HEIGHT).contains(d)) else {
+                            missing += 1;
+                            continue;
+                        };
+                        let head = number(row, top).map_or(ground, |t| t * ex);
+                        let r = size / 2.0;
+                        // Its casing stands a little above the head, to show where it is from above.
+                        tube(&mut b.solids, at, head + r, head - d * ex, r, color, 14);
+                        if let Some(w) = number(row, water).filter(|w| *w >= 0.0 && *w <= d) {
+                            let z = head - w * ex;
+                            tube(&mut b.solids, at, z + r * 0.6, z - r * 0.6, r * 1.7, WATER, 14);
+                        }
+                        b.z_range.0 = b.z_range.0.min(head - d * ex);
+                        b.z_range.1 = b.z_range.1.max(head);
+                        placed = Some([at.0, at.1, head.max(ground) + r * 3.0]);
+                    } else {
+                        let z = match elevation {
+                            Some(_) => match number(row, elevation) {
+                                Some(e) => e * ex,
+                                None => {
+                                    missing += 1;
+                                    continue;
+                                }
+                            },
+                            None => ground + sl.offset * ex + size / 2.0,
+                        };
+                        ball(&mut b.solids, [at.0, at.1, z], size / 2.0, color);
+                        b.z_range.0 = b.z_range.0.min(z - size / 2.0);
+                        b.z_range.1 = b.z_range.1.max(z + size / 2.0);
+                        placed = Some([at.0, at.1, z + size]);
+                    }
+                    shown += 1;
+                }
+            }
+            (SceneKind::Extrude, Geometry::Polygon(polys)) => {
+                for poly in polys {
+                    let Some(outer) = poly.first() else { continue };
+                    let ring = |r: &Vec<Coord>| -> Vec<(f64, f64)> {
+                        let mut v: Vec<(f64, f64)> = r.iter().map(|c| local(*c)).collect();
+                        if v.len() > 1 && v.first() == v.last() {
+                            v.pop();
+                        }
+                        v
+                    };
+                    let o = ring(outer);
+                    if o.len() < 3 || !o.iter().any(|p| inside(*p)) {
+                        continue;
+                    }
+                    if shown >= MAX_FEATURES {
+                        over += 1;
+                        continue;
+                    }
+                    let tall = match height {
+                        Some(_) => match number(row, height) {
+                            Some(h) if h >= 0.0 => h,
+                            _ => {
+                                missing += 1;
+                                continue;
+                            }
+                        },
+                        None => sl.height_m,
+                    };
+                    let holes: Vec<Vec<(f64, f64)>> = poly[1..].iter().map(ring).filter(|h| h.len() >= 3).collect();
+                    let low = o.iter().map(|p| b.ground_at(p.0, p.1)).fold(f64::INFINITY, f64::min);
+                    let z0 = low + sl.offset * ex;
+                    let z1 = z0 + tall * ex;
+                    raised(&mut b.solids, &o, &holes, z0, z1, color);
+                    b.z_range.1 = b.z_range.1.max(z1);
+                    let (sx, sy) = o.iter().fold((0.0, 0.0), |(a, c), p| (a + p.0, c + p.1));
+                    placed = Some([sx / o.len() as f64, sy / o.len() as f64, z1 + auto_size]);
+                    shown += 1;
+                }
+            }
+            _ => {}
+        }
+        if let (Some(at), Some(f)) = (placed, label)
+            && b.labels.len() < MAX_LABELS
+        {
+            let text = ds.value(row, f).to_string();
+            if !text.is_empty() {
+                b.labels.push(Label { text, at });
+            }
+        }
+    }
+    let what = match sl.kind {
+        SceneKind::Well => "wells",
+        SceneKind::Point => "points",
+        SceneKind::Extrude => "polygons",
+    };
+    if missing > 0 {
+        let why = match sl.kind {
+            SceneKind::Well => "no depth (or one out of range)",
+            SceneKind::Point => "no height",
+            SceneKind::Extrude => "no height",
+        };
+        notes.push(format!("{missing} {what} of {name} have {why}, so they are left out"));
+    }
+    if over > 0 {
+        notes.push(format!("{name}: only the first {MAX_FEATURES} {what} are stood up; {over} more are left out"));
+    }
+}
+
+/// An upright tube of `sides` sides about `at`, from `z_top` down to `z_bottom`, closed.
+fn tube(m: &mut Mesh, at: (f64, f64), z_top: f64, z_bottom: f64, r: f64, color: [f32; 3], sides: usize) {
+    let p = |a: f64, z: f64| [at.0 + r * a.cos(), at.1 + r * a.sin(), z];
+    let step = std::f64::consts::TAU / sides as f64;
+    for s in 0..sides {
+        let (a, b) = (s as f64 * step, (s + 1) as f64 * step);
+        let mid = (a + b) / 2.0;
+        m.quad([p(a, z_top), p(a, z_bottom), p(b, z_bottom), p(b, z_top)], [mid.cos(), mid.sin(), 0.0], color);
+    }
+    for (z, n) in [(z_top, 1.0), (z_bottom, -1.0)] {
+        let c = lit(color, [0.0, 0.0, n]);
+        let centre = m.vertex([at.0, at.1, z], c);
+        for s in 0..sides {
+            let (a, b) = (m.vertex(p(s as f64 * step, z), c), m.vertex(p((s + 1) as f64 * step, z), c));
+            m.tris.push([centre, a, b]);
+        }
+    }
+}
+
+/// A ball of radius `r` about `at`: an icosahedron split once.
+fn ball(m: &mut Mesh, at: [f64; 3], r: f64, color: [f32; 3]) {
+    let t = (1.0 + 5f64.sqrt()) / 2.0;
+    let mut v: Vec<[f64; 3]> = [
+        [-1.0, t, 0.0],
+        [1.0, t, 0.0],
+        [-1.0, -t, 0.0],
+        [1.0, -t, 0.0],
+        [0.0, -1.0, t],
+        [0.0, 1.0, t],
+        [0.0, -1.0, -t],
+        [0.0, 1.0, -t],
+        [t, 0.0, -1.0],
+        [t, 0.0, 1.0],
+        [-t, 0.0, -1.0],
+        [-t, 0.0, 1.0],
+    ]
+    .into_iter()
+    .map(norm)
+    .collect();
+    let faces: [[usize; 3]; 20] = [
+        [0, 11, 5],
+        [0, 5, 1],
+        [0, 1, 7],
+        [0, 7, 10],
+        [0, 10, 11],
+        [1, 5, 9],
+        [5, 11, 4],
+        [11, 10, 2],
+        [10, 7, 6],
+        [7, 1, 8],
+        [3, 9, 4],
+        [3, 4, 2],
+        [3, 2, 6],
+        [3, 6, 8],
+        [3, 8, 9],
+        [4, 9, 5],
+        [2, 4, 11],
+        [6, 2, 10],
+        [8, 6, 7],
+        [9, 8, 1],
+    ];
+    let mut tris = Vec::with_capacity(80);
+    for [a, b, c] in faces {
+        let mut mid = |i: usize, j: usize| {
+            v.push(norm([(v[i][0] + v[j][0]) / 2.0, (v[i][1] + v[j][1]) / 2.0, (v[i][2] + v[j][2]) / 2.0]));
+            v.len() - 1
+        };
+        let (ab, bc, ca) = (mid(a, b), mid(b, c), mid(c, a));
+        tris.extend([[a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]]);
+    }
+    let first = m.pos.len() as u32;
+    for n in &v {
+        m.pos.push([at[0] + r * n[0], at[1] + r * n[1], at[2] + r * n[2]].map(|x| x as f32));
+        m.col.push(lit(color, *n));
+    }
+    m.tris.extend(tris.into_iter().map(|t| t.map(|i| first + i as u32)));
+}
+
+/// A polygon raised from `z0` to `z1`: its roof and its walls.
+fn raised(m: &mut Mesh, outer: &[(f64, f64)], holes: &[Vec<(f64, f64)>], z0: f64, z1: f64, color: [f32; 3]) {
+    if let Some(tris) = rustgis_geom::triangulate::triangulate(outer, holes) {
+        let c = lit(color, [0.0, 0.0, 1.0]);
+        let first = m.pos.len() as u32;
+        for p in outer.iter().chain(holes.iter().flatten()) {
+            m.vertex([p.0, p.1, z1], c);
+        }
+        m.tris.extend(tris.into_iter().map(|t| t.map(|i| first + i as u32)));
+    }
+    if z1 - z0 <= 0.0 {
+        return;
+    }
+    for ring in std::iter::once(outer).chain(holes.iter().map(Vec::as_slice)) {
+        for i in 0..ring.len() {
+            let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+            // Its normal either way: walls are drawn from both sides.
+            let n = [b.1 - a.1, a.0 - b.0, 0.0];
+            m.quad([[a.0, a.1, z1], [a.0, a.1, z0], [b.0, b.1, z0], [b.0, b.1, z1]], n, color);
+        }
+    }
+}
+
+/// Where the eye is and how it looks, for a picture `w` × `h` pixels.
+struct Eye {
+    at: [f64; 3],
+    right: [f64; 3],
+    up: [f64; 3],
+    fwd: [f64; 3],
+    /// Pixels a unit of the picture plane at a unit's distance spans.
+    focal: f64,
+    centre: (f64, f64),
+    near: f64,
+}
+
+impl Eye {
+    fn of(b: &Built, cam: &SceneCamera, w: f64, h: f64) -> Eye {
+        let (th, ph) = (cam.heading.to_radians(), cam.tilt.to_radians());
+        let fwd = [th.sin() * ph.sin(), th.cos() * ph.sin(), -ph.cos()];
+        let right = [th.cos(), -th.sin(), 0.0];
+        let up = cross(right, fwd);
+        let dist = cam.zoom * b.diag;
+        let target = [cam.target[0], cam.target[1], b.mid + cam.target[2]];
+        let at = [target[0] - dist * fwd[0], target[1] - dist * fwd[1], target[2] - dist * fwd[2]];
+        Eye {
+            at,
+            right,
+            up,
+            fwd,
+            focal: (h / 2.0) / (FOV.to_radians() / 2.0).tan(),
+            centre: (w / 2.0, h / 2.0),
+            near: (dist * 0.002).max(0.05),
+        }
+    }
+
+    /// A point of the scene in the eye's space: right, up and ahead.
+    fn view(&self, p: [f32; 3]) -> [f64; 3] {
+        let d = [f64::from(p[0]) - self.at[0], f64::from(p[1]) - self.at[1], f64::from(p[2]) - self.at[2]];
+        [dot(d, self.right), dot(d, self.up), dot(d, self.fwd)]
+    }
+
+    /// A point of the eye's space on the picture (pixels), and 1 / its depth.
+    fn project(&self, v: [f64; 3]) -> (f32, f32, f32) {
+        let iz = 1.0 / v[2];
+        ((self.centre.0 + v[0] * iz * self.focal) as f32, (self.centre.1 - v[1] * iz * self.focal) as f32, iz as f32)
+    }
+}
+
+/// A vertex on the picture: where, 1 / its depth, and what it carries over 1 / its depth
+/// (colour or light, and the drape's coordinates), for perspective.
+#[derive(Clone, Copy)]
+struct Sv {
+    x: f32,
+    y: f32,
+    iz: f32,
+    a: [f32; 5],
+}
+
+/// What is being drawn into.
+struct Target {
+    w: usize,
+    h: usize,
+    rgb: Vec<[f32; 3]>,
+    /// 1 / depth of what is nearest on each pixel (0: nothing).
+    depth: Vec<f32>,
+    /// 1 / depth of the nearest clear surface on each pixel, the only one laid over it; infinite
+    /// once laid, so a pixel on two triangles' shared edge isn't laid twice.
+    clear: Vec<f32>,
+}
+
+#[derive(Clone, Copy)]
+enum How<'a> {
+    /// Kept where nearest, and nearest from then on.
+    Solid,
+    /// Kept as the nearest clear surface where it is ([`Target::clear`]), nothing drawn.
+    Mark,
+    /// Laid over what is behind it, `alpha` of it, where it is the nearest clear surface,
+    /// leaving what is nearest as it was.
+    Clear(f32),
+    /// Draped: the picture's colours by the light, or by `under` seen from below.
+    Draped(&'a Pixmap, f32, Option<f32>),
+}
+
+impl Target {
+    fn tri(&mut self, v: [Sv; 3], how: How) {
+        let area = (v[1].x - v[0].x) * (v[2].y - v[0].y) - (v[1].y - v[0].y) * (v[2].x - v[0].x);
+        if area.is_nan() || area.abs() <= 1e-9 {
+            return;
+        }
+        // Anticlockwise in the scene seen from above is clockwise on the picture (y down).
+        let below = area > 0.0;
+        let minx = v.iter().map(|p| p.x).fold(f32::INFINITY, f32::min).floor().max(0.0) as usize;
+        let maxx = (v.iter().map(|p| p.x).fold(f32::NEG_INFINITY, f32::max).ceil() as isize).min(self.w as isize - 1);
+        let miny = v.iter().map(|p| p.y).fold(f32::INFINITY, f32::min).floor().max(0.0) as usize;
+        let maxy = (v.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max).ceil() as isize).min(self.h as isize - 1);
+        if maxx < 0 || maxy < 0 {
+            return;
+        }
+        let inv = 1.0 / area;
+        let edge = |a: &Sv, b: &Sv, x: f32, y: f32| (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+        for py in miny..=maxy as usize {
+            let y = py as f32 + 0.5;
+            let row = py * self.w;
+            for px in minx..=maxx as usize {
+                let x = px as f32 + 0.5;
+                let w0 = edge(&v[1], &v[2], x, y) * inv;
+                let w1 = edge(&v[2], &v[0], x, y) * inv;
+                let w2 = 1.0 - w0 - w1;
+                if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+                    continue;
+                }
+                let iz = w0 * v[0].iz + w1 * v[1].iz + w2 * v[2].iz;
+                let i = row + px;
+                if iz <= self.depth[i] {
+                    continue;
+                }
+                let at = |k: usize| (w0 * v[0].a[k] + w1 * v[1].a[k] + w2 * v[2].a[k]) / iz;
+                match how {
+                    How::Solid => {
+                        self.rgb[i] = [at(0), at(1), at(2)];
+                        self.depth[i] = iz;
+                    }
+                    How::Mark => {
+                        self.clear[i] = self.clear[i].max(iz);
+                    }
+                    How::Clear(alpha) => {
+                        if iz < self.clear[i] * (1.0 - 1e-5) {
+                            continue;
+                        }
+                        self.clear[i] = f32::INFINITY;
+                        let c = [at(0), at(1), at(2)];
+                        let d = &mut self.rgb[i];
+                        *d = [0, 1, 2].map(|k| d[k] + (c[k] - d[k]) * alpha);
+                    }
+                    How::Draped(pm, under, alpha) => {
+                        // Seen from below, the map shows through, dimmer.
+                        let light = if below { under } else { at(0) };
+                        let c = sample(pm, at(3), at(4)).map(|c| (c * light).min(1.0));
+                        match alpha {
+                            None => {
+                                self.rgb[i] = c;
+                                self.depth[i] = iz;
+                            }
+                            Some(alpha) => {
+                                if iz < self.clear[i] * (1.0 - 1e-5) {
+                                    continue;
+                                }
+                                self.clear[i] = f32::INFINITY;
+                                let d = &mut self.rgb[i];
+                                *d = [0, 1, 2].map(|k| d[k] + (c[k] - d[k]) * alpha);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The drape's colour at (`u`, `v`), 0 to 1 across and down it, bilinearly, over white where it
+/// is clear.
+fn sample(pm: &Pixmap, u: f32, v: f32) -> [f32; 3] {
+    let (w, h) = (pm.width() as f32, pm.height() as f32);
+    let (fx, fy) = ((u * w - 0.5).clamp(0.0, w - 1.0), (v * h - 0.5).clamp(0.0, h - 1.0));
+    let (x0, y0) = (fx.floor() as u32, fy.floor() as u32);
+    let (x1, y1) = ((x0 + 1).min(pm.width() - 1), (y0 + 1).min(pm.height() - 1));
+    let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+    let px = |x: u32, y: u32| {
+        let p = pm.pixel(x, y).unwrap_or(tiny_skia::PremultipliedColorU8::TRANSPARENT);
+        // Premultiplied over white.
+        let a = 1.0 - f32::from(p.alpha()) / 255.0;
+        [p.red(), p.green(), p.blue()].map(|c| f32::from(c) / 255.0 + a)
+    };
+    let (a, b, c, d) = (px(x0, y0), px(x1, y0), px(x0, y1), px(x1, y1));
+    [0, 1, 2].map(|k| {
+        let top = a[k] + (b[k] - a[k]) * tx;
+        let bottom = c[k] + (d[k] - c[k]) * tx;
+        top + (bottom - top) * ty
+    })
+}
+
+/// A mesh's triangles on the picture, cut where they cross the near plane.
+fn draw_mesh(t: &mut Target, eye: &Eye, m: &Mesh, how: How, draped: bool) {
+    let views: Vec<[f64; 3]> = m.pos.iter().map(|p| eye.view(*p)).collect();
+    let attrs = |i: usize| -> [f32; 5] {
+        let c = m.col[i];
+        let uv = if draped { m.uv[i] } else { [0.0, 0.0] };
+        [c[0], c[1], c[2], uv[0], uv[1]]
+    };
+    for tri in &m.tris {
+        let idx = tri.map(|i| i as usize);
+        let vs = idx.map(|i| (views[i], attrs(i)));
+        if vs.iter().all(|(v, _)| v[2] < eye.near) {
+            continue;
+        }
+        let poly = clip_near(&vs, eye.near);
+        let sv: Vec<Sv> = poly
+            .iter()
+            .map(|(v, a)| {
+                let (x, y, iz) = eye.project(*v);
+                Sv { x, y, iz, a: a.map(|c| c * iz) }
+            })
+            .collect();
+        for k in 1..sv.len().saturating_sub(1) {
+            t.tri([sv[0], sv[k], sv[k + 1]], how);
+        }
+    }
+}
+
+/// A triangle's part in front of the near plane (depth `near`): none, a triangle or a quad.
+fn clip_near(vs: &[([f64; 3], [f32; 5]); 3], near: f64) -> Vec<([f64; 3], [f32; 5])> {
+    if vs.iter().all(|(v, _)| v[2] >= near) {
+        return vs.to_vec();
+    }
+    let mut out = Vec::with_capacity(4);
+    for i in 0..3 {
+        let (a, b) = (vs[i], vs[(i + 1) % 3]);
+        let (ina, inb) = (a.0[2] >= near, b.0[2] >= near);
+        if ina {
+            out.push(a);
+        }
+        if ina != inb {
+            let t = (near - a.0[2]) / (b.0[2] - a.0[2]);
+            let p = [0, 1, 2].map(|k| a.0[k] + (b.0[k] - a.0[k]) * t);
+            let at = [0, 1, 2, 3, 4].map(|k| a.1[k] + (b.1[k] - a.1[k]) * t as f32);
+            out.push((p, at));
+        }
+    }
+    out
+}
+
+/// Draws a built scene from `cam`, `w` × `h` pixels at `ppp` pixels a point (for its labels and
+/// credits), the ground `opacity` opaque (0 to 1), each pixel worked out from `ss` × `ss`
+/// samples (1: none, 2 or 3 for a smooth image to keep). `None` for a picture of no pixels.
+pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32, ss: u32) -> Option<Pixmap> {
+    let ss = ss.clamp(1, 4) as usize;
+    let (bw, bh) = (w as usize * ss, h as usize * ss);
+    if bw == 0 || bh == 0 {
+        return None;
+    }
+    let eye = Eye::of(b, cam, bw as f64, bh as f64);
+    let mut t = Target { w: bw, h: bh, rgb: vec![[0.0; 3]; bw * bh], depth: vec![0.0; bw * bh], clear: Vec::new() };
+    // The sky: pale at the horizon, bluer above.
+    for y in 0..bh {
+        let s = y as f32 / bh as f32;
+        let c = [0.60 + 0.30 * s, 0.74 + 0.20 * s, 0.90 + 0.07 * s];
+        t.rgb[y * bw..(y + 1) * bw].fill(c);
+    }
+    let opacity = opacity.clamp(0.0, 1.0) as f32;
+    draw_mesh(&mut t, &eye, &b.solids, How::Solid, false);
+    let white;
+    let drape = match &b.drape {
+        Some(d) => d,
+        None => {
+            white = Pixmap::new(1, 1)?;
+            &white
+        }
+    };
+    if opacity >= 1.0 {
+        draw_mesh(&mut t, &eye, &b.ground, How::Draped(drape, b.under, None), true);
+        draw_mesh(&mut t, &eye, &b.sides, How::Solid, false);
+    } else if opacity > 0.0 {
+        // Clear ground over what is under it: only its nearest surface on each pixel, as glass,
+        // not every fold of the ground behind it.
+        t.clear = vec![0.0; bw * bh];
+        draw_mesh(&mut t, &eye, &b.ground, How::Mark, true);
+        draw_mesh(&mut t, &eye, &b.ground, How::Draped(drape, b.under, Some(opacity)), true);
+        // Then the block's nearest side or base, clearer still (what is under the ground is
+        // what is looked at), not hiding the ground from an eye below the base.
+        t.clear.fill(0.0);
+        draw_mesh(&mut t, &eye, &b.sides, How::Mark, false);
+        draw_mesh(&mut t, &eye, &b.sides, How::Clear(opacity * 0.6), false);
+    }
+    // Down to the picture's pixels.
+    let mut pm = Pixmap::new(w, h)?;
+    let n = (ss * ss) as f32;
+    let data = pm.data_mut();
+    for y in 0..h as usize {
+        for x in 0..w as usize {
+            let mut c = [0.0f32; 3];
+            for sy in 0..ss {
+                for sx in 0..ss {
+                    let p = t.rgb[(y * ss + sy) * bw + x * ss + sx];
+                    c = [c[0] + p[0], c[1] + p[1], c[2] + p[2]];
+                }
+            }
+            let i = (y * w as usize + x) * 4;
+            for k in 0..3 {
+                data[i + k] = ((c[k] / n).clamp(0.0, 1.0) * 255.0).round() as u8;
+            }
+            data[i + 3] = 255;
+        }
+    }
+    // The labels that aren't behind something solid.
+    if !b.labels.is_empty() {
+        let mut canvas = Canvas::from_pixmap(pm);
+        let small = Eye::of(b, cam, f64::from(w), f64::from(h));
+        let px = 12.0 * ppp;
+        for l in &b.labels {
+            let v = small.view(l.at.map(|c| c as f32));
+            if v[2] < small.near {
+                continue;
+            }
+            let (x, y, iz) = small.project(v);
+            if !(x >= 0.0 && y >= 0.0 && x < w as f32 && y < h as f32) {
+                continue;
+            }
+            let (sx, sy) = ((x as usize * ss).min(bw - 1), (y as usize * ss).min(bh - 1));
+            // Behind what is nearest there by more than a little: hidden.
+            if t.depth[sy * bw + sx] > iz * 1.02 {
+                continue;
+            }
+            crate::text::text_at(
+                &mut canvas,
+                &l.text,
+                x,
+                y - px * 0.6,
+                px,
+                Rgba::rgb(0x20, 0x20, 0x20),
+                true,
+                crate::text::Align::Center,
+                true,
+            );
+        }
+        pm = canvas.into_pixmap();
+    }
+    if !b.credits.is_empty() {
+        let mut canvas = Canvas::from_pixmap(pm);
+        crate::draw_attribution(&mut canvas, &b.credits, ppp, (0.0, 0.0));
+        pm = canvas.into_pixmap();
+    }
+    Some(pm)
+}
+
+/// Moves the point `cam` turns about as a drag of (`dx`, `dy`) pixels over a picture `h` pixels
+/// tall moves the ground under it, along the ground (not up or down).
+pub fn pan(b: &Built, cam: &mut SceneCamera, dx: f64, dy: f64, h: f64) {
+    let focal = (h / 2.0) / (FOV.to_radians() / 2.0).tan();
+    let per_px = cam.zoom * b.diag / focal.max(1.0);
+    let th = cam.heading.to_radians();
+    let (right, ahead) = ([th.cos(), -th.sin()], [th.sin(), th.cos()]);
+    // Looking down steeply, a drag up the picture is a drag north; looking level, ahead.
+    let along = 1.0 / cam.tilt.to_radians().cos().abs().max(0.35);
+    cam.target[0] -= (right[0] * dx - ahead[0] * dy * along) * per_px;
+    cam.target[1] -= (right[1] * dx - ahead[1] * dy * along) * per_px;
+    let (hw, hh) = b.half;
+    cam.target[0] = cam.target[0].clamp(-hw * 1.5, hw * 1.5);
+    cam.target[1] = cam.target[1].clamp(-hh * 1.5, hh * 1.5);
+}
+
+/// Encodes a picture as PNG.
+pub fn png(pm: &Pixmap) -> Result<Vec<u8>, String> {
+    pm.encode_png().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustgis_data::raster::{ColorHint, Crs, GeoTransform};
+    use rustgis_data::{Dataset, Field, FieldType, GeometryType, Value};
+    use rustgis_map::scene::SceneLayer;
+
+    /// A map with a DEM over a 4 km box near 14° N: a hill in the middle, 100 m at the edges,
+    /// 400 m on top; and a layer of two wells.
+    fn hill() -> (Map, Scene) {
+        let (side, cell) = (80u32, 50.0);
+        let (cx, cy) = (11_200_000.0, 1_560_000.0);
+        let half = f64::from(side) * cell / 2.0;
+        let gt = GeoTransform { origin_x: cx - half, origin_y: cy + half, pixel_width: cell, pixel_height: -cell };
+        let mut z = Vec::new();
+        for j in 0..side {
+            for i in 0..side {
+                let (dx, dy) = (f64::from(i) - 40.0, f64::from(j) - 40.0);
+                z.push((100.0 + 300.0 * (-(dx * dx + dy * dy) / 300.0).exp()) as f32);
+            }
+        }
+        let dem = Raster::new("dem", side, side, vec![z], gt, Crs::WebMercator, None, ColorHint::Gray, "Float32").unwrap();
+        let mut m = Map::new("Map");
+        m.add_raster("dem", rustgis_map::RasterLayer::from_path(dem, "dem.tif"));
+        let mut wells = Dataset::new(
+            "wells",
+            GeometryType::Point,
+            vec![Field::new("ชื่อ", FieldType::Text), Field::new("ลึก", FieldType::Double), Field::new("น้ำ", FieldType::Double)],
+        );
+        let ll = |x: f64, y: f64| rustgis_geom::merc_to_lonlat(Coord::new(x, y));
+        wells.push(Some(Geometry::Point(ll(cx - 1000.0, cy))), vec![Value::Text("บ่อ ก".into()), Value::Float(120.0), Value::Float(15.0)]);
+        wells.push(Some(Geometry::Point(ll(cx + 1000.0, cy))), vec![Value::Text("บ่อ ข".into()), Value::Null, Value::Null]);
+        m.add_dataset(wells);
+        let mut s = Scene::new([cx - 1500.0, cy - 1500.0, cx + 1500.0, cy + 1500.0]);
+        s.dem = Some("dem".into());
+        let mut w = SceneLayer::new("wells", SceneKind::Well);
+        w.depth = Some("ลึก".into());
+        w.water = Some("น้ำ".into());
+        w.label = Some("ชื่อ".into());
+        w.color = Some(Rgba::rgb(0xE0, 0x30, 0x30));
+        s.layers.push(w);
+        (m, s)
+    }
+
+    fn small() -> Detail {
+        Detail { drape_px: 256, cells: 48 }
+    }
+
+    #[test]
+    fn the_ground_follows_the_dem_and_the_base_goes_below_the_wells() {
+        let (m, s) = hill();
+        let b = build(m, &s, small()).unwrap();
+        // The hill's top in the middle, its foot near the edges.
+        assert!((b.ground_at(0.0, 0.0) - 400.0).abs() < 15.0, "{}", b.ground_at(0.0, 0.0));
+        assert!(b.ground_at(b.half.0, 0.0) < 160.0);
+        // One well stood up, 120 m deep from the ground; the other has no depth, said.
+        assert!(b.notes.iter().any(|n| n.starts_with("1 wells of wells have no depth")), "{:?}", b.notes);
+        let well_bottom = b.ground_at(-1000.0 * s.ground_scale(), 0.0) - 120.0;
+        assert!(b.z_range.0 < well_bottom - 50.0, "{:?} vs {well_bottom}", b.z_range);
+        assert_eq!(b.labels.len(), 1);
+        assert_eq!(b.labels[0].text, "บ่อ ก");
+    }
+
+    #[test]
+    fn a_scene_is_drawn_from_above_and_below() {
+        let (m, mut s) = hill();
+        s.layers[0].size = Some(120.0);
+        let b = build(m, &s, small()).unwrap();
+        let red = |pm: &Pixmap| {
+            pm.pixels()
+                .iter()
+                .filter(|p| p.red() > 90 && p.red() > p.green().saturating_add(50) && p.red() > p.blue().saturating_add(50))
+                .count()
+        };
+        // From above, opaque ground: the well's head shows, its tube under the ground doesn't.
+        let above = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 1.0, target: [0.0; 3] };
+        let pm = draw(&b, &above, 1.0, 160, 120, 1.0, 1).unwrap();
+        let shown = red(&pm);
+        assert!(shown > 0, "the well's head");
+        // Level and through clear ground, the whole tube shows: far more of it.
+        let side = SceneCamera { heading: 0.0, tilt: 90.0, zoom: 1.0, target: [0.0, 0.0, -100.0] };
+        let solid = red(&draw(&b, &side, 1.0, 400, 300, 1.0, 1).unwrap());
+        let clear = red(&draw(&b, &side, 0.3, 400, 300, 1.0, 1).unwrap());
+        assert!(clear > solid * 2 && clear > 20, "{solid} → {clear}");
+        // From below, the base.
+        let under = SceneCamera { heading: 0.0, tilt: 170.0, zoom: 1.0, target: [0.0; 3] };
+        let pm = draw(&b, &under, 1.0, 64, 48, 1.0, 1).unwrap();
+        let mid = pm.pixel(32, 24).unwrap();
+        let walls = rgb(s.walls);
+        assert!(
+            [mid.red(), mid.green(), mid.blue()].iter().zip(walls).all(|(c, w)| (f32::from(*c) / 255.0 - w * BASE_SHADE).abs() < 0.06),
+            "{mid:?}"
+        );
+    }
+
+    #[test]
+    fn smoothing_draws_the_same_picture() {
+        let (m, s) = hill();
+        let b = build(m, &s, small()).unwrap();
+        let cam = SceneCamera::default();
+        let (a, c) = (draw(&b, &cam, 1.0, 80, 60, 1.0, 1).unwrap(), draw(&b, &cam, 1.0, 80, 60, 1.0, 2).unwrap());
+        assert_eq!((c.width(), c.height()), (80, 60));
+        let diff: f64 = a.data().iter().zip(c.data()).map(|(x, y)| f64::from((i16::from(*x) - i16::from(*y)).unsigned_abs())).sum::<f64>()
+            / a.data().len() as f64;
+        assert!(diff < 12.0, "{diff}");
+    }
+
+    #[test]
+    fn panning_moves_along_the_ground() {
+        let (m, s) = hill();
+        let b = build(m, &s, small()).unwrap();
+        let mut cam = SceneCamera { heading: 90.0, tilt: 0.0, zoom: 1.0, target: [0.0; 3] };
+        // Facing east, looking down: dragging right moves the ground right (south on the
+        // picture's right... the eye goes north).
+        pan(&b, &mut cam, 10.0, 0.0, 100.0);
+        assert!(cam.target[1] > 0.0 && cam.target[0].abs() < 1e-6, "{:?}", cam.target);
+        assert_eq!(cam.target[2], 0.0);
+    }
+
+    #[test]
+    fn what_the_map_no_longer_has_is_left_out_and_said() {
+        let (m, mut s) = hill();
+        s.layers[0].depth = Some("nope".into());
+        let b = build(m.clone(), &s, small()).unwrap();
+        assert!(b.notes.iter().any(|n| n.contains("no field 'nope'")) && b.solids.tris.is_empty(), "{:?}", b.notes);
+        s.layers[0].layer = "gone".into();
+        assert!(build(m.clone(), &s, small()).unwrap().notes.iter().any(|n| n.contains("'gone', which isn't a layer")));
+        s.layers.clear();
+        s.dem = Some("wells".into());
+        let b = build(m, &s, small()).unwrap();
+        assert!(b.notes.iter().any(|n| n.contains("the ground is flat")) && b.z_range.1 == 0.0, "{:?}", b.notes);
+    }
+}

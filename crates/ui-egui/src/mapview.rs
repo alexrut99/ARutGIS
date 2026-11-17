@@ -789,6 +789,10 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
         crate::layoutview::show(app, ui);
         return;
     }
+    if crate::sceneview::shown(app) {
+        crate::sceneview::show(app, ui);
+        return;
+    }
     if app.ws.catalog_view {
         egui::Frame::NONE.inner_margin(egui::Margin::same(16)).show(ui, |ui| crate::workspacepanes::catalog_view(app, ui, &t));
         return;
@@ -4530,7 +4534,11 @@ fn view_tabs(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     ui.painter().line_segment([pos2(r.min.x, r.max.y - 0.5), pos2(r.max.x, r.max.y - 0.5)], Stroke::new(1.0, t.border));
     let mut x = r.min.x + 6.0;
     let names: Vec<String> = app.session.project.maps.iter().map(|m| m.name.clone()).collect();
-    let active = if app.session.active_layout.is_some() || app.mb.shown() { usize::MAX } else { app.session.project.active_map };
+    let active = if app.session.active_layout.is_some() || app.mb.shown() || crate::sceneview::shown(app) {
+        usize::MAX
+    } else {
+        app.session.project.active_map
+    };
     // A tab's close button asks to delete its map or layout.
     let mut close: Option<Deletion> = None;
     for (i, n) in names.iter().enumerate() {
@@ -4567,6 +4575,7 @@ fn view_tabs(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         }
         if resp.clicked() && !is {
             app.mb.active = false;
+            app.scene3d.shown = false;
             let _ = app.run("layout.close", Value::Null);
             let _ = app.run("map.activate", json!({"name": n}));
             app.map.popup = None;
@@ -4616,6 +4625,7 @@ fn view_tabs(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         }
         if resp.clicked() && !is {
             app.mb.active = false;
+            app.scene3d.shown = false;
             let _ = app.run("layout.activate", json!({"name": n}));
             app.ui.tab = "Publish".into();
         }
@@ -4623,6 +4633,47 @@ fn view_tabs(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
             let _ = app.run("ui.dialog", json!({"name": "renameLayout", "target": n}));
         }
         resp.context_menu(|ui| crate::panes::layout_menu(app, ui, n));
+        x += w + 2.0;
+    }
+    // The active map's 3D scene (ARutGIS), after the layouts.
+    if app.session.map().scene.is_some() {
+        let n = format!("{} · {}", tl!("3D Scene"), app.session.map().name);
+        let w = crate::widgets::text_w(ui, &n, regular(12.0)) + 46.0 + TAB_CLOSE_W;
+        let tr = Rect::from_min_size(pos2(x, r.min.y + 4.0), vec2(w, r.height() - 4.0));
+        let resp = ui.interact(tr, egui::Id::unique("scenetab"), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &n));
+        let is = crate::sceneview::shown(app);
+        if is {
+            ui.painter().rect_filled(tr, CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, t.ribbon);
+            ui.painter().rect_filled(
+                Rect::from_min_max(tr.min, pos2(tr.max.x, tr.min.y + 2.0)),
+                CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 },
+                t.accent,
+            );
+        } else if resp.contains_pointer() {
+            ui.painter().rect_filled(tr, CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, t.hover);
+        }
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(pos2(tr.min.x + 15.0, tr.center().y), vec2(15.0, 15.0)),
+            "relief",
+            t.icon,
+            t.accent,
+        );
+        ui.painter().text(
+            pos2(tr.min.x + 28.0, tr.center().y),
+            Align2::LEFT_CENTER,
+            &n,
+            if is { semibold(12.0) } else { regular(12.0) },
+            if is { t.text } else { t.text_dim },
+        );
+        // Closing the tab goes back to the map; the scene stays with it.
+        if tab_close(ui, t, tr, egui::Id::unique("scenetab_close"), is, true, tl!("Back to the Map")) {
+            app.scene3d.shown = false;
+        }
+        if resp.clicked() && !is {
+            let _ = app.run("ui.scene", Value::Null);
+        }
         x += w + 2.0;
     }
     // ModelBuilder, after the layouts.

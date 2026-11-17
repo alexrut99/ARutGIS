@@ -5704,6 +5704,10 @@ fn references_follow_layer(s: &mut Session, old: &str, new: &str) {
     if let Some(walls) = s.map_mut().view.terrain.as_mut().and_then(|t| t.block.as_mut()).and_then(|b| b.walls_layer.as_mut()) {
         replace(walls);
     }
+    // The 3D scene's DEM and the layers it stands up (ARutGIS), kept by name as a mask is.
+    if let Some(scene) = s.map_mut().scene.as_mut() {
+        scene.rename_layer(&mut replace);
+    }
     // Elevation and Map Series selectors compare spellings exactly, even though lookup does not.
     if case_only {
         if s.map().layers.iter().filter(|l| l.name.eq_ignore_ascii_case(old)).count() == 1 {

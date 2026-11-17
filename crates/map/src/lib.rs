@@ -26,6 +26,7 @@ pub mod projection;
 pub mod qgis;
 pub mod raster;
 pub mod report;
+pub mod scene;
 pub mod shadow;
 pub mod slots;
 pub mod source;
@@ -1554,6 +1555,9 @@ pub struct Map {
     /// The time slider, when it is on: bound layers show only what falls in its window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time: Option<time::TimeSlider>,
+    /// Its 3D scene (ARutGIS): a study area's ground with features stood up in it.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "scene::de_scene")]
+    pub scene: Option<scene::Scene>,
     /// The celestial body the map is on (a [`rustgis_geom::Body`] id): its size sets the ground
     /// distances, areas and scale (#223).
     #[serde(default = "earth", skip_serializing_if = "is_earth")]
@@ -1670,6 +1674,7 @@ impl Map {
             thumbnail: None,
             animation: Vec::new(),
             time: None,
+            scene: None,
             body: earth(),
             next_layer_id: 1,
             instance_id: next_layer_instance(),
@@ -3053,6 +3058,7 @@ impl Map {
             thumbnail: _,
             animation: _,
             time: _,
+            scene: _,
             body: _,
             next_layer_id: _,
             instance_id: _,

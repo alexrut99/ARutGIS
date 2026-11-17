@@ -106,6 +106,7 @@ mod reportpane;
 mod ribbon;
 mod s3ui;
 mod saveprompt;
+mod sceneview;
 mod scriptcolor;
 mod scriptcomplete;
 mod searchbox;
@@ -1258,6 +1259,8 @@ pub struct RustGisApp {
     syncmark: syncmark::Marks,
     /// ModelBuilder's view: the model on its canvas.
     pub mb: modelbuilder::ModelBuilder,
+    /// The 3D Scene view (ARutGIS).
+    pub scene3d: sceneview::SceneView,
     pub ws: workspacepanes::WorkspaceState,
     /// The time slider bar.
     pub time: timebar::TimeBarState,
@@ -1535,6 +1538,7 @@ impl RustGisApp {
             #[cfg(not(target_arch = "wasm32"))]
             syncmark: syncmark::Marks::default(),
             mb: modelbuilder::ModelBuilder::default(),
+            scene3d: sceneview::SceneView::default(),
             ws: workspacepanes::WorkspaceState::default(),
             time: timebar::TimeBarState::default(),
             plugins: pluginsui::PluginsState::default(),
@@ -4729,6 +4733,30 @@ impl RustGisApp {
                 if let Some(path) = dialogs::pick_save(&name, &["gif", "zip"], tl!("Animated GIF or PNG frames (zip)")) {
                     args["path"] = json!(path);
                     return exportjob::start(self, "map.exportOrbit", args);
+                }
+            }
+            "ui.scene" => return sceneview::open(self, p),
+            #[cfg(target_arch = "wasm32")]
+            "ui.sceneExport" | "ui.sceneOrbit" => return Err("exporting a scene needs the desktop app".into()),
+            #[cfg(not(target_arch = "wasm32"))]
+            "ui.sceneExport" => {
+                exportjob::idle(self)?;
+                let name = format!("{} 3D.png", self.session.map().name);
+                // No file picked answers null.
+                if let Some(path) = dialogs::pick_save(&name, &["png"], tl!("PNG image")) {
+                    let mut args = if p.is_object() { p.clone() } else { json!({}) };
+                    args["path"] = json!(path);
+                    return exportjob::start(self, "scene.export", args);
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            "ui.sceneOrbit" => {
+                exportjob::idle(self)?;
+                let name = format!("{} 3D orbit.gif", self.session.map().name);
+                if let Some(path) = dialogs::pick_save(&name, &["gif", "zip"], tl!("Animated GIF or PNG frames (zip)")) {
+                    let mut args = if p.is_object() { p.clone() } else { json!({}) };
+                    args["path"] = json!(path);
+                    return exportjob::start(self, "scene.exportOrbit", args);
                 }
             }
             "ui.magnifier" => self.map.magnifier = p.get("on").and_then(Value::as_bool).unwrap_or(!self.map.magnifier),

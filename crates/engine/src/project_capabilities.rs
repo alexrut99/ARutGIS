@@ -49,8 +49,10 @@ fn relief_effects(layer: &Layer) -> bool {
 }
 
 fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static str> {
-    let (mut block, mut water, mut relief, mut legends) = (false, false, false, false);
+    let (mut block, mut water, mut relief, mut legends, mut scene) = (false, false, false, false, false);
     for map in maps {
+        // A 3D scene (ARutGIS): a reader that doesn't know of it would save the map without it.
+        scene |= map.scene.is_some();
         if let Some(t) = &map.view.terrain {
             block |= t.block.is_some();
             water |= t.water.is_some();
@@ -60,10 +62,16 @@ fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static
             tile.legends.iter().any(|legend| rustgis_data::login_address::inner(&legend.url).len() > rustgis_map::tiles::MAX_LEGEND_URL)
         });
     }
-    [(block, "terrain-block"), (water, "terrain-water"), (relief, "shaded-relief-effects"), (legends, "normalized-legend-urls")]
-        .into_iter()
-        .filter_map(|(used, name)| used.then_some(name))
-        .collect()
+    [
+        (block, "terrain-block"),
+        (water, "terrain-water"),
+        (relief, "shaded-relief-effects"),
+        (legends, "normalized-legend-urls"),
+        (scene, "scene-3d"),
+    ]
+    .into_iter()
+    .filter_map(|(used, name)| used.then_some(name))
+    .collect()
 }
 
 #[derive(Serialize)]

@@ -2076,6 +2076,17 @@ fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
         });
     });
     group(ui, "Scene", |ui| {
+        big(
+            ui,
+            app,
+            "relief",
+            "3D\nScene",
+            "A study area's ground as a block in 3D, the map over it, wells down to their depth and features at their heights; seen from any side, above the ground or under it.",
+            "ui.scene",
+            Value::Null,
+            crate::sceneview::shown(app),
+            false,
+        );
         terrain_menu(ui, app);
         buildings_menu(ui, app);
         col(ui, |ui| {
