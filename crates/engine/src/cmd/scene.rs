@@ -81,7 +81,8 @@ fn layer_box(map: &Map, name: &str) -> Result<[f64; 4], String> {
     if let Some(r) = l.raster.as_ref().and_then(|r| r.data.clone()) {
         return rustgis_render::terrain::raster_box(&r).ok_or_else(|| format!("{name}: its extent can't be placed on the map"));
     }
-    let e = l.dataset.extent();
+    // A streamed layer's whole extent, not only the part read.
+    let e = l.extent();
     if !(e.min_x.is_finite() && e.max_x >= e.min_x) {
         return Err(format!("{name} has no features to take an extent from"));
     }

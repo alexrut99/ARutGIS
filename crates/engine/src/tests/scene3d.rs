@@ -179,3 +179,43 @@ fn a_scene_export_marks_a_streamed_layer_it_couldnt_read() {
     assert!(said.iter().any(|n| n.contains("บ่อ may be missing from the scene")), "{said:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A study area over a streamed layer's extent takes the whole of its source, not the part read.
+#[test]
+fn a_scene_over_a_streamed_layers_extent_takes_its_whole_source() {
+    use rustgis_data::source::{Batch, FeatureSource, Request, SourceInfo};
+    struct Nothing(SourceInfo);
+    impl FeatureSource for Nothing {
+        fn info(&self) -> &SourceInfo {
+            &self.0
+        }
+        fn read(&self, _: &Request) -> rustgis_data::Result<Batch> {
+            Ok(Batch::default())
+        }
+    }
+    let (mut s, _) = with_wells();
+    let li = s.map().layers.iter().position(|l| l.name == "บ่อ").unwrap();
+    let ds = s.map().layers[li].dataset.clone();
+    let info = SourceInfo {
+        name: ds.name.clone(),
+        format: "test",
+        geometry_type: ds.geometry_type,
+        fields: ds.fields.clone(),
+        extent: rustgis_geom::Extent::new(10.0, 45.0, 10.2, 45.1),
+        count: Some(1000),
+        crs: "EPSG:4326".into(),
+        indexed: true,
+        notes: Vec::new(),
+        zm_dropped: false,
+    };
+    // Nothing read of it yet.
+    s.map_mut().layers[li].dataset.features = Vec::new().into();
+    s.map_mut().layers[li].source = Some(rustgis_map::source::SourceLayer::from_path("บ่อ.fgb", None, Box::new(Nothing(info))));
+    let v = s.run("scene.set", &json!({"extentOf": "บ่อ"})).unwrap();
+    let e: Vec<f64> = v["extent"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
+    let (a, c) = (
+        rustgis_geom::merc_to_lonlat(rustgis_geom::Coord::new(e[0], e[1])),
+        rustgis_geom::merc_to_lonlat(rustgis_geom::Coord::new(e[2], e[3])),
+    );
+    assert!(a.x < 10.0 && a.y < 45.0 && c.x > 10.2 && c.y > 45.1, "{a:?} {c:?}");
+}
