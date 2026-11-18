@@ -172,7 +172,10 @@ fn a_scene_export_marks_a_streamed_layer_it_couldnt_read() {
     s.map_mut().layers[li].source = Some(src);
     let png = dir.join("ฉาก.png").display().to_string();
     s.run("scene.export", &json!({"path": png, "width": 120, "height": 80, "smooth": 1})).unwrap();
+    // The OS's own words for a missing file differ (Windows: "cannot find the file").
     let error = s.map().layers[li].source.as_ref().and_then(|src| src.error.clone());
-    assert!(error.is_some_and(|e| e.contains("No such file")), "the failure shows on the layer");
+    assert!(error.is_some_and(|e| !e.is_empty()), "the failure shows on the layer");
+    let said: Vec<&String> = s.notices.iter().map(|n| &n.text).collect();
+    assert!(said.iter().any(|n| n.contains("บ่อ may be missing from the scene")), "{said:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }

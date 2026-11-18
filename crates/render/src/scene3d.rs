@@ -249,8 +249,9 @@ pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, S
     go_on()?;
     let at = Placing { local: &local, inside: &inside, auto_size, ex, scale };
     for sl in &scene.layers {
-        stand_up(map, sl, &mut built, &at, &mut notes);
+        stand_up(map, sl, &mut built, &at, &mut notes)?;
     }
+    notes.extend(unread(map, scene));
     go_on()?;
     let lowest = built.z_range.0.min(g_lo);
     // By default a quarter of the relief below what is lowest, at least 50 m.
@@ -387,6 +388,22 @@ fn sides_mesh(b: &mut Built, base: f64, walls: Rgba) {
     b.sides = m;
 }
 
+/// The scene's streamed layers whose source couldn't be read (left out of it, or only partly
+/// in it), in one note with a count, naming the first.
+fn unread(map: &Map, scene: &Scene) -> Option<String> {
+    let failed: Vec<(&str, &str)> = map
+        .layers
+        .iter()
+        .filter(|l| scene.layers.iter().any(|sl| sl.layer == l.name))
+        .filter_map(|l| Some((l.name.as_str(), l.source.as_ref()?.error.as_deref()?)))
+        .collect();
+    let (name, error) = failed.first()?;
+    Some(match failed.len() {
+        1 => format!("{name} may be missing from the scene, as its source couldn't be read: {error}"),
+        n => format!("{n} layers may be missing from the scene, as their sources couldn't be read; the first, {name}: {error}"),
+    })
+}
+
 /// How features are placed in the box.
 struct Placing<'a> {
     /// Longitude and latitude to the box's metres about its middle.
@@ -402,14 +419,15 @@ struct Placing<'a> {
 }
 
 /// Stands up the features of one of a scene's layers: those the map draws (its definition
-/// query, the time slider's window and its display filters at the drape's scale).
-fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut Vec<String>) {
+/// query, the time slider's window and its display filters at the drape's scale). Cancel is
+/// looked at between features. Errors: Cancel.
+fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut Vec<String>) -> Result<(), String> {
     let Placing { local, inside, auto_size, ex, scale } = *at;
     let name = &sl.layer;
     // A layer or a field taken out of the map since: the layer is left out, said.
     let Some(layer) = map.layer_by_name(name) else {
         notes.push(format!("the scene stands up '{name}', which isn't a layer of the map any more"));
-        return;
+        return Ok(());
     };
     let ds = &layer.dataset;
     let field = |f: &Option<String>| -> Result<Option<usize>, String> {
@@ -431,7 +449,7 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
         Ok(f) => f,
         Err(e) => {
             notes.push(e);
-            return;
+            return Ok(());
         }
     };
     let number = |row: usize, f: Option<usize>| f.and_then(|f| ds.value(row, f).as_f64()).filter(|v| v.is_finite());
@@ -442,6 +460,7 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
         if !drawn.get(row).copied().unwrap_or(true) {
             continue;
         }
+        go_on()?;
         let Some(g) = ds.features.get(row).and_then(|f| f.geometry.as_ref()) else { continue };
         let color = sl.color.unwrap_or_else(|| {
             let s = layer.renderer.symbol_for(ds, row);
@@ -569,6 +588,7 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
     if over > 0 {
         notes.push(format!("{name}: only the first {MAX_FEATURES} {what} are stood up; {over} more are left out"));
     }
+    Ok(())
 }
 
 /// A polygon (its outer ring and holes, open or closed) cut to the box `half` (half its width
@@ -1306,6 +1326,43 @@ mod tests {
         let b = build(m, &s, small()).unwrap();
         assert_eq!(b.labels.len(), 1, "{:?}", b.notes);
         assert!(!b.solids.tris.is_empty());
+    }
+
+    #[test]
+    fn a_layer_whose_source_failed_is_said() {
+        let (mut m, s) = hill();
+        let Some(l) = m.layers.iter_mut().find(|l| l.name == "wells") else { panic!("no wells") };
+        let mut src = rustgis_map::source::SourceLayer::default();
+        src.error = Some("the disk is gone".into());
+        l.source = Some(src);
+        let b = build(m, &s, small()).unwrap();
+        assert!(
+            b.notes.iter().any(|n| n.contains("wells may be missing from the scene") && n.contains("the disk is gone")),
+            "{:?}",
+            b.notes
+        );
+    }
+
+    #[test]
+    fn standing_up_stops_when_cancelled() {
+        struct Cancelled;
+        impl rustgis_data::progress::Probe for Cancelled {
+            fn cancelled(&self) -> bool {
+                true
+            }
+            fn begin(&self, _: u64) {}
+            fn advance(&self, _: u64) {}
+        }
+        let (m, s) = hill();
+        let mut b = build(m.clone(), &s, small()).unwrap();
+        let before = b.solids.tris.len();
+        let (local, inside) = (|c: Coord| (c.x, c.y), |_: (f64, f64)| true);
+        let at = Placing { local: &local, inside: &inside, auto_size: 10.0, ex: 1.0, scale: 50_000.0 };
+        let installed = rustgis_data::progress::install(Some(std::sync::Arc::new(Cancelled)));
+        let r = stand_up(&m, &s.layers[0], &mut b, &at, &mut Vec::new());
+        drop(installed);
+        assert!(r.unwrap_err().contains("ancel"));
+        assert_eq!(b.solids.tris.len(), before, "nothing more stood up");
     }
 
     #[test]
