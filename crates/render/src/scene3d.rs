@@ -454,7 +454,7 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
     };
     let number = |row: usize, f: Option<usize>| f.and_then(|f| ds.value(row, f).as_f64()).filter(|v| v.is_finite());
     let size = sl.size.unwrap_or(auto_size);
-    let (mut shown, mut missing, mut over, mut roofless) = (0usize, 0usize, 0usize, 0usize);
+    let (mut shown, mut missing, mut over, mut roofless, mut unlabelled) = (0usize, 0usize, 0usize, 0usize, 0usize);
     let drawn = layer.drawn_rows(scale);
     for row in 0..ds.features.len() {
         if !drawn.get(row).copied().unwrap_or(true) {
@@ -557,12 +557,13 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
             }
             _ => {}
         }
-        if let (Some(at), Some(f)) = (placed, label)
-            && b.labels.len() < MAX_LABELS
-        {
+        if let (Some(at), Some(f)) = (placed, label) {
             let text = ds.value(row, f).to_string();
-            if !text.is_empty() {
-                b.labels.push(Label { text, at });
+            // An empty value has no label to show; one over the limit is counted.
+            match (text.is_empty(), b.labels.len() < MAX_LABELS) {
+                (true, _) => {}
+                (false, true) => b.labels.push(Label { text, at }),
+                (false, false) => unlabelled += 1,
             }
         }
     }
@@ -587,6 +588,9 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
     }
     if over > 0 {
         notes.push(format!("{name}: only the first {MAX_FEATURES} {what} are stood up; {over} more are left out"));
+    }
+    if unlabelled > 0 {
+        notes.push(format!("the scene shows at most {MAX_LABELS} labels, so {unlabelled} {what} of {name} are without theirs"));
     }
     Ok(())
 }
@@ -1326,6 +1330,22 @@ mod tests {
         let b = build(m, &s, small()).unwrap();
         assert_eq!(b.labels.len(), 1, "{:?}", b.notes);
         assert!(!b.solids.tris.is_empty());
+    }
+
+    #[test]
+    fn labels_over_the_limit_are_said() {
+        let (mut m, s) = hill();
+        let Some(l) = m.layers.iter_mut().find(|l| l.name == "wells") else { panic!("no wells") };
+        let (cx, cy) = (11_200_000.0, 1_560_000.0);
+        let ll = |x: f64, y: f64| rustgis_geom::merc_to_lonlat(Coord::new(x, y));
+        for i in 0..MAX_LABELS + 10 {
+            let (dx, dy) = ((i % 60) as f64 * 40.0 - 1200.0, (i / 60) as f64 * 40.0 - 1200.0);
+            l.dataset
+                .push(Some(Geometry::Point(ll(cx + dx, cy + dy))), vec![Value::Text(format!("บ่อ {i}")), Value::Float(50.0), Value::Null]);
+        }
+        let b = build(m, &s, small()).unwrap();
+        assert_eq!(b.labels.len(), MAX_LABELS);
+        assert!(b.notes.iter().any(|n| n.contains(&format!("at most {MAX_LABELS} labels, so 11 wells of wells"))), "{:?}", b.notes);
     }
 
     #[test]
