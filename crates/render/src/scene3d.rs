@@ -1339,8 +1339,9 @@ fn hit(m: &Mesh, o: [f64; 3], d: [f64; 3], near: f64) -> Result<Option<(f64, usi
 
 /// What is under the point (`x`, `y`) of a picture `w` × `h` (any unit, the same) of `b` from
 /// `cam`, the ground `opacity` opaque: the nearest of the ground, the block's sides and what is
-/// stood up, or through ground less than opaque, what is stood up behind it. None: the sky. It
-/// looks at Cancel as it goes (a scene of many features has many triangles): Err when pressed.
+/// stood up, or through ground less than opaque, what is stood up behind it. None: the sky (and
+/// the ground and the block, clear). It looks at Cancel as it goes (a scene of many features has
+/// many triangles): Err when pressed.
 pub fn pick(b: &Built, cam: &SceneCamera, opacity: f64, w: f64, h: f64, x: f64, y: f64) -> Result<Option<Picked>, String> {
     if !(w > 0.0 && h > 0.0 && x.is_finite() && y.is_finite()) {
         return Ok(None);
@@ -1351,11 +1352,16 @@ pub fn pick(b: &Built, cam: &SceneCamera, opacity: f64, w: f64, h: f64, x: f64, 
     // Along the ray, a point's depth grows by d · fwd a unit.
     let near = eye.near / dot(d, eye.fwd).max(1e-9);
     let solid = hit(&b.solids, eye.at, d, near)?;
-    // The ground's own surface (true) or the block's sides and base.
-    let ground = [hit(&b.ground, eye.at, d, near)?.map(|(t, _)| (t, true)), hit(&b.sides, eye.at, d, near)?.map(|(t, _)| (t, false))]
-        .into_iter()
-        .flatten()
-        .min_by(|a, c| a.0.total_cmp(&c.0));
+    // The ground's own surface (true) or the block's sides and base; none when the ground is
+    // clear, as none of them is drawn then.
+    let ground = if opacity > 0.0 {
+        [hit(&b.ground, eye.at, d, near)?.map(|(t, _)| (t, true)), hit(&b.sides, eye.at, d, near)?.map(|(t, _)| (t, false))]
+            .into_iter()
+            .flatten()
+            .min_by(|a, c| a.0.total_cmp(&c.0))
+    } else {
+        None
+    };
     let (t, owner, on_ground) = match (solid, ground) {
         (Some((ts, n)), Some((tg, _))) if ts <= tg || opacity < 1.0 => (ts, Some(n), false),
         (Some((ts, n)), None) => (ts, Some(n), false),
@@ -1490,6 +1496,13 @@ mod tests {
         // The sky.
         let level = SceneCamera { heading: 0.0, tilt: 90.0, zoom: 1.0, target: [0.0, 0.0, 0.0] };
         assert!(look(&level, 1.0, 200.0, 2.0).is_none());
+        // Ground left clear is not drawn, and so not picked: beside the well the sky; the well
+        // still itself.
+        let beside = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.3, target: [well + 300.0, 0.0, 0.0] };
+        assert!(look(&beside, 0.3, 200.0, 150.0).is_some());
+        assert!(look(&beside, 0.0, 200.0, 150.0).is_none());
+        let onto = SceneCamera { target: [well, 0.0, 0.0], ..beside };
+        assert!(look(&onto, 0.0, 200.0, 150.0).and_then(|p| p.feature).is_some());
         // Cancel pressed: it stops (a scene of many features has many triangles to look through).
         struct Cancelled;
         impl rustgis_data::progress::Probe for Cancelled {
