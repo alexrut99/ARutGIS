@@ -71,7 +71,7 @@ pub const READ_FORMAT: u32 = 2;
 /// The saved additions this RustGIS understands. Writers require only capabilities used by
 /// their payload, so a format-2 reader without them refuses instead of discarding their fields.
 pub const CAPABILITIES: &[&str] =
-    &["terrain-block", "terrain-water", "shaded-relief-effects", "normalized-legend-urls", "field-origin", "frame-layers"];
+    &["terrain-block", "terrain-water", "shaded-relief-effects", "normalized-legend-urls", "field-origin", "frame-layers", "scene-3d"];
 /// The most entries a document's `requires` may list: past it the document is refused without
 /// the rest being read.
 pub(crate) const MAX_REQUIRES: usize = 256;
@@ -1732,6 +1732,19 @@ impl Project {
                 NoticeText::format(
                     "{n} map(s): the measured graticule's coordinate system isn't a projected one this version can use, so it was left out (the map's own, else the UTM zone at the centre, is used): {which}",
                     [("n", n.to_string().into()), ("which", which.into())],
+                ),
+            ));
+        }
+        // A 3D scene (ARutGIS) that can't be drawn, which only a hand-edited file holds (an
+        // exaggeration out of range, a box in degrees): left out, said, with why, for each map.
+        for m in &mut p.maps {
+            let Some(why) = m.scene.as_ref().and_then(|s| s.check().err()) else { continue };
+            m.scene = None;
+            p.read_notices.push((
+                ReadPart::Maps,
+                NoticeText::format(
+                    "{map}: its 3D scene can't be drawn, so it was left out: {why}",
+                    [("map", m.name.clone().into()), ("why", why.into())],
                 ),
             ));
         }

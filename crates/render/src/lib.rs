@@ -32,6 +32,7 @@ pub mod post;
 mod raster;
 pub mod raster_export;
 pub mod report;
+pub mod scene3d;
 mod single_image;
 mod stroke_paths;
 pub mod svg;

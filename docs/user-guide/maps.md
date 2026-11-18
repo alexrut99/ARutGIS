@@ -175,6 +175,56 @@ answers:
 rustgis-cli run --cmd 'project.open={"path":"massif.rgis"}' --cmd 'map.setPitch={"pitch":60}' --cmd 'map.exportOrbit={"path":"massif.gif","frames":72,"width":800,"height":500}'
 ```
 
+### 3D Scene (ARutGIS)
+
+A tilted map drapes its layers over the relief; a **3D Scene** stands a study area up as a block
+of ground you can look at from any side, from above the ground or from under it, with what lies
+under the ground in it: wells down to their depth, a well's water level, points at their real
+heights, polygons raised from the ground. **View › Scene › 3D Scene** (`ui.scene`) opens it in a
+tab of its own beside the map's; the first time, it is made over the selected raster layer (or
+the map's first) as its ground and that raster's extent, or the map's view without one.
+
+- **Ground**: a raster layer of heights in metres (`"dem"`), or flat ground at 0 m. The map, as it
+  is drawn, is draped over it, north up; the block's sides and base go down a quarter of the
+  relief below the lowest ground or the deepest well (at least 50 m; `"depth"` sets it).
+- **Vertical exaggeration** (`"exaggeration"`, above 0, at most 50) stretches heights and
+  depths alike.
+- **Ground opacity** (`"groundOpacity"`, 0 to 1): below 1 the ground is glass, its nearest
+  surface laid over what is under it, so the wells show through it.
+- **Study Area**: the DEM's extent, the map's current view, or a layer's extent (`"extent"`,
+  `"bbox"` in degrees, `"extentOf"`), at most 2,000 km a side.
+- **Layers in the Scene** (`scene.layer`): a point layer as **wells** (`"depth"`, a field of
+  metres below the head; `"top"`, a field of the head's height above sea level, else the
+  ground's; `"water"`, a field of the water level's depth below the head, marked by a blue ring),
+  as **points** (`"elevation"`, a field of heights above sea level, else on the ground raised by
+  `"offset"`), or a polygon layer **raised** (`"height"`, a field, else `"heightM"`). Each is
+  coloured by its layer's symbology (or `"color"`), may be labelled by a field (`"label"`), and
+  wells and points are `"size"` metres wide (by default, the area's diagonal over 250). Only the
+  features the map draws stand up (its definition query, the time slider's window, its display
+  filters). Features missing a number they need are left out, and the scene says how many; a
+  polygon with too many corners for a roof (over 5,000 in the area) stands up as walls, said.
+
+Drag to orbit, right-drag to move along the ground, Ctrl+drag (or the middle button) to go up
+or down, under the ground too, and the wheel to come nearer; the compass shows north. **Reset
+View** goes back to the default view. The scene and its camera are saved with the map (a project
+with one requires `scene-3d`, so a RustGIS that can't keep it refuses to open it rather than drop
+it). A layer renamed is followed; one removed is left out of the scene, said.
+
+**Export Image…** (`scene.export`, desktop) writes the scene from its camera as a PNG
+(`"width"` × `"height"` pixels, default 1600 × 1000, each pixel smoothed from `"smooth"`²
+samples), and **Export Orbit…** (`scene.exportOrbit`) turns it about its point as an animated GIF or
+a zip of PNG frames (`"frames"`, `"turn"`, `"speed"`, as Export Orbit's). Both are drawn in the
+background in the app:
+
+```bash
+rustgis-cli run --data dem.tif --data wells.csv \
+  --cmd 'scene.set={"dem":"dem","bbox":[98.40,18.50,98.60,18.68],"exaggeration":1.5}' \
+  --cmd 'scene.layer={"layer":"wells","depth":"depth","water":"swl","label":"name"}' \
+  --cmd 'scene.camera={"heading":30,"tilt":65,"zoom":0.9}' \
+  --cmd 'scene.export={"path":"study-area.png"}' \
+  --cmd 'scene.exportOrbit={"path":"study-area.gif","frames":72}'
+```
+
 MapLibre map links carry a view in their address, as
 `#zoom/latitude/longitude/bearing/pitch` (`https://…/#15.5/40.7484/-73.9857/30/60`). **Go To Map
 Link** (`map.goToLink {"url": …}`) takes such a link, or the part after its `#`, to that place,

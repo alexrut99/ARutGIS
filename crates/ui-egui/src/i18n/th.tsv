@@ -5333,3 +5333,41 @@ In CASE, a condition, or a value to match	ใน CASE: เงื่อนไข 
 In CASE, the value given for the WHEN before it	ใน CASE: ค่าที่ให้สำหรับ WHEN ก่อนหน้า
 In CASE, the value given when no WHEN matches	ใน CASE: ค่าที่ให้เมื่อไม่มี WHEN ใดตรง
 Ends a CASE	จบ CASE
+Flat (no DEM)	พื้นราบ (ไม่มี DEM)
+Vertical exaggeration	ขยายแนวดิ่ง
+Ground opacity	ความทึบผิวดิน
+Study Area	พื้นที่ศึกษา
+The DEM's Extent	ตามขอบเขต DEM
+The Map's Current View	ตามมุมมองแผนที่ปัจจุบัน
+A Layer's Extent	ตามขอบเขตชั้นข้อมูล
+Reset View	รีเซ็ตมุมมอง
+Export Image…	ส่งออกภาพ…
+Remove Scene	ลบฉาก
+Take the 3D scene off the map	นำฉาก 3 มิติออกจากแผนที่
+3D Scene	ฉาก 3 มิติ
+3D\nScene	ฉาก\n3 มิติ
+A study area's ground as a block in 3D, the map over it, wells down to their depth and features at their heights; seen from any side, above the ground or under it.	แสดงพื้นที่ศึกษาเป็นบล็อกภูมิประเทศสามมิติ มีแผนที่คลุมผิว บ่อลงไปตามความลึก และข้อมูลอยู่ที่ระดับความสูงจริง ดูได้รอบทิศ ทั้งเหนือและใต้ผิวดิน
+Building the scene…	กำลังสร้างฉาก…
+Drag: orbit · Right-drag: move · Ctrl+drag: up or down · Wheel: zoom	ลาก: หมุนรอบ · ลากเมาส์ขวา: เลื่อน · Ctrl+ลาก: ขึ้น-ลง · ล้อเมาส์: ซูม
+Layers in the Scene	ชั้นข้อมูลในฉาก
+Add a Layer	เพิ่มชั้นข้อมูล
+No point or polygon layer to add	ไม่มีชั้นข้อมูลจุดหรือรูปปิดให้เพิ่ม
+As Wells (down to their depth)	เป็นบ่อ (ลงไปตามความลึก)
+As Points (at their height)	เป็นจุด (ที่ระดับความสูง)
+Raised	ยกสูง
+Add wells, points or polygons to stand them up in the scene.	เพิ่มบ่อ จุด หรือรูปปิด เพื่อแสดงเป็นสามมิติในฉาก
+Wells	บ่อ
+Take Out of the Scene	นำออกจากฉาก
+Depth	ความลึก
+Wellhead height	ระดับปากบ่อ
+The ground's	ตามผิวดิน
+Water level	ระดับน้ำ
+On the ground	บนผิวดิน
+Width (m)	ความกว้าง (ม.)
+Symbology colours	สีตามสัญลักษณ์
+Wells need a field of their depth (a number): this layer has none	บ่อต้องมีฟิลด์ความลึก (ตัวเลข): ชั้นข้อมูลนี้ไม่มี
+Export Scene	ส่งออกฉาก
+Export Scene Orbit	ส่งออกฉากหมุนรอบ
+Scene Layer	ชั้นข้อมูลในฉาก
+Scene Camera	กล้องของฉาก
+Remove 3D Scene	ลบฉาก 3 มิติ

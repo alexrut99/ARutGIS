@@ -971,6 +971,7 @@ pub(crate) const UI_COMMANDS: &[(&str, &str, &str)] = &[
     ("ui.moveSharedVertices", "Shared Vertices", "Edit › Features"),
     ("ui.traceEdges", "Trace", "Edit › Features"),
     ("ui.exportMap", "Export Map…", "Publish › Output"),
+    ("ui.scene", "3D Scene", "View › Scene"),
     ("ui.checkUpdate", "Check for Updates…", "Help › Help"),
 ];
 
@@ -1005,6 +1006,9 @@ fn search_action(id: &str) -> Option<SearchAction> {
         "map.rename" => Dialog("renameMap"),
         "map.goToXY" => Dialog("goToXY"),
         "map.exportOrbit" => Dialog("exportOrbit"),
+        "scene.set" => Command("ui.scene"),
+        "scene.export" => Command("ui.sceneExport"),
+        "scene.exportOrbit" => Command("ui.sceneOrbit"),
         "map.findPlace" => Dialog("findPlace"),
         "map.thaiSheet" | "map.goToThaiSheet" | "layer.thaiSheetGrid" => Dialog("thaiSheets"),
         "map.camera" | "map.setScale" => Dialog("camera"),

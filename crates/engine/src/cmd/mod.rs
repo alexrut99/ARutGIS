@@ -46,6 +46,7 @@ pub mod reads;
 pub mod repair;
 pub mod report;
 pub mod s3;
+pub mod scene;
 pub mod search;
 pub mod select;
 pub mod service;
@@ -113,6 +114,7 @@ pub fn all() -> Vec<CommandSpec> {
     v.extend(imagery::commands());
     v.extend(deeplearning::commands());
     v.extend(view::commands());
+    v.extend(scene::commands());
     v.extend(workspace::commands());
     v.extend(gp::commands());
     v.extend(history::commands());
