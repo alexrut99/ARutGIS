@@ -47,6 +47,9 @@ pub struct SceneView {
     said: Vec<String>,
     /// What is under the mouse, and the picture and point it was looked for on.
     hover: Option<(Drawn, [u32; 2], Option<String>)>,
+    /// What is under the mouse being looked for off the frame, and on which picture and point.
+    #[cfg(not(target_arch = "wasm32"))]
+    picking: Option<Job<(Drawn, [u32; 2]), Result<Option<scene3d::Picked>, String>>>,
     /// The project the view was for: another one drops what it kept.
     opened: u64,
 }
@@ -109,6 +112,7 @@ pub fn idle(app: &mut RustGisApp) {
     {
         app.scene3d.building = None;
         app.scene3d.drawing = None;
+        app.scene3d.picking = None;
     }
     #[cfg(target_arch = "wasm32")]
     let _ = app;
@@ -454,20 +458,16 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
         match at {
             Some(p) => {
                 let point = [p.x.round() as u32, p.y.round() as u32];
-                if app.scene3d.hover.as_ref().is_none_or(|(d, q, _)| *d != drawn || *q != point) {
-                    let picked = scene3d::pick(
-                        b,
-                        &cam,
-                        scene.ground_opacity,
-                        f64::from(rect.width()),
-                        f64::from(rect.height()),
-                        f64::from(p.x),
-                        f64::from(p.y),
-                    );
-                    app.scene3d.hover = Some((drawn.clone(), point, picked.as_ref().map(said_of)));
+                let at = Pointed { drawn: drawn.clone(), point, cam, opacity: scene.ground_opacity, size: rect.size(), pos: p };
+                keep_picked(app, ui.ctx(), b, at);
+            }
+            None => {
+                app.scene3d.hover = None;
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    app.scene3d.picking = None;
                 }
             }
-            None => app.scene3d.hover = None,
         }
         keep_drawn(app, ui.ctx(), b, drawn, &cam, Look::of(scene), ppp * scale);
     }
@@ -508,6 +508,50 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
     let r = Rect::from_min_size(pos2(rect.min.x + 10.0, rect.max.y - g.size().y - 18.0), g.size() + vec2(14.0, 8.0));
     ui.painter().rect_filled(r, 5.0, t.pane.gamma_multiply(0.85));
     ui.painter().galley(r.min + vec2(7.0, 4.0), g, t.text);
+}
+
+/// Where the mouse is over the picture, and the picture it is over.
+struct Pointed {
+    drawn: Drawn,
+    point: [u32; 2],
+    cam: SceneCamera,
+    opacity: f64,
+    size: egui::Vec2,
+    pos: egui::Vec2,
+}
+
+/// Looks for what is under the mouse when it or the picture moved: natively off the frame (a
+/// scene of many features has many triangles to look through), one for a point left behind
+/// cancelled, what was said before shown meanwhile; in the browser on the frame.
+fn keep_picked(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, at: Pointed) {
+    let looked = |b: &Built, at: &Pointed| {
+        let f = f64::from;
+        scene3d::pick(b, &at.cam, at.opacity, f(at.size.x), f(at.size.y), f(at.pos.x), f(at.pos.y))
+    };
+    let have = |app: &RustGisApp| app.scene3d.hover.as_ref().is_some_and(|(d, q, _)| *d == at.drawn && *q == at.point);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let landed = app.scene3d.picking.as_ref().and_then(|j| j.landed().map(|r| (j.what.clone(), r)));
+        if let Some(((d, q), r)) = landed {
+            app.scene3d.picking = None;
+            if let Ok(p) = r {
+                app.scene3d.hover = Some((d, q, p.as_ref().map(said_of)));
+            }
+        }
+        let want = (at.drawn.clone(), at.point);
+        if !have(app) && app.scene3d.picking.as_ref().is_none_or(|j| j.what != want) {
+            let b = b.clone();
+            app.scene3d.picking = Some(Job::spawn(want, ctx, move || looked(&b, &at)));
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = ctx;
+        if !have(app) {
+            let p = looked(b, &at).ok().flatten();
+            app.scene3d.hover = Some((at.drawn.clone(), at.point, p.as_ref().map(said_of)));
+        }
+    }
 }
 
 /// A point of the scene in words: where, how high, how far under the ground, and the feature
@@ -802,7 +846,12 @@ mod tests {
     use super::*;
 
     fn frame(app: &mut RustGisApp, ctx: &egui::Context) {
-        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 700.0))), ..Default::default() };
+        frame_with(app, ctx, Vec::new());
+    }
+
+    fn frame_with(app: &mut RustGisApp, ctx: &egui::Context, events: Vec<egui::Event>) {
+        let screen = Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 700.0)));
+        let input = egui::RawInput { screen_rect: screen, events, ..Default::default() };
         let mut pass = ctx.run_ui(input, |ui| crate::mapview::show(app, ui));
         pass.textures_delta.clear();
     }
@@ -841,6 +890,37 @@ mod tests {
         let south = scene3d::Picked { lonlat: rustgis_engine::geom::Coord::new(-43.2, -22.9), ..ground };
         assert!(said_of(&south).starts_with("22.90000°S 43.20000°W"));
         crate::i18n::set_current(was);
+    }
+
+    #[test]
+    fn what_is_under_the_mouse_is_looked_for_off_the_frame() {
+        let mut app = RustGisApp::with_sample();
+        let ctx = egui::Context::default();
+        app.run("scene.set", json!({"bbox": [100.4, 13.6, 100.7, 13.9]})).unwrap();
+        app.run("ui.scene", Value::Null).unwrap();
+        built_after(&mut app, &ctx, None);
+        // The mouse over the picture's middle: looked for on a thread, said when it lands.
+        let end = web_time::Instant::now() + std::time::Duration::from_secs(60);
+        frame_with(&mut app, &ctx, vec![egui::Event::PointerMoved(pos2(640.0, 420.0))]);
+        assert!(app.scene3d.picking.is_some() || app.scene3d.hover.is_some(), "looked for");
+        let first = app.scene3d.picking.as_ref().map(|j| j.stop.clone());
+        // Moved on before it landed: the one left behind is cancelled.
+        frame_with(&mut app, &ctx, vec![egui::Event::PointerMoved(pos2(600.0, 400.0))]);
+        assert!(first.is_none_or(|s| s.load(std::sync::atomic::Ordering::Relaxed) || app.scene3d.hover.is_some()));
+        loop {
+            frame(&mut app, &ctx);
+            if app.scene3d.picking.is_none() && app.scene3d.hover.is_some() {
+                break;
+            }
+            assert!(web_time::Instant::now() < end, "what is under the mouse never landed");
+            std::thread::sleep(std::time::Duration::from_millis(10)); // test-wait: it is looked for on a thread of its own
+        }
+        let (_, point, said) = app.scene3d.hover.clone().unwrap();
+        assert!(said.is_some_and(|t| t.contains("°N")), "the ground under it");
+        assert!(point[0] > 0 && point[1] > 0);
+        // Off the picture: nothing said, nothing looked for.
+        frame_with(&mut app, &ctx, vec![egui::Event::PointerGone]);
+        assert!(app.scene3d.hover.is_none() && app.scene3d.picking.is_none());
     }
 
     #[test]

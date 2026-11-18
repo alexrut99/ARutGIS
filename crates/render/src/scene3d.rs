@@ -487,7 +487,7 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
         });
         let color = rgb(color);
         let mut placed: Option<[f64; 3]> = None;
-        let mut well_head: Option<(f64, (f64, f64))> = None;
+        let owned = label.map(|f| ds.value(row, f).to_string()).filter(|t| !t.is_empty());
         match (sl.kind, g) {
             (SceneKind::Well | SceneKind::Point, Geometry::Point(_) | Geometry::MultiPoint(_)) => {
                 let pts: Vec<Coord> = match g {
@@ -511,7 +511,6 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
                             continue;
                         };
                         let head = number(row, top).map_or(ground, |t| t * ex);
-                        well_head = Some((head, at));
                         let r = size / 2.0;
                         // Its casing stands a little above the head, to show where it is from above.
                         tube(&mut b.solids, at, head + r, head - d * ex, r, color, 14);
@@ -521,6 +520,13 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
                         }
                         b.z_range.0 = b.z_range.0.min(head - d * ex);
                         b.z_range.1 = b.z_range.1.max(head);
+                        // Each of a multipoint's wells keeps its own head and middle.
+                        b.owners.push(Owner {
+                            end: b.solids.tris.len(),
+                            layer: name.clone(),
+                            label: owned.clone(),
+                            head: Some((head, at)),
+                        });
                         placed = Some([at.0, at.1, head.max(ground) + r * 3.0]);
                     } else {
                         let z = match elevation {
@@ -579,8 +585,7 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
             _ => {}
         }
         if placed.is_some() && b.owners.last().is_none_or(|o| o.end < b.solids.tris.len()) {
-            let label = label.map(|f| ds.value(row, f).to_string()).filter(|t| !t.is_empty());
-            b.owners.push(Owner { end: b.solids.tris.len(), layer: name.clone(), label, head: well_head });
+            b.owners.push(Owner { end: b.solids.tris.len(), layer: name.clone(), label: owned, head: None });
         }
         if let (Some(at), Some(f)) = (placed, label) {
             let text = ds.value(row, f).to_string();
@@ -1300,9 +1305,12 @@ pub struct PickedFeature {
 }
 
 /// The nearest of a mesh's triangles a ray from `o` along `d` meets: how far along, and which.
-fn hit(m: &Mesh, o: [f64; 3], d: [f64; 3], near: f64) -> Option<(f64, usize)> {
+fn hit(m: &Mesh, o: [f64; 3], d: [f64; 3], near: f64) -> Result<Option<(f64, usize)>, String> {
     let mut best: Option<(f64, usize)> = None;
     for (n, tri) in m.tris.iter().enumerate() {
+        if n % TRIS_PER_LOOK == 0 {
+            go_on()?;
+        }
         let [a, b, c] = tri.map(|i| m.pos[i as usize].map(f64::from));
         let (e1, e2) = ([0, 1, 2].map(|k| b[k] - a[k]), [0, 1, 2].map(|k| c[k] - a[k]));
         let p = cross(d, e2);
@@ -1326,24 +1334,25 @@ fn hit(m: &Mesh, o: [f64; 3], d: [f64; 3], near: f64) -> Option<(f64, usize)> {
             best = Some((t, n));
         }
     }
-    best
+    Ok(best)
 }
 
 /// What is under the point (`x`, `y`) of a picture `w` × `h` (any unit, the same) of `b` from
 /// `cam`, the ground `opacity` opaque: the nearest of the ground, the block's sides and what is
-/// stood up, or through ground less than opaque, what is stood up behind it. None: the sky.
-pub fn pick(b: &Built, cam: &SceneCamera, opacity: f64, w: f64, h: f64, x: f64, y: f64) -> Option<Picked> {
+/// stood up, or through ground less than opaque, what is stood up behind it. None: the sky. It
+/// looks at Cancel as it goes (a scene of many features has many triangles): Err when pressed.
+pub fn pick(b: &Built, cam: &SceneCamera, opacity: f64, w: f64, h: f64, x: f64, y: f64) -> Result<Option<Picked>, String> {
     if !(w > 0.0 && h > 0.0 && x.is_finite() && y.is_finite()) {
-        return None;
+        return Ok(None);
     }
     let eye = Eye::of(b, cam, w, h);
     let (sx, sy) = ((x - eye.centre.0) / eye.focal, (eye.centre.1 - y) / eye.focal);
     let d = norm([0, 1, 2].map(|k| eye.fwd[k] + eye.right[k] * sx + eye.up[k] * sy));
     // Along the ray, a point's depth grows by d · fwd a unit.
     let near = eye.near / dot(d, eye.fwd).max(1e-9);
-    let solid = hit(&b.solids, eye.at, d, near);
+    let solid = hit(&b.solids, eye.at, d, near)?;
     // The ground's own surface (true) or the block's sides and base.
-    let ground = [hit(&b.ground, eye.at, d, near).map(|(t, _)| (t, true)), hit(&b.sides, eye.at, d, near).map(|(t, _)| (t, false))]
+    let ground = [hit(&b.ground, eye.at, d, near)?.map(|(t, _)| (t, true)), hit(&b.sides, eye.at, d, near)?.map(|(t, _)| (t, false))]
         .into_iter()
         .flatten()
         .min_by(|a, c| a.0.total_cmp(&c.0));
@@ -1351,7 +1360,7 @@ pub fn pick(b: &Built, cam: &SceneCamera, opacity: f64, w: f64, h: f64, x: f64, 
         (Some((ts, n)), Some((tg, _))) if ts <= tg || opacity < 1.0 => (ts, Some(n), false),
         (Some((ts, n)), None) => (ts, Some(n), false),
         (_, Some((tg, surface))) => (tg, None, surface),
-        (None, None) => return None,
+        (None, None) => return Ok(None),
     };
     let p = [0, 1, 2].map(|k| eye.at[k] + d[k] * t);
     let (cx, cy, k) = b.origin;
@@ -1370,7 +1379,7 @@ pub fn pick(b: &Built, cam: &SceneCamera, opacity: f64, w: f64, h: f64, x: f64, 
     });
     // On the ground itself, at it (its mesh and its heights between their corners differ a
     // little); elsewhere under it by more than a metre.
-    Some(Picked { lonlat, elevation: p[2] / ex, below_ground: (!on_ground && inside && below > 1.0).then_some(below), feature })
+    Ok(Some(Picked { lonlat, elevation: p[2] / ex, below_ground: (!on_ground && inside && below > 1.0).then_some(below), feature }))
 }
 
 /// Moves the point `cam` turns about as a drag of (`dx`, `dy`) pixels over a picture `h` pixels
@@ -1448,7 +1457,7 @@ mod tests {
         let b = build(m, &s, small()).unwrap();
         let k = b.origin.2;
         let well = -1000.0 * k;
-        let look = |cam: &SceneCamera, opacity: f64, x: f64, y: f64| pick(&b, cam, opacity, 400.0, 300.0, x, y);
+        let look = |cam: &SceneCamera, opacity: f64, x: f64, y: f64| pick(&b, cam, opacity, 400.0, 300.0, x, y).unwrap();
         // Straight down onto the well: the well, at its head, where it is.
         let mut cam = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.3, target: [well, 0.0, 0.0] };
         let p = look(&cam, 1.0, 200.0, 150.0).unwrap();
@@ -1481,6 +1490,43 @@ mod tests {
         // The sky.
         let level = SceneCamera { heading: 0.0, tilt: 90.0, zoom: 1.0, target: [0.0, 0.0, 0.0] };
         assert!(look(&level, 1.0, 200.0, 2.0).is_none());
+        // Cancel pressed: it stops (a scene of many features has many triangles to look through).
+        struct Cancelled;
+        impl rustgis_data::progress::Probe for Cancelled {
+            fn cancelled(&self) -> bool {
+                true
+            }
+            fn begin(&self, _: u64) {}
+            fn advance(&self, _: u64) {}
+        }
+        let installed = rustgis_data::progress::install(Some(std::sync::Arc::new(Cancelled)));
+        let r = pick(&b, &cam, 1.0, 400.0, 300.0, 200.0, 150.0);
+        drop(installed);
+        assert!(r.unwrap_err().contains("ancel"));
+    }
+
+    #[test]
+    fn each_well_of_a_multipoint_is_picked_with_its_own_head() {
+        let (mut m, mut s) = hill();
+        let (cx, cy) = (11_200_000.0, 1_560_000.0);
+        let ll = |x: f64, y: f64| rustgis_geom::merc_to_lonlat(Coord::new(x, y));
+        let mut pair = Dataset::new("pair", GeometryType::Point, vec![Field::new("ลึก", FieldType::Double)]);
+        // Low on the hill's foot first, high near its top last.
+        pair.push(Some(Geometry::MultiPoint(vec![ll(cx + 1000.0, cy), ll(cx - 200.0, cy)])), vec![Value::Float(100.0)]);
+        m.add_dataset(pair);
+        let mut w = SceneLayer::new("pair", SceneKind::Well);
+        w.depth = Some("ลึก".into());
+        s.layers = vec![w];
+        let b = build(m, &s, small()).unwrap();
+        let k = b.origin.2;
+        assert!(b.ground_at(-200.0 * k, 0.0) - b.ground_at(1000.0 * k, 0.0) > 50.0, "the two heads differ");
+        for x in [1000.0 * k, -200.0 * k] {
+            let cam = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.3, target: [x, 0.0, 0.0] };
+            let p = pick(&b, &cam, 1.0, 400.0, 300.0, 200.0, 150.0).unwrap().unwrap();
+            let f = p.feature.clone().unwrap();
+            assert!(f.below_head.unwrap() < 1.0, "at its own head: {p:?}");
+            assert!(p.below_ground.is_none(), "{p:?}");
+        }
     }
 
     #[test]
