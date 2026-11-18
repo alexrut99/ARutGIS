@@ -43,6 +43,8 @@ pub struct SceneView {
     last_draw: f32,
     /// What the commands said last (and whether it is an error).
     message: Option<(String, bool)>,
+    /// What the last build left out, each said in the notices once.
+    said: Vec<String>,
     /// The project the view was for: another one drops what it kept.
     opened: u64,
 }
@@ -275,8 +277,13 @@ fn land(app: &mut RustGisApp, key: Key, r: Result<Built, String>) {
     }
 }
 
-/// Says once what a build left out.
+/// Says once what a build left out: above the picture the first (with a count of the rest), and
+/// each in the notices, a note the build before said too not again.
 fn say_notes(app: &mut RustGisApp, b: &Built) {
+    for n in b.notes.iter().filter(|n| !app.scene3d.said.contains(n)) {
+        app.session.warn(format!("3D Scene: {n}"));
+    }
+    app.scene3d.said.clone_from(&b.notes);
     if let Some(first) = b.notes.first() {
         let more = b.notes.len() - 1;
         let text = if more == 0 { first.clone() } else { format!("{first} (+{more})") };
@@ -754,6 +761,23 @@ mod tests {
             assert!(web_time::Instant::now() < end, "the scene was never built: {:?}", app.scene3d.error);
             std::thread::sleep(std::time::Duration::from_millis(10)); // test-wait: the scene is built on a thread of its own
         }
+    }
+
+    #[test]
+    fn every_note_of_a_build_is_in_the_notices_once() {
+        let mut app = RustGisApp::with_sample();
+        let mut scene = rustgis_engine::map::scene::Scene::new([11_180_000.0, 1_520_000.0, 11_200_000.0, 1_540_000.0]);
+        for name in ["ไม่มี ก", "ไม่มี ข"] {
+            scene.layers.push(rustgis_engine::map::scene::SceneLayer::new(name, rustgis_engine::map::scene::SceneKind::Point));
+        }
+        let b = scene3d::build(app.session.map().detached(), &scene, Detail { drape_px: 64, cells: 16 }).unwrap();
+        let said = |app: &RustGisApp| app.session.notices.iter().filter(|n| n.text.starts_with("3D Scene: ")).count();
+        say_notes(&mut app, &b);
+        assert_eq!(said(&app), 2, "{:?}", b.notes);
+        assert!(app.scene3d.message.as_ref().is_some_and(|(m, _)| m.ends_with("(+1)")));
+        // Built again with the same losses: not said again.
+        say_notes(&mut app, &b);
+        assert_eq!(said(&app), 2);
     }
 
     #[test]
