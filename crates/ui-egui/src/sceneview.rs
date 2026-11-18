@@ -26,7 +26,7 @@ pub struct SceneView {
     built: Option<(Key, Arc<Built>)>,
     /// A build running off the frame, and what it builds.
     #[cfg(not(target_arch = "wasm32"))]
-    building: Option<(Key, crate::Slot<Result<Built, String>>)>,
+    building: Option<Job<Key, Result<Built, String>>>,
     /// Why the last build failed, and what it was built from.
     error: Option<String>,
     failed: Option<Key>,
@@ -34,7 +34,7 @@ pub struct SceneView {
     texture: Option<(Drawn, egui::TextureHandle)>,
     /// A picture being drawn off the frame, and what it draws.
     #[cfg(not(target_arch = "wasm32"))]
-    drawing: Option<(Drawn, crate::Slot<Option<(egui::ColorImage, f32)>>)>,
+    drawing: Option<Job<Drawn, Option<(egui::ColorImage, f32)>>>,
     /// A picture that couldn't be drawn: not tried again until what it draws changes.
     undrawn: Option<Drawn>,
     /// The camera while the mouse moves it, kept to the map's scene when the drag ends.
@@ -45,6 +45,69 @@ pub struct SceneView {
     message: Option<(String, bool)>,
     /// The project the view was for: another one drops what it kept.
     opened: u64,
+}
+
+/// Work running on a thread of its own: what it is for, where its answer lands, and its Cancel,
+/// pressed when the job is dropped (left behind by another, or the view closed).
+#[cfg(not(target_arch = "wasm32"))]
+struct Job<K, T> {
+    what: K,
+    slot: crate::Slot<T>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<K, T> Drop for Job<K, T> {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// A job's Cancel, as the scene's building and drawing look at it.
+#[cfg(not(target_arch = "wasm32"))]
+struct Stop(Arc<std::sync::atomic::AtomicBool>);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl rustgis_engine::data::progress::Probe for Stop {
+    fn cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    fn begin(&self, _: u64) {}
+    fn advance(&self, _: u64) {}
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<K, T: Send + 'static> Job<K, T> {
+    /// Runs `work` on a thread with its Cancel installed, the frame asked again when it lands.
+    fn spawn(what: K, ctx: &egui::Context, work: impl FnOnce() -> T + Send + 'static) -> Job<K, T> {
+        let (slot, stop): (crate::Slot<T>, _) = (Default::default(), Arc::new(std::sync::atomic::AtomicBool::new(false)));
+        let (out, probe, repaint) = (slot.clone(), Stop(stop.clone()), ctx.clone());
+        std::thread::spawn(move || {
+            let _probe = rustgis_engine::data::progress::install(Some(Arc::new(probe)));
+            let r = work();
+            if let Ok(mut o) = out.lock() {
+                *o = Some(r);
+            }
+            repaint.request_repaint();
+        });
+        Job { what, slot, stop }
+    }
+
+    /// Its answer, once it has landed.
+    fn landed(&self) -> Option<T> {
+        self.slot.lock().ok()?.take()
+    }
+}
+
+/// Stops the scene's building and drawing: the view isn't shown.
+pub fn idle(app: &mut RustGisApp) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        app.scene3d.building = None;
+        app.scene3d.drawing = None;
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = app;
 }
 
 /// What a build is made from: the scene without its camera and opacity (which only change the
@@ -165,26 +228,20 @@ fn keep_built(app: &mut RustGisApp, scene: &Scene, ctx: &egui::Context) {
     let key = Key::of(app, scene);
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let landed = app.scene3d.building.as_ref().and_then(|(k, slot)| slot.lock().ok()?.take().map(|r| (k.clone(), r)));
+        let landed = app.scene3d.building.as_ref().and_then(|j| j.landed().map(|r| (j.what.clone(), r)));
         if let Some((k, r)) = landed {
             app.scene3d.building = None;
             land(app, k, r);
+        }
+        // One for what the scene was is cancelled: the scene changed meanwhile.
+        if app.scene3d.building.as_ref().is_some_and(|j| j.what != key) {
+            app.scene3d.building = None;
         }
         let current = app.scene3d.built.as_ref().is_some_and(|(k, _)| *k == key);
         if !current && app.scene3d.failed.as_ref() != Some(&key) && app.scene3d.building.is_none() {
             let map = app.session.map().detached();
             let s = scene.clone();
-            let slot: crate::Slot<Result<Built, String>> = Default::default();
-            let out = slot.clone();
-            let repaint = ctx.clone();
-            std::thread::spawn(move || {
-                let r = scene3d::build(map, &s, Detail::SCREEN);
-                if let Ok(mut o) = out.lock() {
-                    *o = Some(r);
-                }
-                repaint.request_repaint();
-            });
-            app.scene3d.building = Some((key, slot));
+            app.scene3d.building = Some(Job::spawn(key, ctx, move || scene3d::build(map, &s, Detail::SCREEN)));
         }
         if app.scene3d.building.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(150));
@@ -417,7 +474,7 @@ fn keep_drawn(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, drawn: 
     let [w, h] = drawn.size;
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let landed = app.scene3d.drawing.as_ref().and_then(|(d, slot)| slot.lock().ok()?.take().map(|r| (d.clone(), r)));
+        let landed = app.scene3d.drawing.as_ref().and_then(|j| j.landed().map(|r| (j.what.clone(), r)));
         if let Some((d, r)) = landed {
             app.scene3d.drawing = None;
             match r {
@@ -429,22 +486,20 @@ fn keep_drawn(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, drawn: 
                 None => app.scene3d.undrawn = Some(d),
             }
         }
+        // One of a scene built before is cancelled; one of this scene from another camera
+        // finishes, so a picture comes while it turns.
+        if app.scene3d.drawing.as_ref().is_some_and(|j| j.what.built != drawn.built) {
+            app.scene3d.drawing = None;
+        }
         let wanted = app.scene3d.texture.as_ref().is_none_or(|(d, _)| *d != drawn) && app.scene3d.undrawn.as_ref() != Some(&drawn);
         if wanted && app.scene3d.drawing.is_none() {
-            let slot: crate::Slot<Option<(egui::ColorImage, f32)>> = Default::default();
-            let out = slot.clone();
-            let (b, cam, repaint) = (b.clone(), *cam, ctx.clone());
-            std::thread::spawn(move || {
+            let (b, cam) = (b.clone(), *cam);
+            app.scene3d.drawing = Some(Job::spawn(drawn, ctx, move || {
                 let start = web_time::Instant::now();
-                let r = scene3d::draw(&b, &cam, opacity, w, h, ppp, 1).ok().map(|pm| {
+                scene3d::draw(&b, &cam, opacity, w, h, ppp, 1).ok().map(|pm| {
                     (egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pm.data()), start.elapsed().as_secs_f32())
-                });
-                if let Ok(mut o) = out.lock() {
-                    *o = Some(r);
-                }
-                repaint.request_repaint();
-            });
-            app.scene3d.drawing = Some((drawn, slot));
+                })
+            }));
         }
     }
     #[cfg(target_arch = "wasm32")]
@@ -728,9 +783,15 @@ mod tests {
         app.run("scene.set", json!({"exaggeration": 3})).unwrap();
         let second = built_after(&mut app, &ctx, Some(first));
         assert_ne!(first, second);
-        // The map's tab hides it; its own shows it again.
+        // The map's tab hides it, a build under way cancelled; its own shows it again.
+        app.run("scene.set", json!({"exaggeration": 4})).unwrap();
+        frame(&mut app, &ctx);
+        let stop = app.scene3d.building.as_ref().map(|j| j.stop.clone());
         app.run("ui.scene", json!({"show": false})).unwrap();
         assert!(!shown(&app));
+        frame(&mut app, &ctx);
+        assert!(app.scene3d.building.is_none() && app.scene3d.drawing.is_none());
+        assert!(stop.is_none_or(|s| s.load(std::sync::atomic::Ordering::Relaxed)), "its Cancel pressed");
         app.run("ui.scene", Value::Null).unwrap();
         assert!(shown(&app));
         // Taken off the map, the view goes.

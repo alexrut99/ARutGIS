@@ -385,8 +385,10 @@ pub(crate) fn export_work(s: &Session, p: &Value) -> Result<super::exports::Work
     let map = s.map().detached();
     let scene = map.scene.clone().ok_or("the map has no 3D scene: make one first (scene.set)")?;
     Ok(Box::new(move || {
+        // Built on a copy that keeps what its streamed layers' sources said, for the notices.
+        let mut used = map.clone();
         let (written, notes) = (|| {
-            let built = rustgis_render::scene3d::build(map.clone(), &scene, rustgis_render::scene3d::Detail::EXPORT)?;
+            let built = rustgis_render::scene3d::build_on(&mut used, &scene, rustgis_render::scene3d::Detail::EXPORT)?;
             rustgis_data::progress::check().map_err(|e| e.to_string())?;
             let ppp = (f64::from(h) / 700.0).clamp(1.0, 4.0) as f32;
             let pm = rustgis_render::scene3d::draw(&built, &scene.camera, scene.ground_opacity, w, h, ppp, smooth)?;
@@ -396,7 +398,7 @@ pub(crate) fn export_work(s: &Session, p: &Value) -> Result<super::exports::Work
         })()
         .map_or_else(|e| (Err(e), Vec::new()), |(v, n)| (Ok(v), n));
         let warn = rustgis_data::diagnostics::Severity::Warning;
-        super::exports::drawn(std::slice::from_ref(&map), notes.into_iter().map(|n| (warn, n)).collect(), written, path.clone())
+        super::exports::drawn(std::slice::from_ref(&used), notes.into_iter().map(|n| (warn, n)).collect(), written, path.clone())
     }))
 }
 
@@ -420,8 +422,10 @@ pub(crate) fn orbit_work(s: &Session, p: &Value) -> Result<super::exports::Work,
     let map = s.map().detached();
     let scene = map.scene.clone().ok_or("the map has no 3D scene: make one first (scene.set)")?;
     Ok(Box::new(move || {
+        // Built on a copy that keeps what its streamed layers' sources said, for the notices.
+        let mut used = map.clone();
         let (written, notes) = (|| {
-            let built = rustgis_render::scene3d::build(map.clone(), &scene, rustgis_render::scene3d::Detail::EXPORT)?;
+            let built = rustgis_render::scene3d::build_on(&mut used, &scene, rustgis_render::scene3d::Detail::EXPORT)?;
             // A whole turn stops a step short of where it began, so it loops with no frame twice.
             let steps = if turn.rem_euclid(360.0) == 0.0 { frames } else { frames - 1 };
             let bytes = super::time::animate(frames, gif.then_some(speed), |i| {
@@ -436,6 +440,6 @@ pub(crate) fn orbit_work(s: &Session, p: &Value) -> Result<super::exports::Work,
         })()
         .map_or_else(|e| (Err(e), Vec::new()), |(v, n)| (Ok(v), n));
         let warn = rustgis_data::diagnostics::Severity::Warning;
-        super::exports::drawn(std::slice::from_ref(&map), notes.into_iter().map(|n| (warn, n)).collect(), written, path.clone())
+        super::exports::drawn(std::slice::from_ref(&used), notes.into_iter().map(|n| (warn, n)).collect(), written, path.clone())
     }))
 }

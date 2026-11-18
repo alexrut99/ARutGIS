@@ -156,3 +156,23 @@ fn a_scene_over_the_view_of_a_projected_map_is_where_the_view_is() {
     let mid = rustgis_geom::merc_to_lonlat(rustgis_geom::Coord::new((e[0] + e[2]) / 2.0, (e[1] + e[3]) / 2.0));
     assert!((mid.x - 100.5).abs() < 0.05 && (mid.y - 13.75).abs() < 0.05, "{mid:?} from {e:?}");
 }
+
+/// A streamed layer whose source can't be read for the scene's export has its failure shown on
+/// the live layer, as Export Map's does.
+#[test]
+fn a_scene_export_marks_a_streamed_layer_it_couldnt_read() {
+    let (mut s, dem) = with_wells();
+    let dir = std::env::temp_dir().join(format!("rustgis-scene3d-gone-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    s.run("scene.set", &json!({"dem": dem, "extent": "dem"})).unwrap();
+    s.run("scene.layer", &json!({"layer": "บ่อ", "depth": "ลึก"})).unwrap();
+    let li = s.map().layers.iter().position(|l| l.name == "บ่อ").unwrap();
+    let mut src = rustgis_map::source::SourceLayer::default();
+    src.path = Some(dir.join("gone.fgb").display().to_string());
+    s.map_mut().layers[li].source = Some(src);
+    let png = dir.join("ฉาก.png").display().to_string();
+    s.run("scene.export", &json!({"path": png, "width": 120, "height": 80, "smooth": 1})).unwrap();
+    let error = s.map().layers[li].source.as_ref().and_then(|src| src.error.clone());
+    assert!(error.is_some_and(|e| e.contains("No such file")), "the failure shows on the layer");
+    let _ = std::fs::remove_dir_all(&dir);
+}

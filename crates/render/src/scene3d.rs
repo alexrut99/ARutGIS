@@ -119,6 +119,12 @@ pub struct Built {
 /// no heights in the box. A DEM, a layer or a field taken out of the map since the scene named
 /// it is left out, said in [`Built::notes`].
 pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, String> {
+    build_on(&mut map, scene, detail)
+}
+
+/// [`build`] on a copy of the map the caller keeps: its streamed layers' sources, read for the
+/// scene, carry the failures of those that couldn't be (for an export's notices).
+pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, String> {
     scene.check()?;
     // Cancel (an export's) is looked at between the steps.
     go_on()?;
@@ -227,7 +233,7 @@ pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, Strin
     let view = crate::View { width: f64::from(dw), height: f64::from(dh), pixels_per_point: 1.0, camera, sky: false };
     // Streamed layers read the box first, waited for, as the drape reads them: those the map
     // draws there, and those the scene stands up that it doesn't (hidden, or out of their range).
-    let lonlat = crate::view_lonlat(&map, &view);
+    let lonlat = crate::view_lonlat(map, &view);
     let scale = camera.scale();
     let mut pending = map.sync_sources(&lonlat, scale, true);
     for l in map
@@ -243,7 +249,7 @@ pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, Strin
     go_on()?;
     let at = Placing { local: &local, inside: &inside, auto_size, ex, scale };
     for sl in &scene.layers {
-        stand_up(&map, sl, &mut built, &at, &mut notes);
+        stand_up(map, sl, &mut built, &at, &mut notes);
     }
     go_on()?;
     let lowest = built.z_range.0.min(g_lo);
@@ -255,7 +261,7 @@ pub fn build(mut map: Map, scene: &Scene, detail: Detail) -> Result<Built, Strin
     sides_mesh(&mut built, base, scene.walls);
 
     // The map draped over the ground.
-    match crate::render_placed(&mut map, &view) {
+    match crate::render_placed(map, &view) {
         Ok(p) => {
             notes.extend(p.gaps);
             built.credits = p.credits;

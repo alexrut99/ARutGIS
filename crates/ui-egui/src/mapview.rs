@@ -781,6 +781,10 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
     crate::modelbuilder::follow_view(app);
     view_tabs(app, ui, &t);
     crate::vertexedit::cancel_stale_drag(app);
+    if !crate::sceneview::shown(app) {
+        // A scene no longer shown stops building and drawing.
+        crate::sceneview::idle(app);
+    }
     if app.mb.shown() {
         crate::modelbuilder::show(app, ui);
         return;
