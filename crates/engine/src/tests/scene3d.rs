@@ -126,6 +126,7 @@ fn a_saved_scene_is_read_back() {
     assert_eq!((scene.dem.as_deref(), scene.exaggeration, scene.ground_opacity, scene.depth), (Some("dem"), 2.0, 0.5, Some(120.0)));
     assert_eq!(scene.layers.iter().map(|l| l.kind.code()).collect::<Vec<_>>(), ["well", "extrude", "point"]);
     assert_eq!(scene.camera.tilt, 110.0);
+    assert!(!scene.ruler, "its ruler turned off");
     assert!(scene.check().is_ok());
 }
 
@@ -218,4 +219,39 @@ fn a_scene_over_a_streamed_layers_extent_takes_its_whole_source() {
         rustgis_geom::merc_to_lonlat(rustgis_geom::Coord::new(e[2], e[3])),
     );
     assert!(a.x < 10.0 && a.y < 45.0 && c.x > 10.2 && c.y > 45.1, "{a:?} {c:?}");
+}
+
+/// A scene's ruler of heights: on by default, turned off and on by `scene.set`, kept with the
+/// map (only when off: a scene saved before it had one shows it), and drawn on an exported image
+/// as on the screen.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn a_scene_ruler_is_set_kept_and_exported() {
+    let (mut s, dem) = with_wells();
+    let dir = std::env::temp_dir().join(format!("rustgis-scene3d-ruler-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let v = s
+        .run("scene.set", &json!({"dem": dem, "exaggeration": 5, "depth": 300, "camera": {"heading": 30, "tilt": 75, "zoom": 1.5}}))
+        .unwrap();
+    assert_eq!(v["ruler"], true);
+    let shot = |s: &mut Session, name: &str| {
+        let p = dir.join(name).display().to_string();
+        s.run("scene.export", &json!({"path": p, "width": 400, "height": 300, "smooth": 1})).unwrap();
+        image::load_from_memory(&std::fs::read(&p).unwrap()).unwrap().to_rgba8().into_raw()
+    };
+    let on = shot(&mut s, "on.png");
+    assert!(s.run("scene.set", &json!({"ruler": "no"})).unwrap_err().contains("true or false"));
+    assert_eq!(s.run("scene.set", &json!({"ruler": false})).unwrap()["ruler"], false);
+    let off = shot(&mut s, "off.png");
+    let differ = on.chunks(4).zip(off.chunks(4)).filter(|(a, b)| a != b).count();
+    assert!(differ > 100, "the ruler is on the image: {differ} pixels");
+    let (text, _) = s.project.saved_text(None).unwrap();
+    assert!(text.contains("\"ruler\":false"));
+    let mut t = Session::new(crate::Project::default());
+    t.run("project.openText", &json!({"text": text})).unwrap();
+    assert!(!t.map().scene.as_ref().unwrap().ruler);
+    s.run("scene.set", &json!({"ruler": true})).unwrap();
+    let (text, _) = s.project.saved_text(None).unwrap();
+    assert!(!text.contains("\"ruler\""), "on, as a scene saved before it, it isn't written");
+    let _ = std::fs::remove_dir_all(&dir);
 }
