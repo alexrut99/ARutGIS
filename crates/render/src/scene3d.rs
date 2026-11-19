@@ -246,12 +246,12 @@ pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, S
     let inside = |(x, y): (f64, f64)| x.abs() <= half.0 && y.abs() <= half.1;
     let auto_size = built.diag / 250.0;
     // The scale the map is draped at: a layer's features are those the drape draws.
-    let (dw, dh) = if gw >= gh {
-        (detail.drape_px, ((f64::from(detail.drape_px) * gh / gw).round() as u32).max(16))
-    } else {
-        (((f64::from(detail.drape_px) * gw / gh).round() as u32).max(16), detail.drape_px)
-    };
-    let camera = Camera::new(Coord::new(cx, cy), (x1 - x0) / f64::from(dw));
+    // Its longer side `drape_px` pixels; a very long, narrow box's shorter side is drawn at
+    // least 16 pixels across, round its middle, and cut back to the box after.
+    let per_px = (x1 - x0).max(y1 - y0) / f64::from(detail.drape_px);
+    let (bw, bh) = ((x1 - x0) / per_px, (y1 - y0) / per_px);
+    let (dw, dh) = ((bw.round() as u32).max(16), (bh.round() as u32).max(16));
+    let camera = Camera::new(Coord::new(cx, cy), per_px);
     map.view.terrain = None;
     if map.projection != rustgis_map::Projection::WebMercator {
         map.set_projection(rustgis_map::Projection::WebMercator);
@@ -295,7 +295,7 @@ pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, S
         Ok(p) => {
             notes.extend(p.gaps);
             built.credits = p.credits;
-            built.drape = Some(p.pixmap);
+            built.drape = Some(box_of(p.pixmap, bw, bh));
         }
         Err(e) => notes.push(format!("the map couldn't be draped over the ground: {e}")),
     }
@@ -372,6 +372,21 @@ impl Built {
             f64::from(self.heights[j * (self.cols + 1) + i]),
         ]
     }
+}
+
+/// The part of a drape drawn round the box's middle that is the box, `bw` by `bh` pixels (no
+/// less than one) at its middle: all of it unless a side was drawn wider than the box.
+fn box_of(pm: Pixmap, bw: f64, bh: f64) -> Pixmap {
+    let (w, h) = (pm.width(), pm.height());
+    let side = |n: u32, along: f64| {
+        let keep = (along.round() as u32).clamp(1, n);
+        (((f64::from(n) - along) / 2.0).round().clamp(0.0, f64::from(n - keep)) as u32, keep)
+    };
+    let ((x, kw), (y, kh)) = (side(w, bw), side(h, bh));
+    if (kw, kh) == (w, h) {
+        return pm;
+    }
+    tiny_skia::IntRect::from_xywh(x as i32, y as i32, kw, kh).and_then(|r| pm.clone_rect(r)).unwrap_or(pm)
 }
 
 /// The ground's top: its mesh, lit by its slope, the map draped over it.
@@ -1630,6 +1645,41 @@ mod tests {
         let cam = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.01, target: [1000.0 * k, 0.0, 0.0] };
         let p = pick(&b, &cam, 0.0, 400.0, 300.0, 200.0, 150.0).unwrap().unwrap();
         assert!((p.below_ground.unwrap() - 96.0).abs() < 1.0, "{p:?}");
+    }
+
+    #[test]
+    fn a_long_narrow_box_is_draped_with_the_box_only() {
+        // 400 to 1: drawn 16 pixels across its width, cut back to the one row that is the box.
+        let (cx, cy) = (11_200_000.0, 1_560_000.0);
+        for extent in [[cx - 10_000.0, cy - 25.0, cx + 10_000.0, cy + 25.0], [cx - 25.0, cy - 10_000.0, cx + 25.0, cy + 10_000.0]] {
+            let b = build(Map::new("Map"), &Scene::new(extent), small()).unwrap();
+            let d = b.drape.as_ref().unwrap();
+            let long = (extent[2] - extent[0]) > (extent[3] - extent[1]);
+            assert_eq!(if long { (d.width(), d.height()) } else { (d.height(), d.width()) }, (256, 1));
+        }
+        // 50 to 1: as drawn, its sides in proportion.
+        let b = build(Map::new("Map"), &Scene::new([cx - 5000.0, cy - 100.0, cx + 5000.0, cy + 100.0]), small()).unwrap();
+        let d = b.drape.as_ref().unwrap();
+        assert_eq!((d.width(), d.height()), (256, 5));
+    }
+
+    #[test]
+    fn what_is_drawn_round_the_box_is_cut_off() {
+        let mut pm = Pixmap::new(40, 16).unwrap();
+        pm.fill(tiny_skia::Color::from_rgba8(0, 0, 255, 255));
+        // The box: 4 rows at the middle, red.
+        let red =
+            tiny_skia::Paint { shader: tiny_skia::Shader::SolidColor(tiny_skia::Color::from_rgba8(255, 0, 0, 255)), ..Default::default() };
+        pm.fill_rect(tiny_skia::Rect::from_xywh(0.0, 6.0, 40.0, 4.0).unwrap(), &red, tiny_skia::Transform::identity(), None);
+        let cut = box_of(pm.clone(), 40.0, 4.0);
+        assert_eq!((cut.width(), cut.height()), (40, 4));
+        assert!(cut.pixels().iter().all(|p| (p.red(), p.blue()) == (255, 0)));
+        // A box as big as the picture: all of it.
+        assert_eq!(box_of(pm.clone(), 40.0, 16.0).data(), pm.data());
+        // Less than a pixel: the one at its middle.
+        let cut = box_of(pm, 40.0, 0.3);
+        assert_eq!((cut.width(), cut.height()), (40, 1));
+        assert_eq!(cut.pixels()[0].red(), 255);
     }
 
     #[test]
