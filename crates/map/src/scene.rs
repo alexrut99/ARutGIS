@@ -37,14 +37,16 @@ pub struct Scene {
     /// The raster layer of ground heights (metres), by name. None: flat ground at 0 m.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dem: Option<String>,
-    /// How much heights and depths are stretched.
+    /// How much the relief is stretched: heights over the lowest ground of the area (the DEM's,
+    /// and what stands on it). Below the lowest ground (the block, and wells deeper) heights
+    /// are true metres.
     #[serde(default = "one")]
     pub exaggeration: f64,
     /// How opaque the ground is, 0 to 1: below 1 what is under it shows through.
     #[serde(default = "one")]
     pub ground_opacity: f64,
-    /// Metres from the lowest ground, or the deepest well when that is deeper, to the base.
-    /// None: a tenth of the box's longer side, at least 50 m.
+    /// True metres from the lowest ground, or the deepest well when that is deeper, to the base.
+    /// None: a quarter of the ground's relief as drawn, at least 50 m.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<f64>,
     /// The colour of the sides and the base.
@@ -136,7 +138,8 @@ pub struct SceneLayer {
     /// A raised polygon's height where no field gives it (metres).
     #[serde(default = "ten")]
     pub height_m: f64,
-    /// Metres above the ground a point or a raised polygon starts at.
+    /// Metres above the ground a point or a raised polygon starts at (below it when negative):
+    /// stretched as the relief is above the lowest ground, true metres under it.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub offset: f64,
     /// A well's or a point's width (metres). None: worked out from the box, to show at its scale.

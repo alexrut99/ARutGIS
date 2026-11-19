@@ -231,7 +231,7 @@ fn a_scene_ruler_is_set_kept_and_exported() {
     let dir = std::env::temp_dir().join(format!("rustgis-scene3d-ruler-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let v = s
-        .run("scene.set", &json!({"dem": dem, "exaggeration": 5, "depth": 300, "camera": {"heading": 30, "tilt": 75, "zoom": 1.5}}))
+        .run("scene.set", &json!({"dem": dem, "exaggeration": 5, "depth": 1500, "camera": {"heading": 30, "tilt": 75, "zoom": 1.5}}))
         .unwrap();
     assert_eq!(v["ruler"], true);
     let shot = |s: &mut Session, name: &str| {
