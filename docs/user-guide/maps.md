@@ -217,7 +217,7 @@ how far below the ground it is; over a feature, its layer and label, and for a w
 down it the point is from its head. Through ground less than opaque, a well behind the ground is
 what is said, as it is what is seen. The scene and its camera are saved with the map (a project
 with one requires `scene-3d`, so a RustGIS that can't keep it refuses to open it rather than drop
-it). A layer renamed is followed; one removed is left out of the scene, said.
+it; one whose ruler is off also requires `scene-ruler`, which ARutGIS 0.7.1 doesn't know). A layer renamed is followed; one removed is left out of the scene, said.
 
 **Export Image…** (`scene.export`, desktop) writes the scene from its camera as a PNG
 (`"width"` × `"height"` pixels, default 1600 × 1000, each pixel smoothed from `"smooth"`²

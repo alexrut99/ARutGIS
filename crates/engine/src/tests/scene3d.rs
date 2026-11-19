@@ -247,11 +247,22 @@ fn a_scene_ruler_is_set_kept_and_exported() {
     assert!(differ > 100, "the ruler is on the image: {differ} pixels");
     let (text, _) = s.project.saved_text(None).unwrap();
     assert!(text.contains("\"ruler\":false"));
+    // Off, the project and a map file require what keeps it: 0.7.1 knew scenes but not their
+    // ruler, and would save the scene with it on again.
+    let requires = |text: &str| -> Vec<String> {
+        let doc: serde_json::Value = serde_json::from_str(text).unwrap();
+        doc["requires"].as_array().map(|r| r.iter().filter_map(|c| c.as_str().map(String::from)).collect()).unwrap_or_default()
+    };
+    assert!(requires(&text).contains(&"scene-ruler".to_string()), "{:?}", requires(&text));
+    let map_file = crate::project::map_file_bytes(s.map()).unwrap();
+    assert!(requires(std::str::from_utf8(&map_file).unwrap()).contains(&"scene-ruler".to_string()));
+    assert!(crate::project::CAPABILITIES.contains(&"scene-ruler"), "this version reads what it writes");
     let mut t = Session::new(crate::Project::default());
     t.run("project.openText", &json!({"text": text})).unwrap();
     assert!(!t.map().scene.as_ref().unwrap().ruler);
     s.run("scene.set", &json!({"ruler": true})).unwrap();
     let (text, _) = s.project.saved_text(None).unwrap();
     assert!(!text.contains("\"ruler\""), "on, as a scene saved before it, it isn't written");
+    assert!(!requires(&text).contains(&"scene-ruler".to_string()) && requires(&text).contains(&"scene-3d".to_string()));
     let _ = std::fs::remove_dir_all(&dir);
 }
