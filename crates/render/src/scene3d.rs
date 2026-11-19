@@ -90,7 +90,7 @@ struct Owner {
     end: usize,
     layer: String,
     label: Option<String>,
-    /// A well's head (exaggerated metres) and where it is: how deep a point of it is is
+    /// A well's head (metres above sea level) and where it is: how deep a point of it is is
     /// measured from there, and how far under the ground from the ground over it.
     head: Option<(f64, (f64, f64))>,
 }
@@ -121,8 +121,11 @@ pub struct Built {
     diag: f64,
     /// The height the camera turns about by default: the middle of the ground's.
     mid: f64,
-    /// The lowest and highest the scene reaches (exaggerated metres).
+    /// The lowest and highest the scene reaches (the scene's metres).
     pub z_range: (f64, f64),
+    /// Metres from the lowest ground, or the deepest well when that is deeper, to the base: the
+    /// scene's or its default.
+    pub depth: f64,
     /// What was left out and why, and parts of the draped map that are missing: for a notice.
     pub notes: Vec<String>,
     /// The credits of the tile layers draped over the ground.
@@ -226,6 +229,7 @@ pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, S
         diag: gw.hypot(gh),
         mid: (g_lo + g_hi) / 2.0,
         z_range: (g_lo, g_hi),
+        depth: 0.0,
         notes: Vec::new(),
         credits: Vec::new(),
     };
@@ -273,10 +277,12 @@ pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, S
     notes.extend(unread(map, scene));
     go_on()?;
     let lowest = built.z_range.0.min(g_lo);
-    // By default a quarter of the relief below what is lowest, at least 50 m.
-    let depth = scene.depth.unwrap_or_else(|| ((g_hi - g_lo) / ex / 4.0).max(50.0));
-    let base = lowest - depth * ex;
+    // The block is cut below the ground as stretched, in true metres: by default a quarter of
+    // the relief as drawn, at least 50 m.
+    let depth = scene.depth.unwrap_or_else(|| ((g_hi - g_lo) / 4.0).max(50.0));
+    let base = lowest - depth;
     built.z_range.0 = base;
+    built.depth = depth;
     ground_mesh(&mut built);
     sides_mesh(&mut built, base, scene.walls);
 
@@ -336,6 +342,23 @@ impl Built {
         let top = h(i, j) + (h(i + 1, j) - h(i, j)) * tx;
         let bottom = h(i, j + 1) + (h(i + 1, j + 1) - h(i, j + 1)) * tx;
         top + (bottom - top) * ty
+    }
+
+    /// Where `h` metres above sea level lies in the scene at (`x`, `y`): over the ground,
+    /// stretched as the ground is (the exaggeration is the DEM's); under it, true metres down
+    /// from it, as the block and the wells are.
+    pub fn z_of(&self, x: f64, y: f64, h: f64) -> f64 {
+        let g = self.ground_at(x, y);
+        let e = g / self.ex.max(1e-9);
+        if h >= e { h * self.ex } else { g - (e - h) }
+    }
+
+    /// The height above sea level (metres) of the scene's `z` at (`x`, `y`): [`Built::z_of`]
+    /// back.
+    pub fn height_of(&self, x: f64, y: f64, z: f64) -> f64 {
+        let g = self.ground_at(x, y);
+        let ex = self.ex.max(1e-9);
+        if z >= g { z / ex } else { g / ex - (g - z) }
     }
 
     /// The point of the scene at a corner of the ground's mesh.
@@ -510,28 +533,31 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
                             missing += 1;
                             continue;
                         };
-                        let head = number(row, top).map_or(ground, |t| t * ex);
+                        // Down from its head in true metres under the ground (above it, as
+                        // the ground is stretched).
+                        let top_m = number(row, top).unwrap_or(ground / ex.max(1e-9));
+                        let (head, bottom) = (b.z_of(at.0, at.1, top_m), b.z_of(at.0, at.1, top_m - d));
                         let r = size / 2.0;
                         // Its casing stands a little above the head, to show where it is from above.
-                        tube(&mut b.solids, at, head + r, head - d * ex, r, color, 14);
+                        tube(&mut b.solids, at, head + r, bottom, r, color, 14);
                         if let Some(w) = number(row, water).filter(|w| *w >= 0.0 && *w <= d) {
-                            let z = head - w * ex;
+                            let z = b.z_of(at.0, at.1, top_m - w);
                             tube(&mut b.solids, at, z + r * 0.6, z - r * 0.6, r * 1.7, WATER, 14);
                         }
-                        b.z_range.0 = b.z_range.0.min(head - d * ex);
+                        b.z_range.0 = b.z_range.0.min(bottom);
                         b.z_range.1 = b.z_range.1.max(head);
                         // Each of a multipoint's wells keeps its own head and middle.
                         b.owners.push(Owner {
                             end: b.solids.tris.len(),
                             layer: name.clone(),
                             label: owned.clone(),
-                            head: Some((head, at)),
+                            head: Some((top_m, at)),
                         });
                         placed = Some([at.0, at.1, head.max(ground) + r * 3.0]);
                     } else {
                         let z = match elevation {
                             Some(_) => match number(row, elevation) {
-                                Some(e) => e * ex,
+                                Some(e) => b.z_of(at.0, at.1, e),
                                 None => {
                                     missing += 1;
                                     continue;
@@ -1218,7 +1244,9 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32) {
     if (out < 0.0 && left < room) || (out > 0.0 && p0.0.max(p1.0) > eye.centre.0 as f32 * 2.0 - room) {
         out = -out;
     }
-    let (lo, hi) = (base / b.ex, top / b.ex);
+    // Down the corner the block is true metres from the ground there.
+    let hi = b.height_of(x, y, top);
+    let lo = hi - (top - base);
     let step = ruler_step(hi - lo, len, ppp64);
     let tick = 7.0 * ppp;
     let mut pb = tiny_skia::PathBuilder::new();
@@ -1232,7 +1260,7 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32) {
     while v <= hi + 1e-9 {
         if v - lo > near_end
             && hi - v > near_end
-            && let Some(p) = at(v * b.ex)
+            && let Some(p) = at(top - (hi - v))
         {
             marks.push((p, v, step));
         }
@@ -1371,21 +1399,22 @@ pub fn pick(b: &Built, cam: &SceneCamera, opacity: f64, w: f64, h: f64, x: f64, 
     let p = [0, 1, 2].map(|k| eye.at[k] + d[k] * t);
     let (cx, cy, k) = b.origin;
     let lonlat = merc_to_lonlat(Coord::new(p[0] / k + cx, p[1] / k + cy));
-    let ex = b.ex.max(1e-9);
     let (hw, hh) = b.half;
     let inside = p[0].abs() <= hw * (1.0 + 1e-9) && p[1].abs() <= hh * (1.0 + 1e-9);
     let owner = owner.and_then(|n| b.owners.get(b.owners.partition_point(|o| o.end <= n)));
     // A well's depth under the ground is the ground's over its middle, not beside it.
     let (gx, gy) = owner.and_then(|o| o.head).map_or((p[0], p[1]), |(_, at)| at);
-    let below = (b.ground_at(gx, gy) - p[2]) / ex;
+    // Under the ground, true metres.
+    let below = b.ground_at(gx, gy) - p[2];
+    let elevation = b.height_of(gx, gy, p[2]);
     let feature = owner.map(|o| PickedFeature {
         layer: o.layer.clone(),
         label: o.label.clone(),
-        below_head: o.head.map(|(h, _)| ((h - p[2]) / ex).max(0.0)),
+        below_head: o.head.map(|(h, _)| (h - elevation).max(0.0)),
     });
     // On the ground itself, at it (its mesh and its heights between their corners differ a
     // little); elsewhere under it by more than a metre.
-    Ok(Some(Picked { lonlat, elevation: p[2] / ex, below_ground: (!on_ground && inside && below > 1.0).then_some(below), feature }))
+    Ok(Some(Picked { lonlat, elevation, below_ground: (!on_ground && inside && below > 1.0).then_some(below), feature }))
 }
 
 /// Moves the point `cam` turns about as a drag of (`dx`, `dy`) pixels over a picture `h` pixels
@@ -1516,6 +1545,50 @@ mod tests {
         let r = pick(&b, &cam, 1.0, 400.0, 300.0, 200.0, 150.0);
         drop(installed);
         assert!(r.unwrap_err().contains("ancel"));
+    }
+
+    #[test]
+    fn the_ground_is_stretched_and_what_is_under_it_is_true_metres() {
+        let (m, mut s) = hill();
+        s.exaggeration = 4.0;
+        s.depth = Some(200.0);
+        let b = build(m, &s, small()).unwrap();
+        let k = b.origin.2;
+        let well = -1000.0 * k;
+        // The ground stretched: four times its heights.
+        let (head, foot) = (b.ground_at(well, 0.0), b.ground_at(b.half.0, b.half.1));
+        assert!((head / 4.0 - 175.0).abs() < 10.0 && (foot / 4.0 - 100.0).abs() < 1.0, "{head} {foot}");
+        // The block 200 true metres below the lowest ground (the 120 m well ends above it).
+        assert!(head - 120.0 > foot, "the well ends above the lowest ground");
+        assert!((b.z_range.0 - (foot - 200.0)).abs() < 1.0 && b.depth == 200.0, "{:?}", b.z_range);
+        // Over the ground, stretched; under it, true metres down from it; and back.
+        let e = head / 4.0;
+        assert!((b.z_of(well, 0.0, e + 10.0) - (head + 40.0)).abs() < 1e-6);
+        assert!((b.z_of(well, 0.0, e - 50.0) - (head - 50.0)).abs() < 1e-6);
+        for h in [e + 10.0, e, e - 50.0] {
+            assert!((b.height_of(well, 0.0, b.z_of(well, 0.0, h)) - h).abs() < 1e-6);
+        }
+        // The well is its 120 m down from its head, its water 15 m.
+        let look = |cam: &SceneCamera, opacity: f64| pick(&b, cam, opacity, 400.0, 300.0, 200.0, 150.0).unwrap();
+        let down = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.3, target: [well, 0.0, 0.0] };
+        let p = look(&down, 1.0).unwrap();
+        assert!(
+            p.feature.as_ref().and_then(|f| f.below_head).unwrap() < 1.0 && (p.elevation - e).abs() < 3.0,
+            "its casing a little above: {p:?}"
+        );
+        let side = SceneCamera { heading: 90.0, tilt: 90.0, zoom: 0.15, target: [well, 0.0, head - 60.0 - b.mid] };
+        let clear = look(&side, 0.3).unwrap();
+        let below = clear.feature.as_ref().and_then(|f| f.below_head).unwrap();
+        assert!((below - 60.0).abs() < 5.0, "60 true metres down: {below}");
+        assert!((clear.below_ground.unwrap() - 60.0).abs() < 5.0 && (clear.elevation - (e - 60.0)).abs() < 5.0, "{clear:?}");
+        // From under the ground: the base as far under the ground as it is drawn, and its
+        // height above sea level so.
+        let beside = well + 300.0;
+        let (ground, base) = (b.ground_at(beside, 0.0), b.z_range.0);
+        let under = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.002, target: [beside, 0.0, base + 10.0 - b.mid] };
+        let p = look(&under, 1.0).unwrap();
+        assert!((p.below_ground.unwrap() - (ground - base)).abs() < 1.0, "{p:?}");
+        assert!((p.elevation - (ground / 4.0 - (ground - base))).abs() < 1.0, "{p:?}");
     }
 
     #[test]

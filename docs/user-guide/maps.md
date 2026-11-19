@@ -185,10 +185,14 @@ tab of its own beside the map's; the first time, it is made over the selected ra
 the map's first) as its ground and that raster's extent, or the map's view without one.
 
 - **Ground**: a raster layer of heights in metres (`"dem"`), or flat ground at 0 m. The map, as it
-  is drawn, is draped over it, north up; the block's sides and base go down a quarter of the
-  relief below the lowest ground or the deepest well (at least 50 m; `"depth"` sets it).
-- **Vertical exaggeration** (`"exaggeration"`, above 0, at most 50) stretches heights and
-  depths alike.
+  is drawn, is draped over it, north up.
+- **Vertical exaggeration** (`"exaggeration"`, above 0, at most 50) stretches the ground's
+  heights, and what stands above it (points over it, raised polygons). What is under the
+  ground (the block, the wells and their water) is drawn in true metres down from it, so a
+  well 100 m deep is 100 m down at any exaggeration.
+- **Block depth** (`"depth"`, metres): the block is cut below the ground as stretched, its
+  sides and base going down this many true metres below the lowest ground or the deepest well.
+  **Auto** (`null`, the default) is a quarter of the relief as drawn, at least 50 m.
 - **Ground opacity** (`"groundOpacity"`, 0 to 1): below 1 the ground is glass, its nearest
   surface laid over what is under it, so the wells show through it.
 - **Study Area**: the DEM's extent, the map's current view, or a layer's extent (`"extent"`,
@@ -205,8 +209,8 @@ the map's first) as its ground and that raster's extent, or the map's view witho
   polygon with too many corners for a roof (over 5,000 in the area) stands up as walls, said.
 
 - **Height Ruler** (`"ruler"`, on by default): a ruler up the block's corner nearest the eye,
-  from its base to the ground there, numbered in metres above sea level (not exaggerated) at its
-  ends and at round heights between. It is left off a corner too short on the picture to mark,
+  from its base to the ground there, numbered in metres above sea level at its ends and at
+  round heights between: the ground's height there at its top, true metres down from it below. It is left off a corner too short on the picture to mark,
   as one is from straight above. It is drawn on exported images and orbits too.
 
 Drag to orbit, right-drag to move along the ground, Ctrl+drag (or the middle button) to go up
