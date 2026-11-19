@@ -5376,7 +5376,7 @@ Heights in metres above sea level up the block's nearest corner	ความส�
 elevation {z} m	ระดับ {z} ม. (รทก.)
 {d} m below the ground	ลึก {d} ม. จากผิวดิน
 {what}, {d} m down from its head	{what} ลึก {d} ม. จากปากบ่อ
-Stretches the ground's heights (the DEM); the block and the wells under it stay in true metres	ยืดความสูงของผิวดิน (DEM) เท่านั้น บล็อกและบ่อใต้ดินยังเป็นเมตรจริง
+Stretches the relief over the lowest ground (the DEM); below it the block and the wells are true metres	ยืดเฉพาะความสูงของผิวดิน (DEM) ที่สูงกว่าจุดต่ำสุด ส่วนที่อยู่ต่ำกว่านั้น ทั้งบล็อกและบ่อ เป็นเมตรจริง
 Block depth	ความหนาบล็อก
 True metres from the lowest ground, or the deepest well, down to the block's base	เมตรจริงจากผิวดินที่ต่ำที่สุด หรือก้นบ่อที่ลึกที่สุด ลงไปถึงฐานบล็อก
 A quarter of the ground's relief as drawn, at least 50 m	หนึ่งในสี่ของความต่างระดับผิวดินตามที่วาด อย่างน้อย 50 ม.

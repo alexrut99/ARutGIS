@@ -37,16 +37,16 @@ pub struct Scene {
     /// The raster layer of ground heights (metres), by name. None: flat ground at 0 m.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dem: Option<String>,
-    /// How much the ground's heights (the DEM) are stretched, and what stands above it. What is
-    /// under the ground (the block, wells, their water) is drawn in true metres down from it.
+    /// How much the relief is stretched: heights over the lowest ground of the area (the DEM's,
+    /// and what stands on it). Below the lowest ground (the block, and wells deeper) heights
+    /// are true metres.
     #[serde(default = "one")]
     pub exaggeration: f64,
     /// How opaque the ground is, 0 to 1: below 1 what is under it shows through.
     #[serde(default = "one")]
     pub ground_opacity: f64,
-    /// Metres from the lowest ground, or the deepest well when that is deeper, to the base: true
-    /// metres, the block cut below the ground as stretched. None: a quarter of the ground's
-    /// relief as drawn, at least 50 m.
+    /// True metres from the lowest ground, or the deepest well when that is deeper, to the base.
+    /// None: a quarter of the ground's relief as drawn, at least 50 m.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<f64>,
     /// The colour of the sides and the base.

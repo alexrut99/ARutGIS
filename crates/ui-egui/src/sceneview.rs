@@ -331,12 +331,12 @@ fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
     let mut ex = scene.exaggeration;
     let r = ui
         .add(egui::DragValue::new(&mut ex).range(0.1..=50.0).speed(0.05).max_decimals(2).suffix("×"))
-        .on_hover_text(tl!("Stretches the ground's heights (the DEM); the block and the wells under it stay in true metres"));
+        .on_hover_text(tl!("Stretches the relief over the lowest ground (the DEM); below it the block and the wells are true metres"));
     if r.changed() && ex != scene.exaggeration {
         run(app, "scene.set", json!({"exaggeration": ex}));
     }
-    // The block, cut below the ground as stretched, in true metres: the scene's, or the default
-    // the last build took.
+    // The block below the lowest ground, in true metres: the scene's, or the default the last
+    // build took.
     ui.label(tl!("Block depth"));
     let built = app.scene3d.built.as_ref().map(|(_, b)| b.depth);
     let mut depth = scene.depth.or(built).unwrap_or(0.0);
