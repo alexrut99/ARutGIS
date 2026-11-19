@@ -5371,3 +5371,8 @@ Export Scene Orbit	ส่งออกฉากหมุนรอบ
 Scene Layer	ชั้นข้อมูลในฉาก
 Scene Camera	กล้องของฉาก
 Remove 3D Scene	ลบฉาก 3 มิติ
+Height Ruler	สเกลความสูง
+Heights in metres above sea level up the block's nearest corner	ความสูงเป็นเมตรจากระดับทะเลปานกลาง ที่มุมบล็อกด้านใกล้ตา
+elevation {z} m	ระดับ {z} ม. (รทก.)
+{d} m below the ground	ลึก {d} ม. จากผิวดิน
+{what}, {d} m down from its head	{what} ลึก {d} ม. จากปากบ่อ

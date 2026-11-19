@@ -56,10 +56,22 @@ pub struct Scene {
     /// Where the scene is seen from.
     #[serde(default)]
     pub camera: SceneCamera,
+    /// A ruler of heights (metres above sea level, not exaggerated) up the block's corner
+    /// nearest the eye.
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub ruler: bool,
 }
 
 fn one() -> f64 {
     1.0
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(v: &bool) -> bool {
+    *v
 }
 
 fn walls() -> Rgba {
@@ -233,6 +245,7 @@ impl Scene {
             walls: WALLS,
             layers: Vec::new(),
             camera: SceneCamera::default(),
+            ruler: true,
         }
     }
 

@@ -49,10 +49,12 @@ fn relief_effects(layer: &Layer) -> bool {
 }
 
 fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static str> {
-    let (mut block, mut water, mut relief, mut legends, mut scene) = (false, false, false, false, false);
+    let (mut block, mut water, mut relief, mut legends, mut scene, mut ruler) = (false, false, false, false, false, false);
     for map in maps {
         // A 3D scene (ARutGIS): a reader that doesn't know of it would save the map without it.
         scene |= map.scene.is_some();
+        // Its ruler turned off (0.7.2): a reader of scenes from before would show it again.
+        ruler |= map.scene.as_ref().is_some_and(|s| !s.ruler);
         if let Some(t) = &map.view.terrain {
             block |= t.block.is_some();
             water |= t.water.is_some();
@@ -68,6 +70,7 @@ fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static
         (relief, "shaded-relief-effects"),
         (legends, "normalized-legend-urls"),
         (scene, "scene-3d"),
+        (ruler, "scene-ruler"),
     ]
     .into_iter()
     .filter_map(|(used, name)| used.then_some(name))

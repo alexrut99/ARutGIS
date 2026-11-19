@@ -13,7 +13,7 @@ use crate::{CmdResult, CommandSpec as C, Session};
 pub fn commands() -> Vec<C> {
     vec![
         C::new("scene.set", "3D Scene", "View › Scene", set).roles(&[]).effects(crate::policy::Effects::NONE).params(
-            r##"{"extent"?: "dem" (the DEM's extent; the default with a DEM) | "view" (the map's view; the default without one) | [xmin, ymin, xmax, ymax] in Web Mercator metres, "bbox"?: [west, south, east, north] in degrees, "extentOf"?: a layer whose extent the scene takes, "dem"?: a raster layer of heights in metres, or null for flat ground, "exaggeration"?: above 0, at most 50 (default 1), "groundOpacity"?: 0 (clear) to 1 (solid, the default), "depth"?: metres from the lowest ground or deepest well to the base, or null (a tenth of the area's longer side), "walls"?: "#RRGGBB", "layers"?: [layers as scene.layer takes them] (replaces them all), "camera"?: as scene.camera takes it}"##,
+            r##"{"extent"?: "dem" (the DEM's extent; the default with a DEM) | "view" (the map's view; the default without one) | [xmin, ymin, xmax, ymax] in Web Mercator metres, "bbox"?: [west, south, east, north] in degrees, "extentOf"?: a layer whose extent the scene takes, "dem"?: a raster layer of heights in metres, or null for flat ground, "exaggeration"?: above 0, at most 50 (default 1), "groundOpacity"?: 0 (clear) to 1 (solid, the default), "depth"?: metres from the lowest ground or deepest well to the base, or null (a tenth of the area's longer side), "walls"?: "#RRGGBB", "ruler"?: false hides the ruler of heights up the block's corner nearest the eye (shown by default), "layers"?: [layers as scene.layer takes them] (replaces them all), "camera"?: as scene.camera takes it}"##,
         ),
         C::new("scene.layer", "Scene Layer", "View › Scene", layer).roles(&[]).effects(crate::policy::Effects::NONE).params(
             r##"{"layer": a layer of the map, "kind"?: "well" (points as tubes down to their depth) | "point" (points as balls at their height) | "extrude" (polygons raised from the ground) (default: well for points, extrude for polygons), "depth"?: field of a well's depth below its head (metres; needed for wells), "top"?: field of a wellhead's height above sea level (default: the ground's), "water"?: field of a well's water level, its depth below the head, "elevation"?: field of a point's height above sea level (default: the ground's), "height"?: field of a polygon's height, "heightM"?: metres a polygon is raised where no field gives it (default 10), "offset"?: metres above the ground a point or polygon starts, "size"?: a well's or point's width in metres (default: to show at the area's scale), "color"?: "#RRGGBB" (default: the layer's symbology), "label"?: field written beside each, "remove"?: true (takes the layer out of the scene)}"##,
@@ -97,7 +97,8 @@ fn layer_box(map: &Map, name: &str) -> Result<[f64; 4], String> {
 
 fn set(s: &mut Session, p: &Value) -> CmdResult {
     let p = p.as_object().ok_or("the parameters are an object")?;
-    const KEYS: &[&str] = &["extent", "bbox", "extentOf", "dem", "exaggeration", "groundOpacity", "depth", "walls", "layers", "camera"];
+    const KEYS: &[&str] =
+        &["extent", "bbox", "extentOf", "dem", "exaggeration", "groundOpacity", "depth", "walls", "ruler", "layers", "camera"];
     if let Some(k) = p.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("scene.set has no '{k}' ({})", KEYS.join(", ")));
     }
@@ -172,6 +173,9 @@ fn set(s: &mut Session, p: &Value) -> CmdResult {
     if let Some(v) = p.get("walls") {
         scene.walls = v.as_str().and_then(Rgba::from_hex).filter(|c| c.a() == 255).ok_or("walls is an opaque colour, #RRGGBB")?;
     }
+    if let Some(v) = p.get("ruler") {
+        scene.ruler = v.as_bool().ok_or("ruler is true or false")?;
+    }
     if let Some(v) = p.get("layers") {
         let a = v.as_array().ok_or("layers is a list of layers as scene.layer takes them")?;
         if a.len() > MAX_LAYERS {
@@ -193,6 +197,7 @@ fn described(scene: &Scene) -> Value {
     let mut v = serde_json::to_value(scene).unwrap_or(Value::Null);
     if let Some(o) = v.as_object_mut() {
         o.insert("groundSize".into(), json!([w.round(), h.round()]));
+        o.insert("ruler".into(), json!(scene.ruler));
     }
     v
 }
@@ -392,7 +397,8 @@ pub(crate) fn export_work(s: &Session, p: &Value) -> Result<super::exports::Work
             let built = rustgis_render::scene3d::build_on(&mut used, &scene, rustgis_render::scene3d::Detail::EXPORT)?;
             rustgis_data::progress::check().map_err(|e| e.to_string())?;
             let ppp = (f64::from(h) / 700.0).clamp(1.0, 4.0) as f32;
-            let pm = rustgis_render::scene3d::draw(&built, &scene.camera, scene.ground_opacity, w, h, ppp, smooth)?;
+            let pm =
+                rustgis_render::scene3d::draw_with(&built, &scene.camera, rustgis_render::scene3d::Look::of(&scene), w, h, ppp, smooth)?;
             let png = rustgis_render::scene3d::png(&pm)?;
             rustgis_data::io::write_atomic(std::path::Path::new(&path), &png).map_err(|e| format!("{path}: {e}"))?;
             Ok((json!({"path": path, "width": w, "height": h, "bytes": png.len()}), built.notes))
@@ -433,7 +439,7 @@ pub(crate) fn orbit_work(s: &Session, p: &Value) -> Result<super::exports::Work,
                 let mut cam = scene.camera;
                 cam.heading += turn * i as f64 / steps as f64;
                 cam.clamp();
-                let pm = rustgis_render::scene3d::draw(&built, &cam, scene.ground_opacity, w, h, 1.0, 2)?;
+                let pm = rustgis_render::scene3d::draw_with(&built, &cam, rustgis_render::scene3d::Look::of(&scene), w, h, 1.0, 2)?;
                 rustgis_render::scene3d::png(&pm)
             })?;
             rustgis_data::io::write_atomic(std::path::Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))?;

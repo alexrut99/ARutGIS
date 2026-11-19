@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use egui::{Align2, Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
 use rustgis_engine::map::scene::{Scene, SceneCamera, SceneKind};
-use rustgis_engine::render::scene3d::{self, Built, Detail};
+use rustgis_engine::render::scene3d::{self, Built, Detail, Look};
 use serde_json::{Value, json};
 
 use crate::RustGisApp;
@@ -45,6 +45,11 @@ pub struct SceneView {
     message: Option<(String, bool)>,
     /// What the last build left out, each said in the notices once.
     said: Vec<String>,
+    /// What is under the mouse, and the picture and point it was looked for on.
+    hover: Option<(Drawn, [u32; 2], Option<String>)>,
+    /// What is under the mouse being looked for off the frame, and on which picture and point.
+    #[cfg(not(target_arch = "wasm32"))]
+    picking: Option<Job<(Drawn, [u32; 2]), Result<Option<scene3d::Picked>, String>>>,
     /// The project the view was for: another one drops what it kept.
     opened: u64,
 }
@@ -107,6 +112,7 @@ pub fn idle(app: &mut RustGisApp) {
     {
         app.scene3d.building = None;
         app.scene3d.drawing = None;
+        app.scene3d.picking = None;
     }
     #[cfg(target_arch = "wasm32")]
     let _ = app;
@@ -127,6 +133,7 @@ struct Drawn {
     built: usize,
     camera: [u64; 6],
     opacity: u64,
+    ruler: bool,
     size: [u32; 2],
 }
 
@@ -135,6 +142,7 @@ impl Key {
         let mut s = scene.clone();
         s.camera = SceneCamera::default();
         s.ground_opacity = 1.0;
+        s.ruler = true;
         Key { scene: serde_json::to_string(&s).unwrap_or_default(), revision: app.session.revision, map: app.session.map().instance_id() }
     }
 }
@@ -332,6 +340,14 @@ fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
     if r.changed() {
         run_drawing_only(app, "scene.set", json!({"groundOpacity": (op / 100.0).clamp(0.0, 1.0)}));
     }
+    let mut ruler = scene.ruler;
+    if ui
+        .checkbox(&mut ruler, tl!("Height Ruler"))
+        .on_hover_text(tl!("Heights in metres above sea level up the block's nearest corner"))
+        .changed()
+    {
+        run_drawing_only(app, "scene.set", json!({"ruler": ruler}));
+    }
     ui.separator();
     ui.menu_button(tl!("Study Area"), |ui| {
         if let Some(d) = scene.dem.clone()
@@ -434,9 +450,26 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
             built: Arc::as_ptr(b) as usize,
             camera: [cam.heading, cam.tilt, cam.zoom, cam.target[0], cam.target[1], cam.target[2]].map(f64::to_bits),
             opacity: scene.ground_opacity.to_bits(),
+            ruler: scene.ruler,
             size: [w, h],
         };
-        keep_drawn(app, ui.ctx(), b, drawn, &cam, scene.ground_opacity, ppp * scale);
+        // What is under the mouse, looked for again only when it or the picture moves.
+        let at = resp.hover_pos().filter(|_| !dragging && !moved).map(|p| p - rect.min);
+        match at {
+            Some(p) => {
+                let point = [p.x.round() as u32, p.y.round() as u32];
+                let at = Pointed { drawn: drawn.clone(), point, cam, opacity: scene.ground_opacity, size: rect.size(), pos: p };
+                keep_picked(app, ui.ctx(), b, at);
+            }
+            None => {
+                app.scene3d.hover = None;
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    app.scene3d.picking = None;
+                }
+            }
+        }
+        keep_drawn(app, ui.ctx(), b, drawn, &cam, Look::of(scene), ppp * scale);
     }
     if let Some((_, tex)) = &app.scene3d.texture {
         ui.painter().image(tex.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
@@ -468,16 +501,87 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
         ui.painter().rect_filled(r, 5.0, t.pane.gamma_multiply(0.92));
         ui.painter().galley(r.min + vec2(8.0, 5.0), galley, color);
     }
-    let help = tl!("Drag: orbit · Right-drag: move · Ctrl+drag: up or down · Wheel: zoom");
-    let g = ui.painter().layout_no_wrap(help.to_string(), regular(11.5), t.text);
+    // Under the mouse, where and how deep; otherwise how to turn it.
+    let hovered = app.scene3d.hover.as_ref().and_then(|(_, _, s)| s.clone());
+    let help = hovered.unwrap_or_else(|| tl!("Drag: orbit · Right-drag: move · Ctrl+drag: up or down · Wheel: zoom").to_string());
+    let g = ui.painter().layout(help, regular(11.5), t.text, (rect.width() - 40.0).max(100.0));
     let r = Rect::from_min_size(pos2(rect.min.x + 10.0, rect.max.y - g.size().y - 18.0), g.size() + vec2(14.0, 8.0));
     ui.painter().rect_filled(r, 5.0, t.pane.gamma_multiply(0.85));
     ui.painter().galley(r.min + vec2(7.0, 4.0), g, t.text);
 }
 
+/// Where the mouse is over the picture, and the picture it is over.
+struct Pointed {
+    drawn: Drawn,
+    point: [u32; 2],
+    cam: SceneCamera,
+    opacity: f64,
+    size: egui::Vec2,
+    pos: egui::Vec2,
+}
+
+/// Looks for what is under the mouse when it or the picture moved: natively off the frame (a
+/// scene of many features has many triangles to look through), one for a point left behind
+/// cancelled, what was said before shown meanwhile; in the browser on the frame.
+fn keep_picked(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, at: Pointed) {
+    let looked = |b: &Built, at: &Pointed| {
+        let f = f64::from;
+        scene3d::pick(b, &at.cam, at.opacity, f(at.size.x), f(at.size.y), f(at.pos.x), f(at.pos.y))
+    };
+    let have = |app: &RustGisApp| app.scene3d.hover.as_ref().is_some_and(|(d, q, _)| *d == at.drawn && *q == at.point);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let landed = app.scene3d.picking.as_ref().and_then(|j| j.landed().map(|r| (j.what.clone(), r)));
+        if let Some(((d, q), r)) = landed {
+            app.scene3d.picking = None;
+            if let Ok(p) = r {
+                app.scene3d.hover = Some((d, q, p.as_ref().map(said_of)));
+            }
+        }
+        let want = (at.drawn.clone(), at.point);
+        if !have(app) && app.scene3d.picking.as_ref().is_none_or(|j| j.what != want) {
+            let b = b.clone();
+            app.scene3d.picking = Some(Job::spawn(want, ctx, move || looked(&b, &at)));
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = ctx;
+        if !have(app) {
+            let p = looked(b, &at).ok().flatten();
+            app.scene3d.hover = Some((at.drawn.clone(), at.point, p.as_ref().map(said_of)));
+        }
+    }
+}
+
+/// A point of the scene in words: where, how high, how far under the ground, and the feature
+/// there (for a well, how far down it from its head).
+fn said_of(p: &scene3d::Picked) -> String {
+    let (lon, lat) = (p.lonlat.x, p.lonlat.y);
+    let place = format!("{:.5}°{} {:.5}°{}", lat.abs(), if lat < 0.0 { "S" } else { "N" }, lon.abs(), if lon < 0.0 { "W" } else { "E" });
+    let metres = |v: f64| format!("{v:.1}");
+    let mut parts = vec![place, crate::i18n::fmt("elevation {z} m", &[("z", &metres(p.elevation))])];
+    // A well whose head is at the ground: its depth down it says it once.
+    let same = p.feature.as_ref().and_then(|f| f.below_head).zip(p.below_ground).is_some_and(|(h, g)| (h - g).abs() < 0.5);
+    if let Some(d) = p.below_ground.filter(|_| !same) {
+        parts.push(crate::i18n::fmt("{d} m below the ground", &[("d", &metres(d))]));
+    }
+    if let Some(f) = &p.feature {
+        let what = match &f.label {
+            Some(l) => format!("{}: {l}", f.layer),
+            None => f.layer.clone(),
+        };
+        parts.push(match f.below_head {
+            Some(d) => crate::i18n::fmt("{what}, {d} m down from its head", &[("what", &what), ("d", &metres(d))]),
+            None => what,
+        });
+    }
+    parts.join(" · ")
+}
+
 /// Draws the picture again when what it shows changed: natively off the frame (one at a time,
 /// the latest wanted next), the last picture shown meanwhile; in the browser on the frame.
-fn keep_drawn(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, drawn: Drawn, cam: &SceneCamera, opacity: f64, ppp: f32) {
+fn keep_drawn(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, drawn: Drawn, cam: &SceneCamera, look: Look, ppp: f32) {
     let [w, h] = drawn.size;
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -503,7 +607,7 @@ fn keep_drawn(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, drawn: 
             let (b, cam) = (b.clone(), *cam);
             app.scene3d.drawing = Some(Job::spawn(drawn, ctx, move || {
                 let start = web_time::Instant::now();
-                scene3d::draw(&b, &cam, opacity, w, h, ppp, 1).ok().map(|pm| {
+                scene3d::draw_with(&b, &cam, look, w, h, ppp, 1).ok().map(|pm| {
                     (egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pm.data()), start.elapsed().as_secs_f32())
                 })
             }));
@@ -514,7 +618,7 @@ fn keep_drawn(app: &mut RustGisApp, ctx: &egui::Context, b: &Arc<Built>, drawn: 
         let wanted = app.scene3d.texture.as_ref().is_none_or(|(d, _)| *d != drawn) && app.scene3d.undrawn.as_ref() != Some(&drawn);
         if wanted {
             let start = web_time::Instant::now();
-            match scene3d::draw(b, cam, opacity, w, h, ppp, 1) {
+            match scene3d::draw_with(b, cam, look, w, h, ppp, 1) {
                 Ok(pm) => {
                     app.scene3d.last_draw = start.elapsed().as_secs_f32();
                     let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pm.data());
@@ -742,7 +846,12 @@ mod tests {
     use super::*;
 
     fn frame(app: &mut RustGisApp, ctx: &egui::Context) {
-        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 700.0))), ..Default::default() };
+        frame_with(app, ctx, Vec::new());
+    }
+
+    fn frame_with(app: &mut RustGisApp, ctx: &egui::Context, events: Vec<egui::Event>) {
+        let screen = Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 700.0)));
+        let input = egui::RawInput { screen_rect: screen, events, ..Default::default() };
         let mut pass = ctx.run_ui(input, |ui| crate::mapview::show(app, ui));
         pass.textures_delta.clear();
     }
@@ -761,6 +870,57 @@ mod tests {
             assert!(web_time::Instant::now() < end, "the scene was never built: {:?}", app.scene3d.error);
             std::thread::sleep(std::time::Duration::from_millis(10)); // test-wait: the scene is built on a thread of its own
         }
+    }
+
+    #[test]
+    fn a_point_under_the_mouse_is_said_in_thai() {
+        let was = crate::i18n::current();
+        crate::i18n::set_current(crate::i18n::Lang::from_code("th").unwrap());
+        let place = rustgis_engine::geom::Coord::new(98.42115, 18.56087);
+        let ground = scene3d::Picked { lonlat: place, elevation: 512.04, below_ground: None, feature: None };
+        assert_eq!(said_of(&ground), "18.56087°N 98.42115°E · ระดับ 512.0 ม. (รทก.)");
+        // Down a well whose head is at the ground: its depth once.
+        let well = scene3d::PickedFeature { layer: "บ่อ".into(), label: Some("บ่อ 08".into()), below_head: Some(35.0) };
+        let down = scene3d::Picked { elevation: 477.0, below_ground: Some(35.2), feature: Some(well.clone()), ..ground.clone() };
+        assert_eq!(said_of(&down), "18.56087°N 98.42115°E · ระดับ 477.0 ม. (รทก.) · บ่อ: บ่อ 08 ลึก 35.0 ม. จากปากบ่อ");
+        // Its head above the ground (a casing's top from a field): both.
+        let raised = scene3d::Picked { below_ground: Some(33.0), ..down };
+        assert!(said_of(&raised).contains("ลึก 33.0 ม. จากผิวดิน · บ่อ: บ่อ 08 ลึก 35.0 ม. จากปากบ่อ"));
+        // South and west.
+        let south = scene3d::Picked { lonlat: rustgis_engine::geom::Coord::new(-43.2, -22.9), ..ground };
+        assert!(said_of(&south).starts_with("22.90000°S 43.20000°W"));
+        crate::i18n::set_current(was);
+    }
+
+    #[test]
+    fn what_is_under_the_mouse_is_looked_for_off_the_frame() {
+        let mut app = RustGisApp::with_sample();
+        let ctx = egui::Context::default();
+        app.run("scene.set", json!({"bbox": [100.4, 13.6, 100.7, 13.9]})).unwrap();
+        app.run("ui.scene", Value::Null).unwrap();
+        built_after(&mut app, &ctx, None);
+        // The mouse over the picture's middle: looked for on a thread, said when it lands.
+        let end = web_time::Instant::now() + std::time::Duration::from_secs(60);
+        frame_with(&mut app, &ctx, vec![egui::Event::PointerMoved(pos2(640.0, 420.0))]);
+        assert!(app.scene3d.picking.is_some() || app.scene3d.hover.is_some(), "looked for");
+        let first = app.scene3d.picking.as_ref().map(|j| j.stop.clone());
+        // Moved on before it landed: the one left behind is cancelled.
+        frame_with(&mut app, &ctx, vec![egui::Event::PointerMoved(pos2(600.0, 400.0))]);
+        assert!(first.is_none_or(|s| s.load(std::sync::atomic::Ordering::Relaxed) || app.scene3d.hover.is_some()));
+        loop {
+            frame(&mut app, &ctx);
+            if app.scene3d.picking.is_none() && app.scene3d.hover.is_some() {
+                break;
+            }
+            assert!(web_time::Instant::now() < end, "what is under the mouse never landed");
+            std::thread::sleep(std::time::Duration::from_millis(10)); // test-wait: it is looked for on a thread of its own
+        }
+        let (_, point, said) = app.scene3d.hover.clone().unwrap();
+        assert!(said.is_some_and(|t| t.contains("°N")), "the ground under it");
+        assert!(point[0] > 0 && point[1] > 0);
+        // Off the picture: nothing said, nothing looked for.
+        frame_with(&mut app, &ctx, vec![egui::Event::PointerGone]);
+        assert!(app.scene3d.hover.is_none() && app.scene3d.picking.is_none());
     }
 
     #[test]
@@ -799,6 +959,7 @@ mod tests {
         assert_eq!(app.scene3d.built.as_ref().map(|(_, b)| Arc::as_ptr(b) as usize), Some(first));
         // Its opacity and its camera only draw it again.
         run_drawing_only(&mut app, "scene.set", json!({"groundOpacity": 0.4}));
+        run_drawing_only(&mut app, "scene.set", json!({"ruler": false}));
         run_drawing_only(&mut app, "scene.camera", json!({"turn": 45}));
         frame(&mut app, &ctx);
         assert!(app.scene3d.building.is_none(), "{:?}", app.scene3d.message);

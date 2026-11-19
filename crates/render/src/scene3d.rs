@@ -10,7 +10,7 @@
 
 use rustgis_data::Geometry;
 use rustgis_data::raster::Raster;
-use rustgis_geom::{Coord, lonlat_to_merc};
+use rustgis_geom::{Coord, lonlat_to_merc, merc_to_lonlat};
 use rustgis_map::scene::{Scene, SceneCamera, SceneKind, SceneLayer};
 use rustgis_map::{Camera, Map, Rgba};
 use tiny_skia::Pixmap;
@@ -84,6 +84,17 @@ struct Label {
     at: [f64; 3],
 }
 
+/// What a stood-up feature is, for [`pick`]: its triangles in [`Built::solids`] are those
+/// before `end` and after the one before it's.
+struct Owner {
+    end: usize,
+    layer: String,
+    label: Option<String>,
+    /// A well's head (exaggerated metres) and where it is: how deep a point of it is is
+    /// measured from there, and how far under the ground from the ground over it.
+    head: Option<(f64, (f64, f64))>,
+}
+
 /// A scene worked out for drawing: [`build`].
 pub struct Built {
     /// Cells across and down the ground's mesh, and its heights (exaggerated metres) at the
@@ -99,6 +110,11 @@ pub struct Built {
     sides: Mesh,
     solids: Mesh,
     labels: Vec<Label>,
+    owners: Vec<Owner>,
+    /// The middle of the box (Web Mercator metres), metres on the ground a Web Mercator metre,
+    /// and how much heights are stretched: back from the scene's space to the map's.
+    origin: (f64, f64, f64),
+    ex: f64,
     /// How lit the ground's underside is.
     under: f32,
     /// The box's diagonal on the ground (metres): the camera's distance is a share of it.
@@ -203,6 +219,9 @@ pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, S
         sides: Mesh::default(),
         solids: Mesh::default(),
         labels: Vec::new(),
+        owners: Vec::new(),
+        origin: (cx, cy, k),
+        ex,
         under: UNDERSIDE,
         diag: gw.hypot(gh),
         mid: (g_lo + g_hi) / 2.0,
@@ -468,6 +487,7 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
         });
         let color = rgb(color);
         let mut placed: Option<[f64; 3]> = None;
+        let owned = label.map(|f| ds.value(row, f).to_string()).filter(|t| !t.is_empty());
         match (sl.kind, g) {
             (SceneKind::Well | SceneKind::Point, Geometry::Point(_) | Geometry::MultiPoint(_)) => {
                 let pts: Vec<Coord> = match g {
@@ -500,6 +520,13 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
                         }
                         b.z_range.0 = b.z_range.0.min(head - d * ex);
                         b.z_range.1 = b.z_range.1.max(head);
+                        // Each of a multipoint's wells keeps its own head and middle.
+                        b.owners.push(Owner {
+                            end: b.solids.tris.len(),
+                            layer: name.clone(),
+                            label: owned.clone(),
+                            head: Some((head, at)),
+                        });
                         placed = Some([at.0, at.1, head.max(ground) + r * 3.0]);
                     } else {
                         let z = match elevation {
@@ -556,6 +583,9 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
                 }
             }
             _ => {}
+        }
+        if placed.is_some() && b.owners.last().is_none_or(|o| o.end < b.solids.tris.len()) {
+            b.owners.push(Owner { end: b.solids.tris.len(), layer: name.clone(), label: owned, head: None });
         }
         if let (Some(at), Some(f)) = (placed, label) {
             let text = ds.value(row, f).to_string();
@@ -978,6 +1008,28 @@ fn clip_near(vs: &[([f64; 3], [f32; 5]); 3], near: f64) -> Vec<([f64; 3], [f32; 
 /// samples (1: none, 2 or 3 for a smooth image to keep). Cancel (an export's) is looked at as it
 /// draws. Errors: a picture of no pixels, or Cancel.
 pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32, ss: u32) -> Result<Pixmap, String> {
+    draw_with(b, cam, Look { opacity, ruler: false }, w, h, ppp, ss)
+}
+
+/// How a scene is looked at, besides from where: [`draw_with`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Look {
+    /// How opaque the ground is, 0 to 1.
+    pub opacity: f64,
+    /// A ruler of heights up the block's corner nearest the eye ([`Scene::ruler`]).
+    pub ruler: bool,
+}
+
+impl Look {
+    /// How `scene` is looked at.
+    pub fn of(scene: &Scene) -> Look {
+        Look { opacity: scene.ground_opacity, ruler: scene.ruler }
+    }
+}
+
+/// [`draw`], looked at as `look` says.
+pub fn draw_with(b: &Built, cam: &SceneCamera, look: Look, w: u32, h: u32, ppp: f32, ss: u32) -> Result<Pixmap, String> {
+    let opacity = look.opacity;
     let ss = ss.clamp(1, 4) as usize;
     let (bw, bh) = (w as usize * ss, h as usize * ss);
     let no_pixels = || "the picture has no pixels".to_string();
@@ -1073,12 +1125,267 @@ pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32
         }
         pm = canvas.into_pixmap();
     }
+    if look.ruler {
+        let mut canvas = Canvas::from_pixmap(pm);
+        ruler(&mut canvas, b, &Eye::of(b, cam, f64::from(w), f64::from(h)), ppp);
+        pm = canvas.into_pixmap();
+    }
     if !b.credits.is_empty() {
         let mut canvas = Canvas::from_pixmap(pm);
         crate::draw_attribution(&mut canvas, &b.credits, ppp, (0.0, 0.0));
         pm = canvas.into_pixmap();
     }
     Ok(pm)
+}
+
+/// The fewest pixels between a ruler's marks (at a point a pixel).
+const RULER_GAP: f64 = 34.0;
+
+/// The step between a ruler's marks over `span` metres `px` pixels long: 1, 2 or 5 times a power
+/// of ten, at least [`RULER_GAP`] pixels (`ppp` a point) and at most eight to the ruler.
+fn ruler_step(span: f64, px: f64, ppp: f64) -> f64 {
+    let least = (span / 8.0).max(span * RULER_GAP * ppp / px.max(1.0)).max(1e-3);
+    let ten = 10f64.powf(least.log10().floor());
+    [1.0, 2.0, 5.0, 10.0].into_iter().map(|m| m * ten).find(|s| *s >= least * (1.0 - 1e-9)).unwrap_or(10.0 * ten)
+}
+
+/// How much of the segment `a`–`b` lies on a picture `w` × `h` (pixels).
+fn on_picture(a: (f32, f32), b: (f32, f32), w: f64, h: f64) -> f64 {
+    let (x0, y0, dx, dy) = (f64::from(a.0), f64::from(a.1), f64::from(b.0 - a.0), f64::from(b.1 - a.1));
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [(-dx, x0), (dx, w - x0), (-dy, y0), (dy, h - y0)] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return 0.0;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 { t0 = t0.max(r) } else { t1 = t1.min(r) }
+        }
+    }
+    if t1 <= t0 { 0.0 } else { (t1 - t0) * dx.hypot(dy) }
+}
+
+/// The corner of the box a ruler stands up, of the three nearest the eye along the ground (the
+/// farthest is behind the block): the one most of whose edge is on the picture, the leftmost of
+/// those as much on it.
+fn ruler_corner(b: &Built, eye: &Eye) -> (f64, f64) {
+    let (hw, hh) = b.half;
+    let mut corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)];
+    let far = |c: &(f64, f64)| (c.0 - eye.at[0]).hypot(c.1 - eye.at[1]);
+    corners.sort_by(|p, q| far(p).total_cmp(&far(q)));
+    let (w, h) = (eye.centre.0 * 2.0, eye.centre.1 * 2.0);
+    let seen = |&(x, y): &(f64, f64)| -> (f64, f64) {
+        let at = |z: f64| {
+            let v = eye.view([x as f32, y as f32, z as f32]);
+            (v[2] >= eye.near).then(|| eye.project(v))
+        };
+        match (at(b.z_range.0), at(b.ground_at(x, y))) {
+            (Some(p0), Some(p1)) => (on_picture((p0.0, p0.1), (p1.0, p1.1), w, h), f64::from(p0.0.min(p1.0))),
+            _ => (0.0, 0.0),
+        }
+    };
+    corners[..3]
+        .iter()
+        .map(|c| (*c, seen(c)))
+        .max_by(|(_, (la, xa)), (_, (lb, xb))| la.round().total_cmp(&lb.round()).then(xb.total_cmp(xa)))
+        .map_or((-hw, -hh), |(c, _)| c)
+}
+
+/// A ruler of heights up the block's corner nearest the eye, from its base to the ground there:
+/// marked every [`ruler_step`], numbered in metres above sea level (not exaggerated), on the
+/// side of the corner away from the block. Left out when the corner is behind the eye or too
+/// short on the picture to mark.
+fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32) {
+    let (x, y) = ruler_corner(b, eye);
+    let (base, top) = (b.z_range.0, b.ground_at(x, y));
+    let at = |z: f64| {
+        let v = eye.view([x as f32, y as f32, z as f32]);
+        (v[2] >= eye.near).then(|| eye.project(v))
+    };
+    let (Some(p0), Some(p1)) = (at(base), at(top)) else { return };
+    let len = f64::from(p1.0 - p0.0).hypot(f64::from(p1.1 - p0.1));
+    let ppp64 = f64::from(ppp);
+    if on_picture((p0.0, p0.1), (p1.0, p1.1), eye.centre.0 * 2.0, eye.centre.1 * 2.0) < RULER_GAP * ppp64 || top <= base {
+        return;
+    }
+    // Which way is out: away from the middle of the block on the picture.
+    let mid = eye.view([0.0, 0.0, b.mid as f32]);
+    let mut out = if mid[2] >= eye.near && eye.project(mid).0 > p0.0 { -1.0 } else { 1.0 };
+    // Unless its numbers would be off the picture there.
+    let room = 70.0 * ppp;
+    let left = p0.0.min(p1.0).max(0.0);
+    if (out < 0.0 && left < room) || (out > 0.0 && p0.0.max(p1.0) > eye.centre.0 as f32 * 2.0 - room) {
+        out = -out;
+    }
+    let (lo, hi) = (base / b.ex, top / b.ex);
+    let step = ruler_step(hi - lo, len, ppp64);
+    let tick = 7.0 * ppp;
+    let mut pb = tiny_skia::PathBuilder::new();
+    pb.move_to(p0.0, p0.1);
+    pb.line_to(p1.0, p1.1);
+    // Its ends, numbered to the metre, and the round heights between not too near them.
+    let mut marks = vec![(p0, lo, 1.0), (p1, hi, 1.0)];
+    // A label's height and a little apart.
+    let near_end = (hi - lo) * 18.0 * ppp64 / len.max(1.0);
+    let mut v = (lo / step).ceil() * step;
+    while v <= hi + 1e-9 {
+        if v - lo > near_end
+            && hi - v > near_end
+            && let Some(p) = at(v * b.ex)
+        {
+            marks.push((p, v, step));
+        }
+        v += step;
+    }
+    for (p, _, _) in &marks {
+        pb.move_to(p.0, p.1);
+        pb.line_to(p.0 + out * tick, p.1);
+    }
+    let Some(path) = pb.finish() else { return };
+    let paint = |c: tiny_skia::Color| {
+        let mut p = tiny_skia::Paint::default();
+        p.set_color(c);
+        p.anti_alias = true;
+        p
+    };
+    let stroke = |w: f32| tiny_skia::Stroke { width: w * ppp, line_cap: tiny_skia::LineCap::Round, ..Default::default() };
+    let t = tiny_skia::Transform::identity();
+    canvas.stroke_path(&path, &paint(tiny_skia::Color::from_rgba8(255, 255, 255, 220)), &stroke(4.0), t, None);
+    canvas.stroke_path(&path, &paint(tiny_skia::Color::from_rgba8(0x20, 0x20, 0x20, 255)), &stroke(1.6), t, None);
+    let px = 11.0 * ppp;
+    let align = if out < 0.0 { crate::text::Align::Right } else { crate::text::Align::Left };
+    for ((x, y, _), v, precision) in marks {
+        let text = format!("{} m", fmt_metres(v, precision));
+        crate::text::text_at(canvas, &text, x + out * (tick + 4.0 * ppp), y, px, Rgba::rgb(0x20, 0x20, 0x20), false, align, true);
+    }
+}
+
+/// `v` metres written to the precision of a ruler's `step`, with thousands apart.
+fn fmt_metres(v: f64, step: f64) -> String {
+    let decimals = if step >= 1.0 { 0 } else { (-step.log10().floor()) as usize };
+    let s = format!("{:.*}", decimals, if v.abs() < step * 1e-6 { 0.0 } else { v });
+    let (int, frac) = s.split_once('.').map_or((s.as_str(), None), |(i, f)| (i, Some(f)));
+    let (sign, digits) = int.strip_prefix('-').map_or(("", int), |d| ("-", d));
+    let mut grouped = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(c);
+    }
+    match frac {
+        Some(f) => format!("{sign}{grouped}.{f}"),
+        None => format!("{sign}{grouped}"),
+    }
+}
+
+/// What is under a point of a scene's picture: [`pick`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Picked {
+    /// Where it is: longitude and latitude (degrees).
+    pub lonlat: Coord,
+    /// Its height above sea level (metres, not exaggerated).
+    pub elevation: f64,
+    /// How far below the ground it is there (metres), when it is under the ground.
+    pub below_ground: Option<f64>,
+    /// The feature stood up there, when it is one.
+    pub feature: Option<PickedFeature>,
+}
+
+/// A feature of a scene under a point of its picture.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PickedFeature {
+    /// Its layer.
+    pub layer: String,
+    /// Its label's text, when the scene labels its layer.
+    pub label: Option<String>,
+    /// For a well, how far down it the point is from its head (metres).
+    pub below_head: Option<f64>,
+}
+
+/// The nearest of a mesh's triangles a ray from `o` along `d` meets: how far along, and which.
+fn hit(m: &Mesh, o: [f64; 3], d: [f64; 3], near: f64) -> Result<Option<(f64, usize)>, String> {
+    let mut best: Option<(f64, usize)> = None;
+    for (n, tri) in m.tris.iter().enumerate() {
+        if n % TRIS_PER_LOOK == 0 {
+            go_on()?;
+        }
+        let [a, b, c] = tri.map(|i| m.pos[i as usize].map(f64::from));
+        let (e1, e2) = ([0, 1, 2].map(|k| b[k] - a[k]), [0, 1, 2].map(|k| c[k] - a[k]));
+        let p = cross(d, e2);
+        let det = dot(e1, p);
+        if det.abs() < 1e-12 {
+            continue;
+        }
+        let inv = 1.0 / det;
+        let s = [0, 1, 2].map(|k| o[k] - a[k]);
+        let u = dot(s, p) * inv;
+        if !(0.0..=1.0).contains(&u) {
+            continue;
+        }
+        let q = cross(s, e1);
+        let v = dot(d, q) * inv;
+        if v < 0.0 || u + v > 1.0 {
+            continue;
+        }
+        let t = dot(e2, q) * inv;
+        if t >= near && best.is_none_or(|(bt, _)| t < bt) {
+            best = Some((t, n));
+        }
+    }
+    Ok(best)
+}
+
+/// What is under the point (`x`, `y`) of a picture `w` × `h` (any unit, the same) of `b` from
+/// `cam`, the ground `opacity` opaque: the nearest of the ground, the block's sides and what is
+/// stood up, or through ground less than opaque, what is stood up behind it. None: the sky (and
+/// the ground and the block, clear). It looks at Cancel as it goes (a scene of many features has
+/// many triangles): Err when pressed.
+pub fn pick(b: &Built, cam: &SceneCamera, opacity: f64, w: f64, h: f64, x: f64, y: f64) -> Result<Option<Picked>, String> {
+    if !(w > 0.0 && h > 0.0 && x.is_finite() && y.is_finite()) {
+        return Ok(None);
+    }
+    let eye = Eye::of(b, cam, w, h);
+    let (sx, sy) = ((x - eye.centre.0) / eye.focal, (eye.centre.1 - y) / eye.focal);
+    let d = norm([0, 1, 2].map(|k| eye.fwd[k] + eye.right[k] * sx + eye.up[k] * sy));
+    // Along the ray, a point's depth grows by d · fwd a unit.
+    let near = eye.near / dot(d, eye.fwd).max(1e-9);
+    let solid = hit(&b.solids, eye.at, d, near)?;
+    // The ground's own surface (true) or the block's sides and base; none when the ground is
+    // clear, as none of them is drawn then.
+    let ground = if opacity > 0.0 {
+        [hit(&b.ground, eye.at, d, near)?.map(|(t, _)| (t, true)), hit(&b.sides, eye.at, d, near)?.map(|(t, _)| (t, false))]
+            .into_iter()
+            .flatten()
+            .min_by(|a, c| a.0.total_cmp(&c.0))
+    } else {
+        None
+    };
+    let (t, owner, on_ground) = match (solid, ground) {
+        (Some((ts, n)), Some((tg, _))) if ts <= tg || opacity < 1.0 => (ts, Some(n), false),
+        (Some((ts, n)), None) => (ts, Some(n), false),
+        (_, Some((tg, surface))) => (tg, None, surface),
+        (None, None) => return Ok(None),
+    };
+    let p = [0, 1, 2].map(|k| eye.at[k] + d[k] * t);
+    let (cx, cy, k) = b.origin;
+    let lonlat = merc_to_lonlat(Coord::new(p[0] / k + cx, p[1] / k + cy));
+    let ex = b.ex.max(1e-9);
+    let (hw, hh) = b.half;
+    let inside = p[0].abs() <= hw * (1.0 + 1e-9) && p[1].abs() <= hh * (1.0 + 1e-9);
+    let owner = owner.and_then(|n| b.owners.get(b.owners.partition_point(|o| o.end <= n)));
+    // A well's depth under the ground is the ground's over its middle, not beside it.
+    let (gx, gy) = owner.and_then(|o| o.head).map_or((p[0], p[1]), |(_, at)| at);
+    let below = (b.ground_at(gx, gy) - p[2]) / ex;
+    let feature = owner.map(|o| PickedFeature {
+        layer: o.layer.clone(),
+        label: o.label.clone(),
+        below_head: o.head.map(|(h, _)| ((h - p[2]) / ex).max(0.0)),
+    });
+    // On the ground itself, at it (its mesh and its heights between their corners differ a
+    // little); elsewhere under it by more than a metre.
+    Ok(Some(Picked { lonlat, elevation: p[2] / ex, below_ground: (!on_ground && inside && below > 1.0).then_some(below), feature }))
 }
 
 /// Moves the point `cam` turns about as a drag of (`dx`, `dy`) pixels over a picture `h` pixels
@@ -1148,6 +1455,117 @@ mod tests {
 
     fn small() -> Detail {
         Detail { drape_px: 256, cells: 48 }
+    }
+
+    #[test]
+    fn a_point_of_the_picture_says_where_and_how_deep_it_is() {
+        let (m, s) = hill();
+        let b = build(m, &s, small()).unwrap();
+        let k = b.origin.2;
+        let well = -1000.0 * k;
+        let look = |cam: &SceneCamera, opacity: f64, x: f64, y: f64| pick(&b, cam, opacity, 400.0, 300.0, x, y).unwrap();
+        // Straight down onto the well: the well, at its head, where it is.
+        let mut cam = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.3, target: [well, 0.0, 0.0] };
+        let p = look(&cam, 1.0, 200.0, 150.0).unwrap();
+        let f = p.feature.clone().unwrap();
+        assert_eq!((f.layer.as_str(), f.label.as_deref()), ("wells", Some("บ่อ ก")));
+        assert!(f.below_head.unwrap() < 1.0, "{p:?}");
+        let ll = rustgis_geom::merc_to_lonlat(Coord::new(11_200_000.0 - 1000.0, 1_560_000.0));
+        assert!((p.lonlat.x - ll.x).abs() < 1e-4 && (p.lonlat.y - ll.y).abs() < 1e-4, "{p:?}");
+        // Beside it: the ground, at its height there, not under itself.
+        cam.target = [well + 300.0, 0.0, 0.0];
+        let p = look(&cam, 1.0, 200.0, 150.0).unwrap();
+        assert!(p.feature.is_none() && p.below_ground.is_none(), "{p:?}");
+        assert!((p.elevation - b.ground_at(well + 300.0, 0.0)).abs() < 1.0, "{p:?}");
+        // From under the ground, looking down: the base, as far below the ground as it lies.
+        let (ground, base) = (b.ground_at(well + 300.0, 0.0), b.z_range.0);
+        cam.zoom = 0.002;
+        cam.target[2] = base + 10.0 - b.mid;
+        assert!(base + 10.0 + cam.zoom * b.diag < ground, "the eye is under the ground");
+        let p = look(&cam, 1.0, 200.0, 150.0).unwrap();
+        assert!((p.elevation - base).abs() < 1.0, "{p:?}");
+        assert!((p.below_ground.unwrap() - (ground - base)).abs() < 1.0, "{p:?}");
+        // Down the well from beside it, through clear ground: the well, partway down.
+        let side = SceneCamera { heading: 90.0, tilt: 90.0, zoom: 0.15, target: [well, 0.0, b.ground_at(well, 0.0) - 60.0 - b.mid] };
+        let solid = look(&side, 1.0, 200.0, 150.0).unwrap();
+        assert!(solid.feature.is_none(), "opaque ground hides it: {solid:?}");
+        let clear = look(&side, 0.3, 200.0, 150.0).unwrap();
+        let below = clear.feature.and_then(|f| f.below_head).unwrap();
+        assert!((below - 60.0).abs() < 5.0, "{below}");
+        assert!((clear.below_ground.unwrap() - 60.0).abs() < 5.0);
+        // The sky.
+        let level = SceneCamera { heading: 0.0, tilt: 90.0, zoom: 1.0, target: [0.0, 0.0, 0.0] };
+        assert!(look(&level, 1.0, 200.0, 2.0).is_none());
+        // Ground left clear is not drawn, and so not picked: beside the well the sky; the well
+        // still itself.
+        let beside = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.3, target: [well + 300.0, 0.0, 0.0] };
+        assert!(look(&beside, 0.3, 200.0, 150.0).is_some());
+        assert!(look(&beside, 0.0, 200.0, 150.0).is_none());
+        let onto = SceneCamera { target: [well, 0.0, 0.0], ..beside };
+        assert!(look(&onto, 0.0, 200.0, 150.0).and_then(|p| p.feature).is_some());
+        // Cancel pressed: it stops (a scene of many features has many triangles to look through).
+        struct Cancelled;
+        impl rustgis_data::progress::Probe for Cancelled {
+            fn cancelled(&self) -> bool {
+                true
+            }
+            fn begin(&self, _: u64) {}
+            fn advance(&self, _: u64) {}
+        }
+        let installed = rustgis_data::progress::install(Some(std::sync::Arc::new(Cancelled)));
+        let r = pick(&b, &cam, 1.0, 400.0, 300.0, 200.0, 150.0);
+        drop(installed);
+        assert!(r.unwrap_err().contains("ancel"));
+    }
+
+    #[test]
+    fn each_well_of_a_multipoint_is_picked_with_its_own_head() {
+        let (mut m, mut s) = hill();
+        let (cx, cy) = (11_200_000.0, 1_560_000.0);
+        let ll = |x: f64, y: f64| rustgis_geom::merc_to_lonlat(Coord::new(x, y));
+        let mut pair = Dataset::new("pair", GeometryType::Point, vec![Field::new("ลึก", FieldType::Double)]);
+        // Low on the hill's foot first, high near its top last.
+        pair.push(Some(Geometry::MultiPoint(vec![ll(cx + 1000.0, cy), ll(cx - 200.0, cy)])), vec![Value::Float(100.0)]);
+        m.add_dataset(pair);
+        let mut w = SceneLayer::new("pair", SceneKind::Well);
+        w.depth = Some("ลึก".into());
+        s.layers = vec![w];
+        let b = build(m, &s, small()).unwrap();
+        let k = b.origin.2;
+        assert!(b.ground_at(-200.0 * k, 0.0) - b.ground_at(1000.0 * k, 0.0) > 50.0, "the two heads differ");
+        for x in [1000.0 * k, -200.0 * k] {
+            let cam = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.3, target: [x, 0.0, 0.0] };
+            let p = pick(&b, &cam, 1.0, 400.0, 300.0, 200.0, 150.0).unwrap().unwrap();
+            let f = p.feature.clone().unwrap();
+            assert!(f.below_head.unwrap() < 1.0, "at its own head: {p:?}");
+            assert!(p.below_ground.is_none(), "{p:?}");
+        }
+    }
+
+    #[test]
+    fn a_ruler_marks_the_corner_in_round_metres() {
+        assert_eq!(ruler_step(1000.0, 500.0, 1.0), 200.0);
+        assert_eq!(ruler_step(300.0, 1000.0, 1.0), 50.0);
+        assert_eq!(ruler_step(300.0, 1000.0, 2.0), 50.0);
+        assert_eq!(ruler_step(300.0, 150.0, 1.0), 100.0);
+        assert_eq!(fmt_metres(1250.0, 50.0), "1,250");
+        assert_eq!(fmt_metres(-40.0, 20.0), "-40");
+        assert_eq!(fmt_metres(12.5, 0.5), "12.5");
+        assert_eq!(fmt_metres(-0.0, 10.0), "0");
+        let (m, mut s) = hill();
+        assert!(Look::of(&s).ruler, "on by default");
+        // Stretched, so its corner stands tall enough on the picture to mark.
+        s.exaggeration = 5.0;
+        let b = build(m, &s, small()).unwrap();
+        let side = SceneCamera { heading: 30.0, tilt: 80.0, zoom: 1.1, target: [0.0, 0.0, 0.0] };
+        let with = |ruler: bool, cam: &SceneCamera| draw_with(&b, cam, Look { opacity: 1.0, ruler }, 400, 300, 1.0, 1).unwrap();
+        let (on, off) = (with(true, &side), with(false, &side));
+        let differ = on.data().chunks(4).zip(off.data().chunks(4)).filter(|(a, c)| a != c).count();
+        assert!(differ > 200, "the ruler and its numbers are drawn: {differ} pixels");
+        assert_eq!(off.data(), draw(&b, &side, 1.0, 400, 300, 1.0, 1).unwrap().data());
+        // From straight above the corner is a point: no ruler.
+        let above = SceneCamera { tilt: 0.0, ..side };
+        assert_eq!(with(true, &above).data(), with(false, &above).data());
     }
 
     #[test]

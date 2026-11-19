@@ -204,11 +204,20 @@ the map's first) as its ground and that raster's extent, or the map's view witho
   filters). Features missing a number they need are left out, and the scene says how many; a
   polygon with too many corners for a roof (over 5,000 in the area) stands up as walls, said.
 
+- **Height Ruler** (`"ruler"`, on by default): a ruler up the block's corner nearest the eye,
+  from its base to the ground there, numbered in metres above sea level (not exaggerated) at its
+  ends and at round heights between. It is left off a corner too short on the picture to mark,
+  as one is from straight above. It is drawn on exported images and orbits too.
+
 Drag to orbit, right-drag to move along the ground, Ctrl+drag (or the middle button) to go up
 or down, under the ground too, and the wheel to come nearer; the compass shows north. **Reset
-View** goes back to the default view. The scene and its camera are saved with the map (a project
+View** goes back to the default view. With the mouse over the scene, the line at its foot says
+what is under it: its latitude and longitude, its height above sea level and, under the ground,
+how far below the ground it is; over a feature, its layer and label, and for a well, how far
+down it the point is from its head. Through ground less than opaque, a well behind the ground is
+what is said, as it is what is seen. The scene and its camera are saved with the map (a project
 with one requires `scene-3d`, so a RustGIS that can't keep it refuses to open it rather than drop
-it). A layer renamed is followed; one removed is left out of the scene, said.
+it; one whose ruler is off also requires `scene-ruler`, which ARutGIS 0.7.1 doesn't know). A layer renamed is followed; one removed is left out of the scene, said.
 
 **Export Image…** (`scene.export`, desktop) writes the scene from its camera as a PNG
 (`"width"` × `"height"` pixels, default 1600 × 1000, each pixel smoothed from `"smooth"`²
