@@ -138,7 +138,8 @@ pub struct SceneLayer {
     /// A raised polygon's height where no field gives it (metres).
     #[serde(default = "ten")]
     pub height_m: f64,
-    /// Metres above the ground a point or a raised polygon starts at.
+    /// Metres above the ground a point or a raised polygon starts at (below it when negative):
+    /// stretched as the relief is above the lowest ground, true metres under it.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub offset: f64,
     /// A well's or a point's width (metres). None: worked out from the box, to show at its scale.

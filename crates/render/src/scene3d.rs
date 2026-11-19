@@ -565,7 +565,8 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
                                     continue;
                                 }
                             },
-                            None => ground + sl.offset * ex + size / 2.0,
+                            // Above the ground stretched, under the lowest ground true metres.
+                            None => b.z_of(b.height_of(ground) + sl.offset) + size / 2.0,
                         };
                         ball(&mut b.solids, [at.0, at.1, z], size / 2.0, color);
                         b.z_range.0 = b.z_range.0.min(z - size / 2.0);
@@ -598,8 +599,8 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
                             None => sl.height_m,
                         };
                         let low = o.iter().map(|p| b.ground_at(p.0, p.1)).fold(f64::INFINITY, f64::min);
-                        let z0 = low + sl.offset * ex;
-                        let z1 = z0 + tall * ex;
+                        let foot = b.height_of(low) + sl.offset;
+                        let (z0, z1) = (b.z_of(foot), b.z_of(foot + tall));
                         if !raised(&mut b.solids, &o, &holes, z0, z1, color) {
                             roofless += 1;
                         }
@@ -1605,6 +1606,30 @@ mod tests {
         let p = look(&under, 1.0).unwrap();
         assert!((p.elevation - b.height_of(base)).abs() < 1.0, "{p:?}");
         assert!((p.below_ground.unwrap() - (ground / 4.0 - b.height_of(base))).abs() < 1.0, "{p:?}");
+    }
+
+    #[test]
+    fn a_point_set_under_the_ground_is_as_far_under_it_in_true_metres() {
+        let (m, mut s) = hill();
+        s.exaggeration = 4.0;
+        let mut p = SceneLayer::new("wells", SceneKind::Point);
+        p.offset = -100.0;
+        p.size = Some(4.0);
+        s.layers = vec![p];
+        let b = build(m, &s, small()).unwrap();
+        let k = b.origin.2;
+        // Its middle, from the ball's corners: 100 true metres under the ground, below the
+        // lowest ground, so not stretched.
+        let n = b.solids.pos.len() / 2;
+        let centre = |v: &[[f32; 3]]| v.iter().map(|p| f64::from(p[2])).sum::<f64>() / v.len() as f64;
+        for (v, x) in [(&b.solids.pos[..n], -1000.0 * k), (&b.solids.pos[n..], 1000.0 * k)] {
+            let h = b.height_of(b.ground_at(x, 0.0)) - 100.0;
+            assert!(h < b.datum && (centre(v) - (b.z_of(h) + 2.0)).abs() < 0.01, "{} {h}", centre(v));
+        }
+        // Picked from above through clear ground: as deep as it is set, less its half width.
+        let cam = SceneCamera { heading: 0.0, tilt: 0.0, zoom: 0.01, target: [1000.0 * k, 0.0, 0.0] };
+        let p = pick(&b, &cam, 0.0, 400.0, 300.0, 200.0, 150.0).unwrap().unwrap();
+        assert!((p.below_ground.unwrap() - 96.0).abs() < 1.0, "{p:?}");
     }
 
     #[test]
