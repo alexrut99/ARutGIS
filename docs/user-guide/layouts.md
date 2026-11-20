@@ -178,6 +178,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   turn the wheel to zoom them about the pointer; Esc turns it off. Without it, Shift-drag a frame
   to pan its map. Double-click a frame to match the map view, or set the scale in its properties:
   from the whole world down to site plans at 1:20, finds at 1:1 and 2:1 (a scale of 1:0.5).
+  **Zoom To Layer** (in its properties, or its right-click menu) lists the layers the frame draws
+  and fits the frame to the one picked (`layout.frameZoom` with `"to": "layer"`).
   A frame can be turned and tilted like the map view: a new frame, or one matched to the view,
   takes the view's bearing and pitch, and **Bearing** and **Pitch** in its properties (or
   `layout.update` with `bearing` and `pitch`) set them. Its north arrows turn with it. **Grid** draws a labelled graticule over a frame; **Extent Indicator** outlines another frame's

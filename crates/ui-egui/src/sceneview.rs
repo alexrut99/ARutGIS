@@ -329,9 +329,9 @@ fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
     ui.separator();
     ui.label(tl!("Vertical exaggeration"));
     let mut ex = scene.exaggeration;
-    let r = ui
-        .add(egui::DragValue::new(&mut ex).range(0.1..=50.0).speed(0.05).max_decimals(2).suffix("×"))
-        .on_hover_text(tl!("Stretches the relief over the lowest ground (the DEM); below it the block and the wells are true metres"));
+    let r = ui.add(egui::DragValue::new(&mut ex).range(0.1..=50.0).speed(0.05).max_decimals(2).suffix("×")).on_hover_text(tl!(
+        "Stretches the relief over the lowest ground (the DEM); below it the block and the wells are stretched by the depth exaggeration"
+    ));
     if r.changed() && ex != scene.exaggeration {
         run(app, "scene.set", json!({"exaggeration": ex}));
     }
@@ -350,6 +350,23 @@ fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
         && ui.small_button(tl!("Auto")).on_hover_text(tl!("A quarter of the ground's relief as drawn, at least 50 m")).clicked()
     {
         run(app, "scene.set", json!({"depth": null}));
+    }
+    // What is below the lowest ground, stretched on its own; its heights still read true.
+    ui.label(tl!("Depth exaggeration"));
+    let mut dex = scene.depth_exaggeration;
+    let r = ui
+        .add(
+            egui::DragValue::new(&mut dex)
+                .range(0.1..=rustgis_engine::map::scene::MAX_EXAGGERATION)
+                .speed(0.05)
+                .max_decimals(2)
+                .suffix("×"),
+        )
+        .on_hover_text(tl!(
+            "Stretches the block, and the wells below the lowest ground, on its own; the ruler and the readout stay in true metres"
+        ));
+    if r.changed() && dex != scene.depth_exaggeration {
+        run(app, "scene.set", json!({"depthExaggeration": dex}));
     }
     ui.separator();
     ui.label(tl!("Ground opacity"));

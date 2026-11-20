@@ -39,13 +39,19 @@ pub struct Scene {
     pub dem: Option<String>,
     /// How much the relief is stretched: heights over the lowest ground of the area (the DEM's,
     /// and what stands on it). Below the lowest ground (the block, and wells deeper) heights
-    /// are true metres.
+    /// are stretched by `depth_exaggeration` instead.
     #[serde(default = "one")]
     pub exaggeration: f64,
+    /// How much what is below the lowest ground is stretched: the block, and wells and points
+    /// deeper. 1 (the default): true metres. Heights read off the scene are true metres either
+    /// way.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub depth_exaggeration: f64,
     /// How opaque the ground is, 0 to 1: below 1 what is under it shows through.
     #[serde(default = "one")]
     pub ground_opacity: f64,
-    /// True metres from the lowest ground, or the deepest well when that is deeper, to the base.
+    /// True metres from the lowest ground, or the deepest well when that is deeper, to the base
+    /// (drawn stretched by `depth_exaggeration`).
     /// None: a quarter of the ground's relief as drawn, at least 50 m.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<f64>,
@@ -66,6 +72,10 @@ pub struct Scene {
 
 fn one() -> f64 {
     1.0
+}
+
+fn is_one(v: &f64) -> bool {
+    *v == 1.0
 }
 
 fn yes() -> bool {
@@ -243,6 +253,7 @@ impl Scene {
             extent,
             dem: None,
             exaggeration: 1.0,
+            depth_exaggeration: 1.0,
             ground_opacity: 1.0,
             depth: None,
             walls: WALLS,
@@ -273,6 +284,10 @@ impl Scene {
         }
         if !(self.exaggeration.is_finite() && self.exaggeration > 0.0 && self.exaggeration <= MAX_EXAGGERATION) {
             return Err(format!("exaggeration is a number above 0, at most {MAX_EXAGGERATION}"));
+        }
+        let dex = self.depth_exaggeration;
+        if !(dex.is_finite() && dex > 0.0 && dex <= MAX_EXAGGERATION) {
+            return Err(format!("depthExaggeration is a number above 0, at most {MAX_EXAGGERATION}"));
         }
         if !(0.0..=1.0).contains(&self.ground_opacity) {
             return Err("groundOpacity is 0 (clear) to 1 (solid)".into());
@@ -373,7 +388,7 @@ mod tests {
         s.layers.push(w);
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["layers"][0], serde_json::json!({"layer": "บ่อบาดาล", "kind": "well", "depth": "ความลึก", "heightM": 10.0}));
-        assert!(v.get("dem").is_none() && v.get("depth").is_none());
+        assert!(v.get("dem").is_none() && v.get("depth").is_none() && v.get("depthExaggeration").is_none());
         let back: Scene = serde_json::from_value(v).unwrap();
         assert_eq!(back, s);
         // Only the box is needed.
@@ -393,6 +408,8 @@ mod tests {
         assert!(bad(&|s| s.extent = [1.0, 0.0, 0.0, 1.0]).contains("xmin < xmax"));
         assert!(bad(&|s| s.extent = [0.0, 0.0, 5e6, 5e6]).contains("km"));
         assert!(bad(&|s| s.exaggeration = 0.0).contains("exaggeration"));
+        assert!(bad(&|s| s.depth_exaggeration = 0.0).contains("depthExaggeration"));
+        assert!(bad(&|s| s.depth_exaggeration = 51.0).contains("depthExaggeration"));
         assert!(bad(&|s| s.ground_opacity = 1.5).contains("groundOpacity"));
         assert!(bad(&|s| s.depth = Some(-1.0)).contains("depth"));
         assert!(bad(&|s| s.walls = Rgba::new(1, 2, 3, 4)).contains("opaque"));

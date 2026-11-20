@@ -1060,7 +1060,8 @@
           "field-origin",
           "frame-layers",
           "scene-3d",
-          "scene-ruler"
+          "scene-ruler",
+          "scene-depth-exaggeration"
         ],
         "type": "string"
       },
@@ -1132,7 +1133,8 @@
     "field-origin",
     "frame-layers",
     "scene-3d",
-    "scene-ruler"
+    "scene-ruler",
+    "scene-depth-exaggeration"
   ],
   "x-rustgis-reads-format": 2,
   "x-rustgis-writes-format": 2

@@ -13,7 +13,7 @@ use crate::{CmdResult, CommandSpec as C, Session};
 pub fn commands() -> Vec<C> {
     vec![
         C::new("scene.set", "3D Scene", "View › Scene", set).roles(&[]).effects(crate::policy::Effects::NONE).params(
-            r##"{"extent"?: "dem" (the DEM's extent; the default with a DEM) | "view" (the map's view; the default without one) | [xmin, ymin, xmax, ymax] in Web Mercator metres, "bbox"?: [west, south, east, north] in degrees, "extentOf"?: a layer whose extent the scene takes, "dem"?: a raster layer of heights in metres, or null for flat ground, "exaggeration"?: how much the relief over the area's lowest ground is stretched, above 0, at most 50 (default 1; below the lowest ground, the block and deeper wells, true metres), "groundOpacity"?: 0 (clear) to 1 (solid, the default), "depth"?: true metres from the lowest ground or deepest well to the base, or null (a quarter of the ground's relief as drawn, at least 50 m), "walls"?: "#RRGGBB", "ruler"?: false hides the ruler of heights up the block's corner nearest the eye (shown by default), "layers"?: [layers as scene.layer takes them] (replaces them all), "camera"?: as scene.camera takes it}"##,
+            r##"{"extent"?: "dem" (the DEM's extent; the default with a DEM) | "view" (the map's view; the default without one) | [xmin, ymin, xmax, ymax] in Web Mercator metres, "bbox"?: [west, south, east, north] in degrees, "extentOf"?: a layer whose extent the scene takes, "dem"?: a raster layer of heights in metres, or null for flat ground, "exaggeration"?: how much the relief over the area's lowest ground is stretched, above 0, at most 50 (default 1), "depthExaggeration"?: how much what is below the lowest ground (the block, deeper wells and points) is stretched, above 0, at most 50 (default 1: true metres; heights read off the scene are true metres either way), "groundOpacity"?: 0 (clear) to 1 (solid, the default), "depth"?: true metres from the lowest ground or deepest well to the base (drawn stretched by depthExaggeration), or null (a quarter of the ground's relief as drawn, at least 50 m), "walls"?: "#RRGGBB", "ruler"?: false hides the ruler of heights up the block's corner nearest the eye (shown by default), "layers"?: [layers as scene.layer takes them] (replaces them all), "camera"?: as scene.camera takes it}"##,
         ),
         C::new("scene.layer", "Scene Layer", "View › Scene", layer).roles(&[]).effects(crate::policy::Effects::NONE).params(
             r##"{"layer": a layer of the map, "kind"?: "well" (points as tubes down to their depth) | "point" (points as balls at their height) | "extrude" (polygons raised from the ground) (default: well for points, extrude for polygons), "depth"?: field of a well's depth below its head (metres; needed for wells), "top"?: field of a wellhead's height above sea level (default: the ground's), "water"?: field of a well's water level, its depth below the head, "elevation"?: field of a point's height above sea level (default: the ground's), "height"?: field of a polygon's height, "heightM"?: metres a polygon is raised where no field gives it (default 10), "offset"?: metres above the ground a point or polygon starts, "size"?: a well's or point's width in metres (default: to show at the area's scale), "color"?: "#RRGGBB" (default: the layer's symbology), "label"?: field written beside each, "remove"?: true (takes the layer out of the scene)}"##,
@@ -97,8 +97,20 @@ fn layer_box(map: &Map, name: &str) -> Result<[f64; 4], String> {
 
 fn set(s: &mut Session, p: &Value) -> CmdResult {
     let p = p.as_object().ok_or("the parameters are an object")?;
-    const KEYS: &[&str] =
-        &["extent", "bbox", "extentOf", "dem", "exaggeration", "groundOpacity", "depth", "walls", "ruler", "layers", "camera"];
+    const KEYS: &[&str] = &[
+        "extent",
+        "bbox",
+        "extentOf",
+        "dem",
+        "exaggeration",
+        "depthExaggeration",
+        "groundOpacity",
+        "depth",
+        "walls",
+        "ruler",
+        "layers",
+        "camera",
+    ];
     if let Some(k) = p.keys().find(|k| !KEYS.contains(&k.as_str())) {
         return Err(format!("scene.set has no '{k}' ({})", KEYS.join(", ")));
     }
@@ -163,6 +175,9 @@ fn set(s: &mut Session, p: &Value) -> CmdResult {
     scene.dem = dem;
     if let Some(v) = p.get("exaggeration") {
         scene.exaggeration = v.as_f64().ok_or("exaggeration is a number")?;
+    }
+    if let Some(v) = p.get("depthExaggeration") {
+        scene.depth_exaggeration = v.as_f64().ok_or("depthExaggeration is a number")?;
     }
     if let Some(v) = p.get("groundOpacity") {
         scene.ground_opacity = v.as_f64().ok_or("groundOpacity is a number, 0 to 1")?;

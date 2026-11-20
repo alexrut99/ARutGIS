@@ -127,6 +127,7 @@ fn a_saved_scene_is_read_back() {
     assert_eq!(scene.layers.iter().map(|l| l.kind.code()).collect::<Vec<_>>(), ["well", "extrude", "point"]);
     assert_eq!(scene.camera.tilt, 110.0);
     assert!(!scene.ruler, "its ruler turned off");
+    assert_eq!(scene.depth_exaggeration, 3.0, "what is under the ground stretched");
     assert!(scene.check().is_ok());
 }
 
@@ -265,4 +266,34 @@ fn a_scene_ruler_is_set_kept_and_exported() {
     assert!(!text.contains("\"ruler\""), "on, as a scene saved before it, it isn't written");
     assert!(!requires(&text).contains(&"scene-ruler".to_string()) && requires(&text).contains(&"scene-3d".to_string()));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// What is under the lowest ground stretched: the block drawn deeper, its depth still the
+/// metres asked; saved, a project and a map file require what keeps it (0.7.2 would draw it in
+/// true metres and save it so).
+#[test]
+fn what_is_under_the_ground_is_stretched_and_kept() {
+    let (mut s, dem) = with_wells();
+    s.run("scene.set", &json!({"dem": dem, "exaggeration": 2, "depth": 200})).unwrap();
+    for bad in [json!(0), json!(51), json!("two")] {
+        assert!(s.run("scene.set", &json!({"depthExaggeration": bad})).unwrap_err().contains("depthExaggeration"));
+    }
+    let v = s.run("scene.set", &json!({"depthExaggeration": 4})).unwrap();
+    assert_eq!((v["depthExaggeration"].as_f64(), v["depth"].as_f64()), (Some(4.0), Some(200.0)));
+    let (text, _) = s.project.saved_text(None).unwrap();
+    let requires = |text: &str| -> Vec<String> {
+        let doc: serde_json::Value = serde_json::from_str(text).unwrap();
+        doc["requires"].as_array().map(|r| r.iter().filter_map(|c| c.as_str().map(String::from)).collect()).unwrap_or_default()
+    };
+    assert!(requires(&text).contains(&"scene-depth-exaggeration".to_string()), "{:?}", requires(&text));
+    let map_file = crate::project::map_file_bytes(s.map()).unwrap();
+    assert!(requires(std::str::from_utf8(&map_file).unwrap()).contains(&"scene-depth-exaggeration".to_string()));
+    assert!(crate::project::CAPABILITIES.contains(&"scene-depth-exaggeration"), "this version reads what it writes");
+    let mut t = Session::new(crate::Project::default());
+    t.run("project.openText", &json!({"text": text})).unwrap();
+    assert_eq!(t.map().scene.as_ref().unwrap().depth_exaggeration, 4.0);
+    // Back to true metres: not written, nor required.
+    s.run("scene.set", &json!({"depthExaggeration": 1})).unwrap();
+    let (text, _) = s.project.saved_text(None).unwrap();
+    assert!(!text.contains("depthExaggeration") && !requires(&text).contains(&"scene-depth-exaggeration".to_string()));
 }
