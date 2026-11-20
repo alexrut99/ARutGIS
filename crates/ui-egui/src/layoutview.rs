@@ -3700,6 +3700,7 @@ mod tests {
     /// one clicked; a layer left out of the frame isn't offered.
     #[test]
     fn a_map_frame_zooms_to_a_layer_it_draws() {
+        use egui_kittest::kittest::Queryable;
         use rustgis_engine::map::layout::ElementKind;
         let mut app = RustGisApp::with_sample();
         app.run("layout.new", json!({"name": "Zoom"})).unwrap();
