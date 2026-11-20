@@ -188,10 +188,14 @@ the map's first) as its ground and that raster's extent, or the map's view witho
   is drawn, is draped over it, north up.
 - **Vertical exaggeration** (`"exaggeration"`, above 0, at most 50) stretches the relief:
   heights over the area's lowest ground, the DEM's and what stands in it. Below the lowest
-  ground heights are true metres: the block, and the parts of wells deeper than it, are as deep
-  as they are at any exaggeration.
+  ground it doesn't: the block, and the parts of wells deeper than it, are stretched by the
+  depth exaggeration alone.
+- **Depth exaggeration** (`"depthExaggeration"`, above 0, at most 50, default 1) stretches what
+  is below the lowest ground: the block, and wells and points deeper than it. At 1 it is true
+  metres; at 3 a block 200 m deep is drawn as deep as 600 m would be, and the ruler and the
+  readout still say 200 m.
 - **Block depth** (`"depth"`, metres): the block's sides and base go down this many true metres
-  below the lowest ground or the deepest well.
+  below the lowest ground or the deepest well (drawn stretched by the depth exaggeration).
   **Auto** (`null`, the default) is a quarter of the relief as drawn, at least 50 m.
 - **Ground opacity** (`"groundOpacity"`, 0 to 1): below 1 the ground is glass, its nearest
   surface laid over what is under it, so the wells show through it.
@@ -222,7 +226,8 @@ how far below the ground it is; over a feature, its layer and label, and for a w
 down it the point is from its head. Through ground less than opaque, a well behind the ground is
 what is said, as it is what is seen. The scene and its camera are saved with the map (a project
 with one requires `scene-3d`, so a RustGIS that can't keep it refuses to open it rather than drop
-it; one whose ruler is off also requires `scene-ruler`, which ARutGIS 0.7.1 doesn't know). A layer renamed is followed; one removed is left out of the scene, said.
+it; one whose ruler is off also requires `scene-ruler`, which ARutGIS 0.7.1 doesn't know, and one
+stretched below the lowest ground `scene-depth-exaggeration`, which 0.7.2 doesn't). A layer renamed is followed; one removed is left out of the scene, said.
 
 **Export Image…** (`scene.export`, desktop) writes the scene from its camera as a PNG
 (`"width"` × `"height"` pixels, default 1600 × 1000, each pixel smoothed from `"smooth"`²

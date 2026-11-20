@@ -3284,6 +3284,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                     let _ = app.run("layout.frameZoom", json!({"layout": li, "element": id, "to": to}));
                 }
             }
+            ui.menu_button(tl!("Zoom To Layer"), |ui| zoom_to_layer(app, ui, layout, li, id));
         });
     }
 }
@@ -3474,6 +3475,12 @@ fn element_menu(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
         app.layout.select_all(layout, &ids);
         ui.close();
     }
+    if let [id] = ids.as_slice()
+        && matches!(layout.element(*id).map(|e| &e.kind), Some(ElementKind::MapFrame { .. }))
+    {
+        ui.add_enabled_ui(!locked, |ui| ui.menu_button(tl!("Zoom To Layer"), |ui| zoom_to_layer(app, ui, layout, li, *id)));
+        ui.separator();
+    }
     if let [id] = ids.as_slice() {
         ui.add_enabled_ui(!locked, |ui| {
             for to in [Arrange::Front, Arrange::Back] {
@@ -3492,6 +3499,34 @@ fn element_menu(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
         }
         ui.close();
     }
+}
+
+/// A map frame's layers to zoom it to, each once, in the map's order: those the frame draws
+/// (layers left out of it are not listed), and those with something to show greyed out.
+fn zoom_to_layer(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize, id: u32) {
+    let Some(ElementKind::MapFrame { map, exclude, .. }) = layout.element(id).map(|e| &e.kind) else { return };
+    let mut layers: Vec<(String, bool)> = Vec::new();
+    if let Some(m) = app.session.project.maps.iter().find(|m| m.name.eq_ignore_ascii_case(map)) {
+        for l in &m.layers {
+            let left_out = exclude.iter().any(|x| x.eq_ignore_ascii_case(&l.name));
+            if !left_out && !layers.iter().any(|(n, _)| n.eq_ignore_ascii_case(&l.name)) {
+                layers.push((l.name.clone(), !l.shown_extent().is_empty()));
+            }
+        }
+    }
+    if layers.is_empty() {
+        ui.label(egui::RichText::new(tl!("This map frame shows no layers.")).small());
+        return;
+    }
+    egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+        for (name, shown) in layers {
+            let b = ui.add_enabled(shown, egui::Button::new(name.as_str())).on_disabled_hover_text(tl!("This layer has nothing to show."));
+            if b.clicked() {
+                let _ = app.run("layout.frameZoom", json!({"layout": li, "element": id, "to": "layer", "layer": name}));
+                ui.close();
+            }
+        }
+    });
 }
 
 /// Puts the elements on the clipboard, as text `layout.paste` takes, here or in another layout.
@@ -3661,6 +3696,42 @@ mod tests {
     /// Navigating map frames, a selected text on a map frame keeps its handles, where they stick
     /// out over the map too: dragging one resizes the text and leaves the map be. Another
     /// element's handle over the frame still pans the map (#1763).
+    /// Zoom To Layer lists the layers a map frame draws, once each, and zooms the frame to the
+    /// one clicked; a layer left out of the frame isn't offered.
+    #[test]
+    fn a_map_frame_zooms_to_a_layer_it_draws() {
+        use rustgis_engine::map::layout::ElementKind;
+        let mut app = RustGisApp::with_sample();
+        app.run("layout.new", json!({"name": "Zoom"})).unwrap();
+        let li = app.session.active_layout.unwrap();
+        let frame = app.session.project.layouts[li].first_frame().unwrap();
+        let names: Vec<String> = app.session.map().layers.iter().map(|l| l.name.clone()).collect();
+        assert!(names.len() >= 2, "{names:?}");
+        let (shown, left_out) = (names[0].clone(), names[1].clone());
+        app.run("layout.update", json!({"layout": li, "element": frame, "exclude": [left_out]})).unwrap();
+        let center = |app: &RustGisApp| match &app.session.project.layouts[li].element(frame).unwrap().kind {
+            ElementKind::MapFrame { center, scale, .. } => (*center, *scale),
+            k => panic!("{k:?}"),
+        };
+        let before = center(&app);
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(400.0, 400.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                let layout = app.session.project.layouts[li].clone();
+                super::zoom_to_layer(app, ui, &layout, li, frame);
+            },
+            app,
+        );
+        h.run();
+        assert!(h.query_by_label(&left_out).is_none(), "left out of the frame, not offered");
+        h.get_by_label(&shown).click();
+        h.run();
+        let after = center(h.state());
+        assert_ne!(after, before, "zoomed to {shown}");
+        let want = h.state().session.map().layer_by_name(&shown).unwrap().shown_extent();
+        let (c, _) = after;
+        assert!(c.x >= want.min_x && c.x <= want.max_x && c.y >= want.min_y && c.y <= want.max_y, "{c:?} in {want:?}");
+    }
+
     #[test]
     fn a_text_on_a_map_frame_keeps_its_handles_while_navigating() {
         use rustgis_engine::map::layout::ElementKind;

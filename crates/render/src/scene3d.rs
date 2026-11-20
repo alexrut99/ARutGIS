@@ -115,9 +115,10 @@ pub struct Built {
     /// and how much heights are stretched: back from the scene's space to the map's.
     origin: (f64, f64, f64),
     ex: f64,
-    /// The lowest ground's height above sea level (metres): above it heights are stretched,
-    /// below it true metres.
+    /// The lowest ground's height above sea level (metres): above it heights are stretched by
+    /// `ex`, below it by `dex` (1: true metres).
     datum: f64,
+    dex: f64,
     /// How lit the ground's underside is.
     under: f32,
     /// The box's diagonal on the ground (metres): the camera's distance is a share of it.
@@ -229,6 +230,7 @@ pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, S
         origin: (cx, cy, k),
         ex,
         datum: g_lo / ex.max(1e-9),
+        dex: scene.depth_exaggeration,
         under: UNDERSIDE,
         diag: gw.hypot(gh),
         mid: (g_lo + g_hi) / 2.0,
@@ -281,10 +283,10 @@ pub fn build_on(map: &mut Map, scene: &Scene, detail: Detail) -> Result<Built, S
     notes.extend(unread(map, scene));
     go_on()?;
     let lowest = built.z_range.0.min(g_lo);
-    // The block is cut below what is lowest, in true metres: by default a quarter of the relief
-    // as drawn, at least 50 m.
+    // The block is cut below what is lowest, in true metres (drawn stretched as what is under
+    // the lowest ground is): by default a quarter of the relief as drawn, at least 50 m.
     let depth = scene.depth.unwrap_or_else(|| ((g_hi - g_lo) / 4.0).max(50.0));
-    let base = lowest - depth;
+    let base = lowest - depth * scene.depth_exaggeration;
     built.z_range.0 = base;
     built.depth = depth;
     ground_mesh(&mut built);
@@ -349,18 +351,18 @@ impl Built {
     }
 
     /// Where `h` metres above sea level lies in the scene: over the lowest ground (the relief),
-    /// stretched by the exaggeration; under it (the block, and wells deeper than it), true
-    /// metres down from it.
+    /// stretched by the exaggeration; under it (the block, and wells deeper than it), down from
+    /// it stretched by the depth exaggeration (true metres at 1).
     pub fn z_of(&self, h: f64) -> f64 {
         let d = self.datum;
-        if h >= d { h * self.ex } else { d * self.ex - (d - h) }
+        if h >= d { h * self.ex } else { d * self.ex - (d - h) * self.dex }
     }
 
     /// The height above sea level (metres) of the scene's `z`: [`Built::z_of`] back.
     pub fn height_of(&self, z: f64) -> f64 {
-        let (d, ex) = (self.datum, self.ex.max(1e-9));
+        let (d, ex, dex) = (self.datum, self.ex.max(1e-9), self.dex.max(1e-9));
         let dz = d * self.ex;
-        if z >= dz { z / ex } else { d - (dz - z) }
+        if z >= dz { z / ex } else { d - (dz - z) / dex }
     }
 
     /// The point of the scene at a corner of the ground's mesh.
@@ -1262,16 +1264,16 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32) {
     if (out < 0.0 && left < room) || (out > 0.0 && p0.0.max(p1.0) > eye.centre.0 as f32 * 2.0 - room) {
         out = -out;
     }
-    // Stretched down to the lowest ground, true metres below it.
+    // Stretched one way down to the lowest ground, maybe another below it.
     let (hi, lo) = (b.height_of(top), b.height_of(base));
     // Marked as often as its most crowded part allows: the scene's metres a true metre, at
     // their fewest along it.
     let per_m = if lo < b.datum && hi > b.datum {
-        b.ex.min(1.0)
+        b.ex.min(b.dex)
     } else if lo >= b.datum {
         b.ex
     } else {
-        1.0
+        b.dex
     };
     let step = ruler_step(hi - lo, len * per_m * (hi - lo) / (top - base).max(1e-9), ppp64);
     let tick = 7.0 * ppp;
@@ -1621,6 +1623,40 @@ mod tests {
         let p = look(&under, 1.0).unwrap();
         assert!((p.elevation - b.height_of(base)).abs() < 1.0, "{p:?}");
         assert!((p.below_ground.unwrap() - (ground / 4.0 - b.height_of(base))).abs() < 1.0, "{p:?}");
+    }
+
+    #[test]
+    fn what_is_under_the_lowest_ground_is_stretched_as_asked_and_read_in_true_metres() {
+        let (m, mut s) = hill();
+        s.exaggeration = 4.0;
+        s.depth_exaggeration = 3.0;
+        s.depth = Some(200.0);
+        let b = build(m, &s, small()).unwrap();
+        let k = b.origin.2;
+        let well = -1000.0 * k;
+        let (d, e) = (b.datum, b.ground_at(well, 0.0) / 4.0);
+        // Over the lowest ground four times, under it three times; and back.
+        assert!((b.z_of(d + 10.0) - (d + 10.0) * 4.0).abs() < 1e-6);
+        assert!((b.z_of(d - 50.0) - (d * 4.0 - 150.0)).abs() < 1e-6);
+        for h in [e, d, d - 50.0, -300.0] {
+            assert!((b.height_of(b.z_of(h)) - h).abs() < 1e-6);
+        }
+        // The block 200 true metres below the 120 m well's foot, drawn 600 down; still 200 m.
+        let bottom = b.z_of(e - 120.0);
+        assert!((b.z_range.0 - (bottom - 600.0)).abs() < 1.0 && b.depth == 200.0, "{:?}", b.z_range);
+        assert!((b.height_of(b.z_range.0) - (e - 120.0 - 200.0)).abs() < 1.0);
+        // 100 m down the well through clear ground: 100 m, however it is stretched.
+        let at = b.z_of(e - 100.0);
+        let side = SceneCamera { heading: 90.0, tilt: 90.0, zoom: 0.15, target: [well, 0.0, at - b.mid] };
+        let p = pick(&b, &side, 0.3, 400.0, 300.0, 200.0, 150.0).unwrap().unwrap();
+        let below = p.feature.as_ref().and_then(|f| f.below_head).unwrap();
+        assert!((below - 100.0).abs() < 5.0 && (p.below_ground.unwrap() - 100.0).abs() < 5.0, "{p:?}");
+        // Against true metres below the lowest ground: deeper by twice the well's part under it
+        // and twice the block.
+        s.depth_exaggeration = 1.0;
+        let flat = build(hill().0, &s, small()).unwrap();
+        let more = 2.0 * (d - (e - 120.0)) + 400.0;
+        assert!((flat.z_range.0 - b.z_range.0 - more).abs() < 1.0, "{:?} {:?}", b.z_range, flat.z_range);
     }
 
     #[test]

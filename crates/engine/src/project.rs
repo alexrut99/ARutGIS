@@ -79,6 +79,7 @@ pub const CAPABILITIES: &[&str] = &[
     "frame-layers",
     "scene-3d",
     "scene-ruler",
+    "scene-depth-exaggeration",
 ];
 /// The most entries a document's `requires` may list: past it the document is refused without
 /// the rest being read.
