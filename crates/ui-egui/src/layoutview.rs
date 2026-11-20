@@ -3502,15 +3502,17 @@ fn element_menu(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
 }
 
 /// A map frame's layers to zoom it to, each once, in the map's order: those the frame draws
-/// (layers left out of it are not listed), and those with something to show greyed out.
+/// (layers left out of it are not listed). Their extents are not worked out here, as that reads
+/// every feature of a large layer on each frame the menu is open: one with nothing to show says
+/// so when it is clicked.
 fn zoom_to_layer(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize, id: u32) {
     let Some(ElementKind::MapFrame { map, exclude, .. }) = layout.element(id).map(|e| &e.kind) else { return };
-    let mut layers: Vec<(String, bool)> = Vec::new();
+    let mut layers: Vec<String> = Vec::new();
     if let Some(m) = app.session.project.maps.iter().find(|m| m.name.eq_ignore_ascii_case(map)) {
         for l in &m.layers {
             let left_out = exclude.iter().any(|x| x.eq_ignore_ascii_case(&l.name));
-            if !left_out && !layers.iter().any(|(n, _)| n.eq_ignore_ascii_case(&l.name)) {
-                layers.push((l.name.clone(), !l.shown_extent().is_empty()));
+            if !left_out && !layers.iter().any(|n| n.eq_ignore_ascii_case(&l.name)) {
+                layers.push(l.name.clone());
             }
         }
     }
@@ -3519,9 +3521,8 @@ fn zoom_to_layer(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize, 
         return;
     }
     egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-        for (name, shown) in layers {
-            let b = ui.add_enabled(shown, egui::Button::new(name.as_str())).on_disabled_hover_text(tl!("This layer has nothing to show."));
-            if b.clicked() {
+        for name in layers {
+            if ui.button(name.as_str()).clicked() {
                 let _ = app.run("layout.frameZoom", json!({"layout": li, "element": id, "to": "layer", "layer": name}));
                 ui.close();
             }
@@ -3693,9 +3694,6 @@ mod tests {
         );
     }
 
-    /// Navigating map frames, a selected text on a map frame keeps its handles, where they stick
-    /// out over the map too: dragging one resizes the text and leaves the map be. Another
-    /// element's handle over the frame still pans the map (#1763).
     /// Zoom To Layer lists the layers a map frame draws, once each, and zooms the frame to the
     /// one clicked; a layer left out of the frame isn't offered.
     #[test]
@@ -3733,6 +3731,9 @@ mod tests {
         assert!(c.x >= want.min_x && c.x <= want.max_x && c.y >= want.min_y && c.y <= want.max_y, "{c:?} in {want:?}");
     }
 
+    /// Navigating map frames, a selected text on a map frame keeps its handles, where they stick
+    /// out over the map too: dragging one resizes the text and leaves the map be. Another
+    /// element's handle over the frame still pans the map (#1763).
     #[test]
     fn a_text_on_a_map_frame_keeps_its_handles_while_navigating() {
         use rustgis_engine::map::layout::ElementKind;
