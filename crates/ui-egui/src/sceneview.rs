@@ -302,14 +302,23 @@ fn say_notes(app: &mut RustGisApp, b: &Built) {
 }
 
 /// The settings above the picture.
+/// In two rows: the ground and the block, then how it is shown and what can be done with it.
 fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
-    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
+    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 76.0), Sense::hover());
     ui.painter().rect_filled(bar, 0.0, t.ribbon);
     ui.painter().line_segment([bar.left_bottom(), bar.right_bottom()], Stroke::new(1.0, t.border));
-    let mut row = ui
-        .new_child(egui::UiBuilder::new().max_rect(bar.shrink2(vec2(10.0, 6.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    let ui = &mut row;
-    ui.spacing_mut().item_spacing.x = 10.0;
+    let inner = bar.shrink2(vec2(10.0, 4.0));
+    let (top, bottom) = inner.split_top_bottom_at_fraction(0.5);
+    for (rect, first) in [(top, true), (bottom, false)] {
+        let mut row = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        row.set_clip_rect(rect.intersect(ui.clip_rect()));
+        row.spacing_mut().item_spacing.x = 10.0;
+        if first { ground_row(app, &mut row, scene) } else { shown_row(app, &mut row, scene) }
+    }
+}
+
+/// The toolbar's first row: the ground, its stretch, the block, and the study area.
+fn ground_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
     // The ground: a raster layer of heights, or flat.
     ui.label(tl!("Ground"));
     let rasters: Vec<String> = app.session.map().layers.iter().filter(|l| l.raster.is_some()).map(|l| l.name.clone()).collect();
@@ -387,6 +396,31 @@ fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
         run(app, "scene.set", json!({"walls": format!("#{:02X}{:02X}{:02X}", d.r(), d.g(), d.b())}));
     }
     ui.separator();
+    ui.menu_button(tl!("Study Area"), |ui| {
+        if let Some(d) = scene.dem.clone()
+            && ui.button(tl!("The DEM's Extent")).clicked()
+        {
+            run(app, "scene.set", json!({"extent": "dem", "dem": d}));
+            ui.close();
+        }
+        if ui.button(tl!("The Map's Current View")).clicked() {
+            run(app, "scene.set", json!({"extent": "view"}));
+            ui.close();
+        }
+        let names: Vec<String> = app.session.map().layers.iter().map(|l| l.name.clone()).collect();
+        ui.menu_button(tl!("A Layer's Extent"), |ui| {
+            for n in names {
+                if ui.button(&n).clicked() {
+                    run(app, "scene.set", json!({"extentOf": n}));
+                    ui.close();
+                }
+            }
+        });
+    });
+}
+
+/// The toolbar's second row: how the scene is shown, and what can be done with it.
+fn shown_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
     ui.label(tl!("Ground opacity"));
     let mut op = scene.ground_opacity * 100.0;
     let r = ui.add(egui::Slider::new(&mut op, 0.0..=100.0).suffix("%").integer());
@@ -423,27 +457,6 @@ fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
         }
     });
     ui.separator();
-    ui.menu_button(tl!("Study Area"), |ui| {
-        if let Some(d) = scene.dem.clone()
-            && ui.button(tl!("The DEM's Extent")).clicked()
-        {
-            run(app, "scene.set", json!({"extent": "dem", "dem": d}));
-            ui.close();
-        }
-        if ui.button(tl!("The Map's Current View")).clicked() {
-            run(app, "scene.set", json!({"extent": "view"}));
-            ui.close();
-        }
-        let names: Vec<String> = app.session.map().layers.iter().map(|l| l.name.clone()).collect();
-        ui.menu_button(tl!("A Layer's Extent"), |ui| {
-            for n in names {
-                if ui.button(&n).clicked() {
-                    run(app, "scene.set", json!({"extentOf": n}));
-                    ui.close();
-                }
-            }
-        });
-    });
     if ui.button(tl!("Reset View")).clicked() {
         app.scene3d.live = None;
         run_drawing_only(app, "scene.camera", json!({"reset": true}));

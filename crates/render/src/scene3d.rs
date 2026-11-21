@@ -1243,29 +1243,30 @@ fn ruler_corner(b: &Built, eye: &Eye) -> (f64, f64) {
 /// The most marks a ruler of an asked step draws: a step too fine for it is marked at a multiple.
 const RULER_MARKS: f64 = 400.0;
 
-/// Which of a ruler's marks `asked` metres apart over `span` metres `px` pixels long are drawn
-/// and which numbered: every `draw`th multiple of `asked` (1 unless there would be more than
-/// [`RULER_MARKS`]), numbered every `number`th of those, the fewest that keeps numbers
-/// [`RULER_GAP`] pixels apart (`ppp` a point): a round height (1, 2 or 5 times a power of ten)
-/// when one is a multiple of the step, else 1, 2 or 5 times a power of ten of the steps.
-fn ruler_every(asked: f64, span: f64, px: f64, ppp: f64) -> (u64, u64) {
-    let draw = (span / asked / RULER_MARKS).ceil().max(1.0);
-    let drawn = asked * draw;
-    let need = (span * RULER_GAP * ppp / px.max(1.0) / drawn).max(1.0) * (1.0 - 1e-9);
+/// Every how many multiples of `asked` metres a ruler over `span` metres is marked: 1, unless
+/// that would be more than [`RULER_MARKS`] marks.
+fn ruler_draw(asked: f64, span: f64) -> u64 {
+    (span / asked / RULER_MARKS).ceil().max(1.0) as u64
+}
+
+/// Every how many of a ruler's marks `drawn` metres apart one is numbered, when numbers need
+/// `need` marks between them: the fewest at least that, a round height (1, 2 or 5 times a power
+/// of ten) when one is a multiple of `drawn`, else 1, 2 or 5 times a power of ten of marks.
+fn round_every(drawn: f64, need: f64) -> u64 {
+    let need = need.max(1.0) * (1.0 - 1e-9);
     let nice = |least: f64| {
         let ten = 10f64.powf(least.log10().floor());
         (0..12).flat_map(move |i| [1.0, 2.0, 5.0].map(|m| m * ten * 10f64.powi(i))).filter(move |r| *r >= least)
     };
     let whole = |k: f64| (k - k.round()).abs() < 1e-6 * k.max(1.0);
-    let number =
-        nice(need * drawn).take(9).map(|r| r / drawn).find(|k| whole(*k)).or_else(|| nice(need).next()).map_or(1.0, f64::round).max(1.0);
-    (draw as u64, number as u64)
+    nice(need * drawn).take(9).map(|r| r / drawn).find(|k| whole(*k)).or_else(|| nice(need).next()).map_or(1.0, f64::round).clamp(1.0, 1e12)
+        as u64
 }
 
 /// A ruler of heights up the block's corner nearest the eye, from its base to the ground there:
 /// marked every `asked` true metres, or every [`ruler_step`] when none is asked, numbered in
 /// metres above sea level (not exaggerated), on the side of the corner away from the block. An
-/// asked step finer than numbers fit has only every few marks numbered ([`ruler_every`]), the
+/// asked step finer than numbers fit has only every few marks numbered ([`round_every`]), the
 /// rest shorter. Left out when the corner is behind the eye or too short on the picture to mark.
 fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32, asked: Option<f64>) {
     let (x, y) = ruler_corner(b, eye);
@@ -1301,17 +1302,15 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32, asked: Option<f64>
         b.dex
     };
     let long = len * per_m * (hi - lo) / (top - base).max(1e-9);
-    // Marks every `step`, numbered every `number`th, numbers to `precision`.
-    let (step, number, precision) = match asked.filter(|a| a.is_finite() && *a > 0.0) {
-        Some(a) => {
-            let (draw, number) = ruler_every(a, hi - lo, long, ppp64);
-            (a * draw as f64, number, a)
-        }
+    // Marks every `step`, numbers to `precision`; an asked step may number only some.
+    let (step, precision) = match asked.filter(|a| a.is_finite() && *a > 0.0) {
+        Some(a) => (a * ruler_draw(a, hi - lo) as f64, a),
         None => {
             let st = ruler_step(hi - lo, long, ppp64);
-            (st, 1, st)
+            (st, st)
         }
     };
+    let every_one = asked.filter(|a| a.is_finite() && *a > 0.0).is_none();
     let tick = 7.0 * ppp;
     let mut pb = tiny_skia::PathBuilder::new();
     pb.move_to(p0.0, p0.1);
@@ -1322,16 +1321,36 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32, asked: Option<f64>
     let near_end = 18.0 * ppp;
     let apart = |p: (f32, f32, f32), q: (f32, f32, f32)| (p.0 - q.0).hypot(p.1 - q.1) > near_end;
     // Counted from 0 m, so the numbered ones are the round ones.
+    let mut between = Vec::new();
     let mut i = (lo / step - 1e-9).ceil() as i64;
     while (i as f64) * step <= hi + 1e-9 {
-        let v = i as f64 * step;
-        let numbered = i.rem_euclid(number as i64) == 0;
-        if let Some(p) = at(b.z_of(v))
-            && (!numbered || (apart(p, p0) && apart(p, p1)))
-        {
-            marks.push((p, v, precision, numbered));
+        if let Some(p) = at(b.z_of(i as f64 * step)) {
+            between.push((i, p));
         }
         i += 1;
+    }
+    // Numbered where numbers fit, judged where each mark is, as the ruler may be stretched more
+    // above the lowest ground than below it: a round one every so many marks there, and not
+    // nearer the last numbered than numbers fit.
+    let gap = (RULER_GAP * ppp64) as f32;
+    let dist = |p: (f32, f32, f32), q: (f32, f32, f32)| (p.0 - q.0).hypot(p.1 - q.1);
+    let mut last = p0;
+    for (j, me) in between.iter().enumerate() {
+        let (i, p) = *me;
+        let numbered = every_one || {
+            let (a, c) = (j.checked_sub(1).and_then(|k| between.get(k)).unwrap_or(me), between.get(j + 1).unwrap_or(me));
+            let span = (c.0 - a.0).max(1) as f32;
+            let each = (dist(a.1, c.1) / span).max(1e-3);
+            let k = round_every(step, f64::from(gap / each));
+            i.rem_euclid(k as i64) == 0 && dist(p, last) >= gap
+        };
+        let numbered = numbered && apart(p, p0) && apart(p, p1);
+        if numbered || !every_one {
+            marks.push((p, i as f64 * step, precision, numbered));
+        }
+        if numbered {
+            last = p;
+        }
     }
     for (p, _, _, numbered) in &marks {
         pb.move_to(p.0, p.1);
@@ -1809,17 +1828,17 @@ mod tests {
 
     #[test]
     fn a_ruler_is_marked_at_the_step_asked_and_numbered_where_numbers_fit() {
-        // 25 m over 1,000 m on 500 px: every mark drawn, numbers 34 px (68 m) apart at least,
-        // so every 4th numbered, at the hundreds.
-        assert_eq!(ruler_every(25.0, 1000.0, 500.0, 1.0), (1, 4));
+        // 25 m marks that numbers need 2.72 of apart: every 4th numbered, at the hundreds.
+        assert_eq!(round_every(25.0, 2.72), 4);
         // 20 m: every 5th, at the hundreds again.
-        assert_eq!(ruler_every(20.0, 1000.0, 500.0, 1.0), (1, 5));
+        assert_eq!(round_every(20.0, 3.4), 5);
         // 30 m divides no round height: every 5th, 150 m apart.
-        assert_eq!(ruler_every(30.0, 1000.0, 500.0, 1.0), (1, 5));
-        // Wide apart: all numbered.
-        assert_eq!(ruler_every(100.0, 1000.0, 1000.0, 1.0), (1, 1));
+        assert_eq!(round_every(30.0, 2.27), 5);
+        // Room for every number: all numbered.
+        assert_eq!(round_every(100.0, 0.34), 1);
         // Too fine to draw every mark: at a multiple, at most RULER_MARKS.
-        let (draw, _) = ruler_every(0.1, 1000.0, 1000.0, 1.0);
+        assert_eq!(ruler_draw(25.0, 1000.0), 1);
+        let draw = ruler_draw(0.1, 1000.0);
         assert_eq!(draw, 25);
         assert!(1000.0 / (0.1 * draw as f64) <= RULER_MARKS);
         let (m, mut s) = hill();
