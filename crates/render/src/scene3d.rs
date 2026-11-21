@@ -1375,9 +1375,20 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32, asked: Option<f64>
     }
 }
 
+/// The decimals that write every multiple of `step` exactly: none for 25, one for 1.1 or 0.5,
+/// two for 0.25; three at most.
+fn step_decimals(step: f64) -> usize {
+    (0..3)
+        .find(|&d| {
+            let scaled = step * 10f64.powi(d as i32);
+            (scaled - scaled.round()).abs() <= 1e-6 * scaled.max(1.0)
+        })
+        .unwrap_or(3)
+}
+
 /// `v` metres written to the precision of a ruler's `step`, with thousands apart.
 fn fmt_metres(v: f64, step: f64) -> String {
-    let decimals = if step >= 1.0 { 0 } else { (-step.log10().floor()) as usize };
+    let decimals = step_decimals(step);
     let s = format!("{:.*}", decimals, if v.abs() < step * 1e-6 { 0.0 } else { v });
     let (int, frac) = s.split_once('.').map_or((s.as_str(), None), |(i, f)| (i, Some(f)));
     let (sign, digits) = int.strip_prefix('-').map_or(("", int), |d| ("-", d));
@@ -1809,6 +1820,13 @@ mod tests {
         assert_eq!(fmt_metres(-40.0, 20.0), "-40");
         assert_eq!(fmt_metres(12.5, 0.5), "12.5");
         assert_eq!(fmt_metres(-0.0, 10.0), "0");
+        // An asked step is written to its own decimals, not to its power of ten.
+        assert_eq!(fmt_metres(5.0 * 1.1, 1.1), "5.5");
+        assert_eq!(fmt_metres(2.0 * 1.1, 1.1), "2.2");
+        assert_eq!(fmt_metres(3.0 * 0.25, 0.25), "0.75");
+        assert_eq!(fmt_metres(1100.0, 25.0), "1,100");
+        assert_eq!(fmt_metres(0.1 + 0.2, 0.1), "0.3");
+        assert_eq!(fmt_metres(1.0 / 3.0, 1.0 / 3.0), "0.333");
         let (m, mut s) = hill();
         assert!(Look::of(&s).ruler, "on by default");
         // Stretched, so its corner stands tall enough on the picture to mark.
