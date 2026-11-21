@@ -76,7 +76,8 @@ same files. New and changed code follows these rules; not every existing reader 
     ARutGIS's own is `frame-layers`: a layout's map frame leaves layers of its map out
     (`exclude`). RustGIS doesn't know it, so it refuses such a project by that name. `scene-3d`
     (0.7.1) is a map's 3D scene; `scene-ruler` (0.7.2) that scene's Height Ruler turned off;
-    `scene-depth-exaggeration` (0.7.3) what is under its lowest ground stretched.
+    `scene-depth-exaggeration` (0.7.3) what is under its lowest ground stretched;
+    `scene-ruler-step` (0.7.4) its Height Ruler marked at a step asked.
   - ARutGIS 0.6.2 and 0.6.3 wrote format 2 for a project with such a frame, and 1 otherwise,
     with no `requires`. They open a project ARutGIS 0.7.0 saved without looking at what it
     requires.

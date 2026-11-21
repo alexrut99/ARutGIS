@@ -5383,3 +5383,9 @@ A quarter of the ground's relief as drawn, at least 50 m	หนึ่งใน�
 Depth exaggeration	ขยายใต้ดิน
 Stretches the block, and the wells below the lowest ground, on its own; the ruler and the readout stay in true metres	ยืดบล็อกและบ่อส่วนที่ต่ำกว่าผิวดินต่ำสุด แยกจากผิวดิน ส่วนสเกลความสูงและค่าที่อ่านได้ยังเป็นเมตรจริง
 This map frame shows no layers.	กรอบแผนที่นี้ไม่มีชั้นข้อมูลที่แสดง
+Block colour	สีบล็อก
+The colour of the block's sides and base	สีผนังและฐานของบล็อก
+The soil colour of a block diagram	สีดินแบบแผนภาพบล็อก
+Ruler step	ระยะขีดสเกล
+True metres between the ruler's marks; where numbers don't fit, only every few are numbered	ระยะห่างระหว่างขีดบนสเกลความสูง เป็นเมตรจริง ถ้าตัวเลขแน่นเกินไปจะเขียนตัวเลขเฉพาะบางขีด
+A round step that fits the ruler	ระยะขีดเป็นเลขกลมที่พอดีกับสเกล
