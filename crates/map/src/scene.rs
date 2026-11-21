@@ -22,6 +22,8 @@ pub const MAX_DEPTH: f64 = 20_000.0;
 pub const MAX_LAYERS: usize = 32;
 /// The widest a feature stands in a scene (metres): a well's or a point's.
 pub const MAX_SIZE: f64 = 10_000.0;
+/// The least step between a scene's ruler marks (metres).
+pub const MIN_RULER_STEP: f64 = 0.1;
 /// The tallest a raised polygon stands, and the deepest a well goes (metres).
 pub const MAX_HEIGHT: f64 = 20_000.0;
 
@@ -68,6 +70,10 @@ pub struct Scene {
     /// nearest the eye.
     #[serde(default = "yes", skip_serializing_if = "is_yes")]
     pub ruler: bool,
+    /// True metres between the ruler's marks. None: a round step that fits the ruler. Marks the
+    /// picture has no room to number are left unnumbered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruler_step: Option<f64>,
 }
 
 fn one() -> f64 {
@@ -260,6 +266,7 @@ impl Scene {
             layers: Vec::new(),
             camera: SceneCamera::default(),
             ruler: true,
+            ruler_step: None,
         }
     }
 
@@ -296,6 +303,11 @@ impl Scene {
             && !(d.is_finite() && (0.0..=MAX_DEPTH).contains(&d))
         {
             return Err(format!("depth is metres, 0 to {MAX_DEPTH}"));
+        }
+        if let Some(st) = self.ruler_step
+            && !(st.is_finite() && (MIN_RULER_STEP..=MAX_HEIGHT).contains(&st))
+        {
+            return Err(format!("rulerStep is metres, {MIN_RULER_STEP} to {MAX_HEIGHT}, or null"));
         }
         if self.walls.a() != 255 {
             return Err("walls is an opaque colour, #RRGGBB".into());
@@ -388,7 +400,7 @@ mod tests {
         s.layers.push(w);
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["layers"][0], serde_json::json!({"layer": "บ่อบาดาล", "kind": "well", "depth": "ความลึก", "heightM": 10.0}));
-        assert!(v.get("dem").is_none() && v.get("depth").is_none() && v.get("depthExaggeration").is_none());
+        assert!(v.get("dem").is_none() && v.get("depth").is_none() && v.get("depthExaggeration").is_none() && v.get("rulerStep").is_none());
         let back: Scene = serde_json::from_value(v).unwrap();
         assert_eq!(back, s);
         // Only the box is needed.
@@ -410,6 +422,9 @@ mod tests {
         assert!(bad(&|s| s.exaggeration = 0.0).contains("exaggeration"));
         assert!(bad(&|s| s.depth_exaggeration = 0.0).contains("depthExaggeration"));
         assert!(bad(&|s| s.depth_exaggeration = 51.0).contains("depthExaggeration"));
+        assert!(bad(&|s| s.ruler_step = Some(0.0)).contains("rulerStep"));
+        assert!(bad(&|s| s.ruler_step = Some(f64::NAN)).contains("rulerStep"));
+        assert!(bad(&|s| s.ruler_step = Some(30_000.0)).contains("rulerStep"));
         assert!(bad(&|s| s.ground_opacity = 1.5).contains("groundOpacity"));
         assert!(bad(&|s| s.depth = Some(-1.0)).contains("depth"));
         assert!(bad(&|s| s.walls = Rgba::new(1, 2, 3, 4)).contains("opaque"));

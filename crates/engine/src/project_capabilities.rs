@@ -49,7 +49,8 @@ fn relief_effects(layer: &Layer) -> bool {
 }
 
 fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static str> {
-    let (mut block, mut water, mut relief, mut legends, mut scene, mut ruler, mut deep) = (false, false, false, false, false, false, false);
+    let (mut block, mut water, mut relief, mut legends, mut scene, mut ruler, mut deep, mut step) =
+        (false, false, false, false, false, false, false, false);
     for map in maps {
         // A 3D scene (ARutGIS): a reader that doesn't know of it would save the map without it.
         scene |= map.scene.is_some();
@@ -57,6 +58,8 @@ fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static
         ruler |= map.scene.as_ref().is_some_and(|s| !s.ruler);
         // What is under the ground stretched (0.7.3): a reader from before would draw it true.
         deep |= map.scene.as_ref().is_some_and(|s| s.depth_exaggeration != 1.0);
+        // Its ruler marked at a step asked (0.7.4): a reader from before would mark its own.
+        step |= map.scene.as_ref().is_some_and(|s| s.ruler_step.is_some());
         if let Some(t) = &map.view.terrain {
             block |= t.block.is_some();
             water |= t.water.is_some();
@@ -74,6 +77,7 @@ fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static
         (scene, "scene-3d"),
         (ruler, "scene-ruler"),
         (deep, "scene-depth-exaggeration"),
+        (step, "scene-ruler-step"),
     ]
     .into_iter()
     .filter_map(|(used, name)| used.then_some(name))

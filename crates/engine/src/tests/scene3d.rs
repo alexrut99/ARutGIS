@@ -128,6 +128,7 @@ fn a_saved_scene_is_read_back() {
     assert_eq!(scene.camera.tilt, 110.0);
     assert!(!scene.ruler, "its ruler turned off");
     assert_eq!(scene.depth_exaggeration, 3.0, "what is under the ground stretched");
+    assert_eq!(scene.ruler_step, Some(25.0), "its ruler marked every 25 m");
     assert!(scene.check().is_ok());
 }
 
@@ -296,4 +297,39 @@ fn what_is_under_the_ground_is_stretched_and_kept() {
     s.run("scene.set", &json!({"depthExaggeration": 1})).unwrap();
     let (text, _) = s.project.saved_text(None).unwrap();
     assert!(!text.contains("depthExaggeration") && !requires(&text).contains(&"scene-depth-exaggeration".to_string()));
+}
+
+/// The ruler marked at a step asked, and the block's colour: set, saved, read back; the step
+/// requires what keeps it (0.7.3 would mark its own and save the scene without it). Null is
+/// automatic again, and nothing is written for it.
+#[test]
+fn the_rulers_step_and_the_blocks_colour_are_set_and_kept() {
+    let (mut s, dem) = with_wells();
+    s.run("scene.set", &json!({"dem": dem})).unwrap();
+    for bad in [json!(0), json!(-5), json!(30_000), json!("ten")] {
+        assert!(s.run("scene.set", &json!({"rulerStep": bad})).unwrap_err().contains("rulerStep"), "{bad}");
+    }
+    assert!(s.run("scene.set", &json!({"walls": "#11223380"})).unwrap_err().contains("opaque"));
+    let v = s.run("scene.set", &json!({"rulerStep": 25, "walls": "#6B4F3A"})).unwrap();
+    assert_eq!(v["rulerStep"].as_f64(), Some(25.0));
+    let (text, _) = s.project.saved_text(None).unwrap();
+    let requires = |text: &str| -> Vec<String> {
+        let doc: serde_json::Value = serde_json::from_str(text).unwrap();
+        doc["requires"].as_array().map(|r| r.iter().filter_map(|c| c.as_str().map(String::from)).collect()).unwrap_or_default()
+    };
+    assert!(requires(&text).contains(&"scene-ruler-step".to_string()), "{:?}", requires(&text));
+    let map_file = crate::project::map_file_bytes(s.map()).unwrap();
+    assert!(requires(std::str::from_utf8(&map_file).unwrap()).contains(&"scene-ruler-step".to_string()));
+    assert!(crate::project::CAPABILITIES.contains(&"scene-ruler-step"), "this version reads what it writes");
+    let mut t = Session::new(crate::Project::default());
+    t.run("project.openText", &json!({"text": text})).unwrap();
+    let back = t.map().scene.clone().unwrap();
+    assert_eq!((back.ruler_step, back.walls), (Some(25.0), rustgis_map::Rgba::rgb(0x6B, 0x4F, 0x3A)));
+    // Undone, the scene is as it was.
+    s.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.map().scene.as_ref().unwrap().ruler_step, None);
+    s.run("edit.redo", &json!({})).unwrap();
+    s.run("scene.set", &json!({"rulerStep": null})).unwrap();
+    let (text, _) = s.project.saved_text(None).unwrap();
+    assert!(!text.contains("rulerStep") && !requires(&text).contains(&"scene-ruler-step".to_string()));
 }

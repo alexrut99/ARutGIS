@@ -134,6 +134,7 @@ struct Drawn {
     camera: [u64; 6],
     opacity: u64,
     ruler: bool,
+    ruler_step: Option<u64>,
     size: [u32; 2],
 }
 
@@ -143,6 +144,7 @@ impl Key {
         s.camera = SceneCamera::default();
         s.ground_opacity = 1.0;
         s.ruler = true;
+        s.ruler_step = None;
         Key { scene: serde_json::to_string(&s).unwrap_or_default(), revision: app.session.revision, map: app.session.map().instance_id() }
     }
 }
@@ -368,6 +370,22 @@ fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
     if r.changed() && dex != scene.depth_exaggeration {
         run(app, "scene.set", json!({"depthExaggeration": dex}));
     }
+    // The block's sides and base.
+    ui.label(tl!("Block colour"));
+    let w = scene.walls;
+    let mut c = Color32::from_rgb(w.r(), w.g(), w.b());
+    if egui::color_picker::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::Opaque)
+        .on_hover_text(tl!("The colour of the block's sides and base"))
+        .changed()
+    {
+        run(app, "scene.set", json!({"walls": format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b())}));
+    }
+    if w != rustgis_engine::map::scene::WALLS
+        && ui.small_button(tl!("Default")).on_hover_text(tl!("The soil colour of a block diagram")).clicked()
+    {
+        let d = rustgis_engine::map::scene::WALLS;
+        run(app, "scene.set", json!({"walls": format!("#{:02X}{:02X}{:02X}", d.r(), d.g(), d.b())}));
+    }
     ui.separator();
     ui.label(tl!("Ground opacity"));
     let mut op = scene.ground_opacity * 100.0;
@@ -383,6 +401,27 @@ fn toolbar(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene, t: &Tokens) {
     {
         run_drawing_only(app, "scene.set", json!({"ruler": ruler}));
     }
+    // Its marks every so many true metres, or a round step that fits.
+    ui.add_enabled_ui(scene.ruler, |ui| {
+        ui.label(tl!("Ruler step"));
+        let auto = scene.ruler_step.is_none();
+        let mut step = scene.ruler_step.unwrap_or(100.0);
+        let r = ui
+            .add(
+                egui::DragValue::new(&mut step)
+                    .range(rustgis_engine::map::scene::MIN_RULER_STEP..=rustgis_engine::map::scene::MAX_HEIGHT)
+                    .speed(1.0)
+                    .max_decimals(1)
+                    .custom_formatter(move |v, _| if auto { tl!("Auto").to_string() } else { format!("{v} m") }),
+            )
+            .on_hover_text(tl!("True metres between the ruler's marks; where numbers don't fit, only every few are numbered"));
+        if r.changed() && Some(step) != scene.ruler_step {
+            run_drawing_only(app, "scene.set", json!({"rulerStep": step}));
+        }
+        if !auto && ui.small_button(tl!("Auto")).on_hover_text(tl!("A round step that fits the ruler")).clicked() {
+            run_drawing_only(app, "scene.set", json!({"rulerStep": null}));
+        }
+    });
     ui.separator();
     ui.menu_button(tl!("Study Area"), |ui| {
         if let Some(d) = scene.dem.clone()
@@ -486,6 +525,7 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
             camera: [cam.heading, cam.tilt, cam.zoom, cam.target[0], cam.target[1], cam.target[2]].map(f64::to_bits),
             opacity: scene.ground_opacity.to_bits(),
             ruler: scene.ruler,
+            ruler_step: scene.ruler_step.map(f64::to_bits),
             size: [w, h],
         };
         // What is under the mouse, looked for again only when it or the picture moves.
@@ -995,14 +1035,18 @@ mod tests {
         // Its opacity and its camera only draw it again.
         run_drawing_only(&mut app, "scene.set", json!({"groundOpacity": 0.4}));
         run_drawing_only(&mut app, "scene.set", json!({"ruler": false}));
+        run_drawing_only(&mut app, "scene.set", json!({"rulerStep": 25}));
         run_drawing_only(&mut app, "scene.camera", json!({"turn": 45}));
         frame(&mut app, &ctx);
         assert!(app.scene3d.building.is_none(), "{:?}", app.scene3d.message);
         assert_eq!(app.session.map().scene.as_ref().unwrap().camera.heading, 75.0);
-        // Its exaggeration builds it again.
+        // Its exaggeration builds it again, and so does the block's colour.
         app.run("scene.set", json!({"exaggeration": 3})).unwrap();
         let second = built_after(&mut app, &ctx, Some(first));
         assert_ne!(first, second);
+        app.run("scene.set", json!({"walls": "#6B4F3A"})).unwrap();
+        let third = built_after(&mut app, &ctx, Some(second));
+        assert_ne!(second, third);
         // The map's tab hides it, a build under way cancelled; its own shows it again.
         app.run("scene.set", json!({"exaggeration": 4})).unwrap();
         frame(&mut app, &ctx);

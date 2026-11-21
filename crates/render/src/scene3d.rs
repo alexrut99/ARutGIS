@@ -1054,7 +1054,7 @@ fn clip_near(vs: &[([f64; 3], [f32; 5]); 3], near: f64) -> Vec<([f64; 3], [f32; 
 /// samples (1: none, 2 or 3 for a smooth image to keep). Cancel (an export's) is looked at as it
 /// draws. Errors: a picture of no pixels, or Cancel.
 pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32, ss: u32) -> Result<Pixmap, String> {
-    draw_with(b, cam, Look { opacity, ruler: false }, w, h, ppp, ss)
+    draw_with(b, cam, Look { opacity, ruler: false, ruler_step: None }, w, h, ppp, ss)
 }
 
 /// How a scene is looked at, besides from where: [`draw_with`].
@@ -1064,12 +1064,14 @@ pub struct Look {
     pub opacity: f64,
     /// A ruler of heights up the block's corner nearest the eye ([`Scene::ruler`]).
     pub ruler: bool,
+    /// True metres between its marks ([`Scene::ruler_step`]). None: [`ruler_step`]'s.
+    pub ruler_step: Option<f64>,
 }
 
 impl Look {
     /// How `scene` is looked at.
     pub fn of(scene: &Scene) -> Look {
-        Look { opacity: scene.ground_opacity, ruler: scene.ruler }
+        Look { opacity: scene.ground_opacity, ruler: scene.ruler, ruler_step: scene.ruler_step }
     }
 }
 
@@ -1173,7 +1175,7 @@ pub fn draw_with(b: &Built, cam: &SceneCamera, look: Look, w: u32, h: u32, ppp: 
     }
     if look.ruler {
         let mut canvas = Canvas::from_pixmap(pm);
-        ruler(&mut canvas, b, &Eye::of(b, cam, f64::from(w), f64::from(h)), ppp);
+        ruler(&mut canvas, b, &Eye::of(b, cam, f64::from(w), f64::from(h)), ppp, look.ruler_step);
         pm = canvas.into_pixmap();
     }
     if !b.credits.is_empty() {
@@ -1238,11 +1240,34 @@ fn ruler_corner(b: &Built, eye: &Eye) -> (f64, f64) {
         .map_or((-hw, -hh), |(c, _)| c)
 }
 
+/// The most marks a ruler of an asked step draws: a step too fine for it is marked at a multiple.
+const RULER_MARKS: f64 = 400.0;
+
+/// Which of a ruler's marks `asked` metres apart over `span` metres `px` pixels long are drawn
+/// and which numbered: every `draw`th multiple of `asked` (1 unless there would be more than
+/// [`RULER_MARKS`]), numbered every `number`th of those, the fewest that keeps numbers
+/// [`RULER_GAP`] pixels apart (`ppp` a point): a round height (1, 2 or 5 times a power of ten)
+/// when one is a multiple of the step, else 1, 2 or 5 times a power of ten of the steps.
+fn ruler_every(asked: f64, span: f64, px: f64, ppp: f64) -> (u64, u64) {
+    let draw = (span / asked / RULER_MARKS).ceil().max(1.0);
+    let drawn = asked * draw;
+    let need = (span * RULER_GAP * ppp / px.max(1.0) / drawn).max(1.0) * (1.0 - 1e-9);
+    let nice = |least: f64| {
+        let ten = 10f64.powf(least.log10().floor());
+        (0..12).flat_map(move |i| [1.0, 2.0, 5.0].map(|m| m * ten * 10f64.powi(i))).filter(move |r| *r >= least)
+    };
+    let whole = |k: f64| (k - k.round()).abs() < 1e-6 * k.max(1.0);
+    let number =
+        nice(need * drawn).take(9).map(|r| r / drawn).find(|k| whole(*k)).or_else(|| nice(need).next()).map_or(1.0, f64::round).max(1.0);
+    (draw as u64, number as u64)
+}
+
 /// A ruler of heights up the block's corner nearest the eye, from its base to the ground there:
-/// marked every [`ruler_step`], numbered in metres above sea level (not exaggerated), on the
-/// side of the corner away from the block. Left out when the corner is behind the eye or too
-/// short on the picture to mark.
-fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32) {
+/// marked every `asked` true metres, or every [`ruler_step`] when none is asked, numbered in
+/// metres above sea level (not exaggerated), on the side of the corner away from the block. An
+/// asked step finer than numbers fit has only every few marks numbered ([`ruler_every`]), the
+/// rest shorter. Left out when the corner is behind the eye or too short on the picture to mark.
+fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32, asked: Option<f64>) {
     let (x, y) = ruler_corner(b, eye);
     let (base, top) = (b.z_range.0, b.ground_at(x, y));
     let at = |z: f64| {
@@ -1275,29 +1300,42 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32) {
     } else {
         b.dex
     };
-    let step = ruler_step(hi - lo, len * per_m * (hi - lo) / (top - base).max(1e-9), ppp64);
+    let long = len * per_m * (hi - lo) / (top - base).max(1e-9);
+    // Marks every `step`, numbered every `number`th, numbers to `precision`.
+    let (step, number, precision) = match asked.filter(|a| a.is_finite() && *a > 0.0) {
+        Some(a) => {
+            let (draw, number) = ruler_every(a, hi - lo, long, ppp64);
+            (a * draw as f64, number, a)
+        }
+        None => {
+            let st = ruler_step(hi - lo, long, ppp64);
+            (st, 1, st)
+        }
+    };
     let tick = 7.0 * ppp;
     let mut pb = tiny_skia::PathBuilder::new();
     pb.move_to(p0.0, p0.1);
     pb.line_to(p1.0, p1.1);
     // Its ends, numbered to the metre, and the round heights between not too near them.
-    let mut marks = vec![(p0, lo, 1.0), (p1, hi, 1.0)];
+    let mut marks = vec![(p0, lo, 1.0, true), (p1, hi, 1.0, true)];
     // A label's height and a little apart, on the picture.
     let near_end = 18.0 * ppp;
     let apart = |p: (f32, f32, f32), q: (f32, f32, f32)| (p.0 - q.0).hypot(p.1 - q.1) > near_end;
-    let mut v = (lo / step).ceil() * step;
-    while v <= hi + 1e-9 {
+    // Counted from 0 m, so the numbered ones are the round ones.
+    let mut i = (lo / step - 1e-9).ceil() as i64;
+    while (i as f64) * step <= hi + 1e-9 {
+        let v = i as f64 * step;
+        let numbered = i.rem_euclid(number as i64) == 0;
         if let Some(p) = at(b.z_of(v))
-            && apart(p, p0)
-            && apart(p, p1)
+            && (!numbered || (apart(p, p0) && apart(p, p1)))
         {
-            marks.push((p, v, step));
+            marks.push((p, v, precision, numbered));
         }
-        v += step;
+        i += 1;
     }
-    for (p, _, _) in &marks {
+    for (p, _, _, numbered) in &marks {
         pb.move_to(p.0, p.1);
-        pb.line_to(p.0 + out * tick, p.1);
+        pb.line_to(p.0 + out * if *numbered { tick } else { tick * 0.55 }, p.1);
     }
     let Some(path) = pb.finish() else { return };
     let paint = |c: tiny_skia::Color| {
@@ -1312,7 +1350,7 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32) {
     canvas.stroke_path(&path, &paint(tiny_skia::Color::from_rgba8(0x20, 0x20, 0x20, 255)), &stroke(1.6), t, None);
     let px = 11.0 * ppp;
     let align = if out < 0.0 { crate::text::Align::Right } else { crate::text::Align::Left };
-    for ((x, y, _), v, precision) in marks {
+    for ((x, y, _), v, precision, _) in marks.into_iter().filter(|m| m.3) {
         let text = format!("{} m", fmt_metres(v, precision));
         crate::text::text_at(canvas, &text, x + out * (tick + 4.0 * ppp), y, px, Rgba::rgb(0x20, 0x20, 0x20), false, align, true);
     }
@@ -1758,7 +1796,8 @@ mod tests {
         s.exaggeration = 5.0;
         let b = build(m, &s, small()).unwrap();
         let side = SceneCamera { heading: 30.0, tilt: 80.0, zoom: 1.1, target: [0.0, 0.0, 0.0] };
-        let with = |ruler: bool, cam: &SceneCamera| draw_with(&b, cam, Look { opacity: 1.0, ruler }, 400, 300, 1.0, 1).unwrap();
+        let with =
+            |ruler: bool, cam: &SceneCamera| draw_with(&b, cam, Look { opacity: 1.0, ruler, ruler_step: None }, 400, 300, 1.0, 1).unwrap();
         let (on, off) = (with(true, &side), with(false, &side));
         let differ = on.data().chunks(4).zip(off.data().chunks(4)).filter(|(a, c)| a != c).count();
         assert!(differ > 200, "the ruler and its numbers are drawn: {differ} pixels");
@@ -1766,6 +1805,35 @@ mod tests {
         // From straight above the corner is a point: no ruler.
         let above = SceneCamera { tilt: 0.0, ..side };
         assert_eq!(with(true, &above).data(), with(false, &above).data());
+    }
+
+    #[test]
+    fn a_ruler_is_marked_at_the_step_asked_and_numbered_where_numbers_fit() {
+        // 25 m over 1,000 m on 500 px: every mark drawn, numbers 34 px (68 m) apart at least,
+        // so every 4th numbered, at the hundreds.
+        assert_eq!(ruler_every(25.0, 1000.0, 500.0, 1.0), (1, 4));
+        // 20 m: every 5th, at the hundreds again.
+        assert_eq!(ruler_every(20.0, 1000.0, 500.0, 1.0), (1, 5));
+        // 30 m divides no round height: every 5th, 150 m apart.
+        assert_eq!(ruler_every(30.0, 1000.0, 500.0, 1.0), (1, 5));
+        // Wide apart: all numbered.
+        assert_eq!(ruler_every(100.0, 1000.0, 1000.0, 1.0), (1, 1));
+        // Too fine to draw every mark: at a multiple, at most RULER_MARKS.
+        let (draw, _) = ruler_every(0.1, 1000.0, 1000.0, 1.0);
+        assert_eq!(draw, 25);
+        assert!(1000.0 / (0.1 * draw as f64) <= RULER_MARKS);
+        let (m, mut s) = hill();
+        s.exaggeration = 5.0;
+        let b = build(m, &s, small()).unwrap();
+        let side = SceneCamera { heading: 30.0, tilt: 80.0, zoom: 1.1, target: [0.0, 0.0, 0.0] };
+        let with =
+            |ruler_step: Option<f64>| draw_with(&b, &side, Look { opacity: 1.0, ruler: true, ruler_step }, 400, 300, 1.0, 1).unwrap();
+        let auto = with(None);
+        assert_ne!(with(Some(10.0)).data(), auto.data(), "marked every 10 m");
+        // A step that is no number is the automatic one.
+        assert_eq!(with(Some(f64::NAN)).data(), auto.data());
+        s.ruler_step = Some(10.0);
+        assert_eq!(Look::of(&s).ruler_step, Some(10.0));
     }
 
     #[test]

@@ -1061,7 +1061,8 @@
           "frame-layers",
           "scene-3d",
           "scene-ruler",
-          "scene-depth-exaggeration"
+          "scene-depth-exaggeration",
+          "scene-ruler-step"
         ],
         "type": "string"
       },
@@ -1134,7 +1135,8 @@
     "frame-layers",
     "scene-3d",
     "scene-ruler",
-    "scene-depth-exaggeration"
+    "scene-depth-exaggeration",
+    "scene-ruler-step"
   ],
   "x-rustgis-reads-format": 2,
   "x-rustgis-writes-format": 2

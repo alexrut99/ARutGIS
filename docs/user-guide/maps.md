@@ -197,6 +197,8 @@ the map's first) as its ground and that raster's extent, or the map's view witho
 - **Block depth** (`"depth"`, metres): the block's sides and base go down this many true metres
   below the lowest ground or the deepest well (drawn stretched by the depth exaggeration).
   **Auto** (`null`, the default) is a quarter of the relief as drawn, at least 50 m.
+- **Block colour** (`"walls"`, `#RRGGBB`): the block's sides and base, by default `#C8B89A`, the
+  soil of a block diagram; **Default** goes back to it.
 - **Ground opacity** (`"groundOpacity"`, 0 to 1): below 1 the ground is glass, its nearest
   surface laid over what is under it, so the wells show through it.
 - **Study Area**: the DEM's extent, the map's current view, or a layer's extent (`"extent"`,
@@ -216,7 +218,11 @@ the map's first) as its ground and that raster's extent, or the map's view witho
   from its base to the ground there, numbered in metres above sea level at its ends and at
   round heights between, spaced wider over the lowest ground when the relief is stretched. It
   is left off a corner too short on the picture to mark, as one is from straight above. It is
-  drawn on exported images and orbits too.
+  drawn on exported images and orbits too. **Ruler step** (`"rulerStep"`, true metres, 0.1 to
+  20,000) marks it every so many metres, counted from 0 m; where the numbers would crowd, only
+  round heights among the marks are numbered (25 m marks numbered at the hundreds, say) and the
+  rest are shorter, unnumbered, and a step so fine there would be over 400 marks is marked at a
+  multiple of it. **Auto** (`null`, the default) picks a round step that fits.
 
 Drag to orbit, right-drag to move along the ground, Ctrl+drag (or the middle button) to go up
 or down, under the ground too, and the wheel to come nearer; the compass shows north. **Reset
@@ -227,7 +233,8 @@ down it the point is from its head. Through ground less than opaque, a well behi
 what is said, as it is what is seen. The scene and its camera are saved with the map (a project
 with one requires `scene-3d`, so a RustGIS that can't keep it refuses to open it rather than drop
 it; one whose ruler is off also requires `scene-ruler`, which ARutGIS 0.7.1 doesn't know, and one
-stretched below the lowest ground `scene-depth-exaggeration`, which 0.7.2 doesn't). A layer renamed is followed; one removed is left out of the scene, said.
+stretched below the lowest ground `scene-depth-exaggeration`, which 0.7.2 doesn't, and one whose
+ruler has a step of its own `scene-ruler-step`, which 0.7.3 doesn't). A layer renamed is followed; one removed is left out of the scene, said.
 
 **Export Image…** (`scene.export`, desktop) writes the scene from its camera as a PNG
 (`"width"` × `"height"` pixels, default 1600 × 1000, each pixel smoothed from `"smooth"`²
