@@ -310,7 +310,7 @@ const PAN_PREVIEW_SIDE: f64 = 8192.0;
 /// for tiles still on their way, as it's drawn while the pointer moves.
 fn pan_preview(app: &mut RustGisApp, ctx: &egui::Context, layout: &Layout, id: u32, s: f32) -> Option<egui::TextureHandle> {
     let e = layout.element(id)?;
-    let ElementKind::MapFrame { map, center, scale, bearing, pitch, exclude, .. } = &e.kind else { return None };
+    let ElementKind::MapFrame { map, center, scale, bearing, pitch, exclude, frame_labels, .. } = &e.kind else { return None };
     // A tilted view's perspective follows the drawing's height, so a taller drawing wouldn't match
     // the frame: a pitched frame slides the page as before.
     if *pitch != 0.0 {
@@ -325,7 +325,7 @@ fn pan_preview(app: &mut RustGisApp, ctx: &egui::Context, layout: &Layout, id: u
     // thin frame could pass the first and not the second).
     let side = (ctx.input(|i| i.max_texture_side) as f64).min(PAN_PREVIEW_SIDE);
     let ppp = screen.min((PAN_PREVIEW_PIXELS / (w * h).max(1.0)).sqrt()).min(side / w.max(h).max(1.0)).max(0.01);
-    let pm = rustgis_engine::render::layout::frame_map_preview(m, exclude, cam, w, h, ppp)?;
+    let pm = rustgis_engine::render::layout::frame_map_preview(m, (exclude, frame_labels), cam, w, h, ppp)?;
     let img = egui::ColorImage::from_rgba_premultiplied([pm.width() as usize, pm.height() as usize], pm.data());
     Some(ctx.load_texture("layout_pan_preview", img, egui::TextureOptions::LINEAR))
 }
@@ -3191,10 +3191,11 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
         }
     }
     // The layers a map frame draws: a checkbox for each layer and web layer of its map, ticked
-    // when drawn. A locator shows the map without its detail this way; the map itself, and the
-    // other frames that show it, keep every layer. Names gone from the map drop out of the list
-    // as it's written back.
-    if let ElementKind::MapFrame { map, exclude, .. } = &e.kind
+    // when drawn, and beside each vector layer one for its labels, ticked when this frame draws
+    // them. A locator shows the map without its detail or its place names this way, or with the
+    // provinces' names the map leaves out; the map itself, and the other frames that show it, keep
+    // every layer and label. Names gone from the map drop out of the list as it's written back.
+    if let ElementKind::MapFrame { map, exclude, frame_labels, .. } = &e.kind
         && let Some(m) = app.session.project.maps.iter().find(|m| m.name.eq_ignore_ascii_case(map))
     {
         // Once each: layers may share a name, and the frame leaves names out.
@@ -3205,24 +3206,60 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
             }
         }
         let kept: Vec<String> = exclude.iter().filter(|x| names.iter().any(|n| n.eq_ignore_ascii_case(x))).cloned().collect();
+        // Each vector layer's labels: what the map does, whether it has any to draw (a label
+        // class with a field), and what this frame chose.
+        let labels: Vec<Option<(bool, bool, Option<bool>)>> = names
+            .iter()
+            .map(|n| {
+                m.layer_by_name(n).filter(|l| !l.is_raster()).map(|l| {
+                    let has = l.labels.enabled || l.labels.in_order().any(|c| !c.field.trim().is_empty());
+                    let chosen = frame_labels.iter().find(|(k, _)| k.eq_ignore_ascii_case(n)).map(|(_, &on)| on);
+                    (l.labels.enabled, has, chosen)
+                })
+            })
+            .collect();
         if !names.is_empty() {
             ui.add_space(4.0);
-            egui::CollapsingHeader::new(tl!("Layers")).id_salt(("frame_layers", id)).default_open(!exclude.is_empty()).show(ui, |ui| {
+            let open = !exclude.is_empty() || !frame_labels.is_empty();
+            egui::CollapsingHeader::new(tl!("Layers")).id_salt(("frame_layers", id)).default_open(open).show(ui, |ui| {
                 let left_out = |n: &str| exclude.iter().any(|x| x.eq_ignore_ascii_case(n));
-                for n in &names {
-                    let mut drawn = !left_out(n);
-                    let hover = tl!("Draw this layer in this map frame. The map, and other frames showing it, keep the layer either way.");
-                    if ui.checkbox(&mut drawn, n.as_str()).on_hover_text(hover).changed() {
-                        let mut next: Vec<&String> = kept.iter().filter(|x| !x.eq_ignore_ascii_case(n)).collect();
-                        if !drawn {
-                            next.push(n);
+                for (n, label) in names.iter().zip(&labels) {
+                    ui.horizontal(|ui| {
+                        let mut drawn = !left_out(n);
+                        let hover = tl!("Draw this layer in this map frame. The map, and other frames showing it, keep the layer either way.");
+                        if ui.checkbox(&mut drawn, n.as_str()).on_hover_text(hover).changed() {
+                            let mut next: Vec<&String> = kept.iter().filter(|x| !x.eq_ignore_ascii_case(n)).collect();
+                            if !drawn {
+                                next.push(n);
+                            }
+                            update(app, json!({"exclude": next}));
                         }
-                        update(app, json!({"exclude": next}));
-                    }
+                        let Some((map_on, has, chosen)) = *label else { return };
+                        let mut on = chosen.unwrap_or(map_on);
+                        let hover = if has {
+                            tl!("Draw this layer's labels in this map frame. The map, and other frames showing it, keep their labels either way.")
+                        } else {
+                            tl!("This layer has no labels to draw: choose its label field in Labeling first")
+                        };
+                        let r = ui.add_enabled(drawn && has, egui::Checkbox::new(&mut on, tl!("Labels")));
+                        let r = if has { r.on_hover_text(hover) } else { r.on_disabled_hover_text(hover) };
+                        if r.changed() {
+                            // As the map does: no choice of the frame's.
+                            let v = if on == map_on { Value::Null } else { Value::Bool(on) };
+                            update(app, json!({"frameLabels": {n.as_str(): v}}));
+                        }
+                    });
                 }
                 if !exclude.is_empty() {
                     ui.label(
                         egui::RichText::new(tl!("A project with layers left out of a map frame opens in ARutGIS 0.6.2 and later."))
+                            .size(11.0)
+                            .weak(),
+                    );
+                }
+                if !frame_labels.is_empty() {
+                    ui.label(
+                        egui::RichText::new(tl!("A project with labels chosen in a map frame opens in ARutGIS 0.7.6 and later."))
                             .size(11.0)
                             .weak(),
                     );
@@ -4432,6 +4469,59 @@ mod tests {
         h.get_by_label("Solid").click();
         h.run_steps(2);
         assert_eq!(dash(&h), None);
+    }
+
+    /// A map frame's Layers section has a Labels checkbox beside each vector layer: ticked as the
+    /// frame draws its labels, it leaves them out of the frame alone (the map keeps them), and
+    /// ticked again it is back to what the map does, with no choice of the frame's left.
+    #[test]
+    fn a_map_frames_labels_are_ticked_off_in_its_layers() {
+        use egui_kittest::kittest::Queryable;
+        let mut app = RustGisApp::with_sample();
+        app.run("layout.new", json!({"name": "Labels"})).unwrap();
+        let li = app.session.active_layout.unwrap();
+        let frame = app.session.project.layouts[li].first_frame().unwrap();
+        // The vector layers in the order the section lists them, and the first the map labels.
+        let vectors: Vec<(String, bool)> = {
+            let m = app.session.map();
+            let mut seen: Vec<String> = Vec::new();
+            m.layers
+                .iter()
+                .filter(|l| {
+                    let first = !seen.iter().any(|n| n.eq_ignore_ascii_case(&l.name));
+                    seen.push(l.name.clone());
+                    first && !l.is_raster()
+                })
+                .map(|l| (l.name.clone(), l.labels.enabled))
+                .collect()
+        };
+        let Some(at) = vectors.iter().position(|(_, on)| *on) else {
+            panic!("the sample labels a layer: {vectors:?}");
+        };
+        let name = vectors[at].0.clone();
+        // Opened, as a frame with a choice opens it: another layer's labels chosen.
+        let other = vectors.iter().find(|(n, _)| *n != name).map(|(n, on)| (n.clone(), *on)).unwrap();
+        app.run("layout.update", json!({"layout": li, "element": frame, "frameLabels": {&other.0: !other.1}})).unwrap();
+        app.layout.selected = Some(frame);
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(420.0, 2400.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                let layout = app.session.project.layouts[li].clone();
+                egui::ScrollArea::vertical().show(ui, |ui| super::properties(app, ui, &layout, li));
+            },
+            app,
+        );
+        h.run_steps(2);
+        let chosen = |h: &egui_kittest::Harness<'_, RustGisApp>, n: &str| {
+            h.state().session.project.layouts[li].frame_labels(frame).and_then(|m| m.get(n).copied())
+        };
+        h.get_all_by_label("Labels").nth(at).expect("a Labels checkbox for each vector layer").click();
+        h.run_steps(2);
+        assert_eq!(chosen(&h, &name), Some(false), "left out of the frame");
+        assert!(h.state().session.map().layer_by_name(&name).unwrap().labels.enabled, "the map keeps them");
+        h.get_all_by_label("Labels").nth(at).unwrap().click();
+        h.run_steps(2);
+        assert_eq!(chosen(&h, &name), None, "as the map draws them: no choice left");
+        assert_eq!(chosen(&h, &other.0), Some(!other.1), "the other layer's choice kept");
     }
 
     /// The selected element's Bring to Front and Send to Back buttons move it in the drawing

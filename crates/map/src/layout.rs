@@ -878,13 +878,21 @@ pub const MAX_LEGEND_EXCLUDED: usize = 1000;
 /// The most layers a map frame leaves out.
 pub const MAX_FRAME_EXCLUDED: usize = 1000;
 
-/// The format a layout file (`.rgislayout`) is written as, from ARutGIS 0.7.0 on, whatever the
-/// layout holds: 0.7.0 saves what older versions don't know (a dashed outline, a legend's own
-/// labels and look, an MGRS grid), which they would read past, and save the layout without.
-/// ARutGIS 0.6.2 and 0.6.3 wrote 2 for a layout with a map frame that leaves layers out and no
-/// format otherwise, and refuse a format past 2; older ones don't look at it (see
+/// The newest format of a layout file (`.rgislayout`) this version reads: 4, written for a layout
+/// with a map frame that chooses its layers' labels (0.7.6), which 0.7.0 to 0.7.5 would read
+/// past and save the layout without, so they refuse it; [`PLAIN_FILE_FORMAT`] otherwise.
+pub const FILE_FORMAT: u32 = 4;
+
+/// The format a layout file is written as, from ARutGIS 0.7.0 on, when it holds nothing newer
+/// ([`Layout::file_format`]): 0.7.0 saves what older versions don't know (a dashed outline, a
+/// legend's own labels and look, an MGRS grid), which they would read past, and save the layout
+/// without. ARutGIS 0.6.2 and 0.6.3 wrote 2 for a layout with a map frame that leaves layers out
+/// and no format otherwise, and refuse a format past 2; older ones don't look at it (see
 /// [`Layout::to_file`]).
-pub const FILE_FORMAT: u32 = 3;
+pub const PLAIN_FILE_FORMAT: u32 = 3;
+
+/// The most layers a map frame chooses the labels of.
+pub const MAX_FRAME_LABELS: usize = 1000;
 
 /// What a RustGIS that doesn't look at a layout file's format says of one (see
 /// [`Layout::to_file`]).
@@ -1942,6 +1950,12 @@ pub enum ElementKind {
         /// layout without them.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         exclude: Vec<String>,
+        /// Layers of the map whose labels this frame draws or doesn't, by name, whatever the map
+        /// does (`true` labels a layer the map leaves unlabelled, with its label classes): a
+        /// locator's place names left out, or put in. A project with any requires `frame-labels`
+        /// of its reader, and a layout file with any is written as format 4.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        frame_labels: BTreeMap<String, bool>,
     },
     NorthArrow {
         frame: u32,
@@ -2588,7 +2602,28 @@ impl Layout {
             layout: &'a Layout,
             width: &'static str,
         }
-        serde_json::to_string_pretty(&Nested { format: FILE_FORMAT, layout: self, width: NEEDS_NEWER })
+        serde_json::to_string_pretty(&Nested { format: self.file_format(), layout: self, width: NEEDS_NEWER })
+    }
+
+    /// The format its layout file is written as: [`FILE_FORMAT`] when a map frame chooses its
+    /// layers' labels, which ARutGIS before 0.7.6 doesn't know, else [`PLAIN_FILE_FORMAT`], which
+    /// 0.7.0 on reads.
+    pub fn file_format(&self) -> u32 {
+        if self.chooses_frame_labels() { FILE_FORMAT } else { PLAIN_FILE_FORMAT }
+    }
+
+    /// Whether a map frame draws or leaves out some layer's labels whatever its map does, which
+    /// a project holding it requires of its reader (`frame-labels`).
+    pub fn chooses_frame_labels(&self) -> bool {
+        self.elements.iter().any(|e| matches!(&e.kind, ElementKind::MapFrame { frame_labels, .. } if !frame_labels.is_empty()))
+    }
+
+    /// The layers map frame `frame` labels or leaves unlabelled whatever its map does, by name.
+    pub fn frame_labels(&self, frame: u32) -> Option<&BTreeMap<String, bool>> {
+        match self.element(frame).map(|e| &e.kind) {
+            Some(ElementKind::MapFrame { frame_labels, .. }) => Some(frame_labels),
+            _ => None,
+        }
     }
 
     /// The layout in a layout file's text: one level down, as [`Layout::to_file`] writes it, or
@@ -2910,10 +2945,16 @@ impl Layout {
             e.name = e.name.chars().take(200).collect();
             e.rotation = if e.kind.turns() { normalize_rotation(e.rotation) } else { 0.0 };
             match &mut e.kind {
-                ElementKind::MapFrame { center, scale, shape, grid, bearing, pitch, extent_width, exclude, .. } => {
+                ElementKind::MapFrame { center, scale, shape, grid, bearing, pitch, extent_width, exclude, frame_labels, .. } => {
                     // (Names stay whole, as a legend's do.)
                     cut |= exclude.len() > MAX_FRAME_EXCLUDED;
                     exclude.truncate(MAX_FRAME_EXCLUDED);
+                    if frame_labels.len() > MAX_FRAME_LABELS {
+                        cut = true;
+                        while frame_labels.len() > MAX_FRAME_LABELS {
+                            frame_labels.pop_last();
+                        }
+                    }
                     *scale = finite_or(*scale, 50_000_000.0).clamp(MIN_FRAME_SCALE, MAX_FRAME_SCALE);
                     *extent_width = finite_or(*extent_width, INDICATOR_WIDTH).clamp(MIN_INDICATOR_WIDTH, MAX_INDICATOR_WIDTH);
                     *bearing = crate::camera::normalize_bearing(*bearing);
@@ -3347,6 +3388,7 @@ mod tests {
             bearing: 0.0,
             pitch: 0.0,
             exclude,
+            frame_labels: Default::default(),
         };
         let mut l = Layout::new("Layout", 297.0, 210.0);
         let whole = l.add("Map Frame", (10.0, 10.0, 200.0, 150.0), frame(Vec::new()));
@@ -3363,7 +3405,7 @@ mod tests {
             let older = serde_json::from_str::<Layout>(&file).unwrap_err().to_string();
             assert!(older.contains("this layout needs ARutGIS 0.7.0 or later"), "{older}");
             let head: serde_json::Value = serde_json::from_str(&file).unwrap();
-            assert_eq!((head["format"].as_u64(), head.get("elements")), (Some(u64::from(FILE_FORMAT)), None));
+            assert_eq!((head["format"].as_u64(), head.get("elements")), (Some(u64::from(l.file_format())), None));
             assert_eq!(&Layout::from_file(&file).unwrap(), l);
         };
         refused(&l);
@@ -3397,6 +3439,27 @@ mod tests {
         assert!(!l.clamp().is_empty());
         assert_eq!(l.frame_exclude(locator).len(), MAX_FRAME_EXCLUDED);
         assert!(l.clamp().is_empty(), "nothing more to repair");
+        // Labels chosen by a frame: kept by name, written as format 4, which 0.7.0 to 0.7.5
+        // refuse; a layout without any stays format 3.
+        assert!(!l.chooses_frame_labels() && l.file_format() == PLAIN_FILE_FORMAT);
+        if let Some(ElementKind::MapFrame { frame_labels, .. }) = l.element_mut(locator).map(|e| &mut e.kind) {
+            frame_labels.insert("Villages".into(), false);
+            frame_labels.insert("Provinces".into(), true);
+        }
+        assert!(l.chooses_frame_labels() && l.file_format() == FILE_FORMAT);
+        let text = l.to_file().unwrap();
+        assert!(text.contains("\"format\": 4") && text.contains("frame_labels"), "{text}");
+        let back = Layout::from_file(&text).unwrap();
+        assert_eq!(back.frame_labels(locator).map(|m| m.get("Villages").copied()), Some(Some(false)));
+        assert_eq!(back.frame_labels(locator).map(|m| m.get("Provinces").copied()), Some(Some(true)));
+        assert!(back.frame_labels(whole).is_some_and(BTreeMap::is_empty));
+        // More than a frame chooses are cut on reading, and said.
+        if let Some(ElementKind::MapFrame { frame_labels, .. }) = l.element_mut(locator).map(|e| &mut e.kind) {
+            *frame_labels = (0..=MAX_FRAME_LABELS).map(|i| (format!("Layer {i}"), i % 2 == 0)).collect();
+        }
+        assert!(!l.clamp().is_empty());
+        assert_eq!(l.frame_labels(locator).map(BTreeMap::len), Some(MAX_FRAME_LABELS));
+        assert!(l.clamp().is_empty(), "nothing more to repair");
     }
 
     #[test]
@@ -3417,6 +3480,7 @@ mod tests {
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
         let n = l.add("North Arrow", (215.0, 10.0, 15.0, 20.0), ElementKind::north_arrow(f));
@@ -3739,6 +3803,7 @@ mod tests {
                     bearing: 0.0,
                     pitch: 0.0,
                     exclude: Vec::new(),
+                    frame_labels: Default::default(),
                 },
             );
             let r = l.clamp();

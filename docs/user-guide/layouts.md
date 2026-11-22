@@ -198,6 +198,18 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   (`[]` draws every layer again). A project with layers left out of a frame says that it needs
   a reader that knows the choice (`frame-layers`): RustGIS, which doesn't, refuses it rather
   than draw every layer and save the project without the choice.
+- **The labels a frame draws**: beside each vector layer in the same **Layers** section, a
+  **Labels** checkbox, ticked when this frame draws the layer's labels. Untick it and the frame
+  draws the layer without its labels, so a locator shows where the area is without the map's
+  village or road names; tick it for a layer the map leaves unlabelled (a globe locator's copied
+  countries, say) and the frame labels it with the layer's own label classes. A layer with no
+  label field has it greyed: choose its field in Labeling first. The map, and other frames
+  showing it, keep their labels; ticking it back to what the map does leaves no choice of the
+  frame's. Scripts give the same with `"frameLabels": {"Villages": false, "Provinces": true}` on
+  `layout.update` (`null` for a layer as the map draws it, `{}` for every layer). A project
+  with a frame that chooses labels requires `frame-labels`, and its layout file is written as
+  format 4, which ARutGIS before 0.7.6 refuses rather than draw the map's labels and save the
+  layout without the choice.
 - **Grids**: the **Grid** section of a frame's properties turns the grid on and sets its
   **Interval** in degrees (**Auto** picks one from the frame's extent), its **Style** (full lines
   across the frame, ticks along its neatline only, or both, with the **Tick length**), its colour

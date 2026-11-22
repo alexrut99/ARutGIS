@@ -5647,10 +5647,18 @@ pub(crate) fn legends_follow_layer(s: &mut Session, old: &str, new: Option<&str>
                 follow(exclude);
             }
             // The frames that leave the layer out follow it as their legends do.
-            if let rustgis_map::layout::ElementKind::MapFrame { exclude, .. } = &mut e.kind
+            if let rustgis_map::layout::ElementKind::MapFrame { exclude, frame_labels, .. } = &mut e.kind
                 && frames.contains(&e.id)
             {
                 follow(exclude);
+                // Its labels chosen there too, unless another layer bears the new name (whose
+                // choice, or none, the renamed layer then shares); a removed layer's go.
+                let keys: Vec<String> = frame_labels.keys().filter(|n| n.eq_ignore_ascii_case(old)).cloned().collect();
+                let chosen = keys.iter().filter_map(|k| frame_labels.remove(k)).last();
+                if let (Some(n), Some(on), false) = (new, chosen, shared) {
+                    frame_labels.retain(|x, _| !x.eq_ignore_ascii_case(n));
+                    frame_labels.insert(n.to_string(), on);
+                }
             }
         }
     }

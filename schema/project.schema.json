@@ -1063,7 +1063,8 @@
           "scene-ruler",
           "scene-depth-exaggeration",
           "scene-ruler-step",
-          "scene-ruler-range"
+          "scene-ruler-range",
+          "frame-labels"
         ],
         "type": "string"
       },
@@ -1138,7 +1139,8 @@
     "scene-ruler",
     "scene-depth-exaggeration",
     "scene-ruler-step",
-    "scene-ruler-range"
+    "scene-ruler-range",
+    "frame-labels"
   ],
   "x-rustgis-reads-format": 2,
   "x-rustgis-writes-format": 2

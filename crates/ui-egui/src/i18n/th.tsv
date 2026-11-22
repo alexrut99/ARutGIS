@@ -5396,3 +5396,6 @@ The height of its top, metres above sea level. Auto: the ground at its corner	�
 Marks counted from	เริ่มนับขีดที่
 A mark at this height and every step up and down from it. Auto: 0 m	มีขีดที่ความสูงนี้ และทุกระยะขีดขึ้นและลงจากจุดนี้ อัตโนมัติ: 0 ม.
 All Automatic	อัตโนมัติทั้งหมด
+Draw this layer's labels in this map frame. The map, and other frames showing it, keep their labels either way.	วาดป้ายชื่อของชั้นข้อมูลนี้ในกรอบแผนที่นี้ ตัวแผนที่และกรอบอื่นที่แสดงแผนที่เดียวกันยังแสดงป้ายชื่อตามเดิม
+This layer has no labels to draw: choose its label field in Labeling first	ชั้นข้อมูลนี้ยังไม่มีป้ายชื่อ ให้เลือกฟิลด์ป้ายชื่อในแผงการติดป้ายชื่อก่อน
+A project with labels chosen in a map frame opens in ARutGIS 0.7.6 and later.	โปรเจกต์ที่เลือกป้ายชื่อเฉพาะกรอบแผนที่ต้องเปิดด้วย ARutGIS 0.7.6 ขึ้นไป

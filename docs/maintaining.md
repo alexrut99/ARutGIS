@@ -78,13 +78,18 @@ same files. New and changed code follows these rules; not every existing reader 
     (0.7.1) is a map's 3D scene; `scene-ruler` (0.7.2) that scene's Height Ruler turned off;
     `scene-depth-exaggeration` (0.7.3) what is under its lowest ground stretched;
     `scene-ruler-step` (0.7.4) its Height Ruler marked at a step asked; `scene-ruler-range`
-    (0.7.5) that ruler between heights asked, or its marks counted from one.
+    (0.7.5) that ruler between heights asked, or its marks counted from one; `frame-labels`
+    (0.7.6) a layout's map frame that labels a layer, or leaves its labels out, whatever its map
+    does. A layout file holding such a frame is written as format 4 (3 otherwise), which 0.7.0
+    to 0.7.5 refuse.
   - ARutGIS 0.6.2 and 0.6.3 wrote format 2 for a project with such a frame, and 1 otherwise,
     with no `requires`. They open a project ARutGIS 0.7.0 saved without looking at what it
     requires.
   - A layout file (`.rgislayout`) has a format of its own (`layout::FILE_FORMAT`), read up to
-    it: 3 from ARutGIS 0.7.0 on, whatever the layout holds, since 0.6.3 and older would read past
-    what 0.7.0 saves (a dashed outline, a legend's labels) and save the layout without it. 0.6.2
+    it: 3 from ARutGIS 0.7.0 on (`layout::PLAIN_FILE_FORMAT`), since 0.6.3 and older would read
+    past what 0.7.0 saves (a dashed outline, a legend's labels) and save the layout without it;
+    4 from 0.7.6 on for a layout whose map frame chooses its layers' labels
+    (`Layout::file_format`), which 0.7.0 to 0.7.5 would read past, and 3 otherwise. 0.6.2
     and 0.6.3 wrote 2 for a layout with a frame leaving layers out and no format otherwise, and
     refuse one past 2. Versions before 0.6.2 read a layout file without looking at its format,
     so a file holds its layout one level down (`Layout::to_file`): they find no layout in it

@@ -536,6 +536,7 @@ fn layout_export_keeps_all_drawn_legend_classes() {
             bearing: 0.0,
             pitch: 0.0,
             exclude: Vec::new(),
+            frame_labels: Default::default(),
         },
     );
     page.add(
@@ -1163,6 +1164,7 @@ fn layout_export_rejects_unopened_local_shapefiles_and_required_masks() {
                 bearing: 0.0,
                 pitch,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
         for masked in [false, true] {
