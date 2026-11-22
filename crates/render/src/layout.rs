@@ -333,7 +333,7 @@ fn draw_page(
         {
             let view = View { width: fw, height: fh, pixels_per_point: 1.0, camera: cam, sky: false };
             // (As the frame draws it: without the layers it leaves out, which aren't read for it.)
-            let framed = Without::new(map, layout.frame_exclude(*f));
+            let framed = Without::new(map, layout.frame_exclude(*f), &BTreeMap::new());
             let map = &mut *framed.map;
             let lonlat = crate::view_lonlat(map, &view);
             let scale = map.ground_res_at(&cam) / rustgis_geom::PIXEL_M;
@@ -385,7 +385,7 @@ fn draw_page(
         };
         let Some(r) = Rect::from_xywh(x, y, ew.max(1.0), eh.max(1.0)) else { continue };
         match &e.kind {
-            ElementKind::MapFrame { shape, grid, extent_of, extent_color, extent_width, exclude, .. } => {
+            ElementKind::MapFrame { shape, grid, extent_of, extent_color, extent_width, exclude, frame_labels, .. } => {
                 let Some(&(_, mi, cam, fw, fh)) = frame(e.id) else {
                     placeholder(target, r, "Missing map", ppp);
                     continue;
@@ -398,7 +398,8 @@ fn draw_page(
                 // clear of the grid's labels; those that go outside the frame come back for the
                 // page to draw.
                 let grid = grid.as_ref().map(|g| (g, layout.decimal_comma));
-                let Some((mut frame_pm, outside)) = frame_canvas(map, exclude, cam, fw, fh, fppp, target.is_recording(), pending, grid)
+                let Some((mut frame_pm, outside)) =
+                    frame_canvas(map, (exclude, frame_labels), cam, fw, fh, fppp, target.is_recording(), pending, grid)
                 else {
                     if frame_requires_complete(map, &view) {
                         return None;
@@ -411,7 +412,7 @@ fn draw_page(
                 let too_large = frame_pm.overflowed() || page_cost.saturating_add(frame_pm.recorded_cost()) > crate::vector::max_cost();
                 if frame_pm.is_recording()
                     && too_large
-                    && let Some((pixels, _)) = frame_canvas(map, exclude, cam, fw, fh, fppp, false, pending, grid)
+                    && let Some((pixels, _)) = frame_canvas(map, (exclude, frame_labels), cam, fw, fh, fppp, false, pending, grid)
                 {
                     frame_pm = pixels;
                     if let Some(list) = record.as_deref_mut() {
@@ -659,24 +660,40 @@ fn draw_page(
 /// A map frame's map, `w` × `h` points at `ppp` pixels a point, labels and attribution included:
 /// what a frame shows before its grid, indicator and outline. It waits for the map's tiles, as a
 /// page needs them all. Refuses a linked archive changed during the complete frame.
-pub fn frame_map(map: &mut Map, exclude: &[String], camera: rustgis_map::Camera, w: f64, h: f64, ppp: f64) -> Result<Pixmap, String> {
+pub fn frame_map(map: &mut Map, shows: FrameShows<'_>, camera: rustgis_map::Camera, w: f64, h: f64, ppp: f64) -> Result<Pixmap, String> {
     let revisions = crate::archive_revisions([&*map]);
-    let result = frame_canvas(map, exclude, camera, w, h, ppp, false, &mut false, None).map(|(c, _)| c.into_pixmap());
+    let result = frame_canvas(map, shows, camera, w, h, ppp, false, &mut false, None).map(|(c, _)| c.into_pixmap());
     revisions.finish([&*map], result, "could not draw the map frame")
 }
 
+/// What a map frame shows of its map: the layers it leaves out, and those it labels (`true`) or
+/// leaves unlabelled whatever the map does, by name.
+pub type FrameShows<'a> = (&'a [String], &'a BTreeMap<String, bool>);
+
 /// A map with the layers a frame leaves out (`exclude`, by name: its web layers too) hidden, and
-/// shown again when this is dropped: the map draws, and syncs what it streams, as the frame
-/// shows it, and is left as it was.
+/// the labels it chooses (`labels`) turned on or off, put back when this is dropped: the map
+/// draws, and syncs what it streams, as the frame shows it, and is left as it was.
 struct Without<'a> {
     map: &'a mut Map,
     layers: Vec<usize>,
     tiles: Vec<usize>,
+    /// The layers whose labels were turned to the other way.
+    labelled: Vec<usize>,
 }
 
 impl<'a> Without<'a> {
-    fn new(map: &'a mut Map, exclude: &[String]) -> Self {
+    fn new(map: &'a mut Map, exclude: &[String], labels: &BTreeMap<String, bool>) -> Self {
         let out = |name: &str| exclude.iter().any(|x| x.eq_ignore_ascii_case(name));
+        let mut labelled = Vec::new();
+        if !labels.is_empty() {
+            for (i, l) in map.layers.iter_mut().enumerate().filter(|(_, l)| !l.is_raster()) {
+                let asked = labels.iter().find(|(n, _)| n.eq_ignore_ascii_case(&l.name)).map(|(_, &on)| on);
+                if let Some(on) = asked.filter(|&on| on != l.labels.enabled) {
+                    l.labels.enabled = on;
+                    labelled.push(i);
+                }
+            }
+        }
         let (mut layers, mut tiles) = (Vec::new(), Vec::new());
         if !exclude.is_empty() {
             for (i, l) in map.layers.iter_mut().enumerate().filter(|(_, l)| l.visible && out(&l.name)) {
@@ -688,7 +705,7 @@ impl<'a> Without<'a> {
                 tiles.push(i);
             }
         }
-        Without { map, layers, tiles }
+        Without { map, layers, tiles, labelled }
     }
 }
 
@@ -704,6 +721,11 @@ impl Drop for Without<'_> {
                 t.visible = true;
             }
         }
+        for &i in &self.labelled {
+            if let Some(l) = self.map.layers.get_mut(i) {
+                l.labels.enabled = !l.labels.enabled;
+            }
+        }
     }
 }
 
@@ -714,7 +736,7 @@ impl Drop for Without<'_> {
 /// still on their way (in the browser, which doesn't wait for them).
 fn frame_canvas(
     map: &mut Map,
-    exclude: &[String],
+    (exclude, labels): FrameShows<'_>,
     camera: rustgis_map::Camera,
     w: f64,
     h: f64,
@@ -724,7 +746,7 @@ fn frame_canvas(
     grid: Option<(&Grid, bool)>,
 ) -> Option<(Canvas, Vec<OutsideLabel>)> {
     let view = View { width: w, height: h, pixels_per_point: ppp, camera, sky: false };
-    let shown = Without::new(map, exclude);
+    let shown = Without::new(map, exclude, labels);
     // Why its layers were drawn without their cast shadows is kept for the page's caller (see
     // `crate::shadows_said`).
     let (img, shadows) = crate::frame_with_shadows_to_come(|| {
@@ -739,9 +761,16 @@ fn frame_canvas(
 /// [`frame_map`] without waiting for tiles still on their way, for a preview drawn while the
 /// interface waits: a pan's preview, whose size is more than the frame's for the overscan slid
 /// under the pointer.
-pub fn frame_map_preview(map: &mut Map, exclude: &[String], camera: rustgis_map::Camera, w: f64, h: f64, ppp: f64) -> Option<Pixmap> {
+pub fn frame_map_preview(
+    map: &mut Map,
+    (exclude, labels): FrameShows<'_>,
+    camera: rustgis_map::Camera,
+    w: f64,
+    h: f64,
+    ppp: f64,
+) -> Option<Pixmap> {
     let view = View { width: w, height: h, pixels_per_point: ppp, camera, sky: false };
-    let shown = Without::new(map, exclude);
+    let shown = Without::new(map, exclude, labels);
     crate::render(&mut *shown.map, &view).map(|img| finish_frame(img, ppp, None).0.into_pixmap())
 }
 
@@ -5476,6 +5505,7 @@ mod tests {
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
         let rect = if orientation == Orientation::Vertical { (10.0, 10.0, 20.0, 80.0) } else { (10.0, 10.0, 80.0, 20.0) };
@@ -5566,6 +5596,7 @@ mod tests {
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             };
             l.add(&name, (5.0 + 20.0 * i as f64, 5.0, 18.0, 18.0), frame);
         }
@@ -5713,6 +5744,7 @@ mod tests {
             bearing: 0.0,
             pitch: 0.0,
             exclude: Vec::new(),
+            frame_labels: Default::default(),
         };
         let mut l = Layout::new("Layout", 100.0, 100.0);
         let main = l.add("Main", (60.0, 60.0, 30.0, 30.0), frame(Coord::new(20.0, 10.0), 5e7, None));
@@ -5752,6 +5784,7 @@ mod tests {
             bearing: 0.0,
             pitch: 0.0,
             exclude: exclude.iter().map(|n| n.to_string()).collect(),
+            frame_labels: Default::default(),
         };
         let mut l = Layout::new("Layout", 200.0, 120.0);
         // The locator at 5–55 mm, as `inset_pixels` reads; the main frame beside it.
@@ -5784,10 +5817,79 @@ mod tests {
                 .filter(|p| p.red().abs_diff(c.r()) < 40 && p.green().abs_diff(c.g()) < 40 && p.blue().abs_diff(c.b()) < 40)
                 .count()
         };
-        let whole = frame_map_preview(&mut maps[0], &[], cam, 140.0, 140.0, 1.0).unwrap();
-        let without = frame_map_preview(&mut maps[0], &["detail".to_string()], cam, 140.0, 140.0, 1.0).unwrap();
+        let whole = frame_map_preview(&mut maps[0], (&[], &BTreeMap::new()), cam, 140.0, 140.0, 1.0).unwrap();
+        let without = frame_map_preview(&mut maps[0], (&["detail".to_string()], &BTreeMap::new()), cam, 140.0, 140.0, 1.0).unwrap();
         assert!(near(&whole, detail) > 100 && near(&without, detail) == 0 && near(&without, land) > 1000);
         assert!(maps[0].layers.iter().all(|l| l.visible));
+    }
+
+    /// A map frame labels a layer, or leaves it unlabelled, whatever its map does, by name whatever
+    /// its case; the map, and another frame showing it, are left as they were.
+    #[test]
+    fn a_map_frame_labels_the_layers_it_is_told_to() {
+        use rustgis_data::{Dataset, Field, FieldType, Geometry, Value};
+        let mut map = Map::new("m");
+        map.basemap = rustgis_map::Basemap::Blank;
+        map.graticule = false;
+        let mut ds = Dataset::new("Land", GeometryType::Polygon, vec![Field::new("name", FieldType::Text)]);
+        let ring = [(-60.0, -60.0), (60.0, -60.0), (60.0, 60.0), (-60.0, 60.0), (-60.0, -60.0)].map(|(x, y)| Coord::new(x, y)).to_vec();
+        ds.push(Some(Geometry::Polygon(vec![vec![ring]])), vec![Value::Text("MMMMMMMM".into())]);
+        let id = map.add_dataset(ds);
+        if let Some(l) = map.layers.iter_mut().find(|l| l.id == id) {
+            let mut symbol = rustgis_map::Symbol::default_for(GeometryType::Polygon, 0);
+            (symbol.fill, symbol.stroke_width) = (Rgba::rgb(0xF0, 0xF0, 0xF0), 0.0);
+            l.renderer = rustgis_map::Renderer::Single(symbol);
+            l.labels.enabled = true;
+            l.labels.default.field = "name".into();
+            l.labels.default.size = 14.0;
+            l.labels.default.color = Rgba::rgb(0, 0, 0);
+        }
+        let frame = |labels: &[(&str, bool)]| ElementKind::MapFrame {
+            map: "m".into(),
+            center: Coord::new(0.0, 0.0),
+            scale: 2e8,
+            shape: FrameShape::Rectangle,
+            grid: None,
+            extent_of: None,
+            extent_color: rustgis_map::layout::INDICATOR_COLOR,
+            extent_width: rustgis_map::layout::INDICATOR_WIDTH,
+            bearing: 0.0,
+            pitch: 0.0,
+            exclude: Vec::new(),
+            frame_labels: labels.iter().map(|(n, on)| (n.to_string(), *on)).collect(),
+        };
+        // Dark pixels (the label's text) inside the left frame (5–55 mm) and the right (60–110).
+        let dark = |pm: &Pixmap, left: f64| {
+            let k = PT_PER_MM;
+            ((5.0 * k) as u32..(55.0 * k) as u32)
+                .flat_map(|y| ((left * k) as u32..((left + 50.0) * k) as u32).map(move |x| (x, y)))
+                .filter(|&(x, y)| rgb(pm, x, y).0 < 80)
+                .count()
+        };
+        let mut maps = [map];
+        let mut l = Layout::new("Layout", 200.0, 120.0);
+        l.add("Locator", (5.0, 5.0, 50.0, 50.0), frame(&[("LAND", false)]));
+        l.add("Main", (60.0, 5.0, 50.0, 50.0), frame(&[]));
+        let pm = render(&l, &mut maps, 96.0, &PageInfo::default()).unwrap();
+        assert_eq!(dark(&pm, 5.0), 0, "the locator leaves the label out");
+        assert!(dark(&pm, 60.0) > 20, "the other frame draws it");
+        assert!(maps[0].layers.iter().all(|l| l.labels.enabled), "the map labels it still");
+        // Unlabelled on the map: the frame that asks for its labels draws them, the other doesn't.
+        maps[0].layers.iter_mut().for_each(|l| l.labels.enabled = false);
+        let mut l = Layout::new("Layout", 200.0, 120.0);
+        l.add("Locator", (5.0, 5.0, 50.0, 50.0), frame(&[("land", true)]));
+        l.add("Main", (60.0, 5.0, 50.0, 50.0), frame(&[]));
+        let pm = render(&l, &mut maps, 96.0, &PageInfo::default()).unwrap();
+        assert!(dark(&pm, 5.0) > 20 && dark(&pm, 60.0) == 0);
+        assert!(maps[0].layers.iter().all(|l| !l.labels.enabled), "the map leaves it unlabelled still");
+        // A pan's preview is the frame's too.
+        let cam = frame_camera(&maps[0], Coord::new(0.0, 0.0), 2e8, 0.0, 0.0);
+        let on: BTreeMap<String, bool> = [("Land".to_string(), true)].into();
+        let count = |pm: &Pixmap| pm.pixels().iter().filter(|p| p.red() < 80 && p.alpha() > 200).count();
+        let labelled = frame_map_preview(&mut maps[0], (&[], &on), cam, 140.0, 140.0, 1.0).unwrap();
+        let plain = frame_map_preview(&mut maps[0], (&[], &BTreeMap::new()), cam, 140.0, 140.0, 1.0).unwrap();
+        assert!(count(&labelled) > 20 && count(&plain) == 0);
+        assert!(maps[0].layers.iter().all(|l| !l.labels.enabled));
     }
 
     /// Pixels inside the inset (5–55 mm) close to `c`.
@@ -6249,6 +6351,7 @@ Elaboração: RustGIS",
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
         let kind = ElementKind::Colorbar {
@@ -6373,6 +6476,7 @@ Elaboração: RustGIS",
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
         render(&l, &mut maps, 96.0, &PageInfo::default()).unwrap()
@@ -6413,6 +6517,7 @@ Elaboração: RustGIS",
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
         render(&l, &mut maps, 96.0, &PageInfo::default()).unwrap()
@@ -7272,6 +7377,7 @@ Elaboração: RustGIS",
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
         let (crimson, navy) = (Rgba::rgb(0xD0, 0x10, 0x10), Rgba::rgb(0x10, 0x10, 0xD0));

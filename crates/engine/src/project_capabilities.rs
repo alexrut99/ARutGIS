@@ -37,6 +37,11 @@ impl Project {
         if self.layouts.iter().any(rustgis_map::layout::Layout::leaves_layers_out) {
             required.push("frame-layers");
         }
+        // One that labels a layer, or leaves it unlabelled, whatever its map does (0.7.6): one
+        // that doesn't know of it would draw the map's labels, and save the layout without it.
+        if self.layouts.iter().any(rustgis_map::layout::Layout::chooses_frame_labels) {
+            required.push("frame-labels");
+        }
         required
     }
 }
@@ -156,6 +161,22 @@ mod tests {
         assert_eq!(serde_json::to_value(&p).unwrap()["requires"], json!(["normalized-legend-urls"]));
         let reopened = Project::from_json(&saved.to_string()).unwrap();
         assert_eq!(reopened.map().tiles[0].legends[0].url, url);
+    }
+
+    /// A locator's labels chosen by layer name are read, kept, and required again on saving;
+    /// without them nothing is required.
+    #[test]
+    fn frame_labels_are_read_from_a_project_and_required_again() {
+        let mut p = Project::from_json(include_str!("../../../schema/fixtures/frame_labels.rgis")).unwrap();
+        let chosen = p.layouts[0].frame_labels(1).cloned().unwrap_or_default();
+        assert_eq!((chosen.get("Villages"), chosen.get("Provinces")), (Some(&false), Some(&true)));
+        let saved = serde_json::to_value(&p).unwrap();
+        assert_eq!(saved["requires"], json!(["frame-labels"]));
+        assert_eq!(Project::from_json(&saved.to_string()).unwrap().layouts[0].frame_labels(1), Some(&chosen));
+        if let Some(rustgis_map::layout::ElementKind::MapFrame { frame_labels, .. }) = p.layouts[0].element_mut(1).map(|e| &mut e.kind) {
+            frame_labels.clear();
+        }
+        assert!(serde_json::to_value(&p).unwrap().get("requires").is_none());
     }
 
     /// Legacy files still open; a save names terrain features an older format-2 reader loses.

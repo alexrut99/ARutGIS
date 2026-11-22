@@ -5614,6 +5614,8 @@ pub(crate) fn legends_follow_layer(s: &mut Session, old: &str, new: Option<&str>
         None => exclude.retain(|x| !x.eq_ignore_ascii_case(old)),
     };
     let mut unlabelled = 0usize;
+    // Map frames whose choice of its labels it lost the same way.
+    let mut unchosen = 0usize;
     for layout in &mut s.project.layouts {
         let frames: Vec<u32> = layout
             .elements
@@ -5647,10 +5649,22 @@ pub(crate) fn legends_follow_layer(s: &mut Session, old: &str, new: Option<&str>
                 follow(exclude);
             }
             // The frames that leave the layer out follow it as their legends do.
-            if let rustgis_map::layout::ElementKind::MapFrame { exclude, .. } = &mut e.kind
+            if let rustgis_map::layout::ElementKind::MapFrame { exclude, frame_labels, .. } = &mut e.kind
                 && frames.contains(&e.id)
             {
                 follow(exclude);
+                // Its labels chosen there too, unless another layer bears the new name (whose
+                // choice, or none, the renamed layer then shares); a removed layer's go.
+                let keys: Vec<String> = frame_labels.keys().filter(|n| n.eq_ignore_ascii_case(old)).cloned().collect();
+                let chosen = keys.iter().filter_map(|k| frame_labels.remove(k)).last();
+                match (new, chosen, shared) {
+                    (Some(n), Some(on), false) => {
+                        frame_labels.retain(|x, _| !x.eq_ignore_ascii_case(n));
+                        frame_labels.insert(n.to_string(), on);
+                    }
+                    (Some(_), Some(_), true) => unchosen += 1,
+                    _ => {}
+                }
             }
         }
     }
@@ -5659,6 +5673,14 @@ pub(crate) fn legends_follow_layer(s: &mut Session, old: &str, new: Option<&str>
     if let Some(n) = new.filter(|_| unlabelled > 0) {
         s.notify(
             format!("'{old}', renamed '{n}', lost its label in {unlabelled} legend(s): another layer is called '{n}', and a legend labels layers by name"),
+            false,
+        );
+    }
+    if let Some(n) = new.filter(|_| unchosen > 0) {
+        s.notify(
+            format!(
+                "'{old}', renamed '{n}', lost the choice of its labels in {unchosen} map frame(s): another layer is called '{n}', and a frame chooses labels by name, so they draw as that one's"
+            ),
             false,
         );
     }

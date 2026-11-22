@@ -37502,7 +37502,7 @@ fn map_frames_leave_layers_out() {
     let file = dir.join("sheet.rgislayout");
     s.run("layout.save", &json!({"path": file.display().to_string()})).unwrap();
     let mut saved: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-    assert_eq!(saved["format"], json!(rustgis_map::layout::FILE_FORMAT));
+    assert_eq!(saved["format"], json!(rustgis_map::layout::PLAIN_FILE_FORMAT));
     assert_eq!(saved["layout"]["name"], json!(s.project.layouts[0].name));
     assert!(saved["width"].as_str().is_some_and(|why| why.contains("0.7.0")), "{saved}");
     assert!(saved.get("elements").is_none());
@@ -37514,10 +37514,10 @@ fn map_frames_leave_layers_out() {
     assert_eq!(s.project.layouts[earlier].frame_exclude(frame), ["Soils", "Cities"]);
     let copy = s.project.layouts[earlier].name.clone();
     s.run("layout.remove", &json!({"name": copy})).unwrap();
-    saved["format"] = json!(4);
+    saved["format"] = json!(rustgis_map::layout::FILE_FORMAT + 1);
     let count = s.project.layouts.len();
     let refused = s.run("layout.import", &json!({"text": saved.to_string()})).unwrap_err();
-    assert!(refused.contains("saved by a newer RustGIS (format 4)"), "{refused}");
+    assert!(refused.contains("saved by a newer RustGIS (format 5)"), "{refused}");
     assert_eq!(s.project.layouts.len(), count);
     // The layout itself, as RustGIS writes one, is of the format RustGIS's files share: one
     // that says 3 is from a RustGIS this version doesn't know, and refused too.
@@ -37547,10 +37547,98 @@ fn map_frames_leave_layers_out() {
     assert!(!requires(&mut s));
     s.run("layout.save", &json!({"layout": 0, "path": file.display().to_string()})).unwrap();
     let plain: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-    assert_eq!(plain["format"], json!(rustgis_map::layout::FILE_FORMAT));
+    assert_eq!(plain["format"], json!(rustgis_map::layout::PLAIN_FILE_FORMAT));
     assert!(plain["layout"]["elements"].is_array() && !plain["layout"].to_string().contains("exclude"), "{plain}");
     s.run("map.activate", &json!({"name": "World"})).unwrap();
     assert!(listed(&mut s) > short, "every layer listed again");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A map frame can label a layer, or leave its labels out, whatever its map does (a locator
+/// without the place names, or with the provinces'): checked against the map it shows, following
+/// a renamed or removed layer, undone, saved as requiring `frame-labels`, and written in a layout
+/// file of format 4, which ARutGIS before 0.7.6 refuses, only while a frame chooses some.
+#[test]
+fn map_frames_choose_their_layers_labels() {
+    let mut s = Session::new(sample::world_project());
+    s.run("layout.new", &json!({"name": "Sheet"})).unwrap();
+    let frame = s.project.layouts[0].first_frame().unwrap();
+    let chosen = |s: &Session| s.project.layouts[0].frame_labels(frame).cloned().unwrap_or_default().into_iter().collect::<Vec<_>>();
+    let requires = |s: &mut Session| {
+        let (text, _) = s.project.saved_text(None).unwrap();
+        let saved: Value = serde_json::from_str(&text).unwrap();
+        saved["requires"].as_array().is_some_and(|r| r.iter().any(|c| c == "frame-labels"))
+    };
+    assert!(chosen(&s).is_empty() && !requires(&mut s), "nothing a reader that doesn't know of it would lose");
+    let cities_labelled = s.map().layer_by_name("Cities").unwrap().labels.enabled;
+    // Names as the map spells them; merged with what it has; null as the map draws them.
+    s.run("layout.update", &json!({"element": frame, "frameLabels": {"cities": false}})).unwrap();
+    s.run("layout.update", &json!({"element": frame, "frameLabels": {"COUNTRIES": true, "Rivers": false}})).unwrap();
+    assert_eq!(chosen(&s), [("Cities".to_string(), false), ("Countries".to_string(), true), ("Rivers".to_string(), false)]);
+    s.run("layout.update", &json!({"element": frame, "frameLabels": {"rivers": null}})).unwrap();
+    assert_eq!(chosen(&s), [("Cities".to_string(), false), ("Countries".to_string(), true)]);
+    // A layer the map hasn't, a raster, not a choice, or an element that isn't a map frame: an
+    // error that changes nothing.
+    for bad in [json!({"Atlantis": true}), json!({"Cities": "no"}), json!(["Cities"]), json!(true)] {
+        assert!(s.run("layout.update", &json!({"element": frame, "frameLabels": bad})).is_err(), "{bad}");
+    }
+    let legend =
+        s.project.layouts[0].elements.iter().find(|e| matches!(e.kind, rustgis_map::layout::ElementKind::Legend { .. })).unwrap().id;
+    let refused = s.run("layout.update", &json!({"element": legend, "frameLabels": {"Cities": false}})).unwrap_err();
+    assert!(refused.contains("only map frames"), "{refused}");
+    assert_eq!(chosen(&s).len(), 2);
+    // Undone, the frame's choice is as it was.
+    s.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(chosen(&s), [("Cities".to_string(), false), ("Countries".to_string(), true), ("Rivers".to_string(), false)]);
+    s.run("edit.redo", &json!({})).unwrap();
+    // The map's own labels are left as they were.
+    assert_eq!(s.map().layer_by_name("Cities").unwrap().labels.enabled, cities_labelled);
+    // Saved, the project requires it, and reads back whole.
+    assert!(requires(&mut s));
+    assert!(crate::project::CAPABILITIES.contains(&"frame-labels"), "this version reads what it writes");
+    let (text, _) = s.project.saved_text(None).unwrap();
+    let back = crate::Project::from_json(&text).unwrap();
+    assert_eq!(back.layouts[0].frame_labels(frame).map(|m| m.len()), Some(2));
+    // A renamed layer keeps its choice; a removed one's goes.
+    s.run("layer.rename", &json!({"layer": "Cities", "name": "Towns"})).unwrap();
+    assert_eq!(chosen(&s), [("Countries".to_string(), true), ("Towns".to_string(), false)]);
+    s.run("layer.remove", &json!({"layer": "Towns"})).unwrap();
+    assert_eq!(chosen(&s), [("Countries".to_string(), true)]);
+    // Renamed onto a name another layer bears, it shares that one's choice and loses its own:
+    // said, once.
+    s.run("layout.update", &json!({"layout": 0, "element": frame, "frameLabels": {"Rivers": false}})).unwrap();
+    let mark = s.notices.len();
+    s.run("layer.rename", &json!({"layer": "Rivers", "name": "Countries"})).unwrap();
+    assert_eq!(chosen(&s), [("Countries".to_string(), true)]);
+    let said: Vec<&str> = s.notices[mark..].iter().map(|n| n.text.as_str()).filter(|t| t.contains("choice of its labels")).collect();
+    assert_eq!(
+        said,
+        [
+            "'Rivers', renamed 'Countries', lost the choice of its labels in 1 map frame(s): another layer is called 'Countries', and a frame chooses labels by name, so they draw as that one's"
+        ]
+    );
+    // Renamed to a name of its own, nothing is said.
+    let mark = s.notices.len();
+    s.run("layer.rename", &json!({"layer": "Lakes", "name": "Water"})).unwrap();
+    assert!(!s.notices[mark..].iter().any(|n| n.text.contains("choice of its labels")));
+    // A layout file holding it is of format 4, read back here; 0.7.5 reads up to 3.
+    let dir = std::env::temp_dir().join(format!("rustgis-frame-labels-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("sheet.rgislayout");
+    s.run("layout.save", &json!({"path": file.display().to_string()})).unwrap();
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(saved["format"], json!(4));
+    let imported = s.run("layout.import", &json!({"path": file.display().to_string()})).unwrap()["layout"].as_u64().unwrap() as usize;
+    assert_eq!(s.project.layouts[imported].frame_labels(frame).map(|m| m.len()), Some(1));
+    // {} leaves every layer's labels to the map: nothing is required, and the file is format 3.
+    s.run("layout.update", &json!({"layout": 0, "element": frame, "frameLabels": {}})).unwrap();
+    let copy = s.project.layouts[imported].name.clone();
+    s.run("layout.remove", &json!({"name": copy})).unwrap();
+    assert!(chosen(&s).is_empty() && !requires(&mut s));
+    s.run("layout.save", &json!({"layout": 0, "path": file.display().to_string()})).unwrap();
+    let plain: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(plain["format"], json!(3));
+    assert!(!plain.to_string().contains("frame_labels"), "{plain}");
     std::fs::remove_dir_all(&dir).ok();
 }
 

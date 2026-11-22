@@ -99,7 +99,7 @@ pub fn commands() -> Vec<C> {
             r##"{"layout"?, "kind": "northArrow"|"scaleBar"|"legend"|"colorbar"|"text"|"dynamicText"|"picture"|"table"|"chart"|"rectangle" (a neatline framing the page unless any of x, y, w, h is given)|"ellipse"|"circle"|"line"|"arrow"|"extentIndicator"|"grid", "frame"?: element id (default: the first map frame), "of"?: frame id (extentIndicator, which also takes "color" and "width" in points, default red and 2), "text"?, "size"?, "color"?: "#RRGGBB"|"#RRGGBBAA" (text, dynamicText, line, arrow, rectangle, ellipse, circle: its outline; extentIndicator; grid; scaleBar; refused for other kinds), "bold"?: bool (text), "italic"?: bool, "align"?: "left"|"center"|"right", "letterSpacing"?: points, -5 to 50 (text, dynamicText), "rotation"?: degrees anticlockwise about its centre, kept within -180 to 180 (every element but a line, which takes an angle), "font"?: "sans"|"serif"|an installed font family's name, as labels.fonts lists them (text, dynamicText, northArrow, scaleBar; a family not installed here is drawn in its fallback, and a serif where none is installed in the sans, with a warning; refused for other kinds), "fallback"?: "sans"|"serif" (a named font's, where it isn't installed; default its own class, else sans), "title"?: legend title (default "Legend"), "allClasses"?: bool (legend: every class, not only those the frame draws), "hideOther"?: bool (legend: leave out <all other values>), "showNoData"?: bool (legend: include Graduated Colors’ missing-value symbol; default false), "exclude"?: [layer names] (legend: layers it leaves out though the map draws them), "titleType"?, "layerType"?, "labelType"?: {size: points (0 the default), color: "#RRGGBB" ("" dark grey), bold, italic, font, fallback as for a text} (legend: the type of its title, of its layers' names and of its classes' labels), "patchWidth"?, "patchHeight"?: points (0 the default: 16 across, sized to the row down), "linePatch"?: "zigzag"|"straight"|"curve", "areaPatch"?: "rectangle"|"rounded"|"circle"|"natural", "rowSpacing"?: points added under each row, "layerNames"?: {layer name: the name the legend shows ("" its own)}, "classLabels"?: {layer name: {class label: the label the legend shows ("" its own)}} (legend; the layer and its symbology are left as they are), "layerTypes"?: {layer name: {size, color, bold, italic, font, fallback} (null: the legend's)}, "classTypes"?: {layer name: {class label: {size, color, …} (null: the legend's)}} (legend: one layer's name or one class's label in a type of its own, starting from the one it is shown in), "columns"?: 1..3 (legend: the columns its rows are laid in; default 1), "orientation"?: "horizontal"|"vertical" (colorbar), "ticks"?: 2..21 (colorbar: labelled values, ends included), "tickSide"?: "below"|"above"|"right"|"left" (colorbar), "reverse"?: bool (colorbar: high values first), "fill"?: "#RRGGBBAA" (rectangle, ellipse, circle, northArrow; scaleBar: its light parts (the alternating bars' light divisions, a hollow bar), default white; refused for other kinds), "width"?: outline width in points (rectangle, ellipse, circle; 0 for none) or line width in points (line, grid), "radius"?: mm, 0 to 50 (rectangle: rounded corners), "dash"?: [points, …] (line, arrow, and a rectangle's, ellipse's or circle's outline: dash, gap, … in turn, as layer.lineStrokes takes it, at most 8, each 0 to 500; an arrow's heads stay solid; [] or null for solid; refused, null too, for other kinds but a grid) | "solid"|"dashed"|"dotted" (grid: its lines), "dir"?: "horizontal"|"vertical"|"falling"|"rising" (line), "head"?: "none"|"end"|"start"|"both" (line; default "end" for an arrow), "angle"?: degrees anticlockwise from pointing right, centred on the page unless x or y is given (line, arrow; it sets the box and the direction, so w, h and dir are not used with it), "length"?: mm (line, arrow), "image"?: base64, "path"?: picture file, "layer"?: (table, chart; colorbar: a raster layer, default the top visible raster with a colour scale, not drawn by classes, which a legend lists), "field"?, "label"?, "rows"?, "step"?: degrees, or a measured grid's units (metres) (0 picks one), "type"?: "graticule" (latitudes and longitudes, default) | "measured" (eastings and northings in a projected system), "crs"?: a measured grid's coordinate system: EPSG:25832, WKT or a PROJ string ("" or none: the map's when projected, else the UTM zone at the frame's centre), "short"?: bool (a measured grid's labels as their kilometres' last two digits, 43 for 543000), "mgrs"?: bool (a measured grid labelled as MGRS: each 100 km square named with its grid zone designation, 32T MT, and the lines by their kilometres' last two digits; its crs a WGS 84 UTM zone by EPSG code, EPSG:32601–32660 or 32701–32760, or none: the map's when it is one, else the zone at the frame's centre), "outside"?: bool (grid: the labels outside the frame, as ArcGIS prints them; default inside it), "labels"?: bool (grid) | {"<layer>": "<label>"} (legend: what it shows instead of a layer's name, as in layout.update; a layer the map hasn't is refused), "style"?: "lines"|"ticks"|"linesAndTicks" (grid) or "classic"|"compass"|"triangle"|"star"|"needle"|"circle"|"simple"|"chevron"|"block"|"rose" (northArrow) or "alternating"|"doubleAlternating"|"hollow"|"stepped"|"line"|"lineDown"|"lineCross"|"ruler" (scaleBar), "tickLength"?: mm, "format"?: "decimal"|"dms", "hemisphere"?: bool (N/S/E/W rather than a sign), "edges"?: ["top","bottom","left","right"] (labelled edges), "labelOrientation"?: "horizontal"|"vertical", "labelFont"?: {size: points (0 for 8), color ("" dark grey), bold, italic, font, fallback} (grid labels' type), "halo"?: true|false|"auto"|"#RRGGBBAA" (grid labels; auto: white inside the frame, none outside), "labelOffset"?: mm (grid labels moved off the frame's edge), "edgeOrientations"?: {top, bottom, left, right: "horizontal"|"vertical"} (grid labels by edge; null: the sides as labelOrientation), "emphasis"?: bool (measured grid: the kilometres' figures large, the rest small, as topographic maps print them), "fullCorners"?: bool (measured grid: the labels nearest the corners whole), "suffix"?: "none"|"letter"|"metres" (measured grid: E/N or mE/mN after whole values), "minorTicks"?: 0..10 (grid: each step split into parts marked along the edges), "labelEvery"?: 1..10 (grid: every nth line labelled), "decimals"?: 0..6 | null (grid labels; null as many as the step needs), "dmsParts"?: "auto"|"degrees"|"minutes"|"seconds" (graticule labels in dms), "thousands"?: bool (measured grid: 543,000), "second"?: {grid options} | true | false (a second grid over the frame, with options of its own; a new one labels the top and right), "off"?: bool (grid; options not given keep the grid's), "outline"?: "#RRGGBB" (northArrow, or a rectangle's, ellipse's or circle's outline instead of color; refused for other kinds), "units"?: "auto"|"kilometers"|"meters"|"miles"|"feet"|"nauticalMiles", "divisions"?: 1..10, "subdivisions"?: 0..10 (the first division split), "division"?: each division's length in the units (metres when auto; 0 a round one that fits), "unitLabel"?: "abbreviation" (km) | "name" (Kilometers) | "thaiAbbreviation" (กม.) | "thai" (กิโลเมตร) | "custom" | "none", "unitText"?: the unit as typed (sets unitLabel custom), "unitPlace"?: "afterLabel"|"afterBar"|"above"|"below", "numbers"?: "above"|"below"|"ends"|"none", "altColor"?: the light parts, as "fill" (ARutGIS 0.5's name for it), "barHeight"?: points (0 sized to the element) (scaleBar, whose "color" is its lines, dark parts and labels, default #222222), "textSize"?: points (0 sized to the element), "textColor"?: "#RRGGBB" ("" the element's own) (northArrow letter, scaleBar numbers and unit, which take bold, italic, font and fallback as a text does; label is a north arrow's letter, default N, empty for none), "x"?, "y"?, "w"?, "h"?: mm}"##,
         ),
         C::new("layout.update", "Element Properties", "Publish › Element", update).inputs(update_inputs).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files)).params(
-            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line, rectangle, ellipse: its outline; scaleBar: its lines, dark divisions and labels; refused for other elements), "bold"?, "italic"?, "align"?, "letterSpacing"?, "wrapText"?: true (text: breaks each line wider than the element between its words, Thai ones too, as the element is after this call's other changes; the line breaks are kept in the text), "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, northArrow, scaleBar, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "showNoData"?: bool (legend; default false), "exclude"?: [layer names] (legend: layers it doesn't list; map frame: layers and web layers of its map it doesn't draw, as a locator leaves the map's detail out, and its legend leaves them out too; [] for every layer again; a project whose map frame leaves layers out says it requires frame-layers, and a RustGIS that doesn't know that refuses to open it), "titleType"?, "layerType"?, "labelType"?, "patchWidth"?, "patchHeight"?, "linePatch"?, "areaPatch"?, "rowSpacing"?, "layerNames"?, "classLabels"?, "layerTypes"?, "classTypes"? (legend, as in layout.addElement; the types given change only what they name, and the texts and types by layer or class given are merged with those set), "labels"?: {"<layer>": "<label>"|null} (legend: what it shows instead of a layer's name, up to 200 characters, a longer one is refused; each entry replaces that layer's label, null or "" shows its name again, {} every layer's; a layer the map hasn't is refused), "columns"?: 1..3 (legend), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse, and a scaleBar's fill; refused for other elements; for a rectangle or ellipse, color sets it when outline is not given; a scaleBar's fill is the alternating bar's light divisions), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dash"?: [points, …]|[]|null (line, rectangle, ellipse, as in layout.addElement; [] or null makes it solid; refused, null too, for other elements), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"?, "subdivisions"?, "division"?, "unitLabel"?, "unitText"?, "unitPlace"?, "numbers"?, "altColor"? (as "fill"), "barHeight"? (scaleBar; color its dark parts), "textSize"?, "textColor"? (northArrow, scaleBar: as in layout.addElement, with bold, italic, font, fallback), "label"?: a north arrow's letter ("" for none), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "layer"?: (colorbar: "" for the top visible raster with a colour scale, not drawn by classes), "field"?, "rows"?}"##,
+            r##"{"layout"?, "element": id, "x"?, "y"?, "w"?, "h"?: mm, "rotation"?: degrees anticlockwise about its centre (every element but a line, which takes an angle), "name"?, "visible"?, "locked"?: bool (a locked element takes no other change until unlocked; "locked": false unlocks it and may come with changes), "text"?, "size"?, "color"? (text, line, rectangle, ellipse: its outline; scaleBar: its lines, dark divisions and labels; refused for other elements), "bold"?, "italic"?, "align"?, "letterSpacing"?, "wrapText"?: true (text: breaks each line wider than the element between its words, Thai ones too, as the element is after this call's other changes; the line breaks are kept in the text), "font"?: "sans"|"serif"|an installed font family's name, "fallback"?: "sans"|"serif" (text, northArrow, scaleBar, as in layout.addElement; refused for other elements), "title"?, "allClasses"?: bool (legend), "hideOther"?: bool (legend), "showNoData"?: bool (legend; default false), "exclude"?: [layer names] (legend: layers it doesn't list; map frame: layers and web layers of its map it doesn't draw, as a locator leaves the map's detail out, and its legend leaves them out too; [] for every layer again; a project whose map frame leaves layers out says it requires frame-layers, and a RustGIS that doesn't know that refuses to open it), "titleType"?, "layerType"?, "labelType"?, "patchWidth"?, "patchHeight"?, "linePatch"?, "areaPatch"?, "rowSpacing"?, "layerNames"?, "classLabels"?, "layerTypes"?, "classTypes"? (legend, as in layout.addElement; the types given change only what they name, and the texts and types by layer or class given are merged with those set), "labels"?: {"<layer>": "<label>"|null} (legend: what it shows instead of a layer's name, up to 200 characters, a longer one is refused; each entry replaces that layer's label, null or "" shows its name again, {} every layer's; a layer the map hasn't is refused), "columns"?: 1..3 (legend), "orientation"?, "ticks"?, "tickSide"?, "reverse"?: (colorbar), "style"?: (northArrow, scaleBar), "fill"?, "outline"? (northArrow, rectangle, ellipse, and a scaleBar's fill; refused for other elements; for a rectangle or ellipse, color sets it when outline is not given; a scaleBar's fill is the alternating bar's light divisions), "radius"?: mm (rectangle: rounded corners), "width"?: points (rectangle, ellipse, line), "dash"?: [points, …]|[]|null (line, rectangle, ellipse, as in layout.addElement; [] or null makes it solid; refused, null too, for other elements), "dir"?, "head"?, "angle"?, "length"? (line: turned or sized about its centre, then moved by any x or y; dir does not come with angle or length), "units"?, "divisions"?, "subdivisions"?, "division"?, "unitLabel"?, "unitText"?, "unitPlace"?, "numbers"?, "altColor"? (as "fill"), "barHeight"? (scaleBar; color its dark parts), "textSize"?, "textColor"? (northArrow, scaleBar: as in layout.addElement, with bold, italic, font, fallback), "label"?: a north arrow's letter ("" for none), "map"?, "scale"?, "center"?: [lon, lat], "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85), "grid"?: {grid options as in layout.addElement} | false (map frame), "extentIndicator"?: {"color"?, "width"?: points} | false (map frame: its extent indicator's style, or removes it), "frameLabels"?: {"<layer>": true|false|null} (map frame: that layer's labels drawn in this frame, left out of it, or as its map draws them (null), whatever the map does, as a locator leaves the place names out or puts the provinces' in; merged with those it has, {} every layer's as the map's; the map and other frames showing it are left as they are; a project whose map frame chooses labels requires frame-labels, and a layout file with one is format 4, which ARutGIS before 0.7.6 refuses), "layer"?: (colorbar: "" for the top visible raster with a colour scale, not drawn by classes), "field"?, "rows"?}"##,
         ),
         C::new("layout.guides", "Guides", "Publish › Page Setup", guides).inputs(object_inputs).roles(&[]).effects(crate::policy::Effects::NONE).params(
             r#"{"layout"?, "x"?: [mm] (vertical guides, from the page's left edge), "y"?: [mm] (horizontal guides, from its top edge), "clear"?: bool (remove every guide first)}"#,
@@ -603,6 +603,7 @@ fn frame_kind(s: &Session, map: &str, w: f64, shape: FrameShape) -> ElementKind 
         bearing,
         pitch,
         exclude: Vec::new(),
+        frame_labels: Default::default(),
     }
 }
 
@@ -2350,6 +2351,7 @@ fn publication(s: &mut Session, p: &Value) -> CmdResult {
             bearing: 0.0,
             pitch: 0.0,
             exclude: Vec::new(),
+            frame_labels: Default::default(),
         },
     );
     // Over the map, clear of the graticule's labels (drawn inside the frame along its labelled
@@ -3191,6 +3193,7 @@ fn publication(s: &mut Session, p: &Value) -> CmdResult {
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
     }
@@ -4615,6 +4618,43 @@ fn left_out(input: &impl super::InputSource, map_name: &str, p: &Value, (who, mo
     Ok(Some(out))
 }
 
+/// A map frame's `frameLabels` from `p`, over those it has (`now`): `{"<layer>": true|false|null}`,
+/// each entry the layer's labels drawn, left out, or as the map `map_name` draws them (`null`),
+/// `{}` every layer's as the map's; `None` when not given. A layer the map hasn't, or a raster,
+/// is refused, and the names are kept as the map spells them.
+fn frame_labels_param(
+    input: &impl super::InputSource,
+    map_name: &str,
+    now: &BTreeMap<String, bool>,
+    p: &Value,
+) -> Result<Option<BTreeMap<String, bool>>, String> {
+    const WHAT: &str = r#"frameLabels is {"<layer>": true|false|null}: its labels drawn, left out, or as the map draws them"#;
+    let Some(v) = p.get("frameLabels").filter(|v| !v.is_null()) else { return Ok(None) };
+    let given = v.as_object().ok_or(WHAT)?;
+    let context = input.input_context();
+    let map = context.project.maps.iter().find(|m| m.name.eq_ignore_ascii_case(map_name)).ok_or_else(|| format!("no map '{map_name}'"))?;
+    let mut next = if given.is_empty() { BTreeMap::new() } else { now.clone() };
+    for (n, on) in given {
+        let layer = map.layer_by_name(n.trim()).ok_or_else(|| format!("no layer '{n}' in map '{map_name}'"))?;
+        if layer.is_raster() {
+            return Err(format!("'{}' is a raster, which has no labels", layer.name));
+        }
+        let on = match on {
+            Value::Null => None,
+            Value::Bool(b) => Some(*b),
+            _ => return Err(WHAT.into()),
+        };
+        next.retain(|k, _| !k.eq_ignore_ascii_case(&layer.name));
+        if let Some(on) = on {
+            next.insert(layer.name.clone(), on);
+        }
+    }
+    if next.len() > rustgis_map::layout::MAX_FRAME_LABELS {
+        return Err(format!("a map frame chooses the labels of at most {} layers", rustgis_map::layout::MAX_FRAME_LABELS));
+    }
+    Ok(Some(next))
+}
+
 /// The keys of a north arrow's letter's or a scale bar's numbers' type.
 const LABEL_KEYS: &[&str] = &["textSize", "textColor", "bold", "italic", "font", "fallback"];
 
@@ -5284,6 +5324,17 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             _ => None,
         }
     };
+    // A map frame's own choice of its layers' labels, put in over what it has.
+    let new_frame_labels = {
+        let l = s.project.layouts.get(li).ok_or("no layout")?;
+        match l.element(id).map(|e| &e.kind) {
+            Some(ElementKind::MapFrame { map, frame_labels, .. }) => {
+                frame_labels_param(s, map_name.as_deref().unwrap_or(map), frame_labels, p)?
+            }
+            _ if p.get("frameLabels").is_some_and(|v| !v.is_null()) => return Err("only map frames choose their layers' labels".into()),
+            _ => None,
+        }
+    };
     let new_columns = legend_columns_param(p)?;
     if p.get("showNoData").is_some_and(|v| !v.is_null())
         && !matches!(s.project.layouts.get(li).and_then(|l| l.element(id)).map(|e| &e.kind), Some(ElementKind::Legend { .. }))
@@ -5433,7 +5484,20 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
                 *reverse = v;
             }
         }
-        ElementKind::MapFrame { map, center, scale, grid, bearing, pitch, extent_of, extent_color, extent_width, exclude, .. } => {
+        ElementKind::MapFrame {
+            map,
+            center,
+            scale,
+            grid,
+            bearing,
+            pitch,
+            extent_of,
+            extent_color,
+            extent_width,
+            exclude,
+            frame_labels,
+            ..
+        } => {
             match new_indicator {
                 Some(None) => *extent_of = None,
                 Some(Some((c, w))) => (*extent_color, *extent_width) = (c, w),
@@ -5444,6 +5508,9 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             }
             if let Some(names) = new_exclude {
                 *exclude = names;
+            }
+            if let Some(chosen) = new_frame_labels {
+                *frame_labels = chosen;
             }
             if let Some(v) = f(p, "bearing") {
                 *bearing = rustgis_map::camera::normalize_bearing(v);

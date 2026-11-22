@@ -379,6 +379,7 @@ pub fn page_layout(s: &Session, pres: &Presentation, page: &Page) -> Layout {
                     bearing: *bearing,
                     pitch: *pitch,
                     exclude: Vec::new(),
+                    frame_labels: Default::default(),
                 },
             );
         }

@@ -1488,6 +1488,7 @@ pub(crate) mod tests {
                 bearing: 0.0,
                 pitch: 0.0,
                 exclude: Vec::new(),
+                frame_labels: Default::default(),
             },
         );
         let info = crate::layout::PageInfo::default();

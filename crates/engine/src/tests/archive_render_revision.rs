@@ -149,6 +149,7 @@ fn page(map: &Map) -> map::layout::Layout {
             bearing: 0.0,
             pitch: 0.0,
             exclude: Vec::new(),
+            frame_labels: Default::default(),
         },
     );
     page

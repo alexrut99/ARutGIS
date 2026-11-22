@@ -82,6 +82,7 @@ pub const CAPABILITIES: &[&str] = &[
     "scene-depth-exaggeration",
     "scene-ruler-step",
     "scene-ruler-range",
+    "frame-labels",
 ];
 /// The most entries a document's `requires` may list: past it the document is refused without
 /// the rest being read.
