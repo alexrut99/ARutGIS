@@ -135,6 +135,7 @@ struct Drawn {
     opacity: u64,
     ruler: bool,
     ruler_step: Option<u64>,
+    ruler_range: [Option<u64>; 3],
     size: [u32; 2],
 }
 
@@ -144,7 +145,7 @@ impl Key {
         s.camera = SceneCamera::default();
         s.ground_opacity = 1.0;
         s.ruler = true;
-        s.ruler_step = None;
+        (s.ruler_step, s.ruler_min, s.ruler_max, s.ruler_from) = (None, None, None, None);
         Key { scene: serde_json::to_string(&s).unwrap_or_default(), revision: app.session.revision, map: app.session.map().instance_id() }
     }
 }
@@ -435,27 +436,8 @@ fn shown_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
     {
         run_drawing_only(app, "scene.set", json!({"ruler": ruler}));
     }
-    // Its marks every so many true metres, or a round step that fits.
-    ui.add_enabled_ui(scene.ruler, |ui| {
-        ui.label(tl!("Ruler step"));
-        let auto = scene.ruler_step.is_none();
-        let mut step = scene.ruler_step.unwrap_or(100.0);
-        let r = ui
-            .add(
-                egui::DragValue::new(&mut step)
-                    .range(rustgis_engine::map::scene::MIN_RULER_STEP..=rustgis_engine::map::scene::MAX_HEIGHT)
-                    .speed(1.0)
-                    .max_decimals(1)
-                    .custom_formatter(move |v, _| if auto { tl!("Auto").to_string() } else { format!("{v} m") }),
-            )
-            .on_hover_text(tl!("True metres between the ruler's marks; where numbers don't fit, only every few are numbered"));
-        if r.changed() && Some(step) != scene.ruler_step {
-            run_drawing_only(app, "scene.set", json!({"rulerStep": step}));
-        }
-        if !auto && ui.small_button(tl!("Auto")).on_hover_text(tl!("A round step that fits the ruler")).clicked() {
-            run_drawing_only(app, "scene.set", json!({"rulerStep": null}));
-        }
-    });
+    // Its marks and the heights it stands between, in a menu beside it.
+    ui.add_enabled_ui(scene.ruler, |ui| ruler_settings(app, ui, scene));
     ui.separator();
     if ui.button(tl!("Reset View")).clicked() {
         app.scene3d.live = None;
@@ -478,6 +460,88 @@ fn shown_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
         run(app, "scene.remove", Value::Null);
         app.scene3d.shown = false;
     }
+}
+
+/// The ruler's marks every so many true metres, the heights it stands between and the one its
+/// marks are counted from: each its own or automatic (a round step that fits, the block's base,
+/// the ground at its corner, 0 m). Marked ● when any is its own.
+fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
+    use rustgis_engine::map::scene::{MAX_HEIGHT, MIN_RULER_STEP};
+    let asked = scene.ruler_step.is_some() || scene.ruler_min.is_some() || scene.ruler_max.is_some() || scene.ruler_from.is_some();
+    let label = if asked { format!("{} ●", tl!("Ruler Settings")) } else { tl!("Ruler Settings").to_string() };
+    // Where an automatic one starts from when dragged: the block's base, its highest ground.
+    let (base, top) = app.scene3d.built.as_ref().map_or((0.0, 1000.0), |(_, b)| (b.height_of(b.z_range.0), b.height_of(b.z_range.1)));
+    // Each end kept below the other as it is, so nothing dragged is refused; an automatic one
+    // starts from a whole metre.
+    let (lo, hi) = (scene.ruler_min.unwrap_or(base), scene.ruler_max.unwrap_or(top));
+    ui.menu_button(label, |ui| {
+        let mut set: Option<Value> = None;
+        egui::Grid::new("scene3d_ruler").num_columns(3).spacing([8.0, 6.0]).show(ui, |ui| {
+            let rows: [(&str, &str, &str, Option<f64>, f64, std::ops::RangeInclusive<f64>); 4] = [
+                (
+                    "rulerStep",
+                    tl!("Ruler step"),
+                    tl!("True metres between the ruler's marks; where numbers don't fit, only every few are numbered. Auto: a round step that fits the ruler"),
+                    scene.ruler_step,
+                    100.0,
+                    MIN_RULER_STEP..=MAX_HEIGHT,
+                ),
+                (
+                    "rulerMin",
+                    tl!("Ruler bottom"),
+                    tl!("The height its foot stands at, metres above sea level. Auto: the block's base"),
+                    scene.ruler_min,
+                    lo.round().min(hi - MIN_RULER_STEP),
+                    -MAX_HEIGHT..=(hi - MIN_RULER_STEP),
+                ),
+                (
+                    "rulerMax",
+                    tl!("Ruler top"),
+                    tl!("The height of its top, metres above sea level. Auto: the ground at its corner"),
+                    scene.ruler_max,
+                    hi.round().max(lo + MIN_RULER_STEP),
+                    (lo + MIN_RULER_STEP)..=MAX_HEIGHT,
+                ),
+                (
+                    "rulerFrom",
+                    tl!("Marks counted from"),
+                    tl!("A mark at this height and every step up and down from it. Auto: 0 m"),
+                    scene.ruler_from,
+                    0.0,
+                    -MAX_HEIGHT..=MAX_HEIGHT,
+                ),
+            ];
+            for (key, name, tip, now, start, range) in rows {
+                ui.label(name).on_hover_text(tip);
+                let auto = now.is_none();
+                let mut v = now.unwrap_or(start);
+                let r = ui
+                    .add(
+                        egui::DragValue::new(&mut v)
+                            .range(range)
+                            .speed(1.0)
+                            .max_decimals(1)
+                            .custom_formatter(move |v, _| if auto { tl!("Auto").to_string() } else { format!("{v} m") }),
+                    )
+                    .on_hover_text(tip);
+                if r.changed() && Some(v) != now {
+                    set = Some(json!({key: v}));
+                }
+                if auto {
+                    ui.label("");
+                } else if ui.small_button(tl!("Auto")).clicked() {
+                    set = Some(json!({key: null}));
+                }
+                ui.end_row();
+            }
+        });
+        if asked && ui.button(tl!("All Automatic")).clicked() {
+            set = Some(json!({"rulerStep": null, "rulerMin": null, "rulerMax": null, "rulerFrom": null}));
+        }
+        if let Some(p) = set {
+            run_drawing_only(app, "scene.set", p);
+        }
+    });
 }
 
 /// The picture, turned by the mouse.
@@ -539,6 +603,7 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
             opacity: scene.ground_opacity.to_bits(),
             ruler: scene.ruler,
             ruler_step: scene.ruler_step.map(f64::to_bits),
+            ruler_range: [scene.ruler_min, scene.ruler_max, scene.ruler_from].map(|v| v.map(f64::to_bits)),
             size: [w, h],
         };
         // What is under the mouse, looked for again only when it or the picture moves.
@@ -1049,6 +1114,7 @@ mod tests {
         run_drawing_only(&mut app, "scene.set", json!({"groundOpacity": 0.4}));
         run_drawing_only(&mut app, "scene.set", json!({"ruler": false}));
         run_drawing_only(&mut app, "scene.set", json!({"rulerStep": 25}));
+        run_drawing_only(&mut app, "scene.set", json!({"rulerMin": -100, "rulerMax": 900, "rulerFrom": 5}));
         run_drawing_only(&mut app, "scene.camera", json!({"turn": 45}));
         frame(&mut app, &ctx);
         assert!(app.scene3d.building.is_none(), "{:?}", app.scene3d.message);

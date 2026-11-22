@@ -74,6 +74,16 @@ pub struct Scene {
     /// picture has no room to number are left unnumbered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ruler_step: Option<f64>,
+    /// The height (metres above sea level) of the ruler's foot. None: the block's base.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruler_min: Option<f64>,
+    /// The height (metres above sea level) of the ruler's top. None: the ground at its corner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruler_max: Option<f64>,
+    /// The height (metres above sea level) the ruler's marks are counted from: a mark there and
+    /// every step up and down from it. None: 0 m.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruler_from: Option<f64>,
 }
 
 fn one() -> f64 {
@@ -267,6 +277,9 @@ impl Scene {
             camera: SceneCamera::default(),
             ruler: true,
             ruler_step: None,
+            ruler_min: None,
+            ruler_max: None,
+            ruler_from: None,
         }
     }
 
@@ -308,6 +321,18 @@ impl Scene {
             && !(st.is_finite() && (MIN_RULER_STEP..=MAX_HEIGHT).contains(&st))
         {
             return Err(format!("rulerStep is metres, {MIN_RULER_STEP} to {MAX_HEIGHT}, or null"));
+        }
+        for (name, v) in [("rulerMin", self.ruler_min), ("rulerMax", self.ruler_max), ("rulerFrom", self.ruler_from)] {
+            if let Some(h) = v
+                && !(h.is_finite() && (-MAX_HEIGHT..=MAX_HEIGHT).contains(&h))
+            {
+                return Err(format!("{name} is metres above sea level, -{MAX_HEIGHT} to {MAX_HEIGHT}, or null"));
+            }
+        }
+        if let (Some(lo), Some(hi)) = (self.ruler_min, self.ruler_max)
+            && lo >= hi
+        {
+            return Err("rulerMin is below rulerMax".into());
         }
         if self.walls.a() != 255 {
             return Err("walls is an opaque colour, #RRGGBB".into());
@@ -401,6 +426,7 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["layers"][0], serde_json::json!({"layer": "บ่อบาดาล", "kind": "well", "depth": "ความลึก", "heightM": 10.0}));
         assert!(v.get("dem").is_none() && v.get("depth").is_none() && v.get("depthExaggeration").is_none() && v.get("rulerStep").is_none());
+        assert!(v.get("rulerMin").is_none() && v.get("rulerMax").is_none() && v.get("rulerFrom").is_none());
         let back: Scene = serde_json::from_value(v).unwrap();
         assert_eq!(back, s);
         // Only the box is needed.
@@ -425,6 +451,20 @@ mod tests {
         assert!(bad(&|s| s.ruler_step = Some(0.0)).contains("rulerStep"));
         assert!(bad(&|s| s.ruler_step = Some(f64::NAN)).contains("rulerStep"));
         assert!(bad(&|s| s.ruler_step = Some(30_000.0)).contains("rulerStep"));
+        assert!(bad(&|s| s.ruler_min = Some(f64::NAN)).contains("rulerMin"));
+        assert!(bad(&|s| s.ruler_max = Some(25_000.0)).contains("rulerMax"));
+        assert!(bad(&|s| s.ruler_from = Some(-25_000.0)).contains("rulerFrom"));
+        assert!(
+            bad(&|s| {
+                s.ruler_min = Some(500.0);
+                s.ruler_max = Some(500.0);
+            })
+            .contains("below")
+        );
+        // Below sea level is a height too.
+        let mut deep = Scene::new(bkk());
+        (deep.ruler_min, deep.ruler_max, deep.ruler_from) = (Some(-200.0), Some(1_500.0), Some(-200.0));
+        assert!(deep.check().is_ok());
         assert!(bad(&|s| s.ground_opacity = 1.5).contains("groundOpacity"));
         assert!(bad(&|s| s.depth = Some(-1.0)).contains("depth"));
         assert!(bad(&|s| s.walls = Rgba::new(1, 2, 3, 4)).contains("opaque"));

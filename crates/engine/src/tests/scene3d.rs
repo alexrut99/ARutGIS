@@ -129,6 +129,11 @@ fn a_saved_scene_is_read_back() {
     assert!(!scene.ruler, "its ruler turned off");
     assert_eq!(scene.depth_exaggeration, 3.0, "what is under the ground stretched");
     assert_eq!(scene.ruler_step, Some(25.0), "its ruler marked every 25 m");
+    assert_eq!(
+        (scene.ruler_min, scene.ruler_max, scene.ruler_from),
+        (Some(-200.0), Some(1500.0), Some(10.0)),
+        "from -200 m to 1,500 m, counted from 10 m"
+    );
     assert!(scene.check().is_ok());
 }
 
@@ -332,4 +337,46 @@ fn the_rulers_step_and_the_blocks_colour_are_set_and_kept() {
     s.run("scene.set", &json!({"rulerStep": null})).unwrap();
     let (text, _) = s.project.saved_text(None).unwrap();
     assert!(!text.contains("rulerStep") && !requires(&text).contains(&"scene-ruler-step".to_string()));
+}
+
+/// The ruler between heights asked and counted from one: set, saved, read back, required (0.7.4
+/// would stand it on the block and count from 0 m); a foot not below its top is refused, and
+/// null is automatic again, nothing written for it.
+#[test]
+fn the_rulers_heights_are_set_and_kept() {
+    let (mut s, dem) = with_wells();
+    s.run("scene.set", &json!({"dem": dem})).unwrap();
+    for key in ["rulerMin", "rulerMax", "rulerFrom"] {
+        for bad in [json!(25_000), json!(-25_000), json!("high")] {
+            assert!(s.run("scene.set", &json!({key: bad})).unwrap_err().contains(key), "{key} {bad}");
+        }
+    }
+    assert!(s.run("scene.set", &json!({"rulerMin": 900, "rulerMax": 400})).unwrap_err().contains("below"));
+    assert!(s.map().scene.as_ref().unwrap().ruler_min.is_none(), "nothing set by a refused change");
+    let v = s.run("scene.set", &json!({"rulerMin": -150, "rulerMax": 1200.5, "rulerFrom": 37})).unwrap();
+    assert_eq!((v["rulerMin"].as_f64(), v["rulerMax"].as_f64(), v["rulerFrom"].as_f64()), (Some(-150.0), Some(1200.5), Some(37.0)));
+    let (text, _) = s.project.saved_text(None).unwrap();
+    let requires = |text: &str| -> Vec<String> {
+        let doc: serde_json::Value = serde_json::from_str(text).unwrap();
+        doc["requires"].as_array().map(|r| r.iter().filter_map(|c| c.as_str().map(String::from)).collect()).unwrap_or_default()
+    };
+    assert!(requires(&text).contains(&"scene-ruler-range".to_string()), "{:?}", requires(&text));
+    let map_file = crate::project::map_file_bytes(s.map()).unwrap();
+    assert!(requires(std::str::from_utf8(&map_file).unwrap()).contains(&"scene-ruler-range".to_string()));
+    assert!(crate::project::CAPABILITIES.contains(&"scene-ruler-range"), "this version reads what it writes");
+    let mut t = Session::new(crate::Project::default());
+    t.run("project.openText", &json!({"text": text})).unwrap();
+    let back = t.map().scene.clone().unwrap();
+    assert_eq!((back.ruler_min, back.ruler_max, back.ruler_from), (Some(-150.0), Some(1200.5), Some(37.0)));
+    // Undone, the scene is as it was.
+    s.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.map().scene.as_ref().unwrap().ruler_max, None);
+    s.run("edit.redo", &json!({})).unwrap();
+    // One alone is enough to require it.
+    s.run("scene.set", &json!({"rulerMin": null, "rulerMax": null})).unwrap();
+    let (text, _) = s.project.saved_text(None).unwrap();
+    assert!(requires(&text).contains(&"scene-ruler-range".to_string()));
+    s.run("scene.set", &json!({"rulerFrom": null})).unwrap();
+    let (text, _) = s.project.saved_text(None).unwrap();
+    assert!(!text.contains("rulerFrom") && !text.contains("rulerMin") && !requires(&text).contains(&"scene-ruler-range".to_string()));
 }

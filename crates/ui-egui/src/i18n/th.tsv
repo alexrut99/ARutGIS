@@ -5387,5 +5387,12 @@ Block colour	สีบล็อก
 The colour of the block's sides and base	สีผนังและฐานของบล็อก
 The soil colour of a block diagram	สีดินแบบแผนภาพบล็อก
 Ruler step	ระยะขีดสเกล
-True metres between the ruler's marks; where numbers don't fit, only every few are numbered	ระยะห่างระหว่างขีดบนสเกลความสูง เป็นเมตรจริง ถ้าตัวเลขแน่นเกินไปจะเขียนตัวเลขเฉพาะบางขีด
-A round step that fits the ruler	ระยะขีดเป็นเลขกลมที่พอดีกับสเกล
+Ruler Settings	ตั้งค่าสเกล
+True metres between the ruler's marks; where numbers don't fit, only every few are numbered. Auto: a round step that fits the ruler	ระยะห่างระหว่างขีดบนสเกลความสูง เป็นเมตรจริง ถ้าตัวเลขแน่นเกินไปจะเขียนตัวเลขเฉพาะบางขีด อัตโนมัติ: ระยะเลขกลมที่พอดีกับสเกล
+Ruler bottom	ค่าต่ำสุด
+The height its foot stands at, metres above sea level. Auto: the block's base	ความสูงที่ปลายล่างของสเกล เป็นเมตรจากระดับทะเลปานกลาง อัตโนมัติ: ฐานบล็อก
+Ruler top	ค่าสูงสุด
+The height of its top, metres above sea level. Auto: the ground at its corner	ความสูงที่ปลายบนของสเกล เป็นเมตรจากระดับทะเลปานกลาง อัตโนมัติ: ผิวดินที่มุมบล็อก
+Marks counted from	เริ่มนับขีดที่
+A mark at this height and every step up and down from it. Auto: 0 m	มีขีดที่ความสูงนี้ และทุกระยะขีดขึ้นและลงจากจุดนี้ อัตโนมัติ: 0 ม.
+All Automatic	อัตโนมัติทั้งหมด
