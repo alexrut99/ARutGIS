@@ -218,11 +218,21 @@ the map's first) as its ground and that raster's extent, or the map's view witho
   from its base to the ground there, numbered in metres above sea level at its ends and at
   round heights between, spaced wider over the lowest ground when the relief is stretched. It
   is left off a corner too short on the picture to mark, as one is from straight above. It is
-  drawn on exported images and orbits too. **Ruler step** (`"rulerStep"`, true metres, 0.1 to
-  20,000) marks it every so many metres, counted from 0 m; where the numbers would crowd, only
-  round heights among the marks are numbered (25 m marks numbered at the hundreds, say) and the
-  rest are shorter, unnumbered, and a step so fine there would be over 400 marks is marked at a
-  multiple of it. **Auto** (`null`, the default) picks a round step that fits.
+  drawn on exported images and orbits too. **Ruler Settings** beside it (marked ● when any is
+  set) holds four, each back to automatic with its **Auto** (`null`), all of them with **All
+  Automatic**:
+  - **Ruler step** (`"rulerStep"`, true metres, 0.1 to 20,000) marks it every so many metres;
+    where the numbers would crowd, only round heights among the marks are numbered (25 m marks
+    numbered at the hundreds, say) and the rest are shorter, unnumbered, and a step so fine
+    there would be over 400 marks is marked at a multiple of it. Auto picks a round step that
+    fits.
+  - **Ruler bottom** (`"rulerMin"`) and **Ruler top** (`"rulerMax"`): the heights it stands
+    between, in metres above sea level, -20,000 to 20,000, the bottom below the top. Auto is the
+    block's base and the ground at its corner; either may be beyond the block, below its base or
+    up into the air. One asked is numbered as finely as it was set.
+  - **Marks counted from** (`"rulerFrom"`, metres above sea level): a mark at this height and
+    every step up and down from it, so 25 m marks counted from 437 m fall at 437, 462, 487 m….
+    Auto is 0 m.
 
 Drag to orbit, right-drag to move along the ground, Ctrl+drag (or the middle button) to go up
 or down, under the ground too, and the wheel to come nearer; the compass shows north. **Reset
@@ -234,7 +244,8 @@ what is said, as it is what is seen. The scene and its camera are saved with the
 with one requires `scene-3d`, so a RustGIS that can't keep it refuses to open it rather than drop
 it; one whose ruler is off also requires `scene-ruler`, which ARutGIS 0.7.1 doesn't know, and one
 stretched below the lowest ground `scene-depth-exaggeration`, which 0.7.2 doesn't, and one whose
-ruler has a step of its own `scene-ruler-step`, which 0.7.3 doesn't). A layer renamed is followed; one removed is left out of the scene, said.
+ruler has a step of its own `scene-ruler-step`, which 0.7.3 doesn't, and one whose ruler has
+heights of its own `scene-ruler-range`, which 0.7.4 doesn't). A layer renamed is followed; one removed is left out of the scene, said.
 
 **Export Image…** (`scene.export`, desktop) writes the scene from its camera as a PNG
 (`"width"` × `"height"` pixels, default 1600 × 1000, each pixel smoothed from `"smooth"`²
