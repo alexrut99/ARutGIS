@@ -471,7 +471,9 @@ fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
     let label = if asked { format!("{} ●", tl!("Ruler Settings")) } else { tl!("Ruler Settings").to_string() };
     // Where an automatic one starts from when dragged: the block's base, its highest ground.
     let (base, top) = app.scene3d.built.as_ref().map_or((0.0, 1000.0), |(_, b)| (b.height_of(b.z_range.0), b.height_of(b.z_range.1)));
-    let (lo, hi) = (scene.ruler_min.unwrap_or(base).round(), scene.ruler_max.unwrap_or(top).round());
+    // Each end kept below the other as it is, so nothing dragged is refused; an automatic one
+    // starts from a whole metre.
+    let (lo, hi) = (scene.ruler_min.unwrap_or(base), scene.ruler_max.unwrap_or(top));
     ui.menu_button(label, |ui| {
         let mut set: Option<Value> = None;
         egui::Grid::new("scene3d_ruler").num_columns(3).spacing([8.0, 6.0]).show(ui, |ui| {
@@ -489,7 +491,7 @@ fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
                     tl!("Ruler bottom"),
                     tl!("The height its foot stands at, metres above sea level. Auto: the block's base"),
                     scene.ruler_min,
-                    lo,
+                    lo.round().min(hi - MIN_RULER_STEP),
                     -MAX_HEIGHT..=(hi - MIN_RULER_STEP),
                 ),
                 (
@@ -497,7 +499,7 @@ fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
                     tl!("Ruler top"),
                     tl!("The height of its top, metres above sea level. Auto: the ground at its corner"),
                     scene.ruler_max,
-                    hi,
+                    hi.round().max(lo + MIN_RULER_STEP),
                     (lo + MIN_RULER_STEP)..=MAX_HEIGHT,
                 ),
                 (
