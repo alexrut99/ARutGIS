@@ -173,9 +173,7 @@ mod tests {
         let saved = serde_json::to_value(&p).unwrap();
         assert_eq!(saved["requires"], json!(["frame-labels"]));
         assert_eq!(Project::from_json(&saved.to_string()).unwrap().layouts[0].frame_labels(1), Some(&chosen));
-        if let Some(rustgis_map::layout::ElementKind::MapFrame { frame_labels, .. }) =
-            p.layouts[0].element_mut(1).map(|e| &mut e.kind)
-        {
+        if let Some(rustgis_map::layout::ElementKind::MapFrame { frame_labels, .. }) = p.layouts[0].element_mut(1).map(|e| &mut e.kind) {
             frame_labels.clear();
         }
         assert!(serde_json::to_value(&p).unwrap().get("requires").is_none());

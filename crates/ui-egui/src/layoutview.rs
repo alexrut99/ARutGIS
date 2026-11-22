@@ -3212,7 +3212,11 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
             .iter()
             .map(|n| {
                 m.layer_by_name(n).filter(|l| !l.is_raster()).map(|l| {
-                    let has = l.labels.enabled || l.labels.in_order().any(|c| !c.field.trim().is_empty());
+                    // A class labels by its field, or by a text expression in its place.
+                    let has = l.labels.enabled
+                        || l.labels
+                            .in_order()
+                            .any(|c| !c.field.trim().is_empty() || c.by.text.as_deref().is_some_and(|t| !t.trim().is_empty()));
                     let chosen = frame_labels.iter().find(|(k, _)| k.eq_ignore_ascii_case(n)).map(|(_, &on)| on);
                     (l.labels.enabled, has, chosen)
                 })

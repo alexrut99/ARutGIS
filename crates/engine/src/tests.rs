@@ -37604,6 +37604,23 @@ fn map_frames_choose_their_layers_labels() {
     assert_eq!(chosen(&s), [("Countries".to_string(), true), ("Towns".to_string(), false)]);
     s.run("layer.remove", &json!({"layer": "Towns"})).unwrap();
     assert_eq!(chosen(&s), [("Countries".to_string(), true)]);
+    // Renamed onto a name another layer bears, it shares that one's choice and loses its own:
+    // said, once.
+    s.run("layout.update", &json!({"layout": 0, "element": frame, "frameLabels": {"Rivers": false}})).unwrap();
+    let mark = s.notices.len();
+    s.run("layer.rename", &json!({"layer": "Rivers", "name": "Countries"})).unwrap();
+    assert_eq!(chosen(&s), [("Countries".to_string(), true)]);
+    let said: Vec<&str> = s.notices[mark..].iter().map(|n| n.text.as_str()).filter(|t| t.contains("choice of its labels")).collect();
+    assert_eq!(
+        said,
+        [
+            "'Rivers', renamed 'Countries', lost the choice of its labels in 1 map frame(s): another layer is called 'Countries', and a frame chooses labels by name, so they draw as that one's"
+        ]
+    );
+    // Renamed to a name of its own, nothing is said.
+    let mark = s.notices.len();
+    s.run("layer.rename", &json!({"layer": "Lakes", "name": "Water"})).unwrap();
+    assert!(!s.notices[mark..].iter().any(|n| n.text.contains("choice of its labels")));
     // A layout file holding it is of format 4, read back here; 0.7.5 reads up to 3.
     let dir = std::env::temp_dir().join(format!("rustgis-frame-labels-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
