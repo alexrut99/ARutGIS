@@ -1406,12 +1406,14 @@ fn ruler(canvas: &mut Canvas, b: &Built, eye: &Eye, ppp: f32, asked: Option<f64>
 }
 
 /// The decimals that write every multiple of `step` exactly: none for 25, one for 1.1 or 0.5,
-/// two for 0.25; three at most.
+/// two for 0.25 or 12,000.01; three at most. Within a micrometre, however high: a height's
+/// metres are not allowed to hide its centimetres.
 fn step_decimals(step: f64) -> usize {
     (0..3)
         .find(|&d| {
-            let scaled = step * 10f64.powi(d as i32);
-            (scaled - scaled.round()).abs() <= 1e-6 * scaled.max(1.0)
+            let ten = 10f64.powi(d as i32);
+            let scaled = step * ten;
+            (scaled - scaled.round()).abs() <= 1e-6 * ten
         })
         .unwrap_or(3)
 }
@@ -1921,6 +1923,10 @@ mod tests {
     #[test]
     fn a_ruler_stands_between_the_heights_asked_and_is_counted_from_one() {
         assert_eq!((value_decimals(0.0), value_decimals(-200.0), value_decimals(437.5)), (0, 0, 1));
+        // However high, a fraction is kept.
+        assert_eq!((value_decimals(1_200.001), value_decimals(12_000.01), value_decimals(-19_999.9)), (3, 2, 1));
+        assert_eq!(fmt_metres_to(12_000.01, value_decimals(12_000.01)), "12,000.01");
+        assert_eq!(step_decimals(20_000.0), 0);
         assert_eq!(fmt_metres_to(-0.4, 0), "0");
         assert_eq!(fmt_metres_to(-1_250.25, 2), "-1,250.25");
         let (m, mut s) = hill();
