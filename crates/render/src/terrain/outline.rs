@@ -50,10 +50,12 @@ pub struct Outline {
     narrow: usize,
 }
 
-/// The rows, layer, queries and outline read last ([`Outline::of`]), kept while the layer's rows
-/// stay the same: the outline is read again only after an edit or a new query. One that can't be
-/// read is kept too, so a block whose `where` picks nothing isn't looked for again every frame.
-type Kept = (Weak<Vec<Feature>>, String, Option<String>, Option<String>, Option<Arc<Outline>>);
+/// The rows, the system they are held in, layer, queries and outline read last
+/// ([`Outline::of`]), kept while the layer's rows and their system stay the same: the outline is
+/// read again only after an edit, a new query or a projection defined anew (which keeps the rows
+/// and changes their system). One that can't be read is kept too, so a block whose `where` picks
+/// nothing isn't looked for again every frame.
+type Kept = (Weak<Vec<Feature>>, rustgis_data::raster::Crs, String, Option<String>, Option<String>, Option<Arc<Outline>>);
 static LAST: Mutex<Vec<Kept>> = Mutex::new(Vec::new());
 /// How many outlines [`LAST`] keeps (maps drawn side by side, a layout's frames).
 const KEPT: usize = 4;
@@ -68,8 +70,9 @@ impl Outline {
         // layer's are.
         crate::note_held_read(l);
         let rows = l.dataset.features.allocation_key();
-        let same = |k: &Kept| k.0.ptr_eq(&rows) && k.1 == l.name && k.2 == l.definition_query && k.3.as_deref() == filter;
-        if let Some(o) = LAST.lock().ok().and_then(|last| last.iter().find(|k| same(k)).map(|k| k.4.clone())) {
+        let held = l.dataset.coord_crs();
+        let same = |k: &Kept| k.0.ptr_eq(&rows) && k.1 == held && k.2 == l.name && k.3 == l.definition_query && k.4.as_deref() == filter;
+        if let Some(o) = LAST.lock().ok().and_then(|last| last.iter().find(|k| same(k)).map(|k| k.5.clone())) {
             return o;
         }
         let keep = l.query_rows(&l.dataset);
@@ -96,7 +99,7 @@ impl Outline {
             if last.len() >= KEPT {
                 last.remove(0);
             }
-            last.push((rows, l.name.clone(), l.definition_query.clone(), filter.map(str::to_string), o.clone()));
+            last.push((rows, held, l.name.clone(), l.definition_query.clone(), filter.map(str::to_string), o.clone()));
         }
         o
     }

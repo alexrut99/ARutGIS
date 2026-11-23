@@ -1944,6 +1944,12 @@ mod tests {
         l.touch_geometry();
         let held = Outline::of(&m, "geo", None).expect("an outline").extent();
         assert!(held.iter().zip(plain).all(|(a, b)| (a - b).abs() < 0.01), "{held:?} {plain:?}");
+        // Its projection defined anew keeps its rows and their numbers, in another system: the
+        // outline is read again there, not the one kept for the old system.
+        let l = m.layers.iter_mut().find(|l| l.name == "geo").unwrap();
+        l.dataset.held_in = rustgis_data::raster::Crs::Epsg(32632);
+        let moved = Outline::of(&m, "geo", None).expect("an outline").extent();
+        assert!(moved.iter().zip(held).any(|(a, b)| (a - b).abs() > 1000.0), "{moved:?} {held:?}");
     }
 
     /// A held polygon block's polygon with a place that can't be given in longitude/latitude is
