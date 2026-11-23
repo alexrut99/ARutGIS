@@ -380,3 +380,51 @@ fn the_rulers_heights_are_set_and_kept() {
     let (text, _) = s.project.saved_text(None).unwrap();
     assert!(!text.contains("rulerFrom") && !text.contains("rulerMin") && !requires(&text).contains(&"scene-ruler-range".to_string()));
 }
+
+/// The scene's grid of eastings, northings and heights: off by default, turned on with its
+/// steps in range or automatic, kept in the project (which then requires `scene-grid`), undone,
+/// and drawn on an exported picture.
+#[test]
+fn the_scenes_grid_is_set_kept_and_exported() {
+    let (mut s, dem) = with_wells();
+    s.run("scene.set", &json!({"dem": dem})).unwrap();
+    assert!(!s.map().scene.as_ref().unwrap().grid, "off by default");
+    for (key, bad) in [("gridStep", json!(0.5)), ("gridStep", json!(3_000_000)), ("gridZStep", json!(0.01)), ("gridZStep", json!("tall"))] {
+        assert!(s.run("scene.set", &json!({key: bad})).unwrap_err().contains(key), "{key} {bad}");
+    }
+    assert!(s.run("scene.set", &json!({"grid": "yes"})).unwrap_err().contains("grid is true or false"));
+    let v = s.run("scene.set", &json!({"grid": true, "gridStep": 500, "gridZStep": 25.5})).unwrap();
+    assert_eq!((v["grid"].as_bool(), v["gridStep"].as_f64(), v["gridZStep"].as_f64()), (Some(true), Some(500.0), Some(25.5)));
+    let requires = |s: &mut Session| -> Vec<String> {
+        let (text, _) = s.project.saved_text(None).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        doc["requires"].as_array().map(|r| r.iter().filter_map(|c| c.as_str().map(String::from)).collect()).unwrap_or_default()
+    };
+    assert!(requires(&mut s).contains(&"scene-grid".to_string()), "{:?}", requires(&mut s));
+    assert!(crate::project::CAPABILITIES.contains(&"scene-grid"), "this version reads what it writes");
+    let (text, _) = s.project.saved_text(None).unwrap();
+    let mut t = Session::new(crate::Project::default());
+    t.run("project.openText", &json!({"text": text})).unwrap();
+    let back = t.map().scene.clone().unwrap();
+    assert_eq!((back.grid, back.grid_step, back.grid_z_step), (true, Some(500.0), Some(25.5)));
+    // Drawn on an export: the picture differs from one without it.
+    let dir = std::env::temp_dir().join(format!("arutgis-scene-grid-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let export = |s: &mut Session, name: &str| {
+        let path = dir.join(name);
+        s.run("scene.export", &json!({"path": path.display().to_string(), "width": 320, "height": 240})).unwrap();
+        std::fs::read(path).unwrap()
+    };
+    let with = export(&mut s, "with.png");
+    s.run("edit.undo", &json!({})).unwrap();
+    assert!(!s.map().scene.as_ref().unwrap().grid, "undone");
+    assert!(!requires(&mut s).contains(&"scene-grid".to_string()));
+    let without = export(&mut s, "without.png");
+    assert_ne!(with, without, "the grid is drawn on the picture");
+    // Automatic steps given back, then off: nothing of it saved.
+    s.run("edit.redo", &json!({})).unwrap();
+    s.run("scene.set", &json!({"grid": false, "gridStep": null, "gridZStep": null})).unwrap();
+    let (text, _) = s.project.saved_text(None).unwrap();
+    assert!(!text.contains("gridStep") && !text.contains("\"grid\"") && !requires(&mut s).contains(&"scene-grid".to_string()));
+    std::fs::remove_dir_all(&dir).ok();
+}

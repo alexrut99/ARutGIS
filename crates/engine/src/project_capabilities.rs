@@ -571,7 +571,7 @@ fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static
     let mut polygon = false;
     let (mut offline_area_id, mut paper, mut native, mut guided) = (false, false, false, false);
     // ARutGIS's 3D scene.
-    let (mut scene, mut ruler, mut deep, mut step, mut range) = (false, false, false, false, false);
+    let (mut scene, mut ruler, mut deep, mut step, mut range, mut grid) = (false, false, false, false, false, false);
     for map in maps {
         offline_area_id |= map.offline_area_id.is_some();
         // A blank basemap's paper colour (#2532), which an older reader would draw and save white.
@@ -594,6 +594,9 @@ fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static
         // Its ruler between heights asked, or counted from one (0.7.5): a reader from before
         // would stand it on the block and count from 0 m.
         range |= map.scene.as_ref().is_some_and(|s| s.ruler_min.is_some() || s.ruler_max.is_some() || s.ruler_from.is_some());
+        // Its grid of eastings, northings and heights (0.8.1): a reader from before would save
+        // the scene without it.
+        grid |= map.scene.as_ref().is_some_and(|s| s.grid || s.grid_step.is_some() || s.grid_z_step.is_some());
         if let Some(t) = &map.view.terrain {
             block |= t.block.is_some();
             // A round block (#2318), which an older reader would draw and save as a box; one cut
@@ -644,6 +647,7 @@ fn map_capabilities<'a>(maps: impl IntoIterator<Item = &'a Map>) -> Vec<&'static
         (deep, "scene-depth-exaggeration"),
         (step, "scene-ruler-step"),
         (range, "scene-ruler-range"),
+        (grid, "scene-grid"),
     ]
     .into_iter()
     .filter_map(|(used, name)| used.then_some(name))

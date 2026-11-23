@@ -116,6 +116,7 @@ pub const CAPABILITIES: &[&str] = &[
     "scene-depth-exaggeration",
     "scene-ruler-step",
     "scene-ruler-range",
+    "scene-grid",
     "frame-labels",
 ];
 /// A layer or table saved in a coordinate system of its own, not longitude/latitude

@@ -17,6 +17,9 @@ use tiny_skia::Pixmap;
 
 use crate::canvas::Canvas;
 
+mod grid;
+pub use grid::GridLook;
+
 /// The camera's field of view, top to bottom (degrees).
 const FOV: f64 = 40.0;
 /// The most cells along the longer side of the ground's mesh.
@@ -1076,7 +1079,7 @@ fn clip_near(vs: &[([f64; 3], [f32; 5]); 3], near: f64) -> Vec<([f64; 3], [f32; 
 /// samples (1: none, 2 or 3 for a smooth image to keep). Cancel (an export's) is looked at as it
 /// draws. Errors: a picture of no pixels, or Cancel.
 pub fn draw(b: &Built, cam: &SceneCamera, opacity: f64, w: u32, h: u32, ppp: f32, ss: u32) -> Result<Pixmap, String> {
-    draw_with(b, cam, Look { opacity, ruler: false, ruler_step: None, ruler_range: RulerRange::default() }, w, h, ppp, ss)
+    draw_with(b, cam, Look { opacity, ruler: false, ruler_step: None, ruler_range: RulerRange::default(), grid: None }, w, h, ppp, ss)
 }
 
 /// How a scene is looked at, besides from where: [`draw_with`].
@@ -1090,6 +1093,8 @@ pub struct Look {
     pub ruler_step: Option<f64>,
     /// The heights it stands from and to, and its marks are counted from.
     pub ruler_range: RulerRange,
+    /// A grid of eastings, northings and heights ([`Scene::grid`]), or none.
+    pub grid: Option<GridLook>,
 }
 
 /// The heights (metres above sea level) a ruler stands from and to, and its marks are counted
@@ -1112,6 +1117,7 @@ impl Look {
             ruler: scene.ruler,
             ruler_step: scene.ruler_step,
             ruler_range: RulerRange { min: scene.ruler_min, max: scene.ruler_max, from: scene.ruler_from },
+            grid: scene.grid.then_some(GridLook { step: scene.grid_step, z_step: scene.grid_z_step }),
         }
     }
 }
@@ -1180,6 +1186,13 @@ pub fn draw_with(b: &Built, cam: &SceneCamera, look: Look, w: u32, h: u32, ppp: 
             }
             data[i + 3] = 255;
         }
+    }
+    // The grid, where nothing nearer hides it; under the labels.
+    if let Some(g) = look.grid {
+        let small = Eye::of(b, cam, f64::from(w), f64::from(h));
+        let mut canvas = Canvas::from_pixmap(pm);
+        grid::draw(&mut canvas, b, &small, (&t, ss), ppp, g.or_ruler(look.ruler_step));
+        pm = canvas.into_pixmap();
     }
     // The labels that aren't behind something solid.
     if !b.labels.is_empty() {
@@ -1709,6 +1722,37 @@ mod tests {
         assert!(r.unwrap_err().contains("ancel"));
     }
 
+    /// The grid of eastings, northings and heights draws lines and numbers the plain picture
+    /// hasn't, on and around the block, and leaves the picture as it was when off.
+    #[test]
+    fn a_grid_of_eastings_northings_and_heights_is_drawn_when_asked() {
+        let (m, s) = hill();
+        let b = build(m, &s, small()).unwrap();
+        let cam = SceneCamera { heading: 30.0, tilt: 60.0, zoom: 1.0, target: [0.0, 0.0, 0.0] };
+        let look = |grid| Look { opacity: 1.0, ruler: false, ruler_step: None, ruler_range: RulerRange::default(), grid };
+        let plain = draw_with(&b, &cam, look(None), 480, 360, 1.0, 1).unwrap();
+        let gridded = draw_with(&b, &cam, look(Some(GridLook::default())), 480, 360, 1.0, 1).unwrap();
+        if let Ok(dir) = std::env::var("ARUTGIS_SCENE_GRID_PNG") {
+            gridded.save_png(format!("{dir}/grid.png")).unwrap();
+            let fine = draw_with(&b, &cam, look(Some(GridLook { step: Some(500.0), z_step: Some(50.0) })), 960, 720, 2.0, 2).unwrap();
+            fine.save_png(format!("{dir}/grid_fine.png")).unwrap();
+            let under = SceneCamera { heading: 200.0, tilt: 70.0, zoom: 1.4, target: [0.0, 0.0, 0.0] };
+            draw_with(&b, &under, look(Some(GridLook::default())), 960, 720, 2.0, 2)
+                .unwrap()
+                .save_png(format!("{dir}/grid_turned.png"))
+                .unwrap();
+        }
+        let differ = plain.pixels().iter().zip(gridded.pixels()).filter(|(a, c)| a != c).count();
+        assert!(differ > 1000, "the grid and its numbers are drawn: {differ} pixels");
+        assert_eq!(Look::of(&s).grid, None, "off by default");
+        let mut on = s.clone();
+        (on.grid, on.grid_step, on.grid_z_step) = (true, Some(250.0), Some(20.0));
+        assert_eq!(Look::of(&on).grid, Some(GridLook { step: Some(250.0), z_step: Some(20.0) }));
+        // Its heights at the ruler's step, when it asks none and the ruler asks one.
+        assert_eq!(GridLook::default().or_ruler(Some(25.0)).z_step, Some(25.0));
+        assert_eq!(GridLook { z_step: Some(10.0), ..GridLook::default() }.or_ruler(Some(25.0)).z_step, Some(10.0));
+    }
+
     /// A layer held in a system of its own (RustGIS 0.8 keeps a projected file's eastings and
     /// northings) stands up where the same layer in longitude/latitude does: its wells and their
     /// labels in the same places.
@@ -1920,8 +1964,16 @@ mod tests {
         let b = build(m, &s, small()).unwrap();
         let side = SceneCamera { heading: 30.0, tilt: 80.0, zoom: 1.1, target: [0.0, 0.0, 0.0] };
         let with = |ruler: bool, cam: &SceneCamera| {
-            draw_with(&b, cam, Look { opacity: 1.0, ruler, ruler_step: None, ruler_range: RulerRange::default() }, 400, 300, 1.0, 1)
-                .unwrap()
+            draw_with(
+                &b,
+                cam,
+                Look { opacity: 1.0, ruler, ruler_step: None, ruler_range: RulerRange::default(), grid: None },
+                400,
+                300,
+                1.0,
+                1,
+            )
+            .unwrap()
         };
         let (on, off) = (with(true, &side), with(false, &side));
         let differ = on.data().chunks(4).zip(off.data().chunks(4)).filter(|(a, c)| a != c).count();
@@ -1952,8 +2004,16 @@ mod tests {
         let b = build(m, &s, small()).unwrap();
         let side = SceneCamera { heading: 30.0, tilt: 80.0, zoom: 1.1, target: [0.0, 0.0, 0.0] };
         let with = |ruler_step: Option<f64>| {
-            draw_with(&b, &side, Look { opacity: 1.0, ruler: true, ruler_step, ruler_range: RulerRange::default() }, 400, 300, 1.0, 1)
-                .unwrap()
+            draw_with(
+                &b,
+                &side,
+                Look { opacity: 1.0, ruler: true, ruler_step, ruler_range: RulerRange::default(), grid: None },
+                400,
+                300,
+                1.0,
+                1,
+            )
+            .unwrap()
         };
         let auto = with(None);
         assert_ne!(with(Some(10.0)).data(), auto.data(), "marked every 10 m");
@@ -1977,7 +2037,7 @@ mod tests {
         let b = build(m, &s, small()).unwrap();
         let side = SceneCamera { heading: 30.0, tilt: 80.0, zoom: 1.1, target: [0.0, 0.0, 0.0] };
         let with = |ruler_step: Option<f64>, ruler_range: RulerRange| {
-            draw_with(&b, &side, Look { opacity: 1.0, ruler: true, ruler_step, ruler_range }, 400, 300, 1.0, 1).unwrap()
+            draw_with(&b, &side, Look { opacity: 1.0, ruler: true, ruler_step, ruler_range, grid: None }, 400, 300, 1.0, 1).unwrap()
         };
         let auto = with(None, RulerRange::default());
         let off = draw(&b, &side, 1.0, 400, 300, 1.0, 1).unwrap();
