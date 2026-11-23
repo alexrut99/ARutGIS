@@ -153,7 +153,7 @@ fn google_heights(polygons: &mut Value, grids: &[google25d::Grid]) -> usize {
 
 /// Overture's buildings as read from its GeoParquet files, as GeoJSON features with what 3D needs:
 /// their id, name, height, floors, class and subtype.
-pub fn overture_features(fields: &[rustgis_data::Field], features: &[rustgis_data::Feature]) -> Vec<Value> {
+pub fn overture_features(fields: &[rustgis_data::Field], features: rustgis_data::Features) -> Vec<Value> {
     let col = |n: &str| fields.iter().position(|f| f.name == n);
     let keep = [
         ("id", col("id")),
@@ -164,11 +164,11 @@ pub fn overture_features(fields: &[rustgis_data::Field], features: &[rustgis_dat
         ("subtype", col("subtype")),
     ];
     features
-        .iter()
+        .rows()
         .filter_map(|f| {
-            let g = f.geometry.as_ref()?;
+            let g = f.geometry()?;
             let props: serde_json::Map<String, Value> =
-                keep.iter().map(|(k, i)| ((*k).to_string(), i.and_then(|i| f.attrs.get(i)).map_or(Value::Null, |v| v.to_json()))).collect();
+                keep.iter().map(|(k, i)| ((*k).to_string(), i.map_or(Value::Null, |i| f.value(i).to_json()))).collect();
             Some(json!({"type": "Feature", "geometry": rustgis_data::io::geometry_to_geojson(g), "properties": props}))
         })
         .collect()
@@ -195,7 +195,7 @@ fn overture_buildings(area: [f64; 4]) -> Result<Vec<Value>, String> {
         let url = overture::parse_item(&fetch(&f.item)?)?;
         let (fields, batch) =
             rustgis_data::source::query_url_blocking(&url, vec!["names.primary".into()], req).map_err(|e| format!("Overture: {e}"))?;
-        out.extend(overture_features(&fields, &batch.features));
+        out.extend(overture_features(&fields, batch.features.into()));
     }
     Ok(out)
 }

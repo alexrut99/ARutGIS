@@ -43691,7 +43691,7 @@ fn map_frames_leave_layers_out() {
     saved["format"] = json!(rustgis_map::layout::FILE_FORMAT + 1);
     let count = s.project.layouts.len();
     let refused = s.run("layout.import", &json!({"text": saved.to_string()})).unwrap_err();
-    assert!(refused.contains("saved by a newer RustGIS (format 5)"), "{refused}");
+    assert!(refused.contains(&format!("saved by a newer RustGIS (format {})", rustgis_map::layout::FILE_FORMAT + 1)), "{refused}");
     assert_eq!(s.project.layouts.len(), count);
     // The layout itself, as RustGIS writes one, is of the format RustGIS's files share: one
     // that says 3 is from a RustGIS this version doesn't know, and refused too.

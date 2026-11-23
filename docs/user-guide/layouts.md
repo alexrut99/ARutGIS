@@ -240,7 +240,10 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   `layout.update` (`null` for a layer as the map draws it, `{}` for every layer). A project
   with a frame that chooses labels requires `frame-labels`, and its layout file is written as
   format 4, which ARutGIS before 0.7.6 refuses rather than draw the map's labels and save the
-  layout without the choice.
+  layout without the choice. A layout file holding what ARutGIS 0.8 took in from RustGIS 0.8 (an
+  element's background or colour, a text that wraps, a chart's grouping, look, classes or stack,
+  a map frame's border, a legend's, scale bar's or grid's text size) is format 5, which ARutGIS
+  0.7.6 refuses rather than save the layout without them.
 - **Grids**: the **Grid** section of a frame's properties turns the grid on and sets its
   **Interval** in degrees (**Auto** picks one from the frame's extent), its **Style** (full lines
   across the frame, ticks along its neatline only, or both, with the **Tick length**), its colour

@@ -888,10 +888,18 @@ pub const MAX_LEGEND_EXCLUDED: usize = 1000;
 /// The most layers a map frame leaves out.
 pub const MAX_FRAME_EXCLUDED: usize = 1000;
 
-/// The newest format of a layout file (`.rgislayout`) this version reads: 4, written for a layout
-/// with a map frame that chooses its layers' labels (0.7.6), which 0.7.0 to 0.7.5 would read
-/// past and save the layout without, so they refuse it; [`PLAIN_FILE_FORMAT`] otherwise.
-pub const FILE_FORMAT: u32 = 4;
+/// The newest format of a layout file (`.rgislayout`) this version reads: 5, written for a layout
+/// holding what ARutGIS 0.8.0 took in from RustGIS 0.8 ([`Layout::uses_rustgis_0_8`]: an
+/// element's background or ink, a text that wraps, a chart's grouping, look, classes or stack, a
+/// map frame's border, a legend's, scale bar's or grid's text size), which 0.7.6 would read past
+/// and save the layout without, so it refuses it; [`FRAME_LABELS_FILE_FORMAT`] or
+/// [`PLAIN_FILE_FORMAT`] otherwise.
+pub const FILE_FORMAT: u32 = 5;
+
+/// The format a layout file is written as when a map frame chooses its layers' labels (0.7.6)
+/// and it holds nothing newer: 0.7.0 to 0.7.5 would read past the choice and save the layout
+/// without it, so they refuse it.
+pub const FRAME_LABELS_FILE_FORMAT: u32 = 4;
 
 /// The format a layout file is written as, from ARutGIS 0.7.0 on, when it holds nothing newer
 /// ([`Layout::file_format`]): 0.7.0 saves what older versions don't know (a dashed outline, a
@@ -2023,7 +2031,7 @@ pub enum ElementKind {
         /// Layers of the map whose labels this frame draws or doesn't, by name, whatever the map
         /// does (`true` labels a layer the map leaves unlabelled, with its label classes): a
         /// locator's place names left out, or put in. A project with any requires `frame-labels`
-        /// of its reader, and a layout file with any is written as format 4.
+        /// of its reader, and a layout file with any is written as format 4 at least.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         frame_labels: BTreeMap<String, bool>,
     },
@@ -3696,11 +3704,37 @@ impl Layout {
         serde_json::to_string_pretty(&Nested { format: self.file_format(), layout: self, width: NEEDS_NEWER })
     }
 
-    /// The format its layout file is written as: [`FILE_FORMAT`] when a map frame chooses its
-    /// layers' labels, which ARutGIS before 0.7.6 doesn't know, else [`PLAIN_FILE_FORMAT`], which
-    /// 0.7.0 on reads.
+    /// The format its layout file is written as: [`FILE_FORMAT`] when it holds what ARutGIS
+    /// before 0.8.0 doesn't know ([`Layout::uses_rustgis_0_8`]), [`FRAME_LABELS_FILE_FORMAT`]
+    /// when a map frame chooses its layers' labels, which ARutGIS before 0.7.6 doesn't know, else
+    /// [`PLAIN_FILE_FORMAT`], which 0.7.0 on reads.
     pub fn file_format(&self) -> u32 {
-        if self.chooses_frame_labels() { FILE_FORMAT } else { PLAIN_FILE_FORMAT }
+        if self.uses_rustgis_0_8() {
+            FILE_FORMAT
+        } else if self.chooses_frame_labels() {
+            FRAME_LABELS_FILE_FORMAT
+        } else {
+            PLAIN_FILE_FORMAT
+        }
+    }
+
+    /// Whether it holds what ARutGIS took in from RustGIS 0.8 (the project capabilities
+    /// `layout-element-background`, `-ink`, `-wrap`, `layout-chart-*`, `layout-frame-border` and
+    /// `layout-text-size`): what ARutGIS 0.7.6 reads past in a layout file, and would save the
+    /// layout without.
+    pub fn uses_rustgis_0_8(&self) -> bool {
+        self.elements.iter().any(|e| {
+            let k = &e.kind;
+            e.background.is_some()
+                || k.ink().is_some()
+                || matches!(k, ElementKind::Text { wrap: true, .. })
+                || k.chart_uses_data_options()
+                || k.chart_uses_look_options()
+                || k.chart_uses_classes()
+                || k.chart_uses_stack()
+                || k.has_custom_border()
+                || k.has_custom_text_size()
+        })
     }
 
     /// Whether a map frame draws or leaves out some layer's labels whatever its map does, which
@@ -5244,9 +5278,20 @@ mod tests {
             frame_labels.insert("Villages".into(), false);
             frame_labels.insert("Provinces".into(), true);
         }
-        assert!(l.chooses_frame_labels() && l.file_format() == FILE_FORMAT);
+        assert!(l.chooses_frame_labels() && l.file_format() == FRAME_LABELS_FILE_FORMAT);
         let text = l.to_file().unwrap();
         assert!(text.contains("\"format\": 4") && text.contains("frame_labels"), "{text}");
+        // What ARutGIS took in from RustGIS 0.8, a map frame's border here, is format 5, which
+        // 0.7.6 refuses rather than save the layout without it.
+        assert!(!l.uses_rustgis_0_8());
+        if let Some(ElementKind::MapFrame { border_width, .. }) = l.element_mut(locator).map(|e| &mut e.kind) {
+            *border_width = 2.0;
+        }
+        assert!(l.uses_rustgis_0_8() && l.file_format() == FILE_FORMAT);
+        assert!(l.to_file().unwrap().contains("\"format\": 5"));
+        if let Some(ElementKind::MapFrame { border_width, .. }) = l.element_mut(locator).map(|e| &mut e.kind) {
+            *border_width = FRAME_BORDER_WIDTH;
+        }
         let back = Layout::from_file(&text).unwrap();
         assert_eq!(back.frame_labels(locator).map(|m| m.get("Villages").copied()), Some(Some(false)));
         assert_eq!(back.frame_labels(locator).map(|m| m.get("Provinces").copied()), Some(Some(true)));
