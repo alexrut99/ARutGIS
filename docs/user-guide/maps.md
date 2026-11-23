@@ -285,8 +285,9 @@ the map's first) as its ground and that raster's extent, or the map's view witho
   round heights between, spaced wider over the lowest ground when the relief is stretched. It
   is left off a corner too short on the picture to mark, as one is from straight above. It is
   drawn on exported images and orbits too. **Ruler Settings** beside it (marked ● when any is
-  set) holds four, each back to automatic with its **Auto** (`null`), all of them with **All
-  Automatic**:
+  set) holds four, each typed in its box in metres and set with Enter (or by leaving the box);
+  commas between thousands and a unit after it (`1,200 m`) are read, and an emptied box is back
+  to automatic, as its **Auto** (`null`) sets it; **All Automatic** sets them all back:
   - **Ruler step** (`"rulerStep"`, true metres, 0.1 to 20,000) marks it every so many metres;
     where the numbers would crowd, only round heights among the marks are numbered (25 m marks
     numbered at the hundreds, say) and the rest are shorter, unnumbered, and a step so fine
@@ -299,6 +300,17 @@ the map's first) as its ground and that raster's extent, or the map's view witho
   - **Marks counted from** (`"rulerFrom"`, metres above sea level): a mark at this height and
     every step up and down from it, so 25 m marks counted from 437 m fall at 437, 462, 487 m….
     Auto is 0 m.
+- **3D Grid** (`"grid"`, off by default): lines of eastings and northings (UTM metres, in the
+  WGS 84 zone of the scene's middle) and of heights (metres above sea level), like the box of a
+  3D chart: on the box's two far walls up to its top, on the block's near sides up to the
+  ground, on its base and draped over the ground, each shown only where nothing nearer hides it.
+  The eastings and northings are numbered along the foot of the nearer sides, with their axis
+  (`E (UTM 47N)`, `N (UTM 47N)`), and the heights up a side corner, one the ruler isn't on.
+  **Grid Settings** beside it sets, typed as the ruler's are, the **E/N step** (`"gridStep"`,
+  metres between eastings and northings, 1 to 2,000,000) and the **Height step**
+  (`"gridZStep"`, true metres, 0.1 to 20,000); empty, a round step that fits, the heights' at
+  the ruler's step when it has one. A step so fine there would be over 200 lines is drawn at a
+  multiple of it. It is drawn on exported images and orbits too.
 
 Drag to orbit, right-drag to move along the ground, Ctrl+drag (or the middle button) to go up
 or down, under the ground too, and the wheel to come nearer; the compass shows north. **Reset
@@ -311,7 +323,8 @@ with one requires `scene-3d`, so a RustGIS that can't keep it refuses to open it
 it; one whose ruler is off also requires `scene-ruler`, which ARutGIS 0.7.1 doesn't know, and one
 stretched below the lowest ground `scene-depth-exaggeration`, which 0.7.2 doesn't, and one whose
 ruler has a step of its own `scene-ruler-step`, which 0.7.3 doesn't, and one whose ruler has
-heights of its own `scene-ruler-range`, which 0.7.4 doesn't). A layer renamed is followed; one removed is left out of the scene, said.
+heights of its own `scene-ruler-range`, which 0.7.4 doesn't, and one with its grid on or a
+step set for it `scene-grid`, which 0.8.0 doesn't). A layer renamed is followed; one removed is left out of the scene, said.
 
 **Export Image…** (`scene.export`, desktop) writes the scene from its camera as a PNG
 (`"width"` × `"height"` pixels, default 1600 × 1000, each pixel smoothed from `"smooth"`²

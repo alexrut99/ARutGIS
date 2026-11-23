@@ -24,6 +24,8 @@ pub const MAX_LAYERS: usize = 32;
 pub const MAX_SIZE: f64 = 10_000.0;
 /// The least step between a scene's ruler marks (metres).
 pub const MIN_RULER_STEP: f64 = 0.1;
+/// The least step between a scene's grid lines of eastings and northings (metres).
+pub const MIN_GRID_STEP: f64 = 1.0;
 /// The tallest a raised polygon stands, and the deepest a well goes (metres).
 pub const MAX_HEIGHT: f64 = 20_000.0;
 
@@ -84,6 +86,21 @@ pub struct Scene {
     /// every step up and down from it. None: 0 m.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ruler_from: Option<f64>,
+    /// A grid of eastings, northings and heights (UTM metres, in the WGS 84 zone of the scene's
+    /// middle, and metres above sea level): lines on the box's far walls up to its top, on the
+    /// block's near sides, its base and over the ground, numbered along the near edges.
+    #[serde(default, skip_serializing_if = "is_no")]
+    pub grid: bool,
+    /// Metres between the grid's eastings and northings. None: a round step that fits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_step: Option<f64>,
+    /// True metres between the grid's heights. None: a round step that fits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_z_step: Option<f64>,
+}
+
+fn is_no(v: &bool) -> bool {
+    !*v
 }
 
 fn one() -> f64 {
@@ -280,6 +297,9 @@ impl Scene {
             ruler_min: None,
             ruler_max: None,
             ruler_from: None,
+            grid: false,
+            grid_step: None,
+            grid_z_step: None,
         }
     }
 
@@ -333,6 +353,16 @@ impl Scene {
             && lo >= hi
         {
             return Err("rulerMin is below rulerMax".into());
+        }
+        if let Some(st) = self.grid_step
+            && !(st.is_finite() && (MIN_GRID_STEP..=MAX_SIDE).contains(&st))
+        {
+            return Err(format!("gridStep is metres, {MIN_GRID_STEP} to {MAX_SIDE}, or null"));
+        }
+        if let Some(st) = self.grid_z_step
+            && !(st.is_finite() && (MIN_RULER_STEP..=MAX_HEIGHT).contains(&st))
+        {
+            return Err(format!("gridZStep is metres, {MIN_RULER_STEP} to {MAX_HEIGHT}, or null"));
         }
         if self.walls.a() != 255 {
             return Err("walls is an opaque colour, #RRGGBB".into());

@@ -78,7 +78,9 @@ same files. New and changed code follows these rules; not every existing reader 
     (0.7.1) is a map's 3D scene; `scene-ruler` (0.7.2) that scene's Height Ruler turned off;
     `scene-depth-exaggeration` (0.7.3) what is under its lowest ground stretched;
     `scene-ruler-step` (0.7.4) its Height Ruler marked at a step asked; `scene-ruler-range`
-    (0.7.5) that ruler between heights asked, or its marks counted from one; `frame-labels`
+    (0.7.5) that ruler between heights asked, or its marks counted from one; `scene-grid`
+    (0.8.1) that scene's grid of eastings, northings and heights turned on, or a step set for
+    it; `frame-labels`
     (0.7.6) a layout's map frame that labels a layer, or leaves its labels out, whatever its map
     does. A layout file holding such a frame is written as format 4 (3 otherwise), which 0.7.0
     to 0.7.5 refuse.

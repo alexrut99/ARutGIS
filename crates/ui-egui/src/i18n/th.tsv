@@ -5388,13 +5388,13 @@ The colour of the block's sides and base	สีผนังและฐานข
 The soil colour of a block diagram	สีดินแบบแผนภาพบล็อก
 Ruler step	ระยะขีดสเกล
 Ruler Settings	ตั้งค่าสเกล
-True metres between the ruler's marks; where numbers don't fit, only every few are numbered. Auto: a round step that fits the ruler	ระยะห่างระหว่างขีดบนสเกลความสูง เป็นเมตรจริง ถ้าตัวเลขแน่นเกินไปจะเขียนตัวเลขเฉพาะบางขีด อัตโนมัติ: ระยะเลขกลมที่พอดีกับสเกล
+True metres between the ruler's marks; where numbers don't fit, only every few are numbered. Empty: a round step that fits the ruler	ระยะห่างระหว่างขีดบนสเกลความสูง เป็นเมตรจริง ถ้าตัวเลขแน่นเกินไปจะเขียนตัวเลขเฉพาะบางขีด เว้นว่าง: ระยะเลขกลมที่พอดีกับสเกล
 Ruler bottom	ค่าต่ำสุด
-The height its foot stands at, metres above sea level. Auto: the block's base	ความสูงที่ปลายล่างของสเกล เป็นเมตรจากระดับทะเลปานกลาง อัตโนมัติ: ฐานบล็อก
+The height its foot stands at, metres above sea level. Empty: the block's base	ความสูงที่ปลายล่างของสเกล เป็นเมตรจากระดับทะเลปานกลาง เว้นว่าง: ฐานบล็อก
 Ruler top	ค่าสูงสุด
-The height of its top, metres above sea level. Auto: the ground at its corner	ความสูงที่ปลายบนของสเกล เป็นเมตรจากระดับทะเลปานกลาง อัตโนมัติ: ผิวดินที่มุมบล็อก
+The height of its top, metres above sea level. Empty: the ground at its corner	ความสูงที่ปลายบนของสเกล เป็นเมตรจากระดับทะเลปานกลาง เว้นว่าง: ผิวดินที่มุมบล็อก
 Marks counted from	เริ่มนับขีดที่
-A mark at this height and every step up and down from it. Auto: 0 m	มีขีดที่ความสูงนี้ และทุกระยะขีดขึ้นและลงจากจุดนี้ อัตโนมัติ: 0 ม.
+A mark at this height and every step up and down from it. Empty: 0 m	มีขีดที่ความสูงนี้ และทุกระยะขีดขึ้นและลงจากจุดนี้ เว้นว่าง: 0 ม.
 All Automatic	อัตโนมัติทั้งหมด
 Draw this layer's labels in this map frame. The map, and other frames showing it, keep their labels either way.	วาดป้ายชื่อของชั้นข้อมูลนี้ในกรอบแผนที่นี้ ตัวแผนที่และกรอบอื่นที่แสดงแผนที่เดียวกันยังแสดงป้ายชื่อตามเดิม
 This layer has no labels to draw: choose its label field in Labeling first	ชั้นข้อมูลนี้ยังไม่มีป้ายชื่อ ให้เลือกฟิลด์ป้ายชื่อในแผงการติดป้ายชื่อก่อน
@@ -5770,3 +5770,13 @@ As scale_linear, along a curve: 0.5 grows fast then slowly, 2 slowly then fast; 
 The map series index feature's id (integer), null outside a series page	รหัสของฟีเจอร์ดัชนีชุดแผนที่ (จำนวนเต็ม) เป็น null นอกหน้าชุดแผนที่
 The map series page's name (text), null outside a series page	ชื่อหน้าของชุดแผนที่ (ข้อความ) เป็น null นอกหน้าชุดแผนที่
 The map series page's number (integer, from 1), null outside a series page	หมายเลขหน้าของชุดแผนที่ (จำนวนเต็ม เริ่มจาก 1) เป็น null นอกหน้าชุดแผนที่
+3D Grid	กริด 3 มิติ
+Eastings and northings (UTM metres) and heights on the box's walls, the block's sides and the ground	เส้นพิกัด Easting, Northing (UTM เมตร) และความสูง บนผนังกล่อง ข้างบล็อก และผิวดิน
+Grid Settings	ตั้งค่ากริด
+E/N step	ระยะห่าง E/N
+Metres between the grid's eastings and northings (UTM). Empty: a round step that fits the scene	ระยะห่างเป็นเมตรระหว่างเส้น Easting และ Northing ของกริด (UTM) เว้นว่าง: ระยะเลขกลมที่พอดีกับฉาก
+Height step	ระยะห่างความสูง
+True metres between the grid's heights. Empty: the ruler's step when it has one, else a round step that fits	ระยะห่างระหว่างเส้นความสูงของกริด เป็นเมตรจริง เว้นว่าง: ใช้ระยะขีดของสเกลความสูงถ้าตั้งไว้ ไม่เช่นนั้นใช้ระยะเลขกลมที่พอดี
+Auto:	อัตโนมัติ:
+Empty the box: its automatic value	ล้างช่อง: ใช้ค่าอัตโนมัติ
+type a number of metres, or leave it empty for Auto	พิมพ์ตัวเลขเป็นเมตร หรือเว้นว่างไว้เพื่อใช้ค่าอัตโนมัติ

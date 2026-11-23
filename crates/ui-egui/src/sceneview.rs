@@ -136,6 +136,7 @@ struct Drawn {
     ruler: bool,
     ruler_step: Option<u64>,
     ruler_range: [Option<u64>; 3],
+    grid: Option<[Option<u64>; 2]>,
     size: [u32; 2],
 }
 
@@ -146,6 +147,7 @@ impl Key {
         s.ground_opacity = 1.0;
         s.ruler = true;
         (s.ruler_step, s.ruler_min, s.ruler_max, s.ruler_from) = (None, None, None, None);
+        (s.grid, s.grid_step, s.grid_z_step) = (false, None, None);
         Key { scene: serde_json::to_string(&s).unwrap_or_default(), revision: app.session.revision, map: app.session.map().instance_id() }
     }
 }
@@ -438,6 +440,15 @@ fn shown_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
     }
     // Its marks and the heights it stands between, in a menu beside it.
     ui.add_enabled_ui(scene.ruler, |ui| ruler_settings(app, ui, scene));
+    let mut grid = scene.grid;
+    if ui
+        .checkbox(&mut grid, tl!("3D Grid"))
+        .on_hover_text(tl!("Eastings and northings (UTM metres) and heights on the box's walls, the block's sides and the ground"))
+        .changed()
+    {
+        run_drawing_only(app, "scene.set", json!({"grid": grid}));
+    }
+    ui.add_enabled_ui(scene.grid, |ui| grid_settings(app, ui, scene));
     ui.separator();
     if ui.button(tl!("Reset View")).clicked() {
         app.scene3d.live = None;
@@ -463,85 +474,167 @@ fn shown_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
 }
 
 /// The ruler's marks every so many true metres, the heights it stands between and the one its
-/// marks are counted from: each its own or automatic (a round step that fits, the block's base,
-/// the ground at its corner, 0 m). Marked ● when any is its own.
+/// marks are counted from: each typed in metres, or left empty for its automatic one (a round step
+/// that fits, the block's base, the ground at its corner, 0 m), shown greyed in the box. Marked ●
+/// when any is its own.
 fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
-    use rustgis_engine::map::scene::{MAX_HEIGHT, MIN_RULER_STEP};
     let asked = scene.ruler_step.is_some() || scene.ruler_min.is_some() || scene.ruler_max.is_some() || scene.ruler_from.is_some();
     let label = if asked { format!("{} ●", tl!("Ruler Settings")) } else { tl!("Ruler Settings").to_string() };
-    // Where an automatic one starts from when dragged: the block's base, its highest ground.
-    let (base, top) = app.scene3d.built.as_ref().map_or((0.0, 1000.0), |(_, b)| (b.height_of(b.z_range.0), b.height_of(b.z_range.1)));
-    // Each end kept below the other as it is, so nothing dragged is refused; an automatic one
-    // starts from a whole metre.
-    let (lo, hi) = (scene.ruler_min.unwrap_or(base), scene.ruler_max.unwrap_or(top));
+    // What the automatic foot is now: the block's base (its top, the ground at the corner it
+    // stands up, moves with the eye).
+    let base = app.scene3d.built.as_ref().map(|(_, b)| b.height_of(b.z_range.0));
+    let metres =
+        |v: Option<f64>| v.map(|v| format!("{} {}", tl!("Auto:"), plain_metres(v.round()))).unwrap_or_else(|| tl!("Auto").to_string());
     ui.menu_button(label, |ui| {
-        let mut set: Option<Value> = None;
-        egui::Grid::new("scene3d_ruler").num_columns(3).spacing([8.0, 6.0]).show(ui, |ui| {
-            let rows: [(&str, &str, &str, Option<f64>, f64, std::ops::RangeInclusive<f64>); 4] = [
-                (
-                    "rulerStep",
-                    tl!("Ruler step"),
-                    tl!("True metres between the ruler's marks; where numbers don't fit, only every few are numbered. Auto: a round step that fits the ruler"),
-                    scene.ruler_step,
-                    100.0,
-                    MIN_RULER_STEP..=MAX_HEIGHT,
-                ),
-                (
-                    "rulerMin",
-                    tl!("Ruler bottom"),
-                    tl!("The height its foot stands at, metres above sea level. Auto: the block's base"),
-                    scene.ruler_min,
-                    lo.round().min(hi - MIN_RULER_STEP),
-                    -MAX_HEIGHT..=(hi - MIN_RULER_STEP),
-                ),
-                (
-                    "rulerMax",
-                    tl!("Ruler top"),
-                    tl!("The height of its top, metres above sea level. Auto: the ground at its corner"),
-                    scene.ruler_max,
-                    hi.round().max(lo + MIN_RULER_STEP),
-                    (lo + MIN_RULER_STEP)..=MAX_HEIGHT,
-                ),
-                (
-                    "rulerFrom",
-                    tl!("Marks counted from"),
-                    tl!("A mark at this height and every step up and down from it. Auto: 0 m"),
-                    scene.ruler_from,
-                    0.0,
-                    -MAX_HEIGHT..=MAX_HEIGHT,
-                ),
-            ];
-            for (key, name, tip, now, start, range) in rows {
-                ui.label(name).on_hover_text(tip);
-                let auto = now.is_none();
-                let mut v = now.unwrap_or(start);
-                let r = ui
-                    .add(
-                        egui::DragValue::new(&mut v)
-                            .range(range)
-                            .speed(1.0)
-                            .max_decimals(1)
-                            .custom_formatter(move |v, _| if auto { tl!("Auto").to_string() } else { format!("{v} m") }),
-                    )
-                    .on_hover_text(tip);
-                if r.changed() && Some(v) != now {
-                    set = Some(json!({key: v}));
+        let rows: [(&str, &str, &str, Option<f64>, String); 4] = [
+            (
+                "rulerStep",
+                tl!("Ruler step"),
+                tl!("True metres between the ruler's marks; where numbers don't fit, only every few are numbered. Empty: a round step that fits the ruler"),
+                scene.ruler_step,
+                tl!("Auto").to_string(),
+            ),
+            (
+                "rulerMin",
+                tl!("Ruler bottom"),
+                tl!("The height its foot stands at, metres above sea level. Empty: the block's base"),
+                scene.ruler_min,
+                metres(base),
+            ),
+            (
+                "rulerMax",
+                tl!("Ruler top"),
+                tl!("The height of its top, metres above sea level. Empty: the ground at its corner"),
+                scene.ruler_max,
+                tl!("Auto").to_string(),
+            ),
+            (
+                "rulerFrom",
+                tl!("Marks counted from"),
+                tl!("A mark at this height and every step up and down from it. Empty: 0 m"),
+                scene.ruler_from,
+                format!("{} 0", tl!("Auto:")),
+            ),
+        ];
+        metres_settings(app, ui, "scene3d_ruler", &rows, asked);
+    });
+}
+
+/// The grid's steps: metres between its eastings and northings, and between its heights, each
+/// typed or left empty for a round one that fits (the heights' then the ruler's step, when it
+/// asks one).
+fn grid_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
+    let asked = scene.grid_step.is_some() || scene.grid_z_step.is_some();
+    let label = if asked { format!("{} ●", tl!("Grid Settings")) } else { tl!("Grid Settings").to_string() };
+    ui.menu_button(label, |ui| {
+        let z_auto = scene.ruler_step.map_or_else(|| tl!("Auto").to_string(), |st| format!("{} {}", tl!("Auto:"), plain_metres(st)));
+        let rows: [(&str, &str, &str, Option<f64>, String); 2] = [
+            (
+                "gridStep",
+                tl!("E/N step"),
+                tl!("Metres between the grid's eastings and northings (UTM). Empty: a round step that fits the scene"),
+                scene.grid_step,
+                tl!("Auto").to_string(),
+            ),
+            (
+                "gridZStep",
+                tl!("Height step"),
+                tl!("True metres between the grid's heights. Empty: the ruler's step when it has one, else a round step that fits"),
+                scene.grid_z_step,
+                z_auto,
+            ),
+        ];
+        metres_settings(app, ui, "scene3d_grid", &rows, asked);
+    });
+}
+
+/// A menu's rows of settings in metres (`scene.set` key, name, tip, value, what empty means),
+/// each typed in a box and set when Enter is pressed or the box is left: empty sets it back to
+/// automatic, and a number that isn't one is said under them. With `asked`, a button sets them all
+/// back.
+fn metres_settings(app: &mut RustGisApp, ui: &mut Ui, id: &str, rows: &[(&str, &str, &str, Option<f64>, String)], asked: bool) {
+    let mut set: Option<Value> = None;
+    let wrong = egui::Id::unique((id, "wrong"));
+    egui::Grid::new(id).num_columns(3).spacing([8.0, 6.0]).show(ui, |ui| {
+        for (key, name, tip, now, auto) in rows {
+            ui.label(*name).on_hover_text(*tip);
+            ui.horizontal(|ui| {
+                match metres_field(ui, egui::Id::unique((id, *key)), *now, auto, name) {
+                    Some(Ok(v)) => {
+                        ui.data_mut(|d| {
+                            d.remove::<String>(wrong);
+                        });
+                        set = Some(json!({ *key: v }));
+                    }
+                    Some(Err(e)) => {
+                        ui.data_mut(|d| d.insert_temp(wrong, e));
+                    }
+                    None => {}
                 }
-                if auto {
-                    ui.label("");
-                } else if ui.small_button(tl!("Auto")).clicked() {
-                    set = Some(json!({key: null}));
-                }
-                ui.end_row();
+                ui.label("m");
+            })
+            .response
+            .on_hover_text(*tip);
+            if now.is_some() && ui.small_button(tl!("Auto")).on_hover_text(tl!("Empty the box: its automatic value")).clicked() {
+                set = Some(json!({ *key: null }));
             }
-        });
-        if asked && ui.button(tl!("All Automatic")).clicked() {
-            set = Some(json!({"rulerStep": null, "rulerMin": null, "rulerMax": null, "rulerFrom": null}));
-        }
-        if let Some(p) = set {
-            run_drawing_only(app, "scene.set", p);
+            ui.end_row();
         }
     });
+    if let Some(e) = ui.data(|d| d.get_temp::<String>(wrong)) {
+        ui.colored_label(ui.visuals().error_fg_color, e);
+    }
+    if asked && ui.button(tl!("All Automatic")).clicked() {
+        let all: serde_json::Map<String, Value> = rows.iter().map(|r| (r.0.to_string(), Value::Null)).collect();
+        set = Some(Value::Object(all));
+    }
+    if let Some(p) = set {
+        run_drawing_only(app, "scene.set", p);
+    }
+}
+
+/// A box for a number of metres: `now` written plainly while it isn't being typed in, empty for
+/// automatic, which `auto` says greyed. Read when Enter is pressed or the box is left: `Some(Ok)`
+/// with the number (None: empty, automatic) when it changed, `Some(Err)` with why when it isn't a
+/// number. Commas between thousands, spaces and a trailing "m" are let through.
+fn metres_field(ui: &mut Ui, id: egui::Id, now: Option<f64>, auto: &str, name: &str) -> Option<Result<Option<f64>, String>> {
+    let shown = now.map(plain_metres).unwrap_or_default();
+    let mut text = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| shown.clone());
+    let r = ui.add(egui::TextEdit::singleline(&mut text).id(id).hint_text(auto).desired_width(110.0));
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, name));
+    if r.has_focus() {
+        ui.data_mut(|d| d.insert_temp(id, text));
+        return None;
+    }
+    // Left (Enter, Tab or a click elsewhere): read, then shown as it is set. Left as it was
+    // shown, nothing is set.
+    let typed = ui.data_mut(|d| d.remove_temp::<String>(id));
+    let typed = if r.lost_focus() { Some(text) } else { typed };
+    let typed = typed.filter(|t| t.trim() != shown)?;
+    match read_metres(&typed) {
+        Ok(v) if v.map(f64::to_bits) == now.map(f64::to_bits) => None,
+        Ok(v) => Some(Ok(v)),
+        Err(()) => Some(Err(format!("{}: {}", name, tl!("type a number of metres, or leave it empty for Auto")))),
+    }
+}
+
+/// A number of metres as typed: empty (or Auto) for none; commas, spaces and a unit after it
+/// ("m", "ม.", "เมตร") let through.
+fn read_metres(text: &str) -> Result<Option<f64>, ()> {
+    let t = text.trim();
+    let t = ["เมตร", "ม.", "ม", "m"].iter().find_map(|u| t.strip_suffix(u)).unwrap_or(t).trim();
+    if t.is_empty() || t.eq_ignore_ascii_case("auto") || t == tl!("Auto") {
+        return Ok(None);
+    }
+    let digits: String = t.chars().filter(|c| !matches!(c, ',' | ' ' | '\u{a0}' | '\u{202f}' | '_')).collect();
+    let digits = digits.replace('\u{2212}', "-");
+    digits.parse::<f64>().ok().filter(|v| v.is_finite()).map(Some).ok_or(())
+}
+
+/// `v` metres written as typed back: no thousands apart, no needless decimals, and every digit
+/// it has, so reading it back gives the same number.
+fn plain_metres(v: f64) -> String {
+    if v == 0.0 { "0".to_string() } else { format!("{v}") }
 }
 
 /// The picture, turned by the mouse.
@@ -604,6 +697,7 @@ fn picture(app: &mut RustGisApp, ui: &mut Ui, rect: Rect, scene: &Scene, t: &Tok
             ruler: scene.ruler,
             ruler_step: scene.ruler_step.map(f64::to_bits),
             ruler_range: [scene.ruler_min, scene.ruler_max, scene.ruler_from].map(|v| v.map(f64::to_bits)),
+            grid: scene.grid.then(|| [scene.grid_step, scene.grid_z_step].map(|v| v.map(f64::to_bits))),
             size: [w, h],
         };
         // What is under the mouse, looked for again only when it or the picture moves.
@@ -1141,6 +1235,90 @@ mod tests {
         app.run("scene.remove", Value::Null).unwrap();
         frame(&mut app, &ctx);
         assert!(!shown(&app));
+    }
+
+    #[test]
+    fn metres_are_read_as_typed() {
+        assert_eq!(read_metres(" 25 "), Ok(Some(25.0)));
+        assert_eq!(read_metres("1,200 m"), Ok(Some(1200.0)));
+        assert_eq!(read_metres("-50.5ม."), Ok(Some(-50.5)));
+        assert_eq!(read_metres("2 500 เมตร"), Ok(Some(2500.0)));
+        assert_eq!(read_metres("\u{2212}20"), Ok(Some(-20.0)));
+        assert_eq!(read_metres(""), Ok(None));
+        assert_eq!(read_metres("Auto"), Ok(None));
+        assert_eq!(read_metres("abc"), Err(()));
+        assert_eq!(read_metres("1e400"), Err(()));
+        assert_eq!((plain_metres(1200.0), plain_metres(0.25), plain_metres(-0.0)), ("1200".into(), "0.25".into(), "0".into()));
+        // Every digit kept: a value read back from its box is the same number.
+        for v in [0.0004, 1234.56789, -200.125, 1e-7] {
+            assert_eq!(read_metres(&plain_metres(v)), Ok(Some(v)), "{v}");
+        }
+    }
+
+    /// The ruler's and the grid's settings are typed: Enter sets one, an emptied box sets it back
+    /// to automatic, a number with thousands apart and its unit is read, and what isn't a number
+    /// is said and sets nothing. The grid is turned on beside the ruler.
+    #[test]
+    fn the_rulers_and_the_grids_settings_are_typed() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut app = RustGisApp::with_sample();
+        app.run("scene.set", json!({"bbox": [100.4, 13.6, 100.7, 13.9]})).unwrap();
+        let mut fonts = false;
+        // (The ground opacity's slider beside them has no name of its own for a screen reader.)
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(900.0, 420.0)).with_accessibility_check(false).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                let Some(scene) = app.session.map().scene.clone() else { return };
+                ui.horizontal_wrapped(|ui| shown_row(app, ui, &scene));
+            },
+            app,
+        );
+        h.run_steps(2);
+        let scene = |h: &egui_kittest::Harness<'_, RustGisApp>| h.state().session.map().scene.clone().unwrap();
+        let type_in = |h: &mut egui_kittest::Harness<'_, RustGisApp>, field: &str, text: &str| {
+            h.get_by_role_and_label(Role::TextInput, field).focus();
+            h.run();
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+            h.key_press(egui::Key::Backspace);
+            if !text.is_empty() {
+                h.get_by_role_and_label(Role::TextInput, field).type_text(text);
+            }
+            h.run();
+            h.key_press(egui::Key::Enter);
+            h.run_steps(2);
+        };
+        h.get_by_label("Ruler Settings").click();
+        h.run_steps(2);
+        type_in(&mut h, "Ruler step", "25");
+        assert_eq!(scene(&h).ruler_step, Some(25.0));
+        type_in(&mut h, "Ruler top", "1,200 m");
+        assert_eq!(scene(&h).ruler_max, Some(1200.0));
+        type_in(&mut h, "Ruler step", "");
+        assert_eq!(scene(&h).ruler_step, None, "emptied: automatic");
+        type_in(&mut h, "Ruler bottom", "lots");
+        assert_eq!(scene(&h).ruler_min, None);
+        assert!(h.query_by_label_contains("type a number of metres").is_some(), "said under the boxes");
+        type_in(&mut h, "Ruler bottom", "-50");
+        assert_eq!(scene(&h).ruler_min, Some(-50.0));
+        assert!(h.query_by_label_contains("type a number of metres").is_none(), "said no more");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(2);
+        // The grid, beside it.
+        assert!(!scene(&h).grid);
+        h.get_by_label("3D Grid").click();
+        h.run_steps(2);
+        assert!(scene(&h).grid);
+        h.get_by_label("Grid Settings").click();
+        h.run_steps(2);
+        type_in(&mut h, "E/N step", "250");
+        type_in(&mut h, "Height step", "20");
+        let s = scene(&h);
+        assert_eq!((s.grid_step, s.grid_z_step), (Some(250.0), Some(20.0)));
     }
 
     #[test]
