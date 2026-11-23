@@ -4,7 +4,7 @@
 //! and otherwise scan, testing the envelope in each geometry's header before decoding it.
 
 use super::gpkg_blob::{field_type, is_empty_blob, is_whole_empty_blob, split_blob};
-use super::{Batch, FeatureSource, Reproject, Request, Sampler, SourceInfo, clamp_limit, in_request, stride};
+use super::{Batch, FeatureSource, Reproject, Request, Sampler, SourceInfo, clamp_limit, stride};
 use crate::raster::Crs;
 use crate::{DataError, Feature, Field, FieldType, GeometryType, Result, Value, wkb};
 use rusqlite::types::ValueRef;
@@ -93,11 +93,12 @@ pub fn unsupported_table_counts_bytes(bytes: &[u8]) -> Result<Vec<(String, u64)>
     let mut copy = tempfile::NamedTempFile::new()?;
     copy.write_all(bytes)?;
     copy.flush()?;
-    unsupported_table_counts(copy.path())
+    crate::provenance::without(|| unsupported_table_counts(copy.path()))
 }
 
 fn open_db(path: &Path) -> Result<Connection> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(err)?;
+    crate::provenance::sqlite(path);
     // A cap on SQLite's page cache, so a huge database can't take all the memory; and the file is
     // hostile: nothing it defines (views, triggers, generated columns) may call functions, and
     // nothing writes.
@@ -137,8 +138,11 @@ impl GpkgSource {
     pub fn open(path: &Path, layer: Option<&str>) -> Result<Self> {
         // The identity is taken before the database is opened: a file put in its place after
         // this leaves it describing the file opened, which a traversal then refuses to swap.
-        let id = file_identity(path);
-        Self::open_conn(open_db(path)?, layer, None, id)
+        // Made absolute first, so the file opened and the path kept for a traversal are one even
+        // if the working directory changes in between.
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        let id = file_identity(&path);
+        Self::open_conn(open_db(&path)?, &path, layer, None, id)
     }
 
     /// Opens a GeoPackage held in memory, through a temporary copy (SQLite reads files). The copy
@@ -152,7 +156,9 @@ impl GpkgSource {
             let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
             let salt = std::collections::hash_map::RandomState::new();
             let tag = std::hash::BuildHasher::hash_one(&salt, (nanos, N.fetch_add(1, Ordering::Relaxed)));
-            let p = std::env::temp_dir().join(format!("rustgis-{}-{tag:016x}.gpkg", std::process::id()));
+            let p = std::path::absolute(std::env::temp_dir())
+                .unwrap_or_else(|_| std::env::temp_dir())
+                .join(format!("rustgis-{}-{tag:016x}.gpkg", std::process::id()));
             let mut o = std::fs::OpenOptions::new();
             o.write(true).create_new(true);
             // Readable by this user only: the copy holds their data, in a shared folder.
@@ -170,7 +176,7 @@ impl GpkgSource {
         }
         drop(f);
         let id = file_identity(&p);
-        match open_db(&p).and_then(|c| Self::open_conn(c, layer, Some(p.clone()), id)) {
+        match crate::provenance::without(|| open_db(&p)).and_then(|c| Self::open_conn(c, &p, layer, Some(p.clone()), id)) {
             Ok(s) => Ok(s),
             Err(e) => {
                 let _ = std::fs::remove_file(&p);
@@ -182,7 +188,9 @@ impl GpkgSource {
     /// Opens a feature table (`layer`, else the first) on an open database from its metadata,
     /// noting what reading changes: an unknown coordinate system, other tables, Z or M values
     /// dropped. `id` is the file's identity taken before it was opened.
-    fn open_conn(conn: Connection, layer: Option<&str>, temp: Option<PathBuf>, id: Option<(u64, u64)>) -> Result<Self> {
+    /// `path` is the file as the caller named it, made absolute. SQLite's own name for it resolves symbolic links
+    /// (macOS's temporary folder `/var` is `/private/var`), so it isn't the path to record.
+    fn open_conn(conn: Connection, path: &Path, layer: Option<&str>, temp: Option<PathBuf>, id: Option<(u64, u64)>) -> Result<Self> {
         let tables = feature_tables(&conn)?;
         let table = match layer {
             Some(l) => tables
@@ -307,7 +315,7 @@ impl GpkgSource {
             notes,
             zm_dropped: false,
         };
-        let file = conn.path().filter(|p| !p.is_empty()).map(|p| (PathBuf::from(p), id));
+        let file = Some((path.to_path_buf(), id));
         let mut src = GpkgSource { info, conn: Mutex::new(Some(conn)), table, geom, pk, rtree, reproject, temp, file };
         if src.info.geometry_type == GeometryType::None {
             src.info.geometry_type = src.peek_kind();
@@ -408,11 +416,11 @@ impl GpkgSource {
         {
             return Ok(Row::Skip);
         }
-        let Some(geometry) = wkb::decode(body).and_then(|g| self.reproject.geometry(g)) else { return Ok(Row::Bad) };
-        if !in_request(&geometry, req) {
+        let Some(placed) = wkb::decode(body).and_then(|g| self.reproject.read(g)) else { return Ok(Row::Bad) };
+        if !placed.in_request(req) {
             return Ok(Row::Skip);
         }
-        Ok(Row::Feature(Feature { id, geometry: Some(geometry), attrs: attrs() }))
+        Ok(Row::Feature(Feature { id, geometry: Some(placed.geometry), attrs: attrs() }))
     }
 }
 
@@ -429,9 +437,20 @@ impl FeatureSource for GpkgSource {
         &self.info
     }
 
+    /// Its own system, in which it gives its features as the file holds them.
+    fn coord_crs(&self) -> crate::raster::Crs {
+        self.reproject.crs()
+    }
+
     /// Samples native-envelope matches, or decoded view matches when the native box is refused.
     /// Scans count records and check Cancel between them.
     fn read(&self, req: &Request) -> Result<Batch> {
+        if self.temp.is_none()
+            && let Some((path, id)) = &self.file
+            && file_identity(path) == *id
+        {
+            crate::provenance::sqlite(path);
+        }
         let limit = clamp_limit(req.limit);
         let guard = self.conn.lock().map_err(|_| DataError::Format("GeoPackage connection poisoned".into()))?;
         let conn = guard.as_ref().ok_or_else(|| DataError::Format("GeoPackage connection closed".into()))?;
@@ -548,7 +567,8 @@ impl FeatureSource for GpkgSource {
             Ok(())
         };
         same_file()?;
-        let conn = open_db(path)?;
+        // An upload's SQLite copy is generated; its bytes were supplied by the caller.
+        let conn = if self.temp.is_some() { crate::provenance::without(|| open_db(path)) } else { open_db(path) }?;
         same_file()?;
         let req = Request { extent, limit: usize::MAX };
         let native = extent.and_then(|e| self.reproject.extent_from_lonlat(&e));
@@ -638,13 +658,14 @@ pub fn write_in(ds: &crate::Dataset, path: &Path, crs: Crs) -> Result<()> {
 /// a table of) the GeoPackage at `path` when it exists, its other tables left as they were.
 pub fn write_table_in(ds: &crate::Dataset, path: &Path, crs: Crs, target: &GpkgTable) -> Result<GpkgWritten> {
     let name = target.name.as_deref().unwrap_or(&ds.name);
+    let pinned = pinned_time()?;
     if let Some(replace) = into_existing(path, target)? {
-        return add::write_features(path, name, table_kind(ds), &ds.fields, crs, replace, &mut |put| put(&ds.features));
+        return add::write_features(path, name, table_kind(ds), &ds.fields, crs, replace, pinned, &mut |put| put(&ds.features));
     }
     check_new_destination(path)?;
     let tmp = temp_database_beside(path)?;
     let conn = Connection::open(&tmp).map_err(err)?;
-    let table = build(&conn, ds, name, crs)?;
+    let table = build(&conn, ds, name, crs, pinned)?;
     install(conn, tmp, path)?;
     Ok(GpkgWritten { table, replaced: false, dependents: Vec::new() })
 }
@@ -696,8 +717,9 @@ pub(crate) fn write_features_in(
     feed: &mut dyn FnMut(&mut dyn FnMut(&[crate::Feature]) -> Result<()>) -> Result<()>,
 ) -> Result<GpkgWritten> {
     let name = target.name.as_deref().unwrap_or(name);
+    let pinned = pinned_time()?;
     if let Some(replace) = into_existing(path, target)? {
-        return add::write_features(path, name, geometry_type, fields, crs, replace, feed);
+        return add::write_features(path, name, geometry_type, fields, crs, replace, pinned, feed);
     }
     check_new_destination(path)?;
     let (mut multi_points, mut mixed, mut keep_ids) = (None, false, true);
@@ -711,7 +733,7 @@ pub(crate) fn write_features_in(
             Err(Redo::Mixed) => mixed = true,
             Err(Redo::Renumber) => keep_ids = false,
             Ok((layout, extent)) => {
-                finish(&conn, &layout, extent)?;
+                finish(&conn, &layout, extent, pinned)?;
                 install(conn, tmp, path)?;
                 return Ok(GpkgWritten { table: layout.table, replaced: false, dependents: Vec::new() });
             }
@@ -823,7 +845,7 @@ fn destination_error(path: &Path, error: std::io::Error) -> DataError {
 
 /// Builds a whole layer's GeoPackage on `conn`, its table `name` chosen from all its features;
 /// returns the table's name as written.
-fn build(conn: &Connection, ds: &crate::Dataset, name: &str, crs: Crs) -> Result<String> {
+fn build(conn: &Connection, ds: &crate::Dataset, name: &str, crs: Crs, pinned: Option<i64>) -> Result<String> {
     let multi_points = ds.features.iter().any(|f| matches!(f.geometry, Some(crate::Geometry::MultiPoint(_))));
     let kind = table_kind(ds);
     let mixed = ds.features.iter().any(|f| other_kind(f, kind));
@@ -836,7 +858,7 @@ fn build(conn: &Connection, ds: &crate::Dataset, name: &str, crs: Crs) -> Result
     if insert(conn, &layout, &ds.features, keep_ids)?.is_some() {
         return Err(DataError::Format("GeoPackage: a feature doesn't fit the table chosen for the layer".into()));
     }
-    finish(conn, &layout, ds.extent())?;
+    finish(conn, &layout, ds.extent(), pinned)?;
     Ok(layout.table)
 }
 
@@ -1069,16 +1091,17 @@ fn insert(conn: &Connection, layout: &Layout, features: &[crate::Feature], keep_
     Ok(None)
 }
 
-/// [`register`]s the table and commits.
-fn finish(conn: &Connection, layout: &Layout, extent: Extent) -> Result<()> {
-    register(conn, layout, extent)?;
+/// [`register`]s the table, in a new file, and commits.
+fn finish(conn: &Connection, layout: &Layout, extent: Extent, pinned: Option<i64>) -> Result<()> {
+    register(conn, layout, extent, pinned, None)?;
     conn.execute_batch("COMMIT;").map_err(err)
 }
 
 /// Records the table in the GeoPackage's contents with its `extent` (identified by its table
 /// name, numbered if another table already has that identifier) and adds the triggers that keep its
-/// spatial index in step with edits.
-fn register(conn: &Connection, layout: &Layout, extent: Extent) -> Result<()> {
+/// spatial index in step with edits. Its `last_change` is the `pinned` time ([`pinned_time`]) or
+/// now, and past the `last_change` of the table it `replaced`, if any.
+fn register(conn: &Connection, layout: &Layout, extent: Extent, pinned: Option<i64>, replaced: Option<&str>) -> Result<()> {
     let Layout { table, geom, has_geom, geom_type, srs_id, table_q: t, geom_q: g, fid_q: i, rtree_q: rt, .. } = layout;
     let (has_geom, srs_id) = (*has_geom, *srs_id);
     let e = extent;
@@ -1096,9 +1119,19 @@ fn register(conn: &Connection, layout: &Layout, extent: Extent) -> Result<()> {
         }
         identifier = format!("{table}_{i}");
     }
+    // The time of the export, or the pinned one; a replaced table's always moves past the one it
+    // replaces, since saving edits takes an unchanged `last_change` for an unchanged table.
+    let last_change: String = conn
+        .query_row(
+            "SELECT CASE WHEN julianday(?2) >= julianday(t) THEN strftime('%Y-%m-%dT%H:%M:%fZ', ?2, '+0.001 seconds') ELSE t END
+             FROM (SELECT COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ', ?1, 'unixepoch'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) AS t)",
+            rusqlite::params![pinned, replaced],
+            |r| r.get(0),
+        )
+        .map_err(err)?;
     conn.execute(
         "INSERT INTO gpkg_contents (table_name, data_type, identifier, last_change, min_x, min_y, max_x, max_y, srs_id)
-            VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?4, ?5, ?6, ?7, ?8)",
+            VALUES (?1, ?2, ?3, ?9, ?4, ?5, ?6, ?7, ?8)",
         rusqlite::params![
             table,
             if has_geom { "features" } else { "attributes" },
@@ -1107,7 +1140,8 @@ fn register(conn: &Connection, layout: &Layout, extent: Extent) -> Result<()> {
             bounds[1],
             bounds[2],
             bounds[3],
-            srs
+            srs,
+            last_change
         ],
     )
     .map_err(err)?;
@@ -1248,6 +1282,27 @@ fn value(v: ValueRef<'_>, ty: FieldType, unread: &mut Vec<usize>, rounded: Optio
     }
 }
 
+/// The time a new table's `last_change` records, when `SOURCE_DATE_EPOCH` sets one
+/// ([`source_date_epoch`]). Read before an export writes anything, so a bad value refuses it at once.
+fn pinned_time() -> Result<Option<i64>> {
+    source_date_epoch(std::env::var_os("SOURCE_DATE_EPOCH").as_deref())
+}
+
+/// `SOURCE_DATE_EPOCH` read: seconds since 1970 as a whole number, as reproducible builds use it,
+/// so the same export run twice writes the same bytes. Unset or empty, the table records the time
+/// it is written. A value that isn't such a number (text that isn't Unicode included), or lies
+/// past year 9999, refuses the export rather than being ignored.
+fn source_date_epoch(raw: Option<&std::ffi::OsStr>) -> Result<Option<i64>> {
+    let raw = raw.map(|r| r.to_string_lossy());
+    let Some(raw) = raw.as_deref().map(str::trim).filter(|r| !r.is_empty()) else { return Ok(None) };
+    match raw.parse::<i64>() {
+        Ok(secs) if (0..=253_402_300_799).contains(&secs) => Ok(Some(secs)),
+        _ => Err(DataError::Format(format!(
+            "SOURCE_DATE_EPOCH is {raw:?}: it must be a whole number of seconds since 1970, up to the end of year 9999"
+        ))),
+    }
+}
+
 /// An SQL identifier, quoted.
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('"', "\"\""))
@@ -1259,4 +1314,31 @@ fn err(e: rusqlite::Error) -> DataError {
 
 fn not_gpkg(e: rusqlite::Error) -> DataError {
     DataError::Format(format!("not a GeoPackage: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::source_date_epoch;
+    use std::ffi::OsStr;
+
+    /// Whole seconds from 1970 to the end of year 9999 pin the time; unset or blank leaves it the
+    /// export's; anything else, text that isn't Unicode included, refuses the export.
+    #[test]
+    fn source_date_epoch_takes_whole_seconds_and_refuses_the_rest() {
+        let read = |raw: Option<&OsStr>| source_date_epoch(raw).map_err(|e| e.to_string());
+        assert_eq!(read(None), Ok(None));
+        for (raw, secs) in
+            [("", None), ("  ", None), ("0", Some(0)), (" 1000000000 ", Some(1_000_000_000)), ("253402300799", Some(253_402_300_799))]
+        {
+            assert_eq!(read(Some(OsStr::new(raw))), Ok(secs), "{raw:?}");
+        }
+        for raw in ["-1", "253402300800", "1.5", "yesterday"] {
+            assert!(read(Some(OsStr::new(raw))).is_err_and(|e| e.contains("SOURCE_DATE_EPOCH")), "{raw:?}");
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            assert!(read(Some(OsStr::from_bytes(b"10\xff"))).is_err(), "not Unicode");
+        }
+    }
 }

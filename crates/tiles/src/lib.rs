@@ -9,6 +9,7 @@
 
 pub mod address;
 pub mod arcgis_auth;
+pub mod arcgis_token;
 pub mod boundaries;
 pub mod buildings3d;
 pub mod cache;
@@ -52,6 +53,6 @@ pub mod vector_export;
 pub mod warp;
 
 pub use draw::{Drawn, Frame, PlacedTiles, Placement, draw, place, place_raster};
-pub use picture::{Pace, Unfinished, pace, paced, unfinished};
+pub use picture::{Pace, Unfinished, lacking, pace, paced, unfinished};
 pub use source::{Kind, Spec};
 pub use symbols::{Collide, Label, LabelIcon};

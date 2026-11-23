@@ -4,7 +4,8 @@
 
 use std::collections::VecDeque;
 
-use crate::provider::{self, Config, HttpRequest, HttpResponse, Note, ToolCall, ToolResult, Turn};
+use crate::attach::Picture;
+use crate::provider::{self, Config, HttpRequest, HttpResponse, Note, ToolCall, ToolImage, ToolResult, Turn};
 use crate::{acp, compact, skills, tools};
 use rustgis_engine::Session;
 use rustgis_engine::policy::{Outcome, Pending, Permit, Remembered, Scope};
@@ -87,6 +88,11 @@ enum State {
 /// What the transcript says when RustGIS itself fails while handling a reply.
 pub const INTERNAL_ERROR: &str = "RustGIS ran into an internal error while handling the model's reply, so the request was stopped. Please report it at https://github.com/opengeos/RustGIS/issues.";
 
+/// What the transcript says when pictures the user attached go to a model that doesn't read
+/// images (listed in [`provider::NOTE_TEMPLATES`]).
+const PICTURES_AS_NAMES: &str =
+    "This model doesn't read images: the pictures go to it as their names only. Pick a model that reads images to show them.";
+
 pub struct Agent {
     pub config: Config,
     turns: Vec<Turn>,
@@ -112,9 +118,16 @@ pub struct Agent {
     /// The Chat Completions providers, addresses and models that refused reasoning alongside tools:
     /// their requests turn reasoning off ([`provider::refuses_reasoning_with_tools`]), others' don't.
     no_reasoning: Vec<(String, String, String)>,
+    /// The providers, addresses and models that refused the images of `view_map`
+    /// ([`provider::refuses_images`]): their requests carry the images' captions instead, and
+    /// `view_map` says the model doesn't read them.
+    no_images: Vec<(String, String, String)>,
     /// The Chat Completions provider, address and model the request waiting was sent to: a refusal
     /// is theirs even if the settings changed since.
     sent_to: Option<(String, String, String)>,
+    /// The provider, address and model the request waiting carried images to: a refusal of them
+    /// is theirs even if the settings changed since.
+    sent_images_to: Option<(String, String, String)>,
     /// A summary request waiting to be retried ([`State::Compacting`]'s `upto` and `resume`).
     retrying_summary: Option<(usize, bool)>,
     /// The skills the model may load ([`skills`]), listed in the system prompt.
@@ -190,7 +203,9 @@ impl Agent {
             preview: None,
             overflow_compacted: false,
             no_reasoning: Vec::new(),
+            no_images: Vec::new(),
             sent_to: None,
+            sent_images_to: None,
             retrying_summary: None,
             summary_limit: compact::BUDGET,
             agents_auto: false,
@@ -281,13 +296,13 @@ impl Agent {
             // A user turn still waiting (a summary, or a message whose request failed) takes the
             // reports after a blank line.
             match a.turns.last_mut() {
-                Some(Turn::User(waiting)) => {
+                Some(Turn::User(waiting, _)) => {
                     if !waiting.ends_with("\n\n") {
                         waiting.push_str("\n\n");
                     }
                     waiting.push_str(&message)
                 }
-                _ => a.turns.push(Turn::User(message)),
+                _ => a.turns.push(Turn::User(message, Vec::new())),
             }
             a.steps = 0;
             a.retries = 0;
@@ -305,6 +320,7 @@ impl Agent {
         child.always = self.always.clone();
         child.conversation = self.conversation;
         child.no_reasoning = self.no_reasoning.clone();
+        child.no_images = self.no_images.clone();
         // The budget is the main assistant's: what's left of it for this message.
         child.max_steps = self.max_steps.saturating_sub(self.steps).max(1);
         child.base_system = system_prompt(s) + SUBAGENT_PROMPT;
@@ -428,19 +444,52 @@ impl Agent {
 
     /// The user's message. The map context goes with it when it changed since the model last saw it.
     pub fn ask(&mut self, text: &str, s: &Session) -> Step {
-        self.guard(|a| a.ask_unguarded(text, s))
+        self.ask_with(text, Vec::new(), s)
     }
 
-    fn ask_unguarded(&mut self, text: &str, s: &Session) -> Step {
+    /// The user's message with the pictures they attached to it ([`crate::attach::prepare`]), at
+    /// most [`crate::attach::MAX_PER_MESSAGE`] (more are left out, and said). The transcript says
+    /// each picture, and the size it went at when it was drawn smaller; a model known not to read
+    /// images gets their captions, which is said too.
+    pub fn ask_with(&mut self, text: &str, pictures: Vec<Picture>, s: &Session) -> Step {
+        self.guard(|a| a.ask_unguarded(text, pictures, s))
+    }
+
+    /// [`Agent::ask_with`] inside the panic guard: records the message and its pictures, joins a
+    /// user turn still waiting, and sends.
+    fn ask_unguarded(&mut self, text: &str, mut pictures: Vec<Picture>, s: &Session) -> Step {
         self.always.retain(|r| r.belongs_to_generation(s.project_generation()));
         let text = text.trim();
-        if text.is_empty() || self.busy() {
+        // A message is its text, its pictures, or both.
+        if (text.is_empty() && pictures.is_empty()) || self.busy() {
             return Step::Done;
         }
         if !self.live.0.load(Ordering::SeqCst) {
             self.live = Arc::new(tools::Live::default());
         }
         self.transcript.push(Entry::User(text.to_string()));
+        if pictures.len() > crate::attach::MAX_PER_MESSAGE {
+            let left = pictures.split_off(crate::attach::MAX_PER_MESSAGE);
+            let names: Vec<&str> = left.iter().map(|p| p.name.as_str()).collect();
+            self.transcript.push(Entry::Note(Note::with(
+                "A message takes at most {most} pictures: {names} left out.",
+                [("most", crate::attach::MAX_PER_MESSAGE.to_string()), ("names", names.join(", "))],
+            )));
+        }
+        for p in &pictures {
+            let size = format!("{} × {}", p.width, p.height);
+            self.transcript.push(Entry::Note(if p.shrunk() {
+                Note::with(
+                    "Attached {name}, sent at {size} (from {from}).",
+                    [("name", p.name.clone()), ("size", size), ("from", format!("{} × {}", p.original.0, p.original.1))],
+                )
+            } else {
+                Note::with("Attached {name} ({size}).", [("name", p.name.clone()), ("size", size)])
+            }));
+        }
+        if !pictures.is_empty() && self.refused_images() {
+            self.transcript.push(Entry::Note(Note::new(PICTURES_AS_NAMES)));
+        }
         let text = compact::escape_user(text);
         let ctx = compact::escape_user(&tools::context(s));
         let message = if ctx == self.last_context { text.to_string() } else { format!("<map>\n{ctx}\n</map>\n\n{text}") };
@@ -449,13 +498,28 @@ impl Agent {
         // request the unanswered message does: this one joins it (two user turns in a row are
         // refused by some providers), after a blank line.
         match self.turns.last_mut() {
-            Some(Turn::User(last)) => {
+            Some(Turn::User(last, waiting)) => {
                 if compact::summary_len(last) != Some(last.len()) {
                     last.push_str("\n\n");
                 }
                 last.push_str(&message);
+                waiting.append(&mut pictures);
+                // The joined message takes no more pictures than one message: the earlier
+                // message's go first, named in their place, and said.
+                let over = waiting.len().saturating_sub(crate::attach::MAX_PER_MESSAGE);
+                if over > 0 {
+                    let gone: Vec<Picture> = waiting.drain(..over).collect();
+                    for p in &gone {
+                        last.push_str(&format!("\n\n{}", compact::escape_user(&p.caption())));
+                    }
+                    let names: Vec<&str> = gone.iter().map(|p| p.name.as_str()).collect();
+                    self.transcript.push(Entry::Note(Note::with(
+                        "A message takes at most {most} pictures: {names} left out.",
+                        [("most", crate::attach::MAX_PER_MESSAGE.to_string()), ("names", names.join(", "))],
+                    )));
+                }
             }
-            _ => self.turns.push(Turn::User(message)),
+            _ => self.turns.push(Turn::User(message, pictures)),
         }
         self.steps = 0;
         self.retries = 0;
@@ -469,6 +533,10 @@ impl Agent {
             self.state = State::Idle;
             return Step::Done;
         }
+        // Old pictures, or all of them for a model that doesn't read them, go as their captions.
+        let refused = self.refused_images();
+        compact::keep_images(&mut self.turns, if refused { 0 } else { compact::KEPT_IMAGES });
+        compact::keep_pictures(&mut self.turns, if refused { 0 } else { compact::KEPT_PICTURES });
         // Past the budget: trim the finished part of the conversation, then summarise it.
         if compact::size(&self.turns) > compact::BUDGET {
             let upto = compact::boundary(&self.turns);
@@ -484,6 +552,7 @@ impl Agent {
         self.state = State::Waiting;
         self.preview = Some(provider::StreamPreview::new(self.config.api()));
         self.sent_to = (self.config.api() == provider::Api::OpenAi).then(|| identity(&self.config));
+        self.sent_images_to = compact::has_images(&self.turns).then(|| identity(&self.config));
         let off = self.refused_reasoning().then(|| Config { reasoning: Some(false), ..self.config.clone() });
         Step::Send(provider::chat_request(off.as_ref().unwrap_or(&self.config), &self.system, &self.turns, &self.tool_defs()))
     }
@@ -492,6 +561,11 @@ impl Agent {
     /// ([`Agent::no_reasoning`]).
     fn refused_reasoning(&self) -> bool {
         self.config.api() == provider::Api::OpenAi && self.no_reasoning.contains(&identity(&self.config))
+    }
+
+    /// Whether the selected provider, address and model refused images ([`Agent::no_images`]).
+    fn refused_images(&self) -> bool {
+        self.no_images.contains(&identity(&self.config))
     }
 
     /// The skills the model may load: the built-in ones and the user's ([`skills::installed`]).
@@ -516,7 +590,13 @@ impl Agent {
     }
 
     /// Runs a call: the agent's own tools, else the session's.
-    fn run_tool(&self, s: &mut Session, call: &ToolCall, tokens: usize, permit: Option<Permit>) -> Result<String, String> {
+    fn run_tool(
+        &self,
+        s: &mut Session,
+        call: &ToolCall,
+        tokens: usize,
+        permit: Option<Permit>,
+    ) -> Result<(String, Vec<ToolImage>), String> {
         if !self.allowed.is_empty() && call.name != "load_skill" && !self.allowed.contains(&call.name) {
             return Err(format!("'{}' isn't one of this subagent's tools", call.name));
         }
@@ -524,9 +604,13 @@ impl Agent {
             "load_skill" => {
                 let name = call.args.get("name").and_then(serde_json::Value::as_str).unwrap_or("").trim();
                 let markdown = skills::load(&self.skills, name)?;
-                Ok(tools::bounded_json(&serde_json::json!({"name":name,"markdown":markdown}), tokens))
+                Ok((tools::bounded_json(&serde_json::json!({"name":name,"markdown":markdown}), tokens), Vec::new()))
             }
-            _ => tools::run_with_budget(s, call, tokens, self.scope(), permit),
+            "view_map" if self.refused_images() => {
+                Err("this model doesn't read images: check the map with list_layers and read_features instead".into())
+            }
+            "view_map" => tools::view_map(s, call, self.scope(), permit).map(|(caption, image)| (caption, vec![image])),
+            _ => tools::run_with_budget(s, call, tokens, self.scope(), permit).map(|c| (c, Vec::new())),
         }
     }
 
@@ -551,9 +635,11 @@ impl Agent {
     fn summarise_quietly(&mut self, upto: usize, resume: bool) -> Step {
         self.state = State::Compacting { upto, resume };
         self.preview = None;
+        // A summary is asked for in text only.
+        self.sent_images_to = None;
         let text = compact::as_text_with_limit(&self.turns, upto, self.summary_limit);
         self.summary_input_len = text.len();
-        let text = Turn::User(text);
+        let text = Turn::User(text, Vec::new());
         Step::Send(provider::chat_request(&self.config, compact::SUMMARY_PROMPT, &[text], &[]))
     }
 
@@ -570,7 +656,7 @@ impl Agent {
                 let context = std::mem::take(&mut self.last_context);
                 if resume
                     && !context.is_empty()
-                    && let Some(Turn::User(text)) = self.turns.first_mut()
+                    && let Some(Turn::User(text, _)) = self.turns.first_mut()
                     && let Some(end) = compact::summary_len(text)
                     && !text.get(end..).is_some_and(|t| t.starts_with("<map>\n"))
                 {
@@ -662,7 +748,12 @@ impl Agent {
         }
         self.preview = None;
         let parsed = resp.as_ref().map_err(Clone::clone).and_then(|r| provider::parse_reply(self.config.api(), r));
+        // A model that doesn't read images refuses them every time (some servers with a 500):
+        // asked again at once without them, not retried as an outage.
+        let images_refused = matches!(&parsed, Err(e) if self.sent_images_to.as_ref().is_some_and(|to| !self.no_images.contains(to))
+            && provider::refuses_images(e));
         if self.retries < MAX_RETRIES
+            && !images_refused
             && let Some(after) = provider::retry_delay_for(&resp, &parsed, self.retries)
         {
             self.retries += 1;
@@ -712,6 +803,20 @@ impl Agent {
                 self.no_reasoning.extend(self.sent_to.take());
                 return self.send();
             }
+            // The model doesn't read images: ask again with their captions, once, and keep it so.
+            Err(_) if images_refused => {
+                self.no_images.extend(self.sent_images_to.take());
+                // Each kind of picture the request carried is said: the map's, the user's.
+                if compact::has_tool_images(&self.turns) {
+                    self.transcript.push(Entry::Note(Note::new(
+                        "The model doesn't read images: the map's pictures go to it as their captions, and view_map is off for it.",
+                    )));
+                }
+                if compact::has_pictures(&self.turns) {
+                    self.transcript.push(Entry::Note(Note::new(PICTURES_AS_NAMES)));
+                }
+                return self.send();
+            }
             Err(e) => {
                 self.transcript.push(Entry::Error(e));
                 self.state = State::Idle;
@@ -744,6 +849,7 @@ impl Agent {
                 name: c.name,
                 content: "Not run: the reply was cut short before it finished.".into(),
                 error: true,
+                images: Vec::new(),
             });
             self.turns.push(Turn::Results(not_run.collect()));
             self.state = State::Idle;
@@ -807,30 +913,30 @@ impl Agent {
         let State::Calls(q, _) = &mut self.state else { return };
         let Some(call) = q.pop_front() else { return };
         let permit = self.pending_policy.take().filter(|_| allow).map(Pending::allow);
-        let (content, error) = if allow {
+        let (content, error, images) = if allow {
             match self.run_tool(s, &call, tokens, permit) {
-                Ok(c) => (c, false),
-                Err(e) => (tools::bounded_json(&serde_json::json!({"error": e}), tokens), true),
+                Ok((c, images)) => (c, false, images),
+                Err(e) => (tools::bounded_json(&serde_json::json!({"error": e}), tokens), true, Vec::new()),
             }
         } else {
-            ("The user declined this action. Don't retry it; ask what they'd like instead.".to_string(), true)
+            ("The user declined this action. Don't retry it; ask what they'd like instead.".to_string(), true, Vec::new())
         };
         let shown = if allow { content.clone() } else { "Declined".to_string() };
-        self.record(call, content, shown, error);
+        self.record(call, content, shown, error, images);
     }
 
     /// Takes the first waiting call off the queue with its result (and what the transcript shows).
     fn record_front(&mut self, content: String, shown: String, error: bool) {
         let State::Calls(q, _) = &mut self.state else { return };
         let Some(call) = q.pop_front() else { return };
-        self.record(call, content, shown, error);
+        self.record(call, content, shown, error, Vec::new());
     }
 
     /// A call's result, for the transcript and the next request.
-    fn record(&mut self, call: ToolCall, content: String, shown: String, error: bool) {
+    fn record(&mut self, call: ToolCall, content: String, shown: String, error: bool, images: Vec<ToolImage>) {
         self.transcript.push(Entry::Tool { name: call.name.clone(), summary: tools::summary(&call), result: shown, error });
         if let State::Calls(_, results) = &mut self.state {
-            results.push(ToolResult { id: call.id, name: call.name, content, error });
+            results.push(ToolResult { id: call.id, name: call.name, content, error, images });
         }
     }
 
@@ -880,6 +986,18 @@ impl Agent {
         }
         let agent = call.args.get("agent").and_then(serde_json::Value::as_str).unwrap_or("subagent");
         let thread = call.args.get("thread").and_then(serde_json::Value::as_str).filter(|t| !t.trim().is_empty());
+        // A delegate gets the task's text: the user's pictures stay here, which is said.
+        if compact::has_pictures(&self.turns) {
+            // A follow-up goes to its thread's agent.
+            let label = match thread {
+                Some(id) => self.threads.iter().find(|t| t.id == id).map(|t| t.agent.label),
+                None => acp::AgentSpec::from_id(agent).map(|h| h.label),
+            };
+            self.transcript.push(Entry::Note(match label.map(str::to_string) {
+                Some(label) => Note::with("Pictures you attached don't go to {agent}: it gets the task's text only.", [("agent", label)]),
+                _ => Note::new("Pictures you attached don't go to a subagent: it gets the task's text only."),
+            }));
+        }
         if agent != "subagent" || thread.is_some() {
             let (result, error) = self.delegate_to_thread(agent, thread, task);
             self.record_front(result.clone(), result, error);
@@ -925,6 +1043,12 @@ impl Agent {
                 self.always.remove(0);
             }
             self.always.push(key.clone());
+        }
+        // A model it found doesn't read images doesn't get them here either.
+        for to in &child.no_images {
+            if !self.no_images.contains(to) {
+                self.no_images.push(to.clone());
+            }
         }
         let (report, error) = child.report();
         self.record_front(report.clone(), report, error);
@@ -1066,10 +1190,14 @@ impl Agent {
             // providers. The map context goes again with the next one. (Idle: `ask` failed
             // before the request went out.)
             State::Idle | State::Waiting | State::Retrying | State::Compacting { .. } => {
-                // A summary at its start stays: only the message after it goes.
-                if let Some(Turn::User(last)) = self.turns.last_mut() {
+                // A summary at its start stays: only the message after it goes, with its
+                // pictures (a summary has none).
+                if let Some(Turn::User(last, pictures)) = self.turns.last_mut() {
                     match compact::summary_len(last) {
-                        Some(n) => last.truncate(n),
+                        Some(n) => {
+                            last.truncate(n);
+                            pictures.clear();
+                        }
                         None => {
                             self.turns.pop();
                         }
@@ -1080,7 +1208,7 @@ impl Agent {
             State::Calls(q, mut results) => {
                 // Every call the model made gets a result, or the next request is malformed.
                 for c in q {
-                    results.push(ToolResult { id: c.id, name: c.name, content: queued.into(), error: true });
+                    results.push(ToolResult { id: c.id, name: c.name, content: queued.into(), error: true, images: Vec::new() });
                 }
                 if !results.is_empty() {
                     self.turns.push(Turn::Results(results));
@@ -1102,7 +1230,13 @@ impl Agent {
             let missing: Vec<ToolResult> = calls
                 .iter()
                 .filter(|c| !answered.contains(&c.id.as_str()))
-                .map(|c| ToolResult { id: c.id.clone(), name: c.name.clone(), content: interrupted.into(), error: true })
+                .map(|c| ToolResult {
+                    id: c.id.clone(),
+                    name: c.name.clone(),
+                    content: interrupted.into(),
+                    error: true,
+                    images: Vec::new(),
+                })
                 .collect();
             let order: Vec<String> = calls.iter().map(|c| c.id.clone()).collect();
             if !missing.is_empty() {
@@ -1130,6 +1264,7 @@ impl Agent {
 /// Commands worth knowing without a search: their parameters come from the registry.
 const COMMON: &[&str] = &[
     "map.goToXY",
+    "map.convertPosition",
     "map.setScale",
     "map.zoomFull",
     "map.basemap",
@@ -1197,10 +1332,23 @@ pub fn run_blocking<E: Into<crate::Error>>(
     agent: &mut Agent,
     text: &str,
     s: &mut Session,
+    send: impl FnMut(&HttpRequest) -> Result<HttpResponse, E>,
+    confirm: impl FnMut(&str, &str, bool) -> bool,
+) {
+    run_blocking_with(agent, text, Vec::new(), s, send, confirm);
+}
+
+/// [`run_blocking`] for a message with pictures attached ([`Agent::ask_with`]).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_blocking_with<E: Into<crate::Error>>(
+    agent: &mut Agent,
+    text: &str,
+    pictures: Vec<Picture>,
+    s: &mut Session,
     mut send: impl FnMut(&HttpRequest) -> Result<HttpResponse, E>,
     mut confirm: impl FnMut(&str, &str, bool) -> bool,
 ) {
-    let mut step = agent.ask(text, s);
+    let mut step = agent.ask_with(text, pictures, s);
     loop {
         step = match step {
             Step::Send(req) => {

@@ -6,15 +6,34 @@ use rustgis_geom::Coord;
 
 use crate::{Dataset, Geometry};
 
-/// Text for XML: special characters escaped, control characters (invalid in XML 1.0) dropped.
-fn xml(s: &str) -> String {
-    s.chars()
-        .filter(|c| !c.is_control() || matches!(c, '\t' | '\n' | '\r'))
-        .collect::<String>()
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+/// Text for XML, special characters escaped: kept exactly or refused, never cleaned without
+/// reporting its loss. `place` says where in the file of `format` the text goes, for the refusal.
+///
+/// XML 1.0 Char production: https://www.w3.org/TR/xml/#charsets.
+fn xml(text: &str, format: &str, place: impl FnOnce() -> String) -> crate::Result<String> {
+    let mut invalid = text.chars().filter(|c| {
+        !matches!(*c,
+            '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..='\u{10ffff}'
+        )
+    });
+    if let Some(first) = invalid.next() {
+        let count = invalid.count().saturating_add(1);
+        return Err(crate::DataError::Format(format!(
+            "{format}: {}: {count} character(s) cannot be represented in XML 1.0 (first U+{:04X})",
+            place(),
+            first as u32
+        )));
+    }
+    Ok(escaped_xml(text))
+}
+
+fn escaped_xml(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\r', "&#13;")
+}
+
+/// Where in a layer's file a feature's text goes, for [`xml`]'s refusal.
+fn feature_place(layer: &str, feature: u64, what: &str) -> String {
+    format!("{layer}, feature id {feature}, {what}")
 }
 
 fn coords(pts: &[Coord]) -> String {
@@ -60,22 +79,44 @@ fn kml_geometry(g: &Geometry) -> String {
 pub fn to_kml(ds: &Dataset, name_field: Option<usize>) -> crate::Result<String> {
     let mut out = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Document><name>{}</name>\n",
-        xml(&ds.name)
+        xml(&ds.name, "KML", || "layer name".to_string())?
     );
+    // KML's description is text. Other types and differently-cased columns stay in
+    // ExtendedData, where the reader preserves their values and reports name collisions.
+    let description = ds.fields.iter().position(|f| f.name == "description" && f.ty == crate::FieldType::Text);
     for (r, f) in ds.features.iter().enumerate() {
         crate::progress::step(1)?;
         let Some(g) = &f.geometry else { continue };
         let name = name_field.map(|fi| ds.value(r, fi).to_file_text()).unwrap_or_else(|| f.id.to_string());
+        let description = match description.map(|fi| ds.value(r, fi)) {
+            Some(crate::Value::Text(text)) => {
+                format!("<description>{}</description>", xml(text, "KML", || feature_place(&ds.name, f.id, "description"))?)
+            }
+            _ => String::new(),
+        };
         let data: String = ds
             .fields
             .iter()
             .zip(&f.attrs)
             .filter(|(_, v)| !v.is_null())
-            .map(|(fd, v)| format!("<Data name=\"{}\"><value>{}</value></Data>", xml(&fd.name), xml(&v.to_file_text())))
-            .collect();
+            .map(|(fd, v)| {
+                let value = match v {
+                    crate::Value::Text(text) if fd.name == "description" && fd.ty == crate::FieldType::Text => {
+                        xml(text, "KML", || feature_place(&ds.name, f.id, "description"))?
+                    }
+                    _ => xml(&v.to_file_text(), "KML", || feature_place(&ds.name, f.id, &format!("field '{}'", fd.name.escape_debug())))?,
+                };
+                // In an attribute, where a reader turns tabs and line breaks into spaces unless
+                // they are written as references.
+                let name = xml(&fd.name, "KML", || format!("{}, field name '{}'", ds.name, fd.name.escape_debug()))?
+                    .replace('\t', "&#9;")
+                    .replace('\n', "&#10;");
+                Ok(format!("<Data name=\"{name}\"><value>{value}</value></Data>"))
+            })
+            .collect::<crate::Result<String>>()?;
         out.push_str(&format!(
-            "<Placemark><name>{}</name><ExtendedData>{data}</ExtendedData>{}</Placemark>\n",
-            xml(&name),
+            "<Placemark><name>{}</name>{description}<ExtendedData>{data}</ExtendedData>{}</Placemark>\n",
+            xml(&name, "KML", || feature_place(&ds.name, f.id, "name"))?,
             kml_geometry(g)
         ));
     }
@@ -94,7 +135,8 @@ pub fn to_gpx(ds: &Dataset, name_field: Option<usize>) -> crate::Result<String> 
     for (r, f) in ds.features.iter().enumerate() {
         crate::progress::step(1)?;
         let Some(g) = &f.geometry else { continue };
-        let name = xml(&name_field.map(|fi| ds.value(r, fi).to_file_text()).unwrap_or_else(|| f.id.to_string()));
+        let name = name_field.map(|fi| ds.value(r, fi).to_file_text()).unwrap_or_else(|| f.id.to_string());
+        let name = xml(&name, "GPX", || feature_place(&ds.name, f.id, "name"))?;
         match g {
             Geometry::Point(c) => out.push_str(&format!("<wpt {}><name>{name}</name></wpt>\n", pt(c))),
             Geometry::MultiPoint(v) => v.iter().for_each(|c| out.push_str(&format!("<wpt {}><name>{name}</name></wpt>\n", pt(c)))),
@@ -268,6 +310,12 @@ pub fn parse_wkt(text: &str) -> Result<(Option<Geometry>, Option<u32>), String> 
 
 /// [`parse_wkt`], also telling whether a coordinate had Z or M values, which were dropped.
 pub fn parse_wkt_zm(text: &str) -> Result<(Option<Geometry>, Option<u32>, bool), String> {
+    parse_wkt_report(text).map(|(g, srid, zm, _)| (g, srid, zm))
+}
+
+/// Parses WKT for tabular imports. The fourth tuple element says later non-empty collection
+/// members were dropped. Nested losses mark the input value once, not once per collection.
+pub(crate) fn parse_wkt_report(text: &str) -> Result<(Option<Geometry>, Option<u32>, bool, bool), String> {
     let text = text.trim();
     let (srid, body) = if text.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("SRID=")) {
         let (s, rest) = text.split_once(';').ok_or("an SRID= without the ';' before its geometry")?;
@@ -275,12 +323,12 @@ pub fn parse_wkt_zm(text: &str) -> Result<(Option<Geometry>, Option<u32>, bool),
     } else {
         (None, text)
     };
-    let mut p = WktParser { toks: wkt_tokens(body)?, at: 0, coords: 0, zm: false };
+    let mut p = WktParser { toks: wkt_tokens(body)?, at: 0, coords: 0, zm: false, members_dropped: false };
     let g = p.geometry(0)?;
     if p.at != p.toks.len() {
         return Err("text after the geometry".into());
     }
-    Ok((g, srid, p.zm))
+    Ok((g, srid, p.zm, p.members_dropped))
 }
 
 #[derive(Debug, PartialEq)]
@@ -347,6 +395,8 @@ struct WktParser {
     coords: usize,
     /// A coordinate had more than x and y.
     zm: bool,
+    /// This value lost at least one non-empty member, at any nesting depth.
+    members_dropped: bool,
 }
 
 impl WktParser {
@@ -420,6 +470,8 @@ impl WktParser {
         }
     }
 
+    /// Parses every member, retaining the first non-empty one and flagging later non-empty
+    /// members at the discard step; nested collections contribute to the same value's flag.
     fn geometry(&mut self, depth: usize) -> Result<Option<Geometry>, String> {
         if depth > 8 {
             return Err("geometry collections nested too deep".into());
@@ -458,18 +510,26 @@ impl WktParser {
             "MULTIPOLYGON" => Geometry::Polygon(self.list(Self::rings)?),
             "GEOMETRYCOLLECTION" => {
                 let members = self.list(|p| p.geometry(depth + 1))?;
-                return Ok(members.into_iter().flatten().next());
+                let mut members = members.into_iter().flatten();
+                let first = members.next();
+                self.members_dropped |= members.next().is_some();
+                return Ok(first);
             }
             other => return Err(format!("'{other}' geometries aren't read")),
         }))
     }
 }
 
+/// A [`to_wkt_csv`] cell's text before quoting: text starting like a formula is prefixed with `'`
+/// so spreadsheets show it rather than run it.
+pub(crate) fn wkt_csv_text(s: &str) -> String {
+    if s.starts_with(['=', '+', '-', '@']) && s.parse::<f64>().is_err() { format!("'{s}") } else { s.to_string() }
+}
+
 /// CSV with a `wkt` geometry column and every attribute; cancellable between features.
 pub fn to_wkt_csv(ds: &Dataset) -> crate::Result<String> {
-    // Text starting like a formula is prefixed with ' so spreadsheets show it rather than run it.
     let q = |s: &str| {
-        let s = if s.starts_with(['=', '+', '-', '@']) && s.parse::<f64>().is_err() { format!("'{s}") } else { s.to_string() };
+        let s = wkt_csv_text(s);
         if s.contains([',', '"', '\n', '\r']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s }
     };
     let mut out = String::from("wkt");

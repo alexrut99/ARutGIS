@@ -453,6 +453,19 @@ fn report_resampled_classes(s: &mut Session, source: &Raster, out: &Raster, meth
 /// The largest whole number a raster's 32-bit float pixels hold exactly.
 const EXACT_WHOLE: f64 = 16_777_216.0;
 
+/// The conversion of a layer's own coordinates to longitude/latitude, for polygons read one by
+/// one ([`rasterops::transform_feature_polygons_to_lonlat`]): none while they are
+/// longitude/latitude, as they are unless the layer holds another system. The same operation
+/// as [`rustgis_data::Dataset::lonlat_conversion`]'s: a conversion to longitude/latitude is the
+/// system's own, never a direct one between two others.
+fn held_transformer(ds: &rustgis_data::Dataset) -> Result<Option<rustgis_data::raster::Transformer>, String> {
+    let crs = ds.coord_crs();
+    if crs == Crs::LonLat {
+        return Ok(None);
+    }
+    crs.transformer().map(Some).map_err(|e| format!("{}: {e}", ds.name))
+}
+
 /// `raster.rasterize`: a polygon layer's selected (or all) features burned onto a grid given as
 /// `raster.project`'s is, each cell whose centre falls in a polygon taking its field's value, a
 /// text field's code or one `value` (see `rustgis_analysis::warp::rasterize`). A new layer, and
@@ -491,10 +504,12 @@ fn rasterize(s: &mut Session, p: &Value) -> CmdResult {
     rows.dedup();
     let (mut no_value, mut no_polygon) = (0, 0);
     let mut burns: Vec<(Vec<Vec<Vec<Coord>>>, rustgis_data::Value)> = Vec::new();
+    // Burned from longitude/latitude, whatever system the layer holds its coordinates in.
+    let own = held_transformer(ds)?;
     for row in rows {
         let Some(feature) = ds.features.get(row) else { continue };
         let parts = match &feature.geometry {
-            Some(Geometry::Polygon(polys)) => rasterops::transform_feature_polygons_to_lonlat(polys, None).ok(),
+            Some(Geometry::Polygon(polys)) => rasterops::transform_feature_polygons_to_lonlat(polys, own.as_ref()).ok(),
             _ => None,
         };
         let Some(parts) = parts else {
@@ -758,10 +773,7 @@ fn grid_param(
                     let layer = s.map().layer_by_name(l).filter(|l| l.raster.is_none()).ok_or_else(|| format!("no vector layer '{l}'"))?;
                     let rows: Vec<usize> =
                         if layer.selection.is_empty() { (0..layer.dataset.features.len()).collect() } else { layer.selection.clone() };
-                    let e = rows
-                        .iter()
-                        .filter_map(|row| layer.dataset.features.get(*row).and_then(|f| f.geometry.as_ref()))
-                        .fold(Extent::EMPTY, |e, g| e.union(&g.extent()));
+                    let e = layer.rows_extent(rows);
                     if e.is_empty() {
                         return Err(format!("{l} has no features to take an extent from"));
                     }
@@ -1038,7 +1050,16 @@ fn zone_rings(s: &Session, z: &str) -> Result<Vec<Vec<Coord>>, String> {
     let l =
         s.map().layer_by_name(z).filter(|l| l.geometry_type() == GeometryType::Polygon).ok_or_else(|| format!("no polygon layer '{z}'"))?;
     let row = l.selection.first().copied().unwrap_or(0);
-    let Some(Geometry::Polygon(polys)) = l.dataset.features.get(row).and_then(|f| f.geometry.as_ref()) else {
+    let Some(g) = l.dataset.features.get(row).and_then(|f| f.geometry.as_ref()) else {
+        return Err("the zone has no polygon".into());
+    };
+    // In longitude/latitude, whatever system the layer holds its coordinates in.
+    let Geometry::Polygon(polys) = &*l
+        .dataset
+        .lonlat_conversion()
+        .and_then(|to| rustgis_data::Dataset::geometry_to_lonlat_by(&to, g))
+        .map_err(|e| format!("{z}: {e}"))?
+    else {
         return Err("the zone has no polygon".into());
     };
     polys.first().cloned().ok_or_else(|| "the zone has no polygon".into())
@@ -1143,13 +1164,10 @@ fn index(s: &mut Session, p: &Value) -> CmdResult {
     super::workflows::made_or_ran(s, p, "raster.index")
 }
 
-/// What a spectral index reads of the session, and the work that makes it.
-pub(crate) fn index_work(s: &Session, p: &Value) -> Result<super::workflows::Work, String> {
-    let r = raster(s, p)?;
-    let bn = |k: &str, d: u64| uint(p, k).unwrap_or(d);
-    let (blue, green, red, nir, swir) = (bn("blue", 1), bn("green", 2), bn("red", 3), bn("nir", 4), bn("swir", 5));
-    let idx = ps(p, "index").ok_or("index is required")?;
-    let expr = match idx {
+/// The band math of a spectral index, over the numbers of the bands it reads (the Indices section's
+/// formulas, and a STAC item's: `stac.addIndex` puts its bands at these numbers).
+pub(crate) fn index_expression(idx: &str, blue: u64, green: u64, red: u64, nir: u64, swir: u64) -> Result<String, String> {
+    Ok(match idx {
         "ndvi" => format!("(b{nir} - b{red}) / (b{nir} + b{red})"),
         "ndwi" => format!("(b{green} - b{nir}) / (b{green} + b{nir})"),
         "savi" => format!("(b{nir} - b{red}) * 1.5 / (b{nir} + b{red} + 0.5)"),
@@ -1157,7 +1175,16 @@ pub(crate) fn index_work(s: &Session, p: &Value) -> Result<super::workflows::Wor
         "ndbi" => format!("(b{swir} - b{nir}) / (b{swir} + b{nir})"),
         "evi" => format!("2.5 * (b{nir} - b{red}) / (b{nir} + 6 * b{red} - 7.5 * b{blue} + 1)"),
         o => return Err(format!("unknown index '{o}'")),
-    };
+    })
+}
+
+/// What a spectral index reads of the session, and the work that makes it.
+pub(crate) fn index_work(s: &Session, p: &Value) -> Result<super::workflows::Work, String> {
+    let r = raster(s, p)?;
+    let bn = |k: &str, d: u64| uint(p, k).unwrap_or(d);
+    let (blue, green, red, nir, swir) = (bn("blue", 1), bn("green", 2), bn("red", 3), bn("nir", 4), bn("swir", 5));
+    let idx = ps(p, "index").ok_or("index is required")?;
+    let expr = index_expression(idx, blue, green, red, nir, swir)?;
     let out = name(p, format!("{}_{idx}", r.name))?;
     Ok(Box::new(move || super::workflows::made(rasterops::derive(&r, &out, vec![rasterops::band_math(&r, &expr)?])?, None)))
 }
@@ -1227,10 +1254,12 @@ pub(crate) fn process_work(s: &Session, p: &Value) -> Result<super::workflows::W
             }
             let mut polygons: Vec<Vec<Vec<Coord>>> = Vec::new();
             let mut failed_features = Vec::new();
+            // In longitude/latitude, whatever system the layer holds its coordinates in.
+            let own = held_transformer(&l.dataset)?;
             for &row in &rows {
                 let Some(f) = l.dataset.features.get(row) else { continue };
                 match &f.geometry {
-                    Some(Geometry::Polygon(polys)) => match rasterops::transform_feature_polygons_to_lonlat(polys, None) {
+                    Some(Geometry::Polygon(polys)) => match rasterops::transform_feature_polygons_to_lonlat(polys, own.as_ref()) {
                         Ok(transformed) => {
                             polygons.extend(transformed);
                         }
@@ -1688,19 +1717,32 @@ fn edge_pixels(r: &Raster, e: &Extent) -> Option<Vec<(f64, f64)>> {
     })
 }
 
-/// The columns and rows of a raster under a longitude/latitude box, or `None` when it misses
-/// (or can't be placed on it, [`edge_pixels`]).
-fn pixel_window(r: &Raster, e: &Extent) -> Option<(std::ops::Range<u32>, std::ops::Range<u32>)> {
+/// What [`pixel_window`] says of a polygon whose box misses the raster.
+const OUTSIDE_THE_RASTER: &str = "the polygon is outside the raster";
+
+/// The columns and rows of a raster under a longitude/latitude box; an error when it misses, or
+/// when the raster's coordinate system can't place the box's edge on it ([`edge_pixels`]).
+fn pixel_window(r: &Raster, e: &Extent) -> Result<(std::ops::Range<u32>, std::ops::Range<u32>), String> {
+    let pixels = edge_pixels(r, e).ok_or_else(|| {
+        let b = r.extent();
+        let misses = e.max_x < b.min_x || e.min_x > b.max_x || e.max_y < b.min_y || e.min_y > b.max_y;
+        if misses {
+            OUTSIDE_THE_RASTER.to_string()
+        } else {
+            format!("{}'s coordinate system can't place the polygon's edge on the raster", r.name)
+        }
+    })?;
     let (mut c0, mut r0, mut c1, mut r1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-    for (c, rr) in edge_pixels(r, e)? {
+    for (c, rr) in pixels {
         (c0, r0, c1, r1) = (c0.min(c), r0.min(rr), c1.max(c), r1.max(rr));
     }
     if c0 > c1 || c1 < 0.0 || r1 < 0.0 || c0 > f64::from(r.width) || r0 > f64::from(r.height) {
-        return None;
+        return Err(OUTSIDE_THE_RASTER.into());
     }
-    let cols = (c0.floor().max(0.0) as u32).min(r.width)..(c1.ceil().max(0.0) as u32 + 1).min(r.width);
-    let rows = (r0.floor().max(0.0) as u32).min(r.height)..(r1.ceil().max(0.0) as u32 + 1).min(r.height);
-    Some((cols, rows))
+    // A far edge past u32's range saturates there; the step past it mustn't overflow.
+    let cols = (c0.floor().max(0.0) as u32).min(r.width)..(c1.ceil().max(0.0) as u32).saturating_add(1).min(r.width);
+    let rows = (r0.floor().max(0.0) as u32).min(r.height)..(r1.ceil().max(0.0) as u32).saturating_add(1).min(r.height);
+    Ok((cols, rows))
 }
 
 fn edit_pixels(s: &mut Session, p: &Value) -> CmdResult {
@@ -1737,7 +1779,7 @@ fn edit_pixels(s: &mut Session, p: &Value) -> CmdResult {
     let mut bands = copied(&r)?;
     let mut n = 0usize;
     // Only the pixels under the polygon's box are visited.
-    let (cols, rows) = pixel_window(&r, &e).ok_or("the polygon is outside the raster")?;
+    let (cols, rows) = pixel_window(&r, &e)?;
     let tr = r.transformer();
     for row in rows {
         for col in cols.clone() {
@@ -1772,9 +1814,30 @@ fn edit_pixels(s: &mut Session, p: &Value) -> CmdResult {
     Ok(json!({"pixels": n}))
 }
 
+/// The ground distance on the WGS 84 ellipsoid from the start of a path to the point `along`
+/// metres along it as the sphere measures it (as `rasterops::profile` spaces its samples), given
+/// each leg's length on the sphere and on the ellipsoid: the legs before it at their ellipsoid
+/// length, and the same share of the leg it falls in.
+fn ellipsoid_along(legs: &[(f64, f64)], along: f64) -> f64 {
+    let (mut sphere, mut ground) = (0.0, 0.0);
+    for &(on_sphere, on_ellipsoid) in legs {
+        if along <= sphere + on_sphere {
+            let share = if on_sphere > 0.0 { ((along - sphere) / on_sphere).clamp(0.0, 1.0) } else { 0.0 };
+            return ground + on_ellipsoid * share;
+        }
+        sphere += on_sphere;
+        ground += on_ellipsoid;
+    }
+    ground
+}
+
 /// The most points `raster.measure` takes.
 const MAX_MEASURE_POINTS: usize = 10_000;
 
+/// `raster.measure`: one measurement of `points` on the map's body (a distance, with its length
+/// over the surface when `layer` gives heights; an area and perimeter; a height between two points;
+/// or a volume above a base), recorded in the session's results. The Earth measures on the WGS 84
+/// ellipsoid and another body on its sphere, as the Measure tool does.
 fn measure(s: &mut Session, p: &Value) -> CmdResult {
     let given = p.get("points").and_then(Value::as_array).ok_or("points is required")?;
     // Refused over the limit: a measurement of the first points would read as the whole
@@ -1790,16 +1853,35 @@ fn measure(s: &mut Session, p: &Value) -> CmdResult {
         d.require_coordinates()?;
     }
     let z = |c: Coord| dem.as_ref().and_then(|d| rasterops::elevation_at(d, 0, c));
-    // Ground lengths and areas on the map's body.
+    // Ground lengths and areas on the map's body: the Earth measures on the WGS 84 ellipsoid, as the
+    // Measure tool and the geoprocessing tools do (#939, #2568); another body measures on its
+    // sphere and scales.
     let body = s.map().body();
+    let earth = body.is_earth();
     let out = match kind {
         "distance" => {
             if pts.len() < 2 {
                 return Err("a distance needs two or more points".into());
             }
-            let flat = body.length(rustgis_geom::geodesic_length_m(&pts));
-            // Along the surface when there's an elevation raster.
+            // On the Earth, each leg's length on the sphere (as the profile below spaces its
+            // samples) and on the ellipsoid; the flat length is the ellipsoid's.
+            let legs: Vec<(f64, f64)> = if earth {
+                pts.windows(2)
+                    .map(|w| match w {
+                        [a, c] => (rustgis_geom::haversine_m(*a, *c), rustgis_geom::wgs84_distance_m(*a, *c)),
+                        _ => (0.0, 0.0),
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let flat = if earth { legs.iter().map(|l| l.1).sum() } else { body.length(rustgis_geom::geodesic_length_m(&pts)) };
+            // Along the surface when there's an elevation raster. The profile spaces its samples
+            // along the path on the sphere; on the Earth each step's ground run is taken from the
+            // legs it covers at their length on the ellipsoid, so level ground gives the flat
+            // length exactly.
             let surface = dem.as_ref().map(|d| {
+                let ground = |along: f64| if earth { ellipsoid_along(&legs, along) } else { body.length(along) };
                 let prof = rasterops::profile(d, 0, &pts, 500);
                 prof.windows(2)
                     .map(|w| match w {
@@ -1808,7 +1890,8 @@ fn measure(s: &mut Session, p: &Value) -> CmdResult {
                                 (Some(x), Some(y)) => y - x,
                                 _ => 0.0,
                             };
-                            (body.length(c.0 - a.0).powi(2) + dh * dh).sqrt()
+                            let run = ground(c.0) - ground(a.0);
+                            (run * run + dh * dh).sqrt()
                         }
                         _ => 0.0,
                     })
@@ -1827,11 +1910,15 @@ fn measure(s: &mut Session, p: &Value) -> CmdResult {
             if rustgis_geom::ring_area_is_ambiguous(&ring) {
                 return Err("the area is ambiguous: 1 ring winds beyond one whole surface".into());
             }
-            let area = body.area(rustgis_geom::geodesic_ring_area_m2(&ring));
+            let (perimeter, area) = if earth {
+                rustgis_geom::wgs84_ring_perimeter_area_m2(&ring)
+            } else {
+                (body.length(rustgis_geom::geodesic_ring_perimeter_m(&ring)), body.area(rustgis_geom::geodesic_ring_area_m2(&ring)))
+            };
             if !area.is_finite() {
                 return Err("the area cannot be measured from these coordinates".into());
             }
-            json!({"kind": "area", "squareMetres": area, "perimeterMetres": body.length(rustgis_geom::geodesic_ring_perimeter_m(&ring))})
+            json!({"kind": "area", "squareMetres": area, "perimeterMetres": perimeter})
         }
         "height" => {
             let (Some(a), Some(c)) = (pts.first(), pts.get(1)) else { return Err("a height needs two points (base, top)".into()) };
@@ -1852,7 +1939,7 @@ fn measure(s: &mut Session, p: &Value) -> CmdResult {
             let mut cells = Vec::new();
             let mut e = Extent::EMPTY;
             pts.iter().for_each(|c| e.expand(*c));
-            let (cols, rows) = pixel_window(d, &e).ok_or("the polygon is outside the raster")?;
+            let (cols, rows) = pixel_window(d, &e)?;
             let tr = d.transformer();
             for row in rows.map(i64::from) {
                 for col in cols.clone().map(i64::from) {
@@ -2414,4 +2501,24 @@ fn robinson_pixel_window_keeps_the_equatorial_edges() {
         assert!(f64::from(columns.start) <= col && f64::from(columns.end) >= col);
         assert!(f64::from(rows.start) <= row && f64::from(rows.end) >= row);
     }
+}
+
+/// A polygon off the raster is said to be outside it; one its coordinate system can't place (on
+/// the equator past 90° from a UTM zone's meridian) is said to be that, not outside the raster.
+#[test]
+fn pixel_window_tells_a_miss_from_a_place_it_cant_take() {
+    use rustgis_data::raster::{ColorHint, Crs, GeoTransform};
+    let transform = GeoTransform { origin_x: 0.0, origin_y: 1.0, pixel_width: 0.01, pixel_height: -0.01 };
+    let r = Raster::new("small", 100, 100, vec![vec![1.0; 10_000]], transform, Crs::LonLat, None, ColorHint::Gray, "Float32").unwrap();
+    assert_eq!(pixel_window(&r, &Extent::new(50.0, 50.0, 51.0, 51.0)).unwrap_err(), OUTSIDE_THE_RASTER);
+    // A box reaching billions of pixels past the raster is the raster's part, without overflow.
+    let tiny = GeoTransform { origin_x: 0.0, origin_y: 1.0, pixel_width: 1e-8, pixel_height: -1e-8 };
+    let r2 = Raster::new("tiny", 100, 100, vec![vec![1.0; 10_000]], tiny, Crs::LonLat, None, ColorHint::Gray, "Float32").unwrap();
+    assert_eq!(pixel_window(&r2, &Extent::new(0.0, -80.0, 170.0, 1.0)).unwrap(), (0..100, 0..100));
+    // UTM zone 17 refuses places on the equator more than 90° from its meridian (#1925).
+    let crs = Crs::from_epsg(32617).unwrap();
+    let transform = GeoTransform { origin_x: -9_000_000.0, origin_y: 9_000_000.0, pixel_width: 100_000.0, pixel_height: -100_000.0 };
+    let r = Raster::new("zone", 180, 180, vec![vec![1.0; 32_400]], transform, crs, None, ColorHint::Gray, "Float32").unwrap();
+    let e = pixel_window(&r, &Extent::new(-170.0, -10.0, 10.0, 10.0)).unwrap_err();
+    assert!(e.contains("coordinate system can't place the polygon's edge"), "{e}");
 }

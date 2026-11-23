@@ -16,6 +16,9 @@ pub(super) struct CurveSpec {
     pub chars: Vec<String>,
     pub advances: Vec<f32>,
     pub gap: f32,
+    /// The text's size: with the letter spacing, how far the line is smoothed either side of the
+    /// text when its course is read ([`line_labels::Line::curved`]).
+    pub size: f32,
     pub overrun: f32,
     /// How far off the line, in screen points ([`line_labels::off_line`]).
     pub off: f32,
@@ -36,6 +39,15 @@ impl std::fmt::Debug for Curves {
 }
 
 impl Curves {
+    /// About how many bytes its positions, changes and spec take, for a budget: a spec, or the
+    /// line in it, shared by several candidates counts in each.
+    pub fn bytes(&self) -> usize {
+        let spec = &self.spec;
+        let chars = spec.chars.iter().map(|c| size_of::<String>() + c.len()).sum::<usize>();
+        let spec = size_of::<CurveSpec>() + chars + spec.advances.len() * size_of::<f32>() + spec.line.bytes();
+        self.positions.len() * size_of::<f32>() + self.changes.len() * size_of::<Change>() + spec
+    }
+
     pub fn new(spec: Arc<CurveSpec>, positions: Vec<f32>, locked: Option<usize>) -> Self {
         Self { spec, positions, locked, changes: Vec::new() }
     }
@@ -106,7 +118,7 @@ impl Curves {
         let ((x, y), turns) = self
             .spec
             .line
-            .curved(&self.spec.advances, self.spec.gap, self.spec.overrun, Some(at))
+            .curved(&self.spec.advances, self.spec.gap, self.spec.size, self.spec.overrun, Some(at))
             .and_then(|c| line_labels::curved_off(c, self.spec.off))?;
         // Reuse the preceding rejected place's vector and String capacities. The accepted
         // middle preview retains its own glyphs; later failed attempts can share this pool.

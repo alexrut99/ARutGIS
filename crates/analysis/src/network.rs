@@ -2,8 +2,9 @@
 //! attribute similarity and neighbourhood summaries.
 
 use std::collections::{BinaryHeap, HashMap};
+use std::sync::{Arc, Mutex, Weak};
 
-use rustgis_data::{Dataset, Geometry};
+use rustgis_data::{Dataset, Feature, Geometry};
 use rustgis_geom::{Coord, EARTH_RADIUS_M, WGS84_MIN_RADIUS_M, haversine_m, wgs84_distance_m};
 
 /// A shortest route: its path, length in metres, cost, and the line rows it uses.
@@ -15,6 +16,8 @@ pub struct Route {
     pub rows: Vec<usize>,
     /// Segments omitted because an endpoint has non-finite coordinates or an invalid latitude.
     pub skipped_segments: usize,
+    /// Lines closed because their cost times a segment's length is past the largest number.
+    pub overflowing: usize,
 }
 
 #[derive(PartialEq)]
@@ -36,10 +39,204 @@ fn key(c: Coord) -> (i64, i64) {
     ((c.x * 1e7).round() as i64, (c.y * 1e7).round() as i64)
 }
 
+type Edge = (usize, f64, f64, usize); // (to, cost, length, row)
+type Segment = (usize, usize, f64, usize); // (from, to, weight, row)
+
+/// Immutable topology: snapped route ends belong only to each query's working copy.
+struct Network {
+    nodes: Vec<Coord>,
+    adj: Vec<Vec<Edge>>,
+    segs: Vec<Segment>,
+    skipped_segments: usize,
+    /// Lines whose cost times a segment's length is past the largest number: closed, as a
+    /// search would never take an edge of infinite cost.
+    overflowing: usize,
+}
+
+/// Whether a segment of a line in `parts` costs no finite number at `weight` a metre. Segments
+/// left out for their coordinates don't count. It looks at Cancel as `build` does, every 4096
+/// segments measured.
+fn cost_overflows(parts: &[Vec<Coord>], weight: f64, pace: &mut crate::control::Pace) -> Result<bool, String> {
+    // No segment is longer than half the Earth's circumference: a weight finite at that length
+    // is finite on every segment, so the segments are measured only past it.
+    if (weight * 2.1e7).is_finite() {
+        return Ok(false);
+    }
+    for w in parts.iter().flat_map(|part| part.windows(2)) {
+        if pace.stop(4096) {
+            return Err(crate::control::Cancelled.into());
+        }
+        if let (Some(a), Some(b)) = (w.first(), w.get(1))
+            && a.is_finite()
+            && b.is_finite()
+            && a.y.abs() <= 90.0
+            && b.y.abs() <= 90.0
+            && !(wgs84_distance_m(*a, *b) * weight).is_finite()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+impl Network {
+    /// Builds edges in source order, preserving shortest-path tie breaking and arithmetic.
+    fn build(ds: &Dataset, rows: &[usize], cost_field: Option<usize>) -> Result<Self, String> {
+        let route_error = |reason, skipped, overflowing| route_error(ds, reason, skipped, overflowing);
+        let mut skipped_segments = 0;
+        let mut overflowing = 0;
+        let mut ids: HashMap<(i64, i64), usize> = HashMap::new();
+        let mut nodes: Vec<Coord> = Vec::new();
+        let mut adj: Vec<Vec<Edge>> = Vec::new();
+        let mut segs: Vec<Segment> = Vec::new();
+        let node = |c: Coord, ids: &mut HashMap<(i64, i64), usize>, nodes: &mut Vec<Coord>, adj: &mut Vec<Vec<Edge>>| {
+            *ids.entry(key(c)).or_insert_with(|| {
+                nodes.push(c);
+                adj.push(Vec::new());
+                nodes.len() - 1
+            })
+        };
+        let mut pace = crate::control::Pace::default();
+        crate::control::begin(rows.len());
+        for (i, r) in rows.iter().enumerate() {
+            crate::control::check()?;
+            crate::control::reached(i);
+            let Some(Geometry::Line(parts)) = ds.features.get(*r).and_then(|f| f.geometry.as_ref()) else { continue };
+            // A cost multiplies each edge's length; no value means 1, and zero or less closes the
+            // line (impassable).
+            let weight = match cost_field.map(|fi| ds.value(*r, fi).as_f64()) {
+                Some(Some(w)) if w.is_finite() && w > 0.0 => w,
+                Some(Some(_)) => continue,
+                _ => 1.0,
+            };
+            if cost_overflows(parts, weight, &mut pace)? {
+                overflowing += 1;
+                continue;
+            }
+            for part in parts {
+                for w in part.windows(2) {
+                    if pace.stop(4096) {
+                        return Err(crate::control::Cancelled.into());
+                    }
+                    let (Some(a), Some(b)) = (w.first(), w.get(1)) else { continue };
+                    // Non-finite coordinates cast to ordinary integer keys (NaN becomes zero).
+                    // Keep unroutable segments out before they can corrupt a valid shared node.
+                    if !a.is_finite() || !b.is_finite() || a.y.abs() > 90.0 || b.y.abs() > 90.0 {
+                        skipped_segments += 1;
+                        continue;
+                    }
+                    let (ia, ib) = (node(*a, &mut ids, &mut nodes, &mut adj), node(*b, &mut ids, &mut nodes, &mut adj));
+                    let len = wgs84_distance_m(*a, *b);
+                    if let Some(v) = adj.get_mut(ia) {
+                        v.push((ib, len * weight, len, *r));
+                    }
+                    if let Some(v) = adj.get_mut(ib) {
+                        v.push((ia, len * weight, len, *r));
+                    }
+                    segs.push((ia, ib, weight, *r));
+                    // Checked per segment, so one huge feature can't grow the network unbounded.
+                    if segs.len() > 10_000_000 || nodes.len() > 5_000_000 {
+                        return Err(route_error("the network is too large".into(), skipped_segments, overflowing));
+                    }
+                }
+            }
+        }
+        if segs.is_empty() && skipped_segments > 0 {
+            return Err(route_error("no usable network remains".into(), skipped_segments, overflowing));
+        }
+        crate::control::finish();
+        Ok(Self { nodes, adj, segs, skipped_segments, overflowing })
+    }
+
+    /// Heap storage retained by the cache, including spare capacity in every adjacency list.
+    fn bytes(&self) -> usize {
+        size_of::<Network>()
+            .saturating_add(2 * size_of::<usize>())
+            .saturating_add(self.nodes.capacity().saturating_mul(size_of::<Coord>()))
+            .saturating_add(self.adj.capacity().saturating_mul(size_of::<Vec<Edge>>()))
+            .saturating_add(self.segs.capacity().saturating_mul(size_of::<Segment>()))
+            .saturating_add(self.adj.iter().fold(0usize, |n, edges| n.saturating_add(edges.capacity().saturating_mul(size_of::<Edge>()))))
+    }
+}
+
+const GRAPH_CACHE_BYTES: usize = 256 << 20;
+
+struct CachedNetwork {
+    features: Weak<Vec<Feature>>,
+    /// The system the rows held their coordinates in, and the datum grids there were, when the
+    /// graph was built: a relabel (Define Projection keeps the rows) or a grid downloaded since
+    /// gives another graph from the same rows.
+    held: (rustgis_data::raster::Crs, u64),
+    rows: Vec<usize>,
+    cost_field: Option<usize>,
+    graph: Arc<Network>,
+}
+
+static NETWORK: Mutex<Option<CachedNetwork>> = Mutex::new(None);
+
+/// Reuses one bounded graph across calls and workers, without retaining the source features.
+/// Mutable feature access invalidates the weak allocation identity, including in-place edits.
+fn network_for(
+    cache: &Mutex<Option<CachedNetwork>>,
+    ds: &Dataset,
+    rows: &[usize],
+    cost_field: Option<usize>,
+) -> Result<Arc<Network>, String> {
+    network_keyed(cache, ds, rows, cost_field, || Network::build(ds, rows, cost_field))
+}
+
+/// [`network_for`] kept under `ds`'s rows as it holds them (its system, and the datum grids
+/// there are), the rows the graph stands for, and built by `build` only when the one kept isn't
+/// theirs.
+fn network_keyed(
+    cache: &Mutex<Option<CachedNetwork>>,
+    ds: &Dataset,
+    rows: &[usize],
+    cost_field: Option<usize>,
+    build: impl FnOnce() -> Result<Network, String>,
+) -> Result<Arc<Network>, String> {
+    crate::control::check()?;
+    let features = ds.features.allocation_key();
+    let held = (ds.coord_crs(), rustgis_data::raster::crs::grid_generation());
+    {
+        let cached = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(cached) =
+            cached.as_ref().filter(|c| c.features.ptr_eq(&features) && c.held == held && c.rows == rows && c.cost_field == cost_field)
+        {
+            return Ok(cached.graph.clone());
+        }
+    }
+    // Build outside the lock: another run can check Cancel while this one builds its graph.
+    let graph = Arc::new(build()?);
+    let bytes = graph.bytes().saturating_add(rows.len().saturating_mul(size_of::<usize>()));
+    crate::control::check()?;
+    let mut cached = cache.lock().unwrap_or_else(|e| e.into_inner());
+    *cached = (bytes <= GRAPH_CACHE_BYTES).then(|| CachedNetwork { features, held, rows: rows.to_vec(), cost_field, graph: graph.clone() });
+    Ok(graph)
+}
+
+/// Preserve clean-network errors; failed partial routes must still disclose omissions: segments
+/// with invalid coordinates and lines closed for a cost past the largest number.
+fn route_error(ds: &Dataset, reason: String, skipped_segments: usize, overflowing: usize) -> String {
+    let mut said = reason;
+    if skipped_segments > 0 {
+        said.push_str(&format!("; {skipped_segments} segments with invalid coordinates were omitted from '{}'", ds.name));
+    }
+    if overflowing > 0 {
+        said.push_str(&format!(
+            "; {overflowing} line(s) of '{}' cost so much that a segment's cost is past the largest number, and were closed",
+            ds.name
+        ));
+    }
+    said
+}
+
 /// The shortest route between two points over the lines of `rows`, joining where vertices
 /// coincide. Each edge costs its length (on the WGS 84 ellipsoid) times the row's `cost_field`
 /// value (1 when empty; lines costing zero or less are closed). Each
 /// end snaps to the nearest point on a line (within `snap_m`), where the route starts or stops.
+/// Repeated calls share one graph up to 256 MiB; edits, row order/visibility and cost field changes
+/// rebuild it. Snapping and endpoint attachments remain specific to each call.
 pub fn shortest_route(
     ds: &Dataset,
     rows: &[usize],
@@ -48,100 +245,141 @@ pub fn shortest_route(
     cost_field: Option<usize>,
     snap_m: f64,
 ) -> Result<Route, String> {
+    shortest_route_with(&NETWORK, ds, rows, from, to, cost_field, snap_m)
+}
+
+/// [`shortest_route`] over `held`, a layer held in another system than longitude/latitude: the
+/// graph is built from `lonlat`, the layer in longitude/latitude, only when the one kept isn't
+/// for `held`'s rows as they are, and is kept under them. Later routes over the same layer then
+/// reuse it without converting the layer again; the converted copy isn't kept.
+pub fn shortest_route_held<'a>(
+    held: &Dataset,
+    lonlat: impl FnOnce() -> Result<std::borrow::Cow<'a, Dataset>, String>,
+    rows: &[usize],
+    from: Coord,
+    to: Coord,
+    cost_field: Option<usize>,
+    snap_m: f64,
+) -> Result<Route, String> {
+    check_route_ends(from, to, snap_m)?;
+    let graph = network_keyed(&NETWORK, held, rows, cost_field, || Network::build(&*lonlat()?, rows, cost_field))?;
+    route_on(&graph, held, from, to, snap_m)
+}
+
+/// Refuses a snap distance or route end a route can't be found from.
+fn check_route_ends(from: Coord, to: Coord, snap_m: f64) -> Result<(), String> {
     if !snap_m.is_finite() {
         return Err("the snap distance must be finite".into());
     }
     if [from, to].iter().any(|c| !c.is_finite() || c.y.abs() > 90.0) {
         return Err("a route end has invalid coordinates".into());
     }
-    // Preserve clean-network errors; failed partial routes must still disclose omissions.
-    let route_error = |reason: String, skipped_segments: usize| {
-        if skipped_segments == 0 {
-            reason
-        } else {
-            format!("{reason}; {skipped_segments} segments with invalid coordinates were omitted from '{}'", ds.name)
-        }
-    };
-    let mut skipped_segments = 0;
-    let mut ids: HashMap<(i64, i64), usize> = HashMap::new();
-    let mut nodes: Vec<Coord> = Vec::new();
-    let mut adj: Vec<Vec<(usize, f64, f64, usize)>> = Vec::new(); // (to, cost, length, row)
-    let mut segs: Vec<(usize, usize, f64, usize)> = Vec::new(); // (from, to, weight, row)
-    let node = |c: Coord, ids: &mut HashMap<(i64, i64), usize>, nodes: &mut Vec<Coord>, adj: &mut Vec<Vec<(usize, f64, f64, usize)>>| {
-        *ids.entry(key(c)).or_insert_with(|| {
-            nodes.push(c);
-            adj.push(Vec::new());
-            nodes.len() - 1
+    Ok(())
+}
+
+/// Keeps endpoint validation, graph reuse and search on the same path for any cache owner.
+fn shortest_route_with(
+    cache: &Mutex<Option<CachedNetwork>>,
+    ds: &Dataset,
+    rows: &[usize],
+    from: Coord,
+    to: Coord,
+    cost_field: Option<usize>,
+    snap_m: f64,
+) -> Result<Route, String> {
+    check_route_ends(from, to, snap_m)?;
+    let graph = network_for(cache, ds, rows, cost_field)?;
+    route_on(&graph, ds, from, to, snap_m)
+}
+
+/// The closest point on any of `segs` to `p`: (segment, fraction along it, the point, metres
+/// away). With `within`, only segments whose box comes within about that many metres of `p` are
+/// measured; one farther can't be within it, so a nearer one is never missed.
+fn nearest_segment(segs: &[Segment], nodes: &[Coord], p: Coord, within: Option<f64>) -> Result<Option<(usize, f64, Coord, f64)>, String> {
+    crate::control::check()?;
+    let window = within.and_then(|m| snap_window(p, m));
+    let k = p.y.to_radians().cos().max(0.01);
+    let mut stopped = false;
+    let mut pace = crate::control::Pace::default();
+    let nearest = segs
+        .iter()
+        .enumerate()
+        .take_while(|_| {
+            stopped = pace.stop(4096);
+            !stopped
         })
-    };
-    for r in rows {
-        let Some(Geometry::Line(parts)) = ds.features.get(*r).and_then(|f| f.geometry.as_ref()) else { continue };
-        // A cost multiplies each edge's length; no value means 1, and zero or less closes the
-        // line (impassable).
-        let weight = match cost_field.map(|fi| ds.value(*r, fi).as_f64()) {
-            Some(Some(w)) if w.is_finite() && w > 0.0 => w,
-            Some(Some(_)) => continue,
-            _ => 1.0,
-        };
-        for part in parts {
-            for w in part.windows(2) {
-                let (Some(a), Some(b)) = (w.first(), w.get(1)) else { continue };
-                // Non-finite coordinates cast to ordinary integer keys (NaN becomes zero).
-                // Keep unroutable segments out before they can corrupt a valid shared node.
-                if !a.is_finite() || !b.is_finite() || a.y.abs() > 90.0 || b.y.abs() > 90.0 {
-                    skipped_segments += 1;
-                    continue;
-                }
-                let (ia, ib) = (node(*a, &mut ids, &mut nodes, &mut adj), node(*b, &mut ids, &mut nodes, &mut adj));
-                let len = wgs84_distance_m(*a, *b);
-                if let Some(v) = adj.get_mut(ia) {
-                    v.push((ib, len * weight, len, *r));
-                }
-                if let Some(v) = adj.get_mut(ib) {
-                    v.push((ia, len * weight, len, *r));
-                }
-                segs.push((ia, ib, weight, *r));
-                // Checked per segment, so one huge feature can't grow the network unbounded.
-                if segs.len() > 10_000_000 || nodes.len() > 5_000_000 {
-                    return Err(route_error("the network is too large".into(), skipped_segments));
-                }
+        .filter_map(|(i, (a, b, _, _))| {
+            let (a, b) = (*nodes.get(*a)?, *nodes.get(*b)?);
+            // A segment runs the short way, as it is measured: an end stored across ±180° from the
+            // other is moved by a whole turn beside it. Unchanged within 180° of each other.
+            let gap = b.x - a.x;
+            let b = if gap.abs() > 180.0 { Coord::new(a.x + (gap + 180.0).rem_euclid(360.0) - 180.0, b.y) } else { b };
+            // The whole turns between the point and the segment's middle: none within 180° of it,
+            // so only a segment near the antimeridian (or stored past ±180°) sees the point moved
+            // to its side, for the window test as for the projection.
+            let turn = 360.0 * ((0.5 * (a.x + b.x) - p.x) / 360.0).round();
+            if let Some([x0, x1, y0, y1]) = window
+                && (a.x.max(b.x) - turn < x0 || a.x.min(b.x) - turn > x1 || a.y.max(b.y) < y0 || a.y.min(b.y) > y1)
+            {
+                return None;
             }
-        }
+            let px = p.x + turn;
+            let (dx, dy) = ((b.x - a.x) * k, b.y - a.y);
+            let len2 = dx * dx + dy * dy;
+            let t = if len2 > 0.0 { (((px - a.x) * k * dx + (p.y - a.y) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+            let x = a.x + t * (b.x - a.x);
+            // Written within −180° to 180°, as a line's vertices are; unchanged when it is.
+            let x = if (-180.0..=180.0).contains(&x) { x } else { (x + 180.0).rem_euclid(360.0) - 180.0 };
+            let q = Coord::new(x, a.y + t * (b.y - a.y));
+            Some((i, t, q, haversine_m(q, p)))
+        })
+        .fold(None, |best: Option<(usize, f64, Coord, f64)>, (i, t, q, sphere)| {
+            // The minimum WGS 84 radius gives a lower bound, so a farther spherical
+            // candidate cannot be discarded merely because the two metrics rank it differently.
+            let lower = if (-90.0..=90.0).contains(&p.y) && (-90.0..=90.0).contains(&q.y) {
+                sphere * WGS84_MIN_RADIUS_M / EARTH_RADIUS_M
+            } else {
+                0.0 // The inverse solver clamps latitudes; the spherical bound would not apply.
+            };
+            if best.as_ref().is_some_and(|b| lower > b.3) {
+                return best;
+            }
+            let distance = wgs84_distance_m(q, p);
+            if distance.is_finite() && best.as_ref().is_none_or(|b| distance < b.3) { Some((i, t, q, distance)) } else { best }
+        });
+    if stopped {
+        return Err(crate::control::Cancelled.into());
     }
-    if segs.is_empty() && skipped_segments > 0 {
-        return Err(route_error("no usable network remains".into(), skipped_segments));
+    Ok(nearest)
+}
+
+/// The longitudes and latitudes `[west, east, south, north]` holding every place within `m`
+/// metres of `p`, with room to spare: a degree of latitude is at least 110.5 km long, and a degree
+/// of longitude at least that times the cosine of the latitude. None near a pole or ±180°, where a
+/// box doesn't hold them; then every segment is measured.
+fn snap_window(p: Coord, m: f64) -> Option<[f64; 4]> {
+    let dlat = m / 110_000.0 * 1.5;
+    let top = p.y.abs() + dlat;
+    if !dlat.is_finite() || top.is_nan() || top >= 80.0 {
+        return None;
     }
-    // The closest point on any segment: (segment, fraction along it, the point, metres away).
-    let nearest = |p: Coord, nodes: &[Coord]| -> Option<(usize, f64, Coord, f64)> {
-        let k = p.y.to_radians().cos().max(0.01);
-        segs.iter()
-            .enumerate()
-            .filter_map(|(i, (a, b, _, _))| {
-                let (a, b) = (*nodes.get(*a)?, *nodes.get(*b)?);
-                let (dx, dy) = ((b.x - a.x) * k, b.y - a.y);
-                let len2 = dx * dx + dy * dy;
-                let t = if len2 > 0.0 { (((p.x - a.x) * k * dx + (p.y - a.y) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
-                let q = Coord::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y));
-                Some((i, t, q, haversine_m(q, p)))
-            })
-            .fold(None, |best: Option<(usize, f64, Coord, f64)>, (i, t, q, sphere)| {
-                // The minimum WGS 84 radius gives a lower bound, so a farther spherical
-                // candidate cannot be discarded merely because the two metrics rank it differently.
-                let lower = if (-90.0..=90.0).contains(&p.y) && (-90.0..=90.0).contains(&q.y) {
-                    sphere * WGS84_MIN_RADIUS_M / EARTH_RADIUS_M
-                } else {
-                    0.0 // The inverse solver clamps latitudes; the spherical bound would not apply.
-                };
-                if best.as_ref().is_some_and(|b| lower > b.3) {
-                    return best;
-                }
-                let distance = wgs84_distance_m(q, p);
-                if distance.is_finite() && best.as_ref().is_none_or(|b| distance < b.3) { Some((i, t, q, distance)) } else { best }
-            })
-    };
+    let dlon = dlat / top.to_radians().cos();
+    (p.x - dlon > -180.0 && p.x + dlon < 180.0).then_some([p.x - dlon, p.x + dlon, p.y - dlat, p.y + dlat])
+}
+
+/// Runs the original search on a private copy, so endpoint attachments never leak across calls.
+/// Cloning the node and adjacency vectors is one step without a Cancel check inside it.
+fn route_on(graph: &Network, ds: &Dataset, from: Coord, to: Coord, snap_m: f64) -> Result<Route, String> {
+    crate::control::check()?;
+    let mut nodes = graph.nodes.clone();
+    let mut adj = graph.adj.clone();
+    let segs = &graph.segs;
+    let skipped_segments = graph.skipped_segments;
+    let route_error = |reason, skipped| route_error(ds, reason, skipped, graph.overflowing);
+    let nearest = |p: Coord, nodes: &[Coord]| nearest_segment(segs, nodes, p, None);
     // Each end becomes a node on its segment, joined to the segment's two ends.
-    let attach = |p: Coord, nodes: &mut Vec<Coord>, adj: &mut Vec<Vec<(usize, f64, f64, usize)>>| -> Result<(usize, usize, f64), String> {
-        let (si, t, q, d) = nearest(p, nodes).ok_or_else(|| route_error("the layer has no lines".into(), skipped_segments))?;
+    let attach = |p: Coord, nodes: &mut Vec<Coord>, adj: &mut Vec<Vec<Edge>>| -> Result<(usize, usize, f64), String> {
+        let (si, t, q, d) = nearest(p, nodes)?.ok_or_else(|| route_error("the layer has no lines".into(), skipped_segments))?;
         if d > snap_m {
             return Err(route_error(
                 format!("a route end is more than {} from the network", rustgis_geom::format_distance(snap_m)),
@@ -188,11 +426,18 @@ pub fn shortest_route(
     let mut dist = vec![f64::INFINITY; n];
     let mut prev: Vec<Option<(usize, f64, usize)>> = vec![None; n];
     let mut heap = BinaryHeap::new();
+    let mut summed_past = false;
     if let Some(d) = dist.get_mut(s) {
         *d = 0.0;
     }
     heap.push(State(0.0, s));
+    crate::control::begin(nodes.len());
+    let mut visited = 0;
+    let mut pace = crate::control::Pace::default();
     while let Some(State(d, u)) = heap.pop() {
+        crate::control::check()?;
+        visited += 1;
+        crate::control::reached(visited);
         if u == t {
             break;
         }
@@ -200,7 +445,13 @@ pub fn shortest_route(
             continue;
         }
         for &(v, c, len, row) in adj.get(u).map(Vec::as_slice).unwrap_or(&[]) {
+            if pace.stop(4096) {
+                return Err(crate::control::Cancelled.into());
+            }
             let nd = d + c;
+            // Each edge's cost is finite, but a path's sum of them can pass the largest number:
+            // never taken, and said if the route then has none.
+            summed_past |= c.is_finite() && !nd.is_finite();
             if nd < dist.get(v).copied().unwrap_or(f64::INFINITY) {
                 if let Some(x) = dist.get_mut(v) {
                     *x = nd;
@@ -214,7 +465,14 @@ pub fn shortest_route(
     }
     let cost = dist.get(t).copied().unwrap_or(f64::INFINITY);
     if !cost.is_finite() {
-        return Err(route_error("the two points aren't connected by the network".into(), skipped_segments));
+        // A sum past the largest number seen anywhere in the search may or may not be on the
+        // way to the target: both are said.
+        let why = if summed_past {
+            "the two points aren't joined by a route whose costs stay within the largest number: the costs along the network add up past it, or they aren't connected (give the lines smaller costs)"
+        } else {
+            "the two points aren't connected by the network"
+        };
+        return Err(route_error(why.into(), skipped_segments));
     }
     let mut path = Vec::new();
     let mut length = 0.0;
@@ -222,6 +480,7 @@ pub fn shortest_route(
     let mut at = t;
     path.push(nodes.get(t).copied().unwrap_or(to));
     while let Some(Some((p, len, row))) = prev.get(at) {
+        crate::control::check()?;
         path.push(nodes.get(*p).copied().unwrap_or(from));
         length += len;
         if used.last() != Some(row) {
@@ -232,7 +491,266 @@ pub fn shortest_route(
     path.reverse();
     used.reverse();
     used.dedup();
-    Ok(Route { path, length_m: length, cost, rows: used, skipped_segments })
+    crate::control::finish();
+    Ok(Route { path, length_m: length, cost, rows: used, skipped_segments, overflowing: graph.overflowing })
+}
+
+// ---------------------------------------------------------------------------------------------
+// Searches from several places at once, for service areas and cost matrices (#2344)
+
+/// A line network for searches from many places: the route's graph, shared through the same
+/// cache, so a route, a service area and a cost matrix over unchanged lines build it once.
+pub(crate) struct Graph(Arc<Network>);
+
+/// A point moved onto the network: onto segment `seg`, at `at`, `to_a` and `to_b` metres along
+/// the segment from its two ends.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Placed {
+    pub(crate) seg: usize,
+    pub(crate) at: Coord,
+    pub(crate) to_a: f64,
+    to_b: f64,
+}
+
+/// One segment of the network: its two ends (nodes), their places, the weight its length is
+/// multiplied by, and the row of the line it belongs to.
+pub(crate) struct SegmentInfo {
+    pub(crate) a: usize,
+    pub(crate) b: usize,
+    pub(crate) from: Coord,
+    pub(crate) to: Coord,
+    pub(crate) weight: f64,
+    pub(crate) row: usize,
+}
+
+impl Graph {
+    /// The network over `rows` of `ds` (in that order), each line's length multiplied by its
+    /// `cost_field` value as for [`shortest_route`]. Reused while the lines don't change.
+    pub(crate) fn of(ds: &Dataset, rows: &[usize], cost_field: Option<usize>) -> Result<Self, String> {
+        network_for(&NETWORK, ds, rows, cost_field).map(Self)
+    }
+
+    pub(crate) fn nodes(&self) -> usize {
+        self.0.nodes.len()
+    }
+
+    pub(crate) fn segments(&self) -> usize {
+        self.0.segs.len()
+    }
+
+    /// Segments left out of the network for invalid coordinates.
+    pub(crate) fn skipped_segments(&self) -> usize {
+        self.0.skipped_segments
+    }
+
+    /// Lines left out of the network as their cost times a segment's length is past the largest
+    /// number.
+    pub(crate) fn overflowing(&self) -> usize {
+        self.0.overflowing
+    }
+
+    /// Segment `i`, in the order the lines and their vertices were read; None past the last.
+    pub(crate) fn segment(&self, i: usize) -> Option<SegmentInfo> {
+        let &(a, b, weight, row) = self.0.segs.get(i)?;
+        Some(SegmentInfo { a, b, from: *self.0.nodes.get(a)?, to: *self.0.nodes.get(b)?, weight, row })
+    }
+
+    /// `p` moved onto the nearest segment, or None when none is within `snap_m` metres (or there
+    /// are no segments). Measured as a route's ends are.
+    pub(crate) fn place(&self, p: Coord, snap_m: f64) -> Result<Option<Placed>, String> {
+        if !p.is_finite() || p.y.abs() > 90.0 {
+            return Ok(None);
+        }
+        let Some((seg, _, at, moved_m)) = nearest_segment(&self.0.segs, &self.0.nodes, p, Some(snap_m))? else { return Ok(None) };
+        if moved_m > snap_m {
+            return Ok(None);
+        }
+        let Some(s) = self.segment(seg) else { return Ok(None) };
+        Ok(Some(Placed { seg, at, to_a: wgs84_distance_m(at, s.from), to_b: wgs84_distance_m(at, s.to) }))
+    }
+
+    /// Where a search from `p` starts: both ends of its segment, at the cost and length of the
+    /// way along it, labelled `source`. None for a place not on this graph, so it reaches nothing.
+    pub(crate) fn starts(&self, p: &Placed, source: usize) -> Vec<Start> {
+        let Some(&(a, b, w, _)) = self.0.segs.get(p.seg) else { return Vec::new() };
+        vec![Start { node: a, cost: p.to_a * w, length: p.to_a, source }, Start { node: b, cost: p.to_b * w, length: p.to_b, source }]
+    }
+
+    /// The cheapest way to `to` found by `search`, as (cost, length): through either end of its
+    /// segment, or straight along it from `from` when both lie on the same segment. Infinite when
+    /// the search didn't reach it.
+    pub(crate) fn reach(&self, search: &Search, from: &Placed, to: &Placed) -> (f64, f64) {
+        let Some(&(a, b, w, _)) = self.0.segs.get(to.seg) else { return (f64::INFINITY, f64::INFINITY) };
+        let mut best = (f64::INFINITY, f64::INFINITY);
+        for (node, along) in [(a, to.to_a), (b, to.to_b)] {
+            let cost = search.cost(node) + along * w;
+            if cost < best.0 {
+                best = (cost, search.length(node) + along);
+            }
+        }
+        if from.seg == to.seg {
+            let along = wgs84_distance_m(from.at, to.at);
+            if along * w <= best.0 {
+                best = (along * w, along);
+            }
+        }
+        best
+    }
+}
+
+/// Where a search starts: a node, the cost and length of reaching it from the start's own place,
+/// and the start's label (a facility's or an origin's number).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Start {
+    pub(crate) node: usize,
+    pub(crate) cost: f64,
+    pub(crate) length: f64,
+    pub(crate) source: usize,
+}
+
+/// A search's working state, made once per thread and reused: each search resets only the nodes
+/// the last one reached, so many short searches over a large network don't each clear it all.
+pub(crate) struct Search {
+    cost: Vec<f64>,
+    length: Vec<f64>,
+    source: Vec<usize>,
+    settled: Vec<bool>,
+    touched: Vec<usize>,
+    heap: BinaryHeap<State>,
+}
+
+impl Search {
+    /// The most bytes a search over `graph` holds, for sharing memory between threads: its arrays
+    /// by node, and its queue, which may take an entry for each way along each segment and for
+    /// each start, kept between searches at up to twice that as it grows.
+    pub(crate) fn bytes(graph: &Graph) -> usize {
+        let per_node = graph.nodes().saturating_mul(3 * size_of::<f64>() + 1 + 2 * size_of::<usize>());
+        let queue = graph.segments().saturating_mul(2).saturating_add(2).saturating_mul(2 * size_of::<State>());
+        per_node.saturating_add(queue)
+    }
+
+    pub(crate) fn new(graph: &Graph) -> Self {
+        let n = graph.nodes();
+        Self {
+            cost: vec![f64::INFINITY; n],
+            length: vec![f64::INFINITY; n],
+            source: vec![usize::MAX; n],
+            settled: vec![false; n],
+            touched: Vec::new(),
+            heap: BinaryHeap::new(),
+        }
+    }
+
+    /// The least cost of reaching `node` in the last search: exact for every node it settled. When
+    /// `settled` ended the search early, the others keep tentative costs; otherwise they are above
+    /// `limit` (or infinite).
+    pub(crate) fn cost(&self, node: usize) -> f64 {
+        self.cost.get(node).copied().unwrap_or(f64::INFINITY)
+    }
+
+    /// The length of the way to `node` that [`Search::cost`] costs.
+    pub(crate) fn length(&self, node: usize) -> f64 {
+        self.length.get(node).copied().unwrap_or(f64::INFINITY)
+    }
+
+    /// The nodes the last search gave a cost: every node it settled, and some beyond `limit`.
+    pub(crate) fn reached(&self) -> impl Iterator<Item = usize> + '_ {
+        self.touched.iter().copied()
+    }
+
+    /// The start `node` is reached from most cheaply: of equally cheap ones, the first to reach it,
+    /// which depends on the network, and for starts at one node on the order they were given.
+    pub(crate) fn source(&self, node: usize) -> Option<usize> {
+        self.source.get(node).copied().filter(|s| *s != usize::MAX)
+    }
+
+    /// Settles nodes in order of their cost from the nearest of `starts`, every node costing up to
+    /// `limit`, and calls `settled` with each; the search ends early when it returns true. With
+    /// `progress`, counts the nodes settled for the run's progress (a search on its own, not one
+    /// of many made on several threads, which count theirs).
+    pub(crate) fn run(
+        &mut self,
+        graph: &Graph,
+        starts: &[Start],
+        limit: f64,
+        progress: bool,
+        mut settled: impl FnMut(usize) -> bool,
+    ) -> Result<(), String> {
+        for &n in &self.touched {
+            if let Some(c) = self.cost.get_mut(n) {
+                *c = f64::INFINITY;
+            }
+            if let Some(l) = self.length.get_mut(n) {
+                *l = f64::INFINITY;
+            }
+            if let Some(s) = self.source.get_mut(n) {
+                *s = usize::MAX;
+            }
+            if let Some(s) = self.settled.get_mut(n) {
+                *s = false;
+            }
+        }
+        self.touched.clear();
+        self.heap.clear();
+        crate::control::check()?;
+        for s in starts {
+            self.improve(s.node, s.cost, s.length, s.source);
+        }
+        let adj = &graph.0.adj;
+        if progress {
+            crate::control::begin(adj.len());
+        }
+        let mut visited = 0;
+        let mut pace = crate::control::Pace::default();
+        while let Some(State(d, u)) = self.heap.pop() {
+            if pace.stop(1) {
+                return Err(crate::control::Cancelled.into());
+            }
+            if d > self.cost(u) || self.settled.get(u).copied().unwrap_or(true) {
+                continue;
+            }
+            if d > limit {
+                break;
+            }
+            if let Some(s) = self.settled.get_mut(u) {
+                *s = true;
+            }
+            visited += 1;
+            if progress {
+                crate::control::reached(visited);
+            }
+            if settled(u) {
+                break;
+            }
+            let (length, source) = (self.length(u), self.source.get(u).copied().unwrap_or(usize::MAX));
+            for &(v, c, len, _) in adj.get(u).map(Vec::as_slice).unwrap_or(&[]) {
+                self.improve(v, d + c, length + len, source);
+            }
+        }
+        if progress {
+            crate::control::finish();
+        }
+        Ok(())
+    }
+
+    /// Records a cheaper way to `node`, if this is one.
+    fn improve(&mut self, node: usize, cost: f64, length: f64, source: usize) {
+        let Some(old) = self.cost.get_mut(node) else { return };
+        if cost.is_nan() || cost >= *old {
+            return;
+        }
+        if old.is_infinite() {
+            self.touched.push(node);
+        }
+        *old = cost;
+        if let Some(l) = self.length.get_mut(node) {
+            *l = length;
+        }
+        if let Some(s) = self.source.get_mut(node) {
+            *s = source;
+        }
+        self.heap.push(State(cost, node));
+    }
 }
 
 /// Most random points made in one call, and point-in-polygon tries spent making them.
@@ -342,29 +860,105 @@ pub fn profile_fields(ds: &Dataset) -> Vec<FieldProfile> {
         .collect()
 }
 
+/// Ranked rows and the count of other resident rows lacking a finite value in at least one
+/// compared field. Per-field standardization still uses every finite value in that field.
+#[derive(Debug)]
+pub struct Similarity {
+    pub matches: Vec<(usize, f64)>,
+    pub skipped: usize,
+}
+
 /// Rows ranked by how close their numeric attributes are to a row's (z-scored Euclidean
-/// distance over `fields`), nearest first, excluding the row itself.
-pub fn similar(ds: &Dataset, row: usize, fields: &[usize], n: usize) -> Vec<(usize, f64)> {
-    let stats: Vec<(f64, f64)> = fields
-        .iter()
-        .map(|fi| {
-            let vals: Vec<f64> = (0..ds.features.len()).filter_map(|r| ds.value(r, *fi).as_f64()).filter(|v| v.is_finite()).collect();
-            let m = vals.iter().sum::<f64>() / vals.len().max(1) as f64;
-            let sd = (vals.iter().map(|v| (v - m).powi(2)).sum::<f64>() / vals.len().max(1) as f64).sqrt();
-            (m, if sd > 0.0 { sd } else { 1.0 })
-        })
-        .collect();
-    let vec_of = |r: usize| -> Option<Vec<f64>> {
-        fields.iter().zip(&stats).map(|(fi, (m, sd))| ds.value(r, *fi).as_f64().filter(|v| v.is_finite()).map(|v| (v - m) / sd)).collect()
+/// distance over `fields`), nearest first, excluding the row itself. Counts progress and checks
+/// Cancel between rows and within wide vectors. The stable library sort is one indivisible step,
+/// checked immediately before and after; equal-distance rows keep their original order.
+/// Non-finite standardization statistics are refused before ranking any candidates.
+pub fn similar(ds: &Dataset, row: usize, fields: &[usize], n: usize) -> Result<Similarity, String> {
+    use crate::control;
+    control::begin(ds.features.len().saturating_mul(fields.len().saturating_mul(3).saturating_add(1)));
+    let mut stats = Vec::with_capacity(fields.len());
+    for fi in fields {
+        let mut vals = Vec::new();
+        for r in 0..ds.features.len() {
+            control::check()?;
+            control::advance(1);
+            if let Some(v) = ds.value(r, *fi).as_f64().filter(|v| v.is_finite()) {
+                vals.push(v);
+            }
+        }
+        // Result's sum delegates to the same f64 reduction as the original iterator sum;
+        // cancellation changes neither its order nor its identity value.
+        let m = vals
+            .iter()
+            .map(|v| {
+                control::check()?;
+                control::advance(1);
+                Ok(*v)
+            })
+            .sum::<Result<f64, control::Cancelled>>()?
+            / vals.len().max(1) as f64;
+        let sd = (vals
+            .iter()
+            .map(|v| {
+                control::check()?;
+                control::advance(1);
+                Ok((v - m).powi(2))
+            })
+            .sum::<Result<f64, control::Cancelled>>()?
+            / vals.len().max(1) as f64)
+            .sqrt();
+        if !m.is_finite() || !sd.is_finite() {
+            return Err("a compared field's values are too large to standardize (its mean or spread overflows)".into());
+        }
+        stats.push((m, if sd > 0.0 { sd } else { 1.0 }));
+    }
+    let mut vector_pace = control::Pace::default();
+    let mut vec_of = |r: usize| -> Result<Option<Vec<f64>>, control::Cancelled> {
+        fields
+            .iter()
+            .zip(&stats)
+            .map(|(fi, (m, sd))| {
+                if vector_pace.stop(1) {
+                    return Err(control::Cancelled);
+                }
+                Ok(ds.value(r, *fi).as_f64().filter(|v| v.is_finite()).map(|v| (v - m) / sd))
+            })
+            .collect()
     };
-    let Some(target) = vec_of(row) else { return Vec::new() };
-    let mut out: Vec<(usize, f64)> = (0..ds.features.len())
-        .filter(|r| *r != row)
-        .filter_map(|r| vec_of(r).map(|v| (r, v.iter().zip(&target).map(|(a, b)| (a - b).powi(2)).sum::<f64>().sqrt())))
-        .collect();
+    let Some(target) = vec_of(row)? else {
+        return Err("the reference row needs a finite numeric value in every compared field".into());
+    };
+    let mut distance_pace = control::Pace::default();
+    let mut out = Vec::new();
+    let mut skipped = 0;
+    for r in 0..ds.features.len() {
+        control::check()?;
+        control::advance(1);
+        if r != row {
+            let Some(v) = vec_of(r)? else {
+                skipped += 1;
+                continue;
+            };
+            let distance = v
+                .iter()
+                .zip(&target)
+                .map(|(a, b)| {
+                    if distance_pace.stop(1) {
+                        return Err(control::Cancelled);
+                    }
+                    Ok((a - b).powi(2))
+                })
+                .sum::<Result<f64, control::Cancelled>>()?
+                .sqrt();
+            out.push((r, distance));
+        }
+    }
+    control::check()?;
     out.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    control::check()?;
     out.truncate(n);
-    out
+    control::finish();
+    Ok(Similarity { matches: out, skipped })
 }
 
 fn radius_scale(at: Coord) -> f64 {
@@ -444,13 +1038,18 @@ pub struct WithinReport {
 }
 
 /// Searches like [`within_counted`], also counting shapes refused for invalid latitudes and
-/// shapes measured without vertices whose coordinates are missing or infinite.
+/// shapes measured without vertices whose coordinates are missing or infinite. Shapes are measured
+/// in longitude/latitude, converted from the dataset's own coordinates ([`Dataset::coord_crs`]),
+/// which they are already today; a place that doesn't convert counts as missing.
 pub fn within_report(ds: &Dataset, rows: &[usize], at: Coord, radius_m: f64) -> WithinReport {
     use rustgis_geom::MAX_LAT;
     // A center that's no place (a latitude past ±90°, a coordinate missing) reaches nothing.
     if !(at.x.is_finite() && at.y.abs() <= 90.0 && radius_m >= 0.0) {
         return WithinReport::default();
     }
+    // Nothing reached when its system can't be converted, which longitude/latitude never fails to
+    // be (`Dataset::coord_crs`).
+    let Ok(lonlat) = ds.lonlat_conversion() else { return WithinReport::default() };
     let m = rustgis_geom::lonlat_to_merc(at);
     let k = radius_scale(at);
     let polar_point = at.y.abs() > MAX_LAT;
@@ -466,7 +1065,14 @@ pub fn within_report(ds: &Dataset, rows: &[usize], at: Coord, radius_m: f64) -> 
     let mut out: Vec<(usize, f64)> = rows
         .iter()
         .filter_map(|r| {
-            let g = ds.features.get(*r)?.geometry.as_ref()?;
+            let own = ds.features.get(*r)?.geometry.as_ref()?;
+            let converted;
+            let g = if lonlat.is_identity() {
+                own
+            } else {
+                converted = lonlat.geometry(own);
+                &converted
+            };
             let (mut invalid, mut missing) = (false, false);
             g.for_each_coord(|c| {
                 invalid |= c.y.is_finite() && c.y.abs() > 90.0;
@@ -942,6 +1548,95 @@ mod tests {
         assert!(found.len() == 1 && bounded == 0, "{found:?} {bounded}");
     }
 
+    /// A segment across ±180° runs the short way: a point on it is placed there, and a point on
+    /// the far side of the world isn't placed on it at all.
+    #[test]
+    fn a_segment_across_the_antimeridian_is_measured_the_short_way() {
+        let mut ds = Dataset::new("roads", GeometryType::Polyline, vec![]);
+        ds.push(Some(Geometry::Line(vec![vec![Coord::new(179.99, 0.0), Coord::new(-179.99, 0.0)]])), vec![]);
+        let graph = Graph(Arc::new(Network::build(&ds, &[0], None).unwrap()));
+        assert!(graph.place(Coord::new(0.0, 0.0), 1000.0).unwrap().is_none(), "nowhere near it");
+        let on = graph.place(Coord::new(179.995, 0.0), 10.0).unwrap();
+        assert!(on.is_some_and(|p| (p.at.x - 179.995).abs() < 1e-9), "{on:?}");
+        let across = graph.place(Coord::new(-179.995, 0.0001), 50.0).unwrap();
+        assert!(across.is_some_and(|p| (p.at.x + 179.995).abs() < 1e-9), "{across:?}");
+        let middle = graph.place(Coord::new(180.0, 0.0), 1000.0).unwrap();
+        assert!(middle.is_some_and(|p| p.at.x.abs() > 179.999 && p.at.y.abs() < 1e-9), "{middle:?}");
+    }
+
+    /// A point is placed on a segment stored past ±180° (at 370°, the same meridian as 10°), as a
+    /// route's end is, not passed over by the snap window.
+    #[test]
+    fn a_segment_stored_past_180_degrees_is_found_by_the_window() {
+        let mut ds = Dataset::new("roads", GeometryType::Polyline, vec![]);
+        ds.push(Some(Geometry::Line(vec![vec![Coord::new(370.0, 0.0), Coord::new(370.01, 0.0)]])), vec![]);
+        let graph = Graph(Arc::new(Network::build(&ds, &[0], None).unwrap()));
+        let placed = graph.place(Coord::new(10.005, 0.0001), 100.0).unwrap();
+        assert!(placed.is_some_and(|p| p.seg == 0), "{placed:?}");
+    }
+
+    /// Repeated pairs reuse topology without retaining endpoint edits; every graph input
+    /// invalidates it, even an attribute/geometry mutation with no other strong feature owner.
+    #[test]
+    fn route_graph_reuse_preserves_results_and_follows_network_edits() {
+        let cache = Mutex::new(None);
+        let mut ds = Dataset::new(
+            "roads",
+            GeometryType::Polyline,
+            vec![Field::new("cost", FieldType::Double), Field::new("other", FieldType::Double)],
+        );
+        ds.push(Some(Geometry::Line(vec![vec![Coord::new(0.0, 0.0), Coord::new(0.09, 0.0)]])), vec![Value::Float(1.0), Value::Float(2.0)]);
+        let from = Coord::new(0.03, 0.0001);
+        let to = Coord::new(0.06, -0.0001);
+        let before = shortest_route_with(&cache, &ds, &[0], from, to, None, 50.0).unwrap();
+        let graph = cache.lock().unwrap().as_ref().unwrap().graph.clone();
+        assert_eq!(ds.features.allocation_key().strong_count(), 1, "the cache must not retain feature data");
+        let shared = network_for(&cache, &ds.clone(), &[0], None).unwrap();
+        assert!(Arc::ptr_eq(&graph, &shared), "another pair must not rebuild unchanged topology");
+        // A different pair attaches different interior nodes, then the original pair repeats.
+        shortest_route_with(&cache, &ds, &[0], Coord::new(0.02, 0.0), Coord::new(0.08, 0.0), None, 1.0).unwrap();
+        let after = shortest_route_with(&cache, &ds, &[0], from, to, None, 50.0).unwrap();
+        assert!(Arc::ptr_eq(&graph, &cache.lock().unwrap().as_ref().unwrap().graph), "queries must keep the original graph");
+        assert_eq!(before, after);
+        assert_eq!(before.length_m.to_bits(), after.length_m.to_bits());
+        assert_eq!(before.cost.to_bits(), after.cost.to_bits());
+        assert!(before.path.iter().zip(&after.path).all(|(a, b)| a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits()));
+        assert!(shortest_route_with(&cache, &ds, &[0], from, to, None, 1.0).is_err(), "a cache hit still obeys this pair's snap distance");
+        assert_eq!((shared.nodes.len(), shared.segs.len()), (2, 1), "query nodes stay out of the graph");
+        let cost = network_for(&cache, &ds, &[0], Some(0)).unwrap();
+        assert!(!Arc::ptr_eq(&shared, &cost));
+        let other = network_for(&cache, &ds, &[0], Some(1)).unwrap();
+        assert!(!Arc::ptr_eq(&cost, &other));
+        assert_eq!(route_on(&other, &ds, from, to, 50.0).unwrap().cost.to_bits(), (before.cost * 2.0).to_bits());
+        ds.features[0].attrs[1] = Value::Float(3.0);
+        let edited = network_for(&cache, &ds, &[0], Some(1)).unwrap();
+        assert!(!Arc::ptr_eq(&other, &edited));
+        assert_eq!(edited.adj[0][0].1.to_bits(), (edited.adj[0][0].2 * 3.0).to_bits());
+        ds.features[0].geometry = Some(Geometry::Line(vec![vec![Coord::new(0.0, 0.0), Coord::new(0.18, 0.0)]]));
+        let moved = network_for(&cache, &ds, &[0], Some(1)).unwrap();
+        assert!(!Arc::ptr_eq(&edited, &moved));
+        assert_eq!(moved.nodes[1], Coord::new(0.18, 0.0));
+        ds.push(Some(Geometry::Line(vec![vec![Coord::new(0.18, 0.0), Coord::new(0.20, 0.0)]])), vec![Value::Float(1.0), Value::Float(1.0)]);
+        let added = network_for(&cache, &ds, &[0, 1], Some(1)).unwrap();
+        assert!(!Arc::ptr_eq(&moved, &added));
+        let reversed = network_for(&cache, &ds, &[1, 0], Some(1)).unwrap();
+        assert!(!Arc::ptr_eq(&added, &reversed), "row order participates in tie breaking");
+        let filtered = network_for(&cache, &ds, &[1], Some(1)).unwrap();
+        assert!(!Arc::ptr_eq(&reversed, &filtered));
+        assert_eq!(filtered.segs.len(), 1);
+        let replaced = Dataset::new("roads", GeometryType::Polyline, ds.fields.clone());
+        let empty = network_for(&cache, &replaced, &[1], Some(1)).unwrap();
+        assert!(!Arc::ptr_eq(&filtered, &empty), "a replacement with the same name is a different network");
+        assert!(empty.segs.is_empty());
+        // Cancellation reaches cold construction and cached queries, without publishing partial graphs.
+        let control = crate::control::Control::cancelled_once_started();
+        assert!(crate::run_under("Route", &control, || Network::build(&ds, &[0, 1], None)).is_err());
+        assert!(control.looked() > 0);
+        let control = crate::control::Control::cancelled_once_started();
+        assert!(crate::run_under("Route", &control, || route_on(&filtered, &ds, from, to, 50.0)).is_err());
+        assert!(control.looked() > 0);
+    }
+
     #[test]
     fn routes_points_profiles_and_similarity() {
         // A square of roads with a slow diagonal.
@@ -956,6 +1651,25 @@ mod tests {
         let cheap =
             shortest_route(&ds, &rows, Coord::new(0.0, 0.0), Coord::new(1.0, 1.0), Some(0), 1000.0).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(cheap.rows, vec![0, 1], "by cost the two sides win");
+        assert_eq!((short.overflowing, cheap.overflowing), (0, 0));
+        // A cost whose segments' costs overflow closes its line, and the route says so.
+        let mut huge = Dataset::new("roads", GeometryType::Polyline, vec![Field::new("cost", FieldType::Double)]);
+        huge.push(l((0.0, 0.0), (1.0, 0.0)), vec![Value::Float(1.0)]);
+        huge.push(l((1.0, 0.0), (1.0, 1.0)), vec![Value::Float(1.0)]);
+        huge.push(l((0.0, 0.0), (1.0, 1.0)), vec![Value::Float(1e306)]);
+        let around =
+            shortest_route(&huge, &rows, Coord::new(0.0, 0.0), Coord::new(1.0, 1.0), Some(0), 1000.0).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!((around.rows, around.overflowing), (vec![0, 1], 1));
+        // Each edge finite, their sum past the largest number: said, not "not connected".
+        let mut summed = Dataset::new("roads", GeometryType::Polyline, vec![Field::new("cost", FieldType::Double)]);
+        let two = vec![Coord::new(0.0, 0.0), Coord::new(0.00001, 0.0), Coord::new(0.00002, 0.0)];
+        summed.push(Some(Geometry::Line(vec![two])), vec![Value::Float(1e308)]);
+        let e = shortest_route(&summed, &[0], Coord::new(0.0, 0.0), Coord::new(0.00002, 0.0), Some(0), 1000.0).unwrap_err();
+        assert!(e.contains("add up past it"), "{e}");
+        // The same beside a target on a line of its own: either may be why, so both are said.
+        summed.push(Some(Geometry::Line(vec![vec![Coord::new(1.0, 1.0), Coord::new(1.001, 1.0)]])), vec![Value::Float(1.0)]);
+        let e = shortest_route(&summed, &[0, 1], Coord::new(0.0, 0.0), Coord::new(1.001, 1.0), Some(0), 1000.0).unwrap_err();
+        assert!(e.contains("add up past it, or they aren't connected"), "{e}");
         assert!(shortest_route(&ds, &rows, Coord::new(5.0, 5.0), Coord::new(1.0, 1.0), None, 1000.0).is_err());
         let mut poly = Dataset::new("p", GeometryType::Polygon, vec![]);
         poly.push(
@@ -974,8 +1688,8 @@ mod tests {
         assert_eq!(random_points(&poly, &[0], 25, 7), pts, "reproducible");
         let p = profile_fields(&ds);
         assert_eq!((p[0].min, p[0].max, p[0].distinct), (Some(1.0), Some(5.0), 2));
-        let sim = similar(&ds, 0, &[0], 2);
-        assert_eq!(sim[0].0, 1);
+        let sim = similar(&ds, 0, &[0], 2).unwrap();
+        assert_eq!(sim.matches[0].0, 1);
         let near = within(&ds, &rows, Coord::new(0.5, 0.001), 500.0);
         assert_eq!(near.first().map(|x| x.0), Some(0));
     }

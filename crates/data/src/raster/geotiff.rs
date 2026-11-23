@@ -130,7 +130,10 @@ fn image_grid_tags<R: Read + Seek>(dec: &mut Decoder<R>) -> Result<Vec<u16>> {
         if matches!(key, 2048 | 3072) && (location != 0 || count != 1) {
             return Err(err("image grid has an invalid coordinate system GeoKey"));
         }
-        if matches!(key, 1024 | 1025) && (location != 0 || count != 1 || !matches!(value, 1 | 2)) {
+        if key == 1024 && (location != 0 || count != 1 || !matches!(value, 1 | 2)) {
+            return Err(err("image grid requires a projected or geographic coordinate system (GTModelTypeGeoKey 1 or 2)"));
+        }
+        if key == 1025 && (location != 0 || count != 1 || !matches!(value, 1 | 2)) {
             return Err(err("image grid requires two-dimensional area or point GeoTIFF georeferencing"));
         }
     }
@@ -196,7 +199,8 @@ fn geo_tags_with_keys<R: Read + Seek>(dec: &mut Decoder<R>, keys: &[u16]) -> Res
     let gascii = dec.find_tag(Tag::Unknown(34737)).ok().flatten().and_then(|v| v.into_string().ok()).unwrap_or_default();
     // A projected file with a user-defined projection (the NLCD's Albers, say) defines it in its
     // keys: read as its own system, never as the geographic system it's based on.
-    let user_defined = key(1024) == Some(1) && key(3072).is_none_or(|c| !usable(&c));
+    // So is one in an ESRI PE citation, which GDAL writes with a user-defined model type (32767).
+    let user_defined = (key(1024) == Some(1) && key(3072).is_none_or(|c| !usable(&c))) || key(1024) == Some(32767);
     let citation = |k: u16| match geokey(keys, &gdoubles, &gascii, k) {
         Some(KeyValue::Ascii(t)) if !t.trim().is_empty() => Some(t),
         _ => None,
@@ -216,17 +220,23 @@ fn geo_tags_with_keys<R: Read + Seek>(dec: &mut Decoder<R>, keys: &[u16]) -> Res
     // A projection the keys don't describe well enough is left unknown (the open goes on, and fails
     // later only if the coordinates aren't degrees), its reason kept for the message.
     let mut custom_error = None;
+    let by_code = || {
+        let code = key(3072).filter(usable).or(key(2048).filter(usable)).map(u32::from);
+        (code, code.and_then(Crs::from_epsg))
+    };
     let (code, crs) = if user_defined {
         match custom_crs(keys, &gdoubles, &gascii) {
             Ok(crs) => (None, Some(crs)),
+            // A user-defined model type whose keys can't be read, but that names a code, is read
+            // by the code, as before.
+            Err(_) if key(1024) == Some(32767) && by_code().1.is_some() => by_code(),
             Err(e) => {
                 custom_error = Some(e.to_string());
                 (None, None)
             }
         }
     } else {
-        let code = key(3072).filter(usable).or(key(2048).filter(usable)).map(u32::from);
-        (code, code.and_then(Crs::from_epsg))
+        by_code()
     };
     // Another body's system ([`super::planetary`]). A geographic one is its own system, not WGS 84:
     // its longitude/latitude are read as they are, and a GeoTIFF written from it keeps its keys.
@@ -412,6 +422,47 @@ fn axis_unit(keys: &[u16], doubles: &[f64], ascii: &str, a: f64) -> Option<f64> 
     }
 }
 
+/// The keys and double parameters with the ellipsoid's axes in metres ([`axis_unit`]), as GDAL
+/// 3.10 doesn't read them: it takes them for metres whatever GeogLinearUnits says, so the Earth's
+/// semi-major axis in feet would be another body's. Axes in a unit the keys don't size are an error.
+fn axes_in_metres(keys: &[u16], doubles: &[f64], ascii: &str) -> Result<(Vec<u16>, Vec<f64>)> {
+    // The axes are read from the file's values, not from the slots added below.
+    let original = doubles;
+    let (mut keys, mut doubles) = (keys.to_vec(), doubles.to_vec());
+    let Some(KeyValue::Double(a)) = geokey(&keys, &doubles, ascii, 2057) else { return Ok((keys, doubles)) };
+    let to_m = axis_unit(&keys, &doubles, ascii, a).ok_or_else(|| {
+        let unit = match geokey(&keys, &doubles, ascii, 2052) {
+            Some(KeyValue::Short(u)) => format!(" (GeogLinearUnits {u})"),
+            _ => String::new(),
+        };
+        err(format!("the file's ellipsoid axes are in a unit{unit} that isn't supported"))
+    })?;
+    if to_m != 1.0 {
+        // GeogSemiMajorAxis and GeogSemiMinorAxis, each in metres in a value of its own after the
+        // others (keys may share one value, which would be converted twice, or another key's),
+        // then GeogLinearUnits as metres.
+        for entry in keys.get_mut(4..).into_iter().flat_map(|k| k.as_chunks_mut::<4>().0) {
+            match entry {
+                [2057 | 2058, 34736, _, offset] => {
+                    // An axis whose value is missing would stay in its unit, read as metres.
+                    let metres = original
+                        .get(usize::from(*offset))
+                        .map(|v| v * to_m)
+                        .ok_or_else(|| err("the file's ellipsoid axis points past its double parameters"))?;
+                    // A slot past the last a key can address: the axes can't be put in metres.
+                    let at = u16::try_from(doubles.len())
+                        .map_err(|_| err("the file's ellipsoid axes can't be converted to metres: too many double parameters"))?;
+                    doubles.push(metres);
+                    *offset = at;
+                }
+                [2052, 0, _, value] => *value = 9001,
+                _ => {}
+            }
+        }
+    }
+    Ok((keys, doubles))
+}
+
 /// The semi-major and semi-minor axes, in metres, of the ellipsoid a file's keys give by its axes
 /// (GeogSemiMajorAxis with GeogSemiMinorAxis or GeogInvFlattening, in GeogLinearUnits), when it is
 /// another body's than the Earth's ([`super::planetary`]).
@@ -483,237 +534,81 @@ fn planetary_geographic(keys: &[u16], doubles: &[f64], ascii: &str) -> Result<Op
         geokeys: keys.to_vec(),
         doubles: doubles.to_vec(),
         ascii: ascii.to_string(),
+        wkt: None,
     };
     Crs::custom(def).map(Some).map_err(err)
 }
 
-/// A user-defined projection from a file's GeoKeys, as a PROJ definition.
+/// A user-defined projection from a file's GeoKeys, as terrio-crs reads them (GDAL's
+/// `GTIFGetOGISDefnAsOSR`, ESRI PE citations included), kept by its WKT. One the keys say is an
+/// EPSG system RustGIS knows (a UTM zone by its citation) is that system.
 fn custom_crs(keys: &[u16], doubles: &[f64], ascii: &str) -> Result<Crs> {
-    let (proj4, label) = proj4_of_keys(keys, doubles, ascii)?;
-    Crs::custom(CustomCrs { proj4, label, geokeys: keys.to_vec(), doubles: doubles.to_vec(), ascii: ascii.to_string() }).map_err(err)
-}
-
-/// A user-defined projection's PROJ definition and name, from its GeoKeys.
-fn proj4_of_keys(keys: &[u16], doubles: &[f64], ascii: &str) -> Result<(String, String)> {
-    let short = |k| match geokey(keys, doubles, ascii, k) {
-        Some(KeyValue::Short(v)) => Some(v),
-        _ => None,
+    let (in_metres, metres) = axes_in_metres(keys, doubles, ascii)?;
+    let read = terrio_crs::geokeys::read(&in_metres, &metres, ascii.as_bytes());
+    let sr = match (read.crs, read.unsupported_method) {
+        (Some(sr), _) => sr,
+        (None, Some(c)) => return Err(err(format!("the file's own projection (coordinate transformation {c}) isn't supported"))),
+        (None, None) => return Err(err("the file's own projection isn't described in its keys")),
     };
-    let num = |k| match geokey(keys, doubles, ascii, k) {
-        Some(KeyValue::Double(v)) if v.is_finite() => Some(v),
-        _ => None,
-    };
+    // Not when the keys give a shift of their own (an ESRI PE citation's TOWGS84): that would be
+    // set aside for the code's, as a WKT with its own shift isn't read as the code beside it.
+    let own_shift = sr.to_wkt().is_some_and(|w| shift_differs(&w, sr.epsg));
+    if let Some(crs) = sr.epsg.filter(|_| !own_shift).and_then(Crs::from_epsg) {
+        return Ok(crs);
+    }
     let text = |k| match geokey(keys, doubles, ascii, k) {
-        Some(KeyValue::Ascii(s)) => Some(s),
+        Some(KeyValue::Ascii(s)) if !s.trim().is_empty() => Some(s),
         _ => None,
     };
-    // The first of several keys a parameter may be given by.
-    let any = |ks: &[u16]| ks.iter().find_map(|k| num(*k));
-    // Metres per linear unit: false eastings and northings are in the file's units, PROJ's in
-    // metres.
-    let (to_m, units) = match short(3076) {
-        Some(9002) => (0.3048, "+units=ft".to_string()),
-        Some(9003) => (1200.0 / 3937.0, "+units=us-ft".to_string()),
-        _ => match num(3077) {
-            Some(m) if m > 0.0 && (m - 1.0).abs() > 1e-12 => (m, format!("+to_meter={m}")),
-            _ => (1.0, "+units=m".to_string()),
-        },
-    };
-    let lat0 = any(&[3081, 3085, 3089]).unwrap_or(0.0);
-    let lon0 = any(&[3080, 3084, 3088, 3095]).unwrap_or(0.0);
-    let x0 = any(&[3082, 3086, 3090]).unwrap_or(0.0) * to_m;
-    let y0 = any(&[3083, 3087, 3091]).unwrap_or(0.0) * to_m;
-    let k0 = any(&[3092, 3093]).unwrap_or(1.0);
-    let (lat1, lat2) = (num(3078).unwrap_or(lat0), num(3079).unwrap_or(lat0));
-    let proj = match short(3075) {
-        Some(1) => format!("+proj=tmerc +lat_0={lat0} +lon_0={lon0} +k_0={k0} +x_0={x0} +y_0={y0}"),
-        Some(7) => format!("+proj=merc +lon_0={lon0} +k_0={k0} +x_0={x0} +y_0={y0}"),
-        Some(8) => format!("+proj=lcc +lat_1={lat1} +lat_2={lat2} +lat_0={lat0} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        Some(9) => format!("+proj=lcc +lat_1={lat0} +lat_0={lat0} +lon_0={lon0} +k_0={k0} +x_0={x0} +y_0={y0}"),
-        Some(10) => format!("+proj=laea +lat_0={lat0} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        Some(11) => format!("+proj=aea +lat_1={lat1} +lat_2={lat2} +lat_0={lat0} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        Some(12) => format!("+proj=aeqd +lat_0={lat0} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        Some(14) => format!("+proj=stere +lat_0={lat0} +lon_0={lon0} +k_0={k0} +x_0={x0} +y_0={y0}"),
-        Some(15) => {
-            // Polar: the pole on the side of the latitude of true scale.
-            let pole = if lat0 < 0.0 { -90.0 } else { 90.0 };
-            format!("+proj=stere +lat_0={pole} +lat_ts={lat0} +lon_0={lon0} +k_0={k0} +x_0={x0} +y_0={y0}")
-        }
-        Some(16) => format!("+proj=sterea +lat_0={lat0} +lon_0={lon0} +k_0={k0} +x_0={x0} +y_0={y0}"),
-        Some(17) => format!("+proj=eqc +lat_ts={lat1} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        // CT_Orthographic: EPSG's method 9840, on the ellipsoid.
-        Some(21) => format!("+proj=ortho +lat_0={lat0} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        // CT_Robinson.
-        Some(23) => format!("+proj=robin +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        // MODIS's grid.
-        Some(24) => format!("+proj=sinu +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        Some(28) => format!("+proj=cea +lat_ts={lat1} +lon_0={lon0} +x_0={x0} +y_0={y0}"),
-        Some(c) => return Err(err(format!("the file's own projection (coordinate transformation {c}) isn't supported"))),
-        None => return Err(err("the file's own projection isn't described in its keys")),
-    };
-    // The datum or ellipsoid, by code or by its axes, in metres.
-    let earth = match (short(2048), short(2050), short(2056)) {
-        (Some(4326), _, _) | (_, Some(6326), _) | (_, _, Some(7030)) => "+datum=WGS84".to_string(),
-        (Some(4269), _, _) | (_, Some(6269), _) | (_, _, Some(7019)) => "+ellps=GRS80 +towgs84=0,0,0".to_string(),
-        (Some(4267), _, _) | (_, Some(6267), _) | (_, _, Some(7008)) => "+ellps=clrk66".to_string(),
-        _ => {
-            // Axes in a unit the keys don't size can't be taken for metres: the ellipsoid, and so
-            // every cell, would be another size.
-            let axis_m = match num(2057) {
-                Some(a) => axis_unit(keys, doubles, ascii, a).ok_or_else(|| {
-                    let unit = short(2052).map(|u| format!(" (GeogLinearUnits {u})")).unwrap_or_default();
-                    err(format!("the file's ellipsoid axes are in a unit{unit} that isn't supported"))
-                })?,
-                None => 1.0,
-            };
-            match (num(2057).map(|a| a * axis_m), num(2059), num(2058).map(|b| b * axis_m)) {
-                (Some(a), Some(rf), _) if a > 0.0 && rf > 0.0 => format!("+a={a} +rf={rf}"),
-                (Some(a), _, Some(b)) if a > 0.0 && b > 0.0 => format!("+a={a} +b={b}"),
-                // Another body's sphere (no flattening, or 0): not WGS 84, which would read its
-                // metres as the Earth's ([`super::planetary`]).
-                (Some(a), rf, None) if super::planetary::off_earth(a) && rf.is_none_or(|rf| rf == 0.0) => format!("+a={a} +b={a}"),
-                _ => "+datum=WGS84".to_string(),
-            }
-        }
-    };
-    let label = text(3073).or_else(|| text(1026)).filter(|t| !t.trim().is_empty()).unwrap_or_else(|| "Custom projection".into());
-    Ok((format!("{proj} {earth} {units} +no_defs"), label))
+    let label = text(3073).or_else(|| text(1026)).or_else(|| sr.name()).unwrap_or_else(|| "Custom projection".into());
+    let wkt = sr.to_wkt().ok_or_else(|| err("the file's own projection has no definition"))?;
+    // Where PROJ writes no string, the one RustGIS wrote before, as for WKT, so a project saved
+    // with the system still opens in an older release.
+    let proj4 = sr.to_proj4().map(|d| d.replace(" +type=crs", "")).or_else(|| super::wkt::legacy_proj4(&wkt)).unwrap_or_default();
+    Crs::custom(CustomCrs { proj4, label, geokeys: keys.to_vec(), doubles: doubles.to_vec(), ascii: ascii.to_string(), wkt: Some(wkt) })
+        .map_err(err)
 }
 
-/// Whether two PROJ definitions place the same points: points around the projection's origin,
-/// unprojected by both, land within a centimetre.
-fn same_projection(a: &str, b: &str) -> bool {
-    let offsets = [(0.0, 0.0), (100_000.0, 50_000.0), (-250_000.0, 150_000.0), (300_000.0, -200_000.0), (-50_000.0, -400_000.0)];
-    let (Ok(ta), Ok(tb)) = (super::crs::transformer_of(a), super::crs::transformer_of(b)) else { return false };
-    // The same map points in both, offset from the first's false origin, so a different false
-    // origin is a different projection.
-    let num = |k: &str| a.split_whitespace().find_map(|t| t.strip_prefix(k)?.parse::<f64>().ok()).filter(|v| v.is_finite()).unwrap_or(0.0);
-    let (x0, y0) = (num("+x_0="), num("+y_0="));
-    offsets.iter().all(|(dx, dy)| {
-        let m = rustgis_geom::Coord::new(x0 + dx, y0 + dy);
-        // Degrees: 1e-7 is about a centimetre.
-        matches!((ta.to_lonlat(m), tb.to_lonlat(m)), (Some(p), Some(q)) if (p.x - q.x).abs() < 1e-7 && (p.y - q.y).abs() < 1e-7)
-    })
+/// Whether WKT `wkt` gives a shift of its own (a `TOWGS84`, a `BOUNDCRS`) that places points
+/// otherwise than the EPSG `code` it is identified as ([`super::wkt::places_as`]); a shift equal to
+/// the code's is the code.
+fn shift_differs(wkt: &str, code: Option<u32>) -> bool {
+    let upper: String = wkt.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_ascii_uppercase();
+    (upper.contains("TOWGS84[") || upper.contains("BOUNDCRS["))
+        && code.and_then(Crs::from_epsg).is_none_or(|c| !super::wkt::places_as(wkt, c))
 }
 
 /// Whether a raster in `crs` can be written as a GeoTIFF: an EPSG system always, a user-defined
-/// one when it came with GeoKeys or its PROJ definition can be said as them (see
-/// [`keys_from_proj4`]).
+/// one when it came with GeoKeys or can be written as them (see [`terrio_keys`]).
 pub fn describes(crs: Crs) -> bool {
-    crs.custom_def().is_none_or(|d| !d.geokeys.is_empty() || keys_from_proj4(&d.proj4, &d.label).is_some())
+    crs.custom_def().is_none_or(|d| !d.geokeys.is_empty() || terrio_keys(&d).is_some())
 }
 
-/// GeoKeys for a user-defined projection from its PROJ definition (one read from WKT, which
-/// came with no keys), the inverse of [`custom_crs`]: the key directory, its double parameters and
-/// its ASCII parameters. `None` for a projection the keys can't say.
-fn keys_from_proj4(proj4: &str, label: &str) -> Option<(Vec<u16>, Vec<f64>, String)> {
-    let params: Vec<(&str, &str)> = proj4.split_whitespace().take(64).filter_map(|t| t.trim_start_matches('+').split_once('=')).collect();
-    let get = |k: &str| params.iter().find(|(n, _)| *n == k).map(|(_, v)| *v);
-    // The keys are written in metres: a definition in other units isn't written.
-    if get("units").is_some_and(|u| u != "m") || get("to_meter").is_some() {
-        return None;
-    }
-    // Nor one with a parameter they can't say (a datum shift, a prime meridian, an axis order,
-    // grids): it would be written as another projection.
-    const SAID: [&str; 16] =
-        ["proj", "lat_0", "lon_0", "lat_1", "lat_2", "lat_ts", "x_0", "y_0", "k_0", "k", "datum", "ellps", "a", "b", "R", "rf"];
-    let tokens = proj4.split_whitespace().map(|t| t.trim_start_matches('+'));
-    if tokens.map(|t| t.split('=').next().unwrap_or(t)).any(|k| !SAID.contains(&k) && !matches!(k, "units" | "no_defs" | "type" | "wktext"))
-    {
-        return None;
-    }
-    // A latitude of true scale is said only for the projections that take one.
-    // A scale factor only for the projections whose keys carry one.
-    let scaled = get("k_0").or(get("k")).and_then(|v| v.parse::<f64>().ok()).is_some_and(|k| (k - 1.0).abs() > 1e-12);
-    if scaled && !matches!(get("proj"), Some("tmerc" | "merc" | "lcc" | "stere" | "sterea")) {
-        return None;
-    }
-    let polar = get("lat_0").and_then(|v| v.parse::<f64>().ok()).is_some_and(|l| l.abs() == 90.0);
-    if get("lat_ts").is_some() && !(matches!(get("proj"), Some("eqc" | "cea")) || (get("proj") == Some("stere") && polar)) {
-        return None;
-    }
-    let num = |k: &str| get(k).and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite());
-    let (lat0, lon0) = (num("lat_0").unwrap_or(0.0), num("lon_0").unwrap_or(0.0));
-    let (x0, y0, k0) = (num("x_0").unwrap_or(0.0), num("y_0").unwrap_or(0.0), num("k_0").or(num("k")).unwrap_or(1.0));
-    // The transformation, and its parameters by key (in metres and degrees).
-    let (ct, mut doubles_by_key): (u16, Vec<(u16, f64)>) = match get("proj")? {
-        "tmerc" => (1, vec![(3080, lon0), (3081, lat0), (3082, x0), (3083, y0), (3092, k0)]),
-        "merc" => (7, vec![(3080, lon0), (3082, x0), (3083, y0), (3092, k0)]),
-        // Two standard parallels (CT 8) carry no scale factor: one that isn't 1 is said by the
-        // one-parallel form (CT 9), when the parallels are one, or not at all.
-        "lcc" => {
-            let lat1 = num("lat_1").unwrap_or(lat0);
-            match num("lat_2") {
-                Some(lat2) if (k0 - 1.0).abs() < 1e-12 => {
-                    (8, vec![(3078, lat1), (3079, lat2), (3084, lon0), (3085, lat0), (3086, x0), (3087, y0)])
-                }
-                Some(lat2) if (lat2 - lat1).abs() > 1e-12 => return None,
-                // The one-parallel form's latitude is both the parallel and the origin's.
-                _ if (lat1 - lat0).abs() > 1e-12 => return None,
-                _ => (9, vec![(3080, lon0), (3081, lat1), (3082, x0), (3083, y0), (3092, k0)]),
-            }
-        }
-        "laea" => (10, vec![(3080, lon0), (3081, lat0), (3082, x0), (3083, y0)]),
-        "aea" => (
-            11,
-            vec![
-                (3078, num("lat_1").unwrap_or(lat0)),
-                (3079, num("lat_2").unwrap_or(lat0)),
-                (3084, lon0),
-                (3085, lat0),
-                (3086, x0),
-                (3087, y0),
-            ],
-        ),
-        "aeqd" => (12, vec![(3080, lon0), (3081, lat0), (3082, x0), (3083, y0)]),
-        // Polar: the latitude of true scale is the key's latitude.
-        // Its longitude is the straight vertical pole's (3095), as GDAL writes it.
-        "stere" if lat0.abs() == 90.0 => {
-            (15, vec![(3081, num("lat_ts").unwrap_or(lat0)), (3082, x0), (3083, y0), (3092, k0), (3095, lon0)])
-        }
-        "stere" => (14, vec![(3080, lon0), (3081, lat0), (3082, x0), (3083, y0), (3092, k0)]),
-        "sterea" => (16, vec![(3080, lon0), (3081, lat0), (3082, x0), (3083, y0), (3092, k0)]),
-        "eqc" => (17, vec![(3078, num("lat_ts").unwrap_or(0.0)), (3080, lon0), (3082, x0), (3083, y0)]),
-        // By the projection centre's keys (3088, 3089), as GDAL writes them.
-        "ortho" => (21, vec![(3082, x0), (3083, y0), (3088, lon0), (3089, lat0)]),
-        "robin" => (23, vec![(3082, x0), (3083, y0), (3088, lon0)]),
-        "cea" => (28, vec![(3078, num("lat_ts").unwrap_or(0.0)), (3080, lon0), (3082, x0), (3083, y0)]),
-        // Its longitude is the projection centre's (3088), as GDAL and MODIS write it.
-        "sinu" => (24, vec![(3082, x0), (3083, y0), (3088, lon0)]),
-        _ => return None,
+/// GeoKeys for a user-defined system as GDAL 3.12.1 writes them (terrio-crs's
+/// `SpatialRef::to_geokeys`): from its WKT, else its PROJ definition; a system the keys can't
+/// hold goes in an ESRI PE citation. The key directory (with the raster type as area), its
+/// double parameters and its ASCII parameters; `None` when it can't be written at all.
+fn terrio_keys(d: &CustomCrs) -> Option<(Vec<u16>, Vec<f64>, String)> {
+    // A system with a shift of its own keeps it: terrio-crs writes its own keys or its declared
+    // code with GeogTOWGS84GeoKey (2062), never a code it is only identified as.
+    let sr = match &d.wkt {
+        Some(w) => terrio_crs::SpatialRef::from_wkt(w),
+        None => terrio_crs::SpatialRef::from_proj4(&format!("{} +type=crs", d.proj4)).ok()?,
     };
-    // The earth: WGS 84 by code, any other by its axes.
-    let mut shorts: Vec<(u16, u16)> = vec![(1024, 1), (1025, 1), (3072, 32767), (3074, 32767), (3075, ct), (3076, 9001)];
-    if get("datum") == Some("WGS84") || (get("ellps") == Some("WGS84") && get("a").is_none()) {
-        shorts.push((2048, 4326));
-    } else {
-        let (a, b) = match (num("a").or(num("R")), num("b"), num("rf")) {
-            (Some(a), Some(b), _) => (a, b),
-            (Some(a), None, Some(rf)) if rf > 0.0 => (a, a - a / rf),
-            (Some(r), None, _) => (r, r),
-            _ => return None,
-        };
-        shorts.extend([(2048, 32767), (2050, 32767), (2056, 32767)]);
-        doubles_by_key.extend([(2057, a), (2058, b)]);
-    }
-    // The key directory: sorted by key, doubles and ASCII at their offsets.
-    // TIFF's ASCII is 7-bit.
-    let label: String = label.chars().filter(|c| c.is_ascii() && !c.is_ascii_control() && *c != '|').take(200).collect();
-    let mut entries: Vec<[u16; 4]> = shorts.iter().map(|(k, v)| [*k, 0, 1, *v]).collect();
-    doubles_by_key.sort_by_key(|(k, _)| *k);
-    let doubles: Vec<f64> = doubles_by_key.iter().map(|(_, v)| *v).collect();
-    for (i, (k, _)) in doubles_by_key.iter().enumerate() {
-        entries.push([*k, 34736, 1, i as u16]);
-    }
-    let ascii = format!("{label}|");
-    entries.push([3073, 34737, ascii.len() as u16, 0]);
+    let tags = sr.to_geokeys().ok()?.encode().ok()?;
+    Some((with_raster_type(&tags.directory)?, tags.doubles, tags.ascii))
+}
+
+/// Key directory `keys` with GTRasterTypeGeoKey (1025) as area (1), added in its place by id;
+/// `None` when the directory can't count its keys.
+fn with_raster_type(keys: &[u16]) -> Option<Vec<u16>> {
+    let (Some(head), Some(entries)) = (keys.get(..4), keys.get(4..)) else { return Some(keys.to_vec()) };
+    let mut entries: Vec<[u16; 4]> = entries.as_chunks::<4>().0.iter().copied().filter(|e| e[0] != 1025).collect();
+    entries.push([1025, 0, 1, 1]);
     entries.sort_by_key(|e| e[0]);
-    let mut keys = vec![1, 1, 0, entries.len() as u16];
-    keys.extend(entries.iter().flatten());
-    // The keys must say the same projection: read back, it places points where the definition
-    // does (anything they can't carry, written differently, is refused rather than shifted).
-    let (back, _) = proj4_of_keys(&keys, &doubles, &ascii).ok()?;
-    same_projection(proj4, &back).then_some((keys, doubles, ascii))
+    let mut out = vec![head[0], head[1], head[2], u16::try_from(entries.len()).ok()?];
+    out.extend(entries.iter().flatten());
+    Some(out)
 }
 
 /// The samples as `f32`, with their type's name. Their memory is reserved first: when it can't be
@@ -860,9 +755,12 @@ fn samples<R: Read + Seek>(dec: &mut Decoder<R>) -> usize {
 /// undone, corrupting the colours (https://github.com/image-rs/image-tiff/issues/425); as grey,
 /// every sample is decoded. The only change is the PhotometricInterpretation value (→ 1) in each
 /// such image's IFD, in memory.
+///
+/// It also shows a SampleFormat of 4 ("undefined", which CBERS-4 scenes have) as 1, unsigned, as
+/// libtiff and GDAL read it: the `tiff` crate refuses to decode it (#2593).
 pub(crate) struct Unpaletted<R> {
     inner: R,
-    /// Where each patched image's PhotometricInterpretation value is, and what to show there.
+    /// Where each patched PhotometricInterpretation or SampleFormat value is, and what to show there.
     patches: Vec<(u64, [u8; 2])>,
     /// Whether the first image (the full one) is a palette image.
     first_palette: bool,
@@ -872,15 +770,16 @@ pub(crate) struct Unpaletted<R> {
     pos: u64,
 }
 
-/// Most images and IFD entries looked at for palette images.
+/// Most images and IFD entries looked at for palette images, and SampleFormat values in an image.
 const MAX_IFDS: usize = 64;
 const MAX_ENTRIES: u64 = 4096;
 
 /// Where the palette images' PhotometricInterpretation values are, and those of RGB images with
 /// samples past the colour ones (which the decoder would leave out, or refuse), walking the IFD
 /// chain (classic and BigTIFF). A file it can't walk has none: the decoder reports what's wrong.
-/// Returns the patches, whether the first image is a palette image, and whether it is such an RGB
-/// image.
+/// Each SampleFormat value of 4 (undefined) is patched to 1 too, in the entry or in the array it
+/// points to (#2593). Returns the patches, whether the first image is a palette image, and whether
+/// it is such an RGB image.
 fn palette_patches<R: Read + Seek>(r: &mut R) -> (Vec<(u64, [u8; 2])>, bool, bool) {
     use std::io::SeekFrom;
     let mut patches = Vec::new();
@@ -933,31 +832,44 @@ fn palette_patches<R: Read + Seek>(r: &mut R) -> (Vec<(u64, [u8; 2])>, bool, boo
             let mut entries = vec![0u8; usize::try_from(n * entry_len).ok()?];
             r.read_exact(&mut entries).ok()?;
             let value_at = if big { 12 } else { 8 };
-            let grey = if little { [1, 0] } else { [0, 1] };
+            // The SHORT 1: grey as a PhotometricInterpretation, unsigned as a SampleFormat.
+            let one = if little { [1, 0] } else { [0, 1] };
             // PhotometricInterpretation (262): where its value is, and the value; SamplesPerPixel
-            // (277); the first ExtraSamples (338) value, when it is inline. Each a SHORT, as the
-            // decoder itself requires of them.
-            let (mut photometric, mut samples, mut extra) = (None, 1u16, None);
+            // (277); the first ExtraSamples (338) value, when it is inline; SampleFormat (339):
+            // where its values are (in the entry when they fit there, else where it points) and
+            // how many. Each a SHORT, as the decoder itself requires of them.
+            let (mut photometric, mut samples, mut extra, mut format) = (None, 1u16, None, None);
             for (i, e) in entries.chunks(entry_len as usize).enumerate() {
                 let short = u16_(e.get(2..)?)? == 3;
+                let entry_value = ifd + count_len + i as u64 * entry_len + value_at as u64;
                 match u16_(e)? {
-                    262 if short => {
-                        photometric = Some((ifd + count_len + i as u64 * entry_len + value_at as u64, u16_(e.get(value_at..)?)?))
-                    }
+                    262 if short => photometric = Some((entry_value, u16_(e.get(value_at..)?)?)),
                     277 if short => samples = u16_(e.get(value_at..)?)?,
                     338 if short => extra = u16_(e.get(value_at..)?),
+                    339 if short => {
+                        let count = if big { u64_(e.get(4..)?)? } else { u64::from(u32_(e.get(4..)?)?) };
+                        // Two bytes a value: four fit in a BigTIFF entry, two in a classic one.
+                        let at = if count <= if big { 4 } else { 2 } {
+                            entry_value
+                        } else if big {
+                            u64_(e.get(value_at..)?)?
+                        } else {
+                            u64::from(u32_(e.get(value_at..)?)?)
+                        };
+                        format = (count <= MAX_ENTRIES).then_some((at, count));
+                    }
                     _ => {}
                 }
             }
             match photometric {
                 Some((at, 3)) => {
-                    patches.push((at, grey));
+                    patches.push((at, one));
                     first |= k == 0;
                 }
                 // An RGB image whose fourth sample isn't alpha, or with five or more: RGBI
                 // orthophotos, multispectral images.
                 Some((at, 2)) if samples > 4 || (samples == 4 && !matches!(extra, Some(1 | 2))) => {
-                    patches.push((at, grey));
+                    patches.push((at, one));
                     first_wide |= k == 0;
                 }
                 _ => {}
@@ -965,6 +877,18 @@ fn palette_patches<R: Read + Seek>(r: &mut R) -> (Vec<(u64, [u8; 2])>, bool, boo
             let mut next = [0u8; 8];
             r.read_exact(&mut next[..next_len]).ok()?;
             ifd = if big { u64_(&next)? } else { u64::from(u32_(&next)?) };
+            // Each SampleFormat value of 4 (undefined) is shown as 1, unsigned, as libtiff and GDAL
+            // read it (#2593). Values that can't be read are left to the decoder.
+            if let Some((at, count)) = format {
+                let mut values = vec![0u8; count as usize * 2];
+                if r.seek(SeekFrom::Start(at)).is_ok() && r.read_exact(&mut values).is_ok() {
+                    for (j, v) in values.as_chunks::<2>().0.iter().enumerate() {
+                        if u16_(v.as_slice()) == Some(4) {
+                            patches.push((at + 2 * j as u64, one));
+                        }
+                    }
+                }
+            }
         }
         Some(())
     };
@@ -1088,14 +1012,40 @@ impl Chunks {
         u64::from(self.per_plane) * self.planes as u64
     }
 
+    /// The bytes the first chunk decodes to at `bits` a sample, each row padded to whole bytes: as
+    /// the tiff crate holds it, cropped to the image, then with a tile's padding, as the LZW and
+    /// LERC readers hold it. The first chunk is the largest (only the last strip and the edge tiles are
+    /// smaller), and one always read, since it holds the image's first pixel.
+    fn first_bytes(&self, bits: u16) -> (u64, u64) {
+        let size = |cols: u32, rows: u32| {
+            let row_bits = u64::from(cols).saturating_mul(self.samples as u64).saturating_mul(u64::from(bits));
+            row_bits.div_ceil(8).saturating_mul(u64::from(rows))
+        };
+        // The tiff crate gives a bottom tile of every band after the first, when the bands are stored
+        // apart, its padding rows too (see `place`); a strip's rows are within the image already.
+        let rows = if self.planes > 1 { self.ch } else { self.ch.min(self.h) };
+        (size(self.cw.min(self.w), rows), size(self.cw, self.ch))
+    }
+
+    /// Where chunk `c` of a plane lies: its corner, then the columns and rows of it the image
+    /// holds (the rest is padding). In `u64`: `x0 + cw` and the next multiple of a step pass
+    /// `u32::MAX` in an image that wide, which in `u32` panics in a debug build and wraps in a
+    /// release build.
+    fn span(&self, c: u32) -> (u64, u64, u64, u64) {
+        let across = self.across.max(1);
+        let (x0, y0) = (u64::from(c % across) * u64::from(self.cw), u64::from(c / across) * u64::from(self.ch));
+        let (w, h) = (u64::from(self.w), u64::from(self.h));
+        (x0, y0, u64::from(self.cw).min(w.saturating_sub(x0)), u64::from(self.ch).min(h.saturating_sub(y0)))
+    }
+
     /// Chunk `i` (counting through every plane) as (plane, chunk index in the file), when it holds
     /// a kept row and column; a chunk holding none is skipped unread.
     fn wanted(&self, i: u64, k: u32) -> Option<(usize, u32)> {
         let plane = usize::try_from(i / u64::from(self.per_plane.max(1))).ok()?;
         let c = u32::try_from(i % u64::from(self.per_plane.max(1))).ok()?;
-        let (x0, y0) = ((c % self.across) * self.cw, (c / self.across) * self.ch);
-        let rows = self.ch.min(self.h.saturating_sub(y0));
-        if y0.div_ceil(k) * k >= y0 + rows || x0.div_ceil(k) * k >= x0 + self.cw.min(self.w - x0) {
+        let (x0, y0, cols, rows) = self.span(c);
+        let k = u64::from(k.max(1));
+        if y0.div_ceil(k) * k >= y0 + rows || x0.div_ceil(k) * k >= x0 + cols {
             return None;
         }
         let index = u32::try_from(plane).ok()?.checked_mul(self.per_plane)?.checked_add(c)?;
@@ -1104,7 +1054,8 @@ impl Chunks {
 
     /// Copies every `k`-th pixel each way of chunk `c` of `plane` (decoded as `values`) into
     /// `bands`, each `ow` pixels wide, counting in `rounded` (by band) the pixels copied whose bit
-    /// is set in `changed` (from [`rounded_bits`]).
+    /// is set in `changed` (from [`rounded_bits`]). Values of none of the chunk's shapes are an
+    /// error: a row length guessed from them would put pixels in other pixels' places.
     fn place(
         &self,
         bands: &mut [Vec<f32>],
@@ -1115,34 +1066,45 @@ impl Chunks {
         c: u32,
         k: u32,
         ow: usize,
-    ) {
+    ) -> Result<()> {
         let c = c % self.per_plane.max(1);
-        let (x0, y0) = ((c % self.across) * self.cw, (c / self.across) * self.ch);
-        let rows = self.ch.min(self.h.saturating_sub(y0));
+        let (x0, y0, cols, rows) = self.span(c);
+        let k = u64::from(k.max(1));
         // The chunk's row length: the data width, or the full tile width when padded. The tiff
         // crate gives a bottom tile of every band after the first, when the bands are stored
         // apart, its padding rows too (issue #544), so the row count can't tell it alone. Where two
         // shapes have the same size, the data width wins: both the tiff crate and our LZW decoder
         // return chunks as wide as the data.
         let per_pixel = self.samples.max(1);
-        let dw = self.cw.min(self.w.saturating_sub(x0)) as usize;
-        let shapes = [(dw, rows), (dw, self.ch), (self.cw as usize, rows), (self.cw as usize, self.ch)];
+        let (dw, data_rows, cw, ch) = (cols as usize, rows as usize, self.cw as usize, self.ch as usize);
+        let shapes = [(dw, data_rows), (dw, ch), (cw, data_rows), (cw, ch)];
         let stride = shapes
             .iter()
-            .find(|(cols, r)| cols.saturating_mul(*r as usize).saturating_mul(per_pixel) == values.len())
-            .map_or(values.len() / (rows as usize).max(1) / per_pixel, |(cols, _)| *cols)
-            .max(1);
+            .find(|(w, r)| w.saturating_mul(*r).saturating_mul(per_pixel) == values.len())
+            .map(|(w, _)| (*w).max(1))
+            .ok_or_else(|| {
+                err(format!(
+                    "a strip or tile decodes to {} values, not the {dw} × {data_rows} pixels of {per_pixel} samples it holds",
+                    values.len()
+                ))
+            })?;
         let mut y = y0.div_ceil(k) * k;
         while y < y0 + rows {
             let mut x = x0.div_ceil(k) * k;
-            while x < (x0 + self.cw).min(self.w) {
-                let src = ((y - y0) as usize * stride + (x - x0) as usize) * self.samples;
+            while x < x0 + cols {
+                // With `stride` one of the chunk's shapes, every position is inside `values`; the
+                // checked arithmetic only keeps a product from being computed unchecked.
+                let src = usize::try_from(y - y0)
+                    .ok()
+                    .and_then(|row| row.checked_mul(stride))
+                    .and_then(|at| at.checked_add(usize::try_from(x - x0).ok()?))
+                    .and_then(|at| at.checked_mul(self.samples));
                 let dst = (y / k) as usize * ow + (x / k) as usize;
                 for b in 0..self.samples {
                     let band = if self.planar { plane } else { b };
-                    if let (Some(v), Some(slot)) = (values.get(src + b), bands.get_mut(band).and_then(|v| v.get_mut(dst))) {
+                    let at = src.unwrap_or(usize::MAX).saturating_add(b);
+                    if let (Some(v), Some(slot)) = (values.get(at), bands.get_mut(band).and_then(|v| v.get_mut(dst))) {
                         *slot = *v;
-                        let at = src + b;
                         if let Some(bits) = changed
                             && bits.get(at / 64).is_some_and(|w| w >> (at % 64) & 1 == 1)
                             && let Some(n) = rounded.get_mut(band)
@@ -1155,7 +1117,23 @@ impl Chunks {
             }
             y += k;
         }
+        Ok(())
     }
+}
+
+/// The most bytes the tiff crate decodes one chunk to, or a whole image to: the sample limit as
+/// 32-bit floats.
+fn decoding_limit() -> usize {
+    max_samples().saturating_mul(4)
+}
+
+/// The tiff crate's limits for reading a whole file's image: [`decoding_limit`] decoded.
+fn limits() -> Limits {
+    let mut l = Limits::default();
+    l.decoding_buffer_size = decoding_limit();
+    l.intermediate_buffer_size = 256 << 20;
+    l.ifd_value_size = 64 << 20;
+    l
 }
 
 /// Fewest chunks worth decoding on more than one thread.
@@ -1181,8 +1159,27 @@ fn decimate<R: Read + Seek>(
     crate::progress::check()?;
     let k = k.max(1);
     let (ow, oh) = (w.div_ceil(k) as usize, h.div_ceil(k) as usize);
-    let mut bands = (0..nbands).map(|_| super::filled(ow, oh, f32::NAN)).collect::<Result<Vec<_>>>()?;
     let chunks = Chunks::new(dec, w, h, nbands, planar);
+    // A chunk larger than its decoder takes can't be read: said before the bands are set aside,
+    // which can be gigabytes for a header claiming a vast image (a few hundred bytes of file, found
+    // by fuzzing, #1952). LERC chunks go to its reader only, which holds 8 bytes a sample with a
+    // tile's padding; LZW ones to the tiff crate, then to our reader, which keeps the padding too;
+    // the rest to the tiff crate only, which holds a chunk cropped to the image.
+    let sample_bits = bits(dec);
+    let (cropped, padded) = chunks.first_bytes(sample_bits);
+    // The LZW reader takes 8- to 64-bit samples only.
+    let lzw_reads = lzw(dec) && matches!(sample_bits, 8 | 16 | 32 | 64);
+    let refused = if super::lerc::is_lerc(dec) {
+        let lerc = chunks.first_bytes(64).1;
+        (lerc > super::lerc::MAX_CHUNK_BYTES as u64).then_some(((chunks.cw, chunks.ch), lerc))
+    } else {
+        let tiff = (chunks.cw.min(w), if chunks.planes > 1 { chunks.ch } else { chunks.ch.min(h) });
+        (cropped > decoding_limit() as u64 && (!lzw_reads || padded > super::lzw::MAX_CHUNK_BYTES as u64)).then_some((tiff, cropped))
+    };
+    if let Some(((cols, rows), bytes)) = refused {
+        return Err(err(format!("a strip or tile of {cols} × {rows} pixels is too large to read ({} MB)", bytes >> 20)));
+    }
+    let mut bands = (0..nbands).map(|_| super::filled(ow, oh, f32::NAN)).collect::<Result<Vec<_>>>()?;
     #[cfg(not(target_arch = "wasm32"))]
     if let Some((open, image, limits)) = open
         && chunks.count() >= PARALLEL_CHUNKS
@@ -1210,7 +1207,7 @@ fn decimate<R: Read + Seek>(
             let (mut values, dt) = to_f32(buf, (ow, oh))?;
             super::lerc::blank(&mut values, gaps.as_deref());
             data_type = dt;
-            chunks.place(&mut bands, &values, changed.as_deref(), &mut rounded, plane, index, k, ow);
+            chunks.place(&mut bands, &values, changed.as_deref(), &mut rounded, plane, index, k, ow)?;
         }
         crate::progress::step(1)?;
     }
@@ -1280,10 +1277,16 @@ fn decimate_parallel(
                         Err(e) => return fail(e),
                     };
                     super::lerc::blank(&mut values, gaps.as_deref());
-                    if let Ok(mut o) = out.lock() {
-                        let (bands, data_type, rounded) = &mut *o;
-                        *data_type = dt;
-                        chunks.place(bands, &values, changed.as_deref(), rounded, plane, index, k, ow);
+                    let placed = match out.lock() {
+                        Ok(mut o) => {
+                            let (bands, data_type, rounded) = &mut *o;
+                            *data_type = dt;
+                            chunks.place(bands, &values, changed.as_deref(), rounded, plane, index, k, ow)
+                        }
+                        Err(_) => Err(err("a chunk couldn't be decoded")),
+                    };
+                    if let Err(e) = placed {
+                        return fail(e);
                     }
                 }
                 Err(e) => return fail(e),
@@ -1322,6 +1325,71 @@ pub fn read<R: Read + Seek>(r: R, name: &str) -> Result<Raster> {
 /// [`read`], with the no-data value a sidecar gives (see [`read_limited_with_nodata`]).
 pub(super) fn read_with_nodata<R: Read + Seek>(r: R, name: &str, sidecar_nodata: Option<f64>) -> Result<Raster> {
     read_limited_with_nodata(reader(r).map_err(err)?, name, max_samples(), None, sidecar_nodata)
+}
+
+/// A single-band `UInt32` GeoTIFF of packed colour, each pixel `0xAABBGGRR` (alpha, blue, green
+/// and red bytes, as GeoLibre's colour tools write a composite), as four `UInt8` bands, red,
+/// green, blue and alpha, exact: read as one band (`grey`, [`read`] of `bytes`) its values are
+/// held as `f32`, whose 24 bits drop the red byte (#2594). A pixel whose alpha is 0, that is the
+/// file's no-data value (compared exactly), or that its transparency mask hides is see-through.
+/// `None` when it isn't packed colour: not one `UInt32` band, or a pixel left visible whose alpha
+/// byte is neither 0 nor 255, or none at 255 (a band of counts or IDs). `grey` tells which files
+/// to decode again; their raw values decide. A rotated or skewed file (read resampled north up),
+/// one without coordinates (a stand-in place), or one too large to hold four bands of, is an
+/// error, for the caller to say. The image is
+/// decoded once more, on one thread: at the peak, `grey`, the packed `u32`s and the four bands,
+/// six times the band. What `grey` lost as it was read (its `lost`) is left for the caller to say.
+pub fn unpack_rgba(grey: &Raster, bytes: &[u8]) -> Result<Option<Raster>> {
+    let [band] = &grey.bands[..] else { return Ok(None) };
+    if grey.data_type != "UInt32" {
+        return Ok(None);
+    }
+    // As `f32`, values under 2^24 are exact and only 0xFEFFFF80–0xFEFFFFFF round up to
+    // 0xFF000000: the raw values below settle those, and no-data. A value in between is no
+    // colour unless it is no-data; any value at 0xFF000000 or past may be an opaque one.
+    let between = |v: f32| (16_777_216.0..4_278_190_080.0).contains(&v);
+    let may_be_packed = !band.data.iter().any(|v| between(*v) && grey.is_valid(*v)) && band.data.iter().any(|v| *v >= 4_278_190_080.0);
+    if !may_be_packed {
+        return Ok(None);
+    }
+    let mut dec = Decoder::new(reader(std::io::Cursor::new(bytes)).map_err(err)?).map_err(err)?.with_limits(limits());
+    let (w, h) = dec.dimensions().map_err(err)?;
+    if geo_tags(&mut dec)?.affine.is_some() {
+        return Err(err("it is rotated or skewed, which packed colours aren't split for"));
+    }
+    let n = (w as usize).saturating_mul(h as usize);
+    // An overview's pixels aren't the image's: its colours come from the whole image, as four bands.
+    if grey.overview.is_some() || (grey.width, grey.height) != (w, h) || n.saturating_mul(4) > max_samples() {
+        return Err(err(format!(
+            "its {w} × {h} pixels are too many to hold as four bands: clip the tool's inputs to a smaller area first"
+        )));
+    }
+    let DecodingResult::U32(packed) = dec.read_image().map_err(err)? else { return Ok(None) };
+    if packed.len() != n || band.data.len() != n {
+        return Err(err(format!("its image holds {} values, not {w} × {h}", packed.len())));
+    }
+    // No-data, exactly, or hidden by the file's transparency mask (NaN as read).
+    let hole = |i: usize, p: u32| grey.nodata == Some(f64::from(p)) || band.data.get(i).is_some_and(|v| v.is_nan());
+    let shown = || packed.iter().enumerate().filter(|(i, p)| !hole(*i, **p)).map(|(_, p)| p >> 24);
+    if !shown().all(|a| a == 0 || a == 255) || !shown().any(|a| a == 255) {
+        return Ok(None);
+    }
+    // A file with no GeoTIFF tags has only a stand-in place, which the rebuilt raster would
+    // hold, and be written with, as coordinates.
+    if !grey.georeferenced {
+        return Err(err("it has no coordinates, and packed colours are split only with them"));
+    }
+    let (cols, rows) = (w as usize, h as usize);
+    let channel = |shift: u32| super::collected(cols, rows, packed.iter().map(|p| ((p >> shift) & 0xFF) as f32));
+    let opacity = packed.iter().enumerate().map(|(i, &p)| if hole(i, p) { 0.0 } else { (p >> 24) as f32 });
+    let alpha = super::collected(cols, rows, opacity)?;
+    let bands = vec![channel(0)?, channel(8)?, channel(16)?, alpha];
+    let mut rgba = Raster::new(grey.name.clone(), w, h, bands, grey.transform, grey.crs, None, ColorHint::Rgb { alpha: true }, "UInt8")?;
+    for (b, name) in rgba.bands.iter_mut().zip(["Red", "Green", "Blue", "Alpha"]) {
+        b.name = name.into();
+    }
+    rgba.copyright.clone_from(&grey.copyright);
+    Ok(Some(rgba))
 }
 
 /// What reading a GeoTIFF from the parts of it read so far came to.
@@ -1366,9 +1434,58 @@ pub fn read_file(path: &std::path::Path, name: &str) -> Result<Raster> {
 /// [`read_file`], with the no-data value a sidecar gives (see [`read_limited_with_nodata`]).
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn read_file_with_nodata(path: &std::path::Path, name: &str, sidecar_nodata: Option<f64>) -> Result<Raster> {
-    let path = path.to_path_buf();
-    let open = move || -> std::io::Result<Reader<'static>> { reader(std::io::BufReader::new(std::fs::File::open(&path)?)) };
-    read_limited_with_nodata(open().map_err(err)?, name, max_samples(), Some(&open), sidecar_nodata)
+    let file = crate::provenance::open(path).map_err(err)?;
+    let revision = file.metadata().and_then(|metadata| super::file_revision::FileRevision::capture(&metadata));
+    read_file_with_revision(path, name, sidecar_nodata, file, revision)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_revision_error(reason: impl std::fmt::Display) -> String {
+    format!(
+        "{reason}. Wait until the file is stable, then Retry Add Data (for an existing layer, Reload Data). Or copy it to a stable local location and add the copy (for an existing layer, point it at the copy with Repair Data Source)."
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_file_with_revision(
+    path: &std::path::Path,
+    name: &str,
+    sidecar_nodata: Option<f64>,
+    file: std::fs::File,
+    revision: std::io::Result<super::file_revision::FileRevision>,
+) -> Result<Raster> {
+    let revision = revision.map_err(|e| e.to_string());
+    let open = || -> std::io::Result<Reader<'static>> {
+        let file = crate::provenance::open(path)?;
+        if let Ok(original) = &revision {
+            let current = file
+                .metadata()
+                .and_then(|metadata| super::file_revision::FileRevision::capture(&metadata))
+                .map_err(|e| std::io::Error::other(load_revision_error(format!("Could not verify the image file while reading: {e}"))))?;
+            if *original != current {
+                return Err(std::io::Error::other(load_revision_error("The image file changed while its pixels were read")));
+            }
+        }
+        reader(std::io::BufReader::new(file))
+    };
+    let decoded = reader(std::io::BufReader::new(file))
+        .map_err(err)
+        .and_then(|r| read_limited_with_nodata(r, name, max_samples(), Some(&open), sidecar_nodata));
+    // A file cut short while it is read fails to decode: the revision says whether that was a
+    // change to wait out (Cancel is said as itself).
+    if let Ok(original) = &revision
+        && !matches!(decoded, Err(crate::DataError::Cancelled))
+    {
+        let current = std::fs::metadata(path)
+            .and_then(|metadata| super::file_revision::FileRevision::capture(&metadata))
+            .map_err(|e| err(load_revision_error(format!("Could not verify the image file after reading: {e}"))))?;
+        if *original != current {
+            return Err(err(load_revision_error("The image file changed while its pixels were read")));
+        }
+    }
+    let mut raster = decoded?;
+    raster.source_file = Some(revision);
+    Ok(raster)
 }
 
 /// [`read`], holding at most `max` samples (the tests' small limit exercises the overviews), with
@@ -1391,13 +1508,7 @@ pub(super) fn read_limited_with_nodata(
     // overviews of it.
     let palette = r.first_is_palette();
     let wide_rgb = r.first_is_wide_rgb();
-    let limits = {
-        let mut l = Limits::default();
-        l.decoding_buffer_size = max_samples().saturating_mul(4);
-        l.intermediate_buffer_size = 256 << 20;
-        l.ifd_value_size = 64 << 20;
-        l
-    };
+    let limits = limits();
     let mut dec = Decoder::new(r).map_err(err)?.with_limits(limits.clone());
     let (full_w, full_h) = dec.dimensions().map_err(err)?;
     let geo = geo_tags(&mut dec)?;
@@ -1423,6 +1534,7 @@ pub(super) fn read_limited_with_nodata(
         Err(e) => (None, Some(format!("its Copyright tag: it can't be read ({e}), so it is left out"))),
     };
     let spp = samples(&mut dec);
+    let full_alpha = extra_alpha(&mut dec);
     let bytes = sample_bytes(&mut dec);
     // The decoded image is held at its own pixel size before conversion to f32, so bound bytes
     // as well as samples.
@@ -1452,9 +1564,14 @@ pub(super) fn read_limited_with_nodata(
             }
             let Ok((ow, oh)) = dec.dimensions() else { continue };
             let (ospp, obytes) = (samples(&mut dec), sample_bytes(&mut dec));
-            // An overview with another sample count (three of an RGBI image's four) would read
-            // as another kind of image: the full image is read sparsely instead.
-            if ospp == spp && fits(ow, oh, ospp, obytes) && best.is_none_or(|(_, bw, bh)| ow as u64 * oh as u64 > bw as u64 * bh as u64) {
+            // An overview with another sample count (three of an RGBI image's four), or another
+            // alpha role for the sample past the colour ones (an RGBA overview of an RGBI image),
+            // would read as another kind of image: the full image is read sparsely instead.
+            if ospp == spp
+                && extra_alpha(&mut dec) == full_alpha
+                && fits(ow, oh, ospp, obytes)
+                && best.is_none_or(|(_, bw, bh)| ow as u64 * oh as u64 > bw as u64 * bh as u64)
+            {
                 best = Some((index, ow, oh));
             }
         }
@@ -1468,9 +1585,14 @@ pub(super) fn read_limited_with_nodata(
         }
         let (dw, dh) = (full_w.div_ceil(k), full_h.div_ceil(k));
         let decimated = (k <= 1 << 20).then_some(u64::from(dw) * u64::from(dh));
+        // As detailed as every k-th pixel is an overview of the full size over k, rounded either
+        // way: GDAL rounds up, some writers down (terrio's 10439 × 9842 for 83517 × 78739 over
+        // 8, #1965), and one a pixel short must not make the whole full image be read instead.
+        let as_detailed = |pixels: u64| pixels >= u64::from((full_w / k).max(1)) * u64::from((full_h / k).max(1));
         match best {
-            // An overview at least as detailed as the full image read sparsely: only it is read.
-            Some((index, ow, oh)) if decimated.is_none_or(|d| u64::from(ow) * u64::from(oh) >= d) => {
+            // An overview as detailed, to the rounding of its size, as the full image read
+            // sparsely: only it is read.
+            Some((index, ow, oh)) if decimated.is_none() || as_detailed(u64::from(ow) * u64::from(oh)) => {
                 dec.seek_to_image(index).map_err(err)?;
                 image = index;
                 (w, h) = (ow, oh);
@@ -1683,14 +1805,20 @@ pub(super) fn read_limited_with_nodata(
     };
     transform.pixel_width *= sx;
     transform.pixel_height *= sy;
+    let mut turned = None;
     let (bands, w, h) = match geo.affine {
         Some([x, xc, xr, y, yc, yr]) => {
-            let (bands, ow, oh, north_up) = super::north_up(&bands, w, h, [x, xc * sx, xr * sy, y, yc * sx, yr * sy], max)?;
+            let affine = [x, xc * sx, xr * sy, y, yc * sx, yr * sy];
+            let (bands, ow, oh, north_up) = super::north_up(&bands, w, h, affine, max)?;
+            // The file's own placement, not the scaled one: its pixels are the ones it is coarser than.
+            turned = Some(turned_note([x, xc, xr, y, yc, yr], (ow, oh), &north_up));
             transform = north_up;
             (bands, ow, oh)
         }
         None => (bands, w, h),
     };
+    // What makes a system the file doesn't give one read as WGS 84, said once.
+    let mut assumed = None;
     let crs = match geo.crs {
         Some(c) => c,
         None => {
@@ -1707,6 +1835,20 @@ pub(super) fn read_limited_with_nodata(
                 return Err(DataError::Format(e.clone()));
             }
             if geo.geographic_model || degrees {
+                assumed = Some(match &geo.custom_error {
+                    // The file's own projection couldn't be read, but its coordinates fit in degrees:
+                    // why is said, not dropped.
+                    Some(e) => super::assumed_wgs84_note(&format!(
+                        "its own coordinate system can't be read ({})",
+                        e.strip_prefix("GeoTIFF: ").unwrap_or(e)
+                    )),
+                    None if geo.geographic_model => {
+                        "its geographic coordinate system has no EPSG code, so its datum isn't read; its coordinates are \
+                         read as longitude/latitude on WGS 84"
+                            .to_string()
+                    }
+                    None => super::assumed_wgs84_note("it doesn't say its coordinate system"),
+                });
                 Crs::LonLat
             } else {
                 return Err(err("the file's coordinate system isn't recognised"));
@@ -1721,12 +1863,38 @@ pub(super) fn read_limited_with_nodata(
     r.copyright = copyright.filter(|c| !c.is_empty());
     r.lost.extend(copyright_lost);
     r.lost.extend(super::planetary::note_of(crs));
+    r.crs_assumed = assumed.is_some();
+    r.lost.extend(assumed);
+    r.lost.extend(turned);
     r.lost.extend(table_lost);
     r.lost.extend(mask_lost);
     if let Some(p) = &described {
         r.apply_pam(p, super::pam::GDAL_METADATA);
     }
     Ok(r)
+}
+
+/// What turning a rotated or skewed image north up says ([`super::north_up`]): its pixels are
+/// resampled, nearest pixel, onto square ones of the same area, coarser when the grid would pass the
+/// sample limit. `affine` is the file's own, at full resolution, `(w, h)` the grid's size and `grid`
+/// its placement.
+fn turned_note(affine: [f64; 6], (w, h): (u32, u32), grid: &GeoTransform) -> String {
+    let [_, xc, xr, _, yc, yr] = affine;
+    let own = (xc * yr - xr * yc).abs().sqrt();
+    // Four significant digits.
+    let short = |v: f64| {
+        let digits = if v.is_finite() && v != 0.0 { (3 - v.abs().log10().floor() as i32).clamp(0, 15) } else { 0 };
+        format!("{v:.*}", digits as usize)
+    };
+    let mut note = format!(
+        "it is rotated or skewed, so it is resampled (nearest pixel) onto a north-up grid of {w} × {h} pixels of {} each; \
+         values are taken from source pixel centres, and the grid's corners beyond the image are empty",
+        short(grid.pixel_width)
+    );
+    if grid.pixel_width > own * (1.0 + 1e-9) {
+        note.push_str(&format!(", and its pixels are coarser than the file's ({}) to keep the grid within the sample limit", short(own)));
+    }
+    note
 }
 
 /// The GeoKey directory a raster's coordinate system is written as, and the user-defined system
@@ -1743,7 +1911,7 @@ pub(super) fn geo_keys(r: &Raster) -> Result<GeoKeys> {
         // A system read from WKT (or a saved project) has no keys: they're made from its PROJ
         // definition when they can be.
         if d.geokeys.is_empty()
-            && let Some((geokeys, doubles, ascii)) = keys_from_proj4(&d.proj4, &d.label)
+            && let Some((geokeys, doubles, ascii)) = terrio_keys(&d)
         {
             std::sync::Arc::new(CustomCrs { geokeys, doubles, ascii, ..(*d).clone() })
         } else {
@@ -1835,8 +2003,10 @@ pub fn write(r: &Raster, band: usize) -> Result<Vec<u8>> {
 }
 
 /// Writes every band of a raster, for a layer whose pixels the project keeps: as [`write`] does
-/// when that keeps them all, otherwise as 32-bit float samples (RGB first for a colour raster,
-/// and alpha after them when it has one), which [`read`] reads back as the same bands.
+/// when that keeps them all. Otherwise: 8-bit samples when the raster is `UInt8` and every valid
+/// value is a whole number in 0–255 (an empty cell only where no-data can mark it), else 32-bit
+/// float samples (RGB first for a colour raster, and alpha after them when it has one). [`read`]
+/// reads them back as the same bands.
 pub fn write_all(r: &Raster) -> Result<Vec<u8>> {
     encode(r, 0, true)
 }
@@ -2019,6 +2189,80 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
+    fn annotation_grid_geotiff_open_failure_retains_format_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = read_file(&dir.path().join("missing.tif"), "missing").unwrap_err().to_string();
+        assert!(error.contains("GeoTIFF:"), "{error}");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn annotation_grid_load_change_and_missing_path_refuse_with_add_data_recovery() {
+        use std::io::Write;
+        for removed in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("image.tif");
+            let pixels = small();
+            let bytes = write(&pixels, 0).unwrap();
+            std::fs::write(&path, &bytes).unwrap();
+            let file = std::fs::File::open(&path).unwrap();
+            let revision = super::super::file_revision::FileRevision::capture(&file.metadata().unwrap()).unwrap();
+            // Inject a change between the initial source snapshot and the final load check,
+            // without timers or filesystem races. The already-open TIFF remains decodable.
+            if removed {
+                std::fs::remove_file(&path).unwrap();
+            } else {
+                std::fs::OpenOptions::new().append(true).open(&path).unwrap().write_all(&[0]).unwrap();
+            }
+            let error = read_file_with_revision(&path, "image", None, file, Ok(revision)).unwrap_err().to_string();
+            assert!(error.contains("GeoTIFF:") && error.contains("Retry Add Data"), "{error}");
+            assert!(
+                error.contains("stable local location") && error.contains("Reload Data") && error.contains("Repair Data Source"),
+                "{error}"
+            );
+            assert!(!error.contains("Use Reload Data, then retry the operation"), "{error}");
+            assert!(error.contains(if removed { "Could not verify" } else { "file changed" }), "{error}");
+            // Once stable, an ordinary Add Data read succeeds and has a verified grid revision.
+            std::fs::write(&path, &bytes).unwrap();
+            let loaded = read_file(&path, "image").unwrap();
+            assert_eq!(loaded.bands[0].data, pixels.bands[0].data);
+            loaded.check_original_file(&path).unwrap();
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn annotation_grid_capture_failure_preserves_pixels_and_reports_the_original_cause() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("image.tif");
+        let pixels = small();
+        std::fs::write(&path, write(&pixels, 0).unwrap()).unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let raster = read_file_with_revision(
+            &path,
+            "image",
+            None,
+            file,
+            Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "modification timestamps unavailable")),
+        )
+        .unwrap();
+        assert_eq!((raster.width, raster.height), (pixels.width, pixels.height));
+        assert_eq!(raster.bands[0].data, pixels.bands[0].data);
+        let error = raster.check_original_file(&path).unwrap_err();
+        assert!(error.contains("modification timestamps unavailable"), "{error}");
+        assert!(error.contains("metadata support/access") && error.contains("another location"), "{error}");
+        assert!(!error.contains("Reload Data"), "{error}");
+        assert!(
+            raster
+                .clone()
+                .check_original_handle(&std::fs::File::open(&path).unwrap())
+                .unwrap_err()
+                .contains("modification timestamps unavailable")
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn chunked_reads_count_progress_and_stop_before_or_during_serial_and_parallel_work() {
         use crate::progress::{install, tests::Counted};
         use std::io::Cursor;
@@ -2093,6 +2337,149 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The chunks of a `w × h` image in `cw × ch` tiles, `samples` to a pixel, as [`Chunks::new`]
+    /// lays them out from a file's tags.
+    fn chunk_grid(w: u32, h: u32, cw: u32, ch: u32, samples: usize) -> Chunks {
+        let (across, down) = (w.div_ceil(cw), h.div_ceil(ch));
+        Chunks { w, h, cw, ch, across, per_plane: across * down, planes: 1, samples, planar: false }
+    }
+
+    /// Every `k`-th pixel each way, whatever the chunks' shape and whether the edge ones are
+    /// padded: the same pixels, in the same places.
+    #[test]
+    fn decimation_keeps_the_same_pixels_whatever_the_chunk_shape() {
+        let value = |x: u32, y: u32, s: usize| (y * 1000 + x * 10) as f32 + s as f32;
+        for (cw, ch) in [(13, 8), (5, 3), (4, 8), (13, 1), (1, 1), (7, 5)] {
+            for padded in [false, true] {
+                for k in 1..=9u32 {
+                    let chunks = chunk_grid(13, 8, cw, ch, 2);
+                    let (ow, oh) = (13u32.div_ceil(k) as usize, 8u32.div_ceil(k) as usize);
+                    let mut bands = vec![vec![f32::NAN; ow * oh]; 2];
+                    for i in 0..chunks.count() {
+                        let Some((plane, index)) = chunks.wanted(i, k) else { continue };
+                        let (x0, y0) = ((index % chunks.across) * cw, (index / chunks.across) * ch);
+                        let (dw, rows) = if padded { (cw, ch) } else { (cw.min(13 - x0), ch.min(8 - y0)) };
+                        let mut values = Vec::new();
+                        for y in y0..y0 + rows {
+                            for x in x0..x0 + dw {
+                                values.extend([value(x, y, 0), value(x, y, 1)]);
+                            }
+                        }
+                        chunks.place(&mut bands, &values, None, &mut [0, 0], plane, index, k, ow).unwrap();
+                    }
+                    for (s, band) in bands.iter().enumerate() {
+                        let want: Vec<f32> =
+                            (0..oh as u32).flat_map(|r| (0..ow as u32).map(move |c| (c * k, r * k))).map(|(x, y)| value(x, y, s)).collect();
+                        assert_eq!(band, &want, "chunks of {cw} × {ch}, padded {padded}, every {k}th, band {s}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// A few hundred bytes claiming an 8-band image of 8 × 4,160,741,449 pixels in one strip (the
+    /// fuzzer's `oom-76cff910…`, #1952): the strip can't be decoded, which is said before the bands
+    /// of the overview made as it is read are set aside (some 2 GB of them on a computer with 16).
+    #[test]
+    fn a_strip_too_large_to_decode_is_refused_before_the_bands_are_set_aside() {
+        let entries: [(u16, u16, u32); 9] = [
+            (256, 4, 8),             // ImageWidth
+            (257, 4, 4_160_741_449), // ImageLength
+            (258, 3, 8),             // BitsPerSample (one value for every sample, as readers allow)
+            (259, 3, 1),             // Compression: none
+            (262, 3, 1),             // PhotometricInterpretation: black is zero
+            (273, 4, 128),           // StripOffsets
+            (277, 3, 8),             // SamplesPerPixel
+            (278, 4, 4_160_741_449), // RowsPerStrip: one strip
+            (279, 4, 135),           // StripByteCounts
+        ];
+        let mut file = b"II*\0".to_vec();
+        file.extend(8u32.to_le_bytes());
+        file.extend((entries.len() as u16).to_le_bytes());
+        for (tag, kind, value) in entries {
+            file.extend(tag.to_le_bytes());
+            file.extend(kind.to_le_bytes());
+            file.extend(1u32.to_le_bytes());
+            file.extend(if kind == 3 { u32::from(value as u16) } else { value }.to_le_bytes());
+        }
+        file.extend(0u32.to_le_bytes());
+        file.resize(128 + 135, 0);
+        let e = read(std::io::Cursor::new(&file), "vast.tif").map(|r| (r.width, r.height)).unwrap_err().to_string();
+        assert!(e.contains("a strip or tile of 8 × 4160741449 pixels is too large to read"), "{e}");
+    }
+
+    /// The first chunk's size as each decoder holds it: rows padded to whole bytes, and a tile larger
+    /// than the image cropped to it for the tiff crate but not for the LZW and LERC readers.
+    #[test]
+    fn the_first_chunk_is_sized_as_its_decoders_hold_it() {
+        // One 1-bit band, 1 × 4,160,741,449 in one strip: a byte a row, not an eighth.
+        assert_eq!(chunk_grid(1, 4_160_741_449, 1, 4_160_741_449, 1).first_bytes(1), (4_160_741_449, 4_160_741_449));
+        // A 1024 × 1024 byte image in one 65536-pixel tile: 1 MB cropped, 4 GB padded.
+        assert_eq!(chunk_grid(1024, 1024, 65536, 65536, 1).first_bytes(8), (1 << 20, 1 << 32));
+        // Bands stored apart: the tiff crate keeps a tile's full height for the later planes.
+        let mut planar = chunk_grid(1024, 1024, 1024, 65536, 1);
+        planar.planes = 2;
+        assert_eq!(planar.first_bytes(8), (1 << 26, 1 << 26));
+    }
+
+    /// An image `u32` can just count the width (or height) of, in chunks of 2^20 pixels, every 2^20th
+    /// pixel: the last chunk ends where `u32` does, so `x0 + cw` and the walk's last step pass it.
+    /// In `u32` that panics in a debug build and wraps into an endless walk in a release build.
+    #[test]
+    fn decimating_an_image_as_wide_or_tall_as_u32_holds_places_its_last_pixel_and_ends() {
+        let k = 1u32 << 20;
+        for wide in [true, false] {
+            let chunks = if wide { chunk_grid(u32::MAX, 1, k, 1, 1) } else { chunk_grid(1, u32::MAX, 1, k, 1) };
+            assert_eq!(chunks.count(), 4096);
+            assert!((0..4096).all(|i| chunks.wanted(i, k) == Some((0, i as u32))));
+            // The last chunk holds one pixel fewer than the others; its first is kept.
+            let mut values = vec![0.0f32; k as usize - 1];
+            values[0] = 7.0;
+            let mut band = vec![vec![f32::NAN; 4096]];
+            chunks.place(&mut band, &values, None, &mut [0], 0, 4095, k, if wide { 4096 } else { 1 }).unwrap();
+            assert_eq!(band[0].iter().filter(|v| !v.is_nan()).count(), 1, "wide {wide}");
+            assert_eq!(band[0][4095], 7.0, "wide {wide}");
+        }
+    }
+
+    /// The next multiple of the step after a chunk's corner is past `u32` there: nothing of the
+    /// chunk is kept, as it isn't below the end of it, not a multiple wrapped round to 0. Where a
+    /// kept pixel is the second last, its next step ends the walk.
+    #[test]
+    fn a_step_that_passes_u32_ends_the_chunk_instead_of_wrapping() {
+        // Chunks of 3 pixels; the last holds the three pixels from 4,294,967,292.
+        let chunks = chunk_grid(u32::MAX, 1, 3, 1, 1);
+        let last = chunks.across - 1;
+        assert_eq!(chunks.span(last), (4_294_967_292, 0, 3, 1));
+        assert_eq!(chunks.wanted(u64::from(last), 1 << 20), None);
+        assert_eq!(chunks.wanted(u64::from(last), 2), Some((0, last)));
+        // Every second pixel keeps 4,294,967,292 and 4,294,967,294; the output isn't made (it would
+        // hold 2 GiB): the walk ending is what is checked.
+        let mut bands = vec![Vec::new()];
+        chunks.place(&mut bands, &[1.0, 2.0, 3.0], None, &mut [0], 0, last, 2, 1 << 31).unwrap();
+        assert!(bands[0].is_empty());
+        // Chunks of no width or height, and an image of no width, are nothing, not a division by 0.
+        let none = chunk_grid(0, 0, 1, 1, 1);
+        assert_eq!(none.count(), 0);
+        assert_eq!(none.span(0), (0, 0, 0, 0));
+    }
+
+    /// A decoded strip or tile whose values make none of its shapes is refused: a row length
+    /// guessed from them would put pixels in other pixels' places, or leave them empty unsaid.
+    #[test]
+    fn a_chunk_of_none_of_its_shapes_is_refused_not_guessed() {
+        // One 4 × 2 tile; 5 values make neither 4 × 2 nor any padded shape.
+        let chunks = chunk_grid(4, 2, 4, 2, 1);
+        let mut bands = vec![vec![f32::NAN; 8]];
+        let e = chunks.place(&mut bands, &[1.0, 2.0, 3.0, 4.0, 5.0], None, &mut [0], 0, 0, 1, 4).unwrap_err().to_string();
+        assert!(e.contains("decodes to 5 values, not the 4 × 2 pixels"), "{e}");
+        assert!(bands[0].iter().all(|v| v.is_nan()), "nothing placed from a refused chunk");
+        // All 8 are placed where they belong.
+        let all: Vec<f32> = (0..8).map(|v| v as f32).collect();
+        chunks.place(&mut bands, &all, None, &mut [0], 0, 0, 1, 4).unwrap();
+        assert_eq!(bands[0], all);
     }
 
     /// Who holds the rights (the Copyright tag) is written by both writers and read back, as the
@@ -2262,6 +2649,120 @@ mod tests {
         assert!(read(std::io::Cursor::new(tests_support::matrix_tiff(flat, false)), "flat").is_err());
     }
 
+    /// A 2 × 2 byte image whose upper left corner is `corner`, `step` a pixel, with this GeoKey
+    /// directory (none: the file gives no coordinate system).
+    fn placed_tiff(corner: (f64, f64), step: f64, keys: Option<&[u16]>) -> Vec<u8> {
+        use tiff::encoder::{TiffEncoder, colortype};
+        let mut out = std::io::Cursor::new(Vec::new());
+        let mut enc = TiffEncoder::new(&mut out).unwrap_or_else(|e| panic!("{e}"));
+        let mut img = enc.new_image::<colortype::Gray8>(2, 2).unwrap_or_else(|e| panic!("{e}"));
+        img.encoder().write_tag(Tag::ModelPixelScaleTag, &[step, step, 0.0][..]).unwrap_or_else(|e| panic!("{e}"));
+        img.encoder().write_tag(Tag::ModelTiepointTag, &[0.0f64, 0.0, 0.0, corner.0, corner.1, 0.0][..]).unwrap_or_else(|e| panic!("{e}"));
+        if let Some(keys) = keys {
+            img.encoder().write_tag(Tag::GeoKeyDirectoryTag, keys).unwrap_or_else(|e| panic!("{e}"));
+        }
+        img.write_data(&[1u8, 2, 3, 4]).unwrap_or_else(|e| panic!("{e}"));
+        out.into_inner()
+    }
+
+    /// A grid whose file gives no usable coordinate system but whose coordinates fit in degrees is
+    /// read as WGS 84 and says why, once. A file that gives its system says nothing of the kind, and
+    /// metres of a projection that can't be read are still refused with the reason (AGENTS.md, Never
+    /// silent).
+    #[test]
+    fn a_grid_read_as_wgs84_says_why() {
+        let read_tiff = |bytes: Vec<u8>| read(std::io::Cursor::new(bytes), "g");
+        // No GeoKeys at all.
+        let r = read_tiff(placed_tiff((10.0, 50.0), 0.5, None)).unwrap();
+        assert_eq!(r.crs, Crs::LonLat);
+        assert_eq!(r.lost.len(), 1, "{:?}", r.lost);
+        assert!(r.lost[0].contains("doesn't say its coordinate system") && r.lost[0].contains("WGS 84"), "{:?}", r.lost);
+        // Its own projection (a coordinate transformation that isn't supported) can't be read, but its
+        // coordinates fit in degrees: the reason is said, not dropped.
+        let own = [1u16, 1, 0, 3, 1024, 0, 1, 1, 3072, 0, 1, 32767, 3075, 0, 1, 99];
+        let r = read_tiff(placed_tiff((10.0, 50.0), 0.5, Some(&own))).unwrap();
+        assert_eq!(r.crs, Crs::LonLat);
+        assert_eq!(r.lost.len(), 1, "{:?}", r.lost);
+        assert!(
+            r.lost[0].starts_with("its own coordinate system can't be read (")
+                && r.lost[0].contains("coordinate transformation 99")
+                && r.lost[0].ends_with("so it's read as WGS 84"),
+            "{:?}",
+            r.lost
+        );
+        // Metres of the same projection are refused, saying why.
+        let e = read_tiff(placed_tiff((500_000.0, 4_000_000.0), 30.0, Some(&own))).unwrap_err().to_string();
+        assert!(e.contains("coordinate transformation 99"), "{e}");
+        // A geographic system with no EPSG code: its datum isn't read.
+        let user = [1u16, 1, 0, 2, 1024, 0, 1, 2, 2048, 0, 1, 32767];
+        let r = read_tiff(placed_tiff((10.0, 50.0), 0.5, Some(&user))).unwrap();
+        assert_eq!(r.crs, Crs::LonLat);
+        assert_eq!(r.lost.len(), 1, "{:?}", r.lost);
+        assert!(r.lost[0].contains("no EPSG code, so its datum isn't read"), "{:?}", r.lost);
+        // A user-defined model type (32767) whose keys don't define a system but name a code is
+        // read by the code, as before.
+        let named = [1u16, 1, 0, 3, 1024, 0, 1, 32767, 1025, 0, 1, 1, 3072, 0, 1, 32633];
+        let r = read_tiff(placed_tiff((500_000.0, 4_000_000.0), 30.0, Some(&named))).unwrap();
+        assert_eq!(r.crs, Crs::from_epsg(32633).unwrap());
+        // Files that give their system say nothing: WGS 84 by its code, and a UTM zone.
+        let wgs84 = [1u16, 1, 0, 3, 1024, 0, 1, 2, 1025, 0, 1, 1, 2048, 0, 1, 4326];
+        let utm = [1u16, 1, 0, 3, 1024, 0, 1, 1, 1025, 0, 1, 1, 3072, 0, 1, 32633];
+        for (bytes, crs) in [
+            (placed_tiff((10.0, 50.0), 0.5, Some(&wgs84)), Crs::LonLat),
+            (placed_tiff((500_000.0, 4_000_000.0), 30.0, Some(&utm)), Crs::from_epsg(32633).unwrap()),
+        ] {
+            let r = read_tiff(bytes).unwrap();
+            assert_eq!(r.crs, crs);
+            assert!(r.lost.is_empty(), "{:?}", r.lost);
+        }
+    }
+
+    /// A rotated or skewed image says it was resampled onto a north-up grid, once, and how; its
+    /// pixels are said to be coarser than the file's only when the grid had to be. A north-up image
+    /// says nothing of the kind.
+    #[test]
+    fn a_turned_image_says_how_it_was_resampled() {
+        let rotated = [30.0, 5.0, 0.0, 400_000.0, 3.0, -30.0, 0.0, 5_000_000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let r = read(std::io::Cursor::new(tests_support::matrix_tiff(rotated, false)), "rot").unwrap();
+        assert_eq!(r.lost.len(), 1, "{:?}", r.lost);
+        let said = &r.lost[0];
+        assert!(said.starts_with("it is rotated or skewed, so it is resampled (nearest pixel) onto a north-up grid of "), "{said}");
+        assert!(said.contains(&format!("{} × {} pixels of 30.25 each", r.width, r.height)), "{said}");
+        assert!(!said.contains("coarser"), "{said}");
+        // Past the sample limit the grid is coarser than the file's pixels, and says so.
+        let file = tests_support::matrix_tiff(rotated, false);
+        let r = read_limited(reader(std::io::Cursor::new(&file)).unwrap(), "coarse", 200, None).unwrap();
+        assert!(r.width * r.height <= 200 && r.transform.pixel_width > 30.25);
+        assert_eq!(r.lost.len(), 1, "{:?}", r.lost);
+        assert!(r.lost[0].contains("coarser") && r.lost[0].contains("30.25"), "{:?}", r.lost);
+        // Decimation makes the source read coarser before north_up; compare to the original file.
+        let r = read_limited(reader(std::io::Cursor::new(&file)).unwrap(), "decimated", 50, None).unwrap();
+        assert_eq!(r.overview, Some((20, 10)));
+        assert!(r.width * r.height <= 50);
+        assert!(r.lost.iter().any(|n| n.contains("coarser than the file's (30.25)")), "{:?}", r.lost);
+        // A stored overview also uses the full-resolution affine for the comparison.
+        let mut out = std::io::Cursor::new(Vec::new());
+        {
+            use tiff::encoder::{TiffEncoder, colortype};
+            let mut enc = TiffEncoder::new(&mut out).unwrap();
+            let mut image = enc.new_image::<colortype::Gray8>(20, 10).unwrap();
+            image.encoder().write_tag(Tag::Unknown(34264), &rotated[..]).unwrap();
+            let keys = [1u16, 1, 0, 1, 3072, 0, 1, 32633];
+            image.encoder().write_tag(Tag::GeoKeyDirectoryTag, &keys[..]).unwrap();
+            image.write_data(&[100u8; 200]).unwrap();
+            let mut image = enc.new_image::<colortype::Gray8>(10, 5).unwrap();
+            image.encoder().write_tag(Tag::NewSubfileType, 1u32).unwrap();
+            image.write_data(&[100u8; 50]).unwrap();
+        }
+        let r = read_limited(reader(std::io::Cursor::new(out.into_inner())).unwrap(), "overview", 50, None).unwrap();
+        assert_eq!(r.overview, Some((20, 10)));
+        assert!(r.lost.iter().any(|n| n.contains("coarser than the file's (30.25)")), "{:?}", r.lost);
+        // The same image placed north up needs no resampling, and says nothing.
+        let level = [30.0, 0.0, 0.0, 400_000.0, 0.0, -30.0, 0.0, 5_000_000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let r = read(std::io::Cursor::new(tests_support::matrix_tiff(level, false)), "level").unwrap();
+        assert!(r.lost.is_empty(), "{:?}", r.lost);
+    }
+
     #[test]
     fn rgb_round_trip_in_utm() {
         let gt = GeoTransform { origin_x: 500_000.0, origin_y: 4_000_000.0, pixel_width: 30.0, pixel_height: -30.0 };
@@ -2400,37 +2901,101 @@ mod tests {
         let r = Raster::new("hrrr", 2, 2, vec![vec![1.0, 2.0, 3.0, 4.0]], gt, crs, None, ColorHint::Gray, "Float32").unwrap();
         let back = read(std::io::Cursor::new(write(&r, 0).unwrap()), "hrrr").unwrap();
         let p = back.crs.custom_def().unwrap().proj4.clone();
-        assert!(p.contains("+proj=lcc") && p.contains("+lon_0=-97.5") && p.contains("+a=6371229"), "{p}");
+        assert!(p.contains("+proj=lcc") && p.contains("+lon_0=-97.5"), "{p}");
         // The same place either way.
         let c = rustgis_geom::Coord { x: 0.0, y: 0.0 };
         let (a, b) = (r.crs.transformer().unwrap().to_lonlat(c).unwrap(), back.crs.transformer().unwrap().to_lonlat(c).unwrap());
         assert!((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9 && (a.x + 97.5).abs() < 1e-6, "{a:?} {b:?}");
-        // One the keys can't say is refused, as before.
-        assert!(keys_from_proj4("+proj=moll +lon_0=0 +datum=WGS84", "x").is_none());
-        assert!(keys_from_proj4("junk", "x").is_none());
-        assert!(keys_from_proj4("+proj=tmerc +lon_0=0 +units=us-ft +datum=WGS84", "x").is_none(), "only metres");
-        for unsaid in [
+        // What GeoTIFF's projection keys can't say (another method, a unit, a shift, a prime
+        // meridian) goes in an ESRI PE citation, as GDAL 3.12.1 writes it, and reads back alike.
+        assert!(terrio_keys(&CustomCrs { proj4: "junk".into(), ..CustomCrs::default() }).is_none());
+        for def in [
+            "+proj=moll +lon_0=0 +datum=WGS84",
+            "+proj=tmerc +lon_0=0 +units=us-ft +datum=WGS84",
             "+proj=stere +lat_0=45 +lat_ts=30 +datum=WGS84",
             "+proj=lcc +lat_1=30 +lat_0=40 +lon_0=-96 +datum=WGS84",
             "+proj=eqc +lat_0=30 +lon_0=0 +datum=WGS84",
-            "+proj=laea +lat_0=52 +lon_0=10 +k_0=0.9 +datum=WGS84",
-            "+proj=lcc +lat_1=30 +lat_2=40 +k_0=0.9996 +datum=WGS84",
+            "+proj=laea +lat_0=52 +lon_0=10 +datum=WGS84",
             "+proj=merc +lat_ts=33 +datum=WGS84",
             "+proj=tmerc +ellps=bessel +towgs84=598.1,73.7,418.2",
-            "+proj=lcc +lat_1=40 +pm=paris +a=6378249.2 +b=6356515",
+            "+proj=lcc +lat_1=40 +lat_0=40 +pm=paris +a=6378249.2 +b=6356515",
+            // A one-parallel conic with a scale factor, and a polar stereographic.
+            "+proj=lcc +lat_1=46.8 +lat_2=46.8 +lat_0=46.8 +lon_0=2.3 +k_0=0.99987742 +datum=WGS84",
+            "+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m",
         ] {
-            assert!(keys_from_proj4(unsaid, "x").is_none(), "{unsaid}");
+            keys_round_trip(def);
         }
-        // A one-parallel conic with a scale factor (as WKT's 1SP gives it, both parallels the same)
-        // keeps it.
-        let (k, d, a) =
-            keys_from_proj4("+proj=lcc +lat_1=46.8 +lat_2=46.8 +lat_0=46.8 +lon_0=2.3 +k_0=0.99987742 +datum=WGS84", "x").unwrap();
-        assert!(custom_crs(&k, &d, &a).unwrap().custom_def().unwrap().proj4.contains("+k_0=0.99987742"));
-        // A polar stereographic round trip: the pole's longitude comes back.
-        let (k, d, a) =
-            keys_from_proj4("+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m", "NSIDC").unwrap();
-        let back = custom_crs(&k, &d, &a).unwrap().custom_def().unwrap().proj4.clone();
-        assert!(back.contains("+lat_0=90") && back.contains("+lat_ts=70") && back.contains("+lon_0=-45"), "{back}");
+    }
+
+    /// User-defined keys GDAL reads otherwise than the plain key set: the centre's easting and
+    /// northing (ProjCenterEastingGeoKey, ProjCenterNorthingGeoKey) in place of the false ones,
+    /// and a Hotine without its rectified grid angle, which GDAL takes as 90°. Where GDAL 3.12.2
+    /// places them (its WKT2, then pyproj 3.8.0 from EPSG:4326; 3.10.3 agrees). RustGIS read the
+    /// first and last as GDAL does and refused the second.
+    #[test]
+    fn projection_keys_are_read_as_gdal_reads_them() {
+        fn keys(transformation: u16, params: &[(u16, f64)]) -> (Vec<u16>, Vec<f64>) {
+            // Projected, user-defined, on WGS 84, in metres.
+            let mut entries: Vec<[u16; 4]> = vec![
+                [1024, 0, 1, 1],
+                [1025, 0, 1, 1],
+                [2048, 0, 1, 4326],
+                [3072, 0, 1, 32767],
+                [3074, 0, 1, 32767],
+                [3075, 0, 1, transformation],
+                [3076, 0, 1, 9001],
+            ];
+            let mut doubles = vec![];
+            for (k, v) in params {
+                entries.push([*k, 34736, 1, doubles.len() as u16]);
+                doubles.push(*v);
+            }
+            entries.sort_unstable();
+            let mut keys = vec![1, 1, 0, entries.len() as u16];
+            keys.extend(entries.into_iter().flatten());
+            (keys, doubles)
+        }
+        let cases = [
+            (
+                keys(1, &[(3080, 9.0), (3081, 0.0), (3092, 0.9996), (3090, 500_000.0), (3091, 0.0)]),
+                (10.0, 45.0),
+                (578_815.303, 4_983_436.768),
+            ),
+            (
+                keys(3, &[(3088, 10.0), (3089, 40.0), (3094, 30.0), (3093, 1.0), (3082, 0.0), (3083, 0.0)]),
+                (11.0, 41.0),
+                (5_038_140.229, -17_104.251),
+            ),
+            // Polar stereographic about the pole with a standard parallel beside it: GDAL 3.12.2
+            // (and 3.10.3) take the pole as the standard parallel, scale 1, as RustGIS read it.
+            (keys(15, &[(3095, 0.0), (3081, 90.0), (3078, 71.0), (3082, 0.0), (3083, 0.0)]), (10.0, 80.0), (194_428.508, -1_102_658.862)),
+        ];
+        for ((k, d), (lon, lat), (x, y)) in cases {
+            let crs = custom_crs(&k, &d, "").unwrap_or_else(|e| panic!("{e}: {k:?}"));
+            let p = crs.transformer().unwrap().from_lonlat(rustgis_geom::Coord::new(lon, lat)).unwrap();
+            assert!((p.x - x).abs() < 0.01 && (p.y - y).abs() < 0.01, "{p:?}: {k:?}");
+        }
+    }
+
+    /// `def` written as GeoKeys ([`terrio_keys`]) and read back ([`custom_crs`]): a system that
+    /// places points as `def` does, near its centre. The keys and the system read back.
+    fn keys_round_trip(def: &str) -> (Vec<u16>, Vec<f64>, String, Crs) {
+        let crs = Crs::parse(def).unwrap_or_else(|e| panic!("{def}: {e}"));
+        let d = crs.custom_def().unwrap();
+        let (k, dd, a) = terrio_keys(&d).unwrap_or_else(|| panic!("{def}"));
+        let back = custom_crs(&k, &dd, &a).unwrap_or_else(|e| panic!("{def}: {e}"));
+        let num = |key: &str| def.split_whitespace().find_map(|t| t.strip_prefix(key)?.parse::<f64>().ok());
+        let (lon0, lat0) = (num("+lon_0=").unwrap_or(0.0), num("+lat_0=").unwrap_or(45.0));
+        let at = rustgis_geom::Coord::new(lon0 + 1.0, if lat0.abs() >= 80.0 { lat0.signum() * 80.0 } else { lat0 + 1.0 });
+        let (p, q) = (crs.transformer().unwrap().from_lonlat(at).unwrap(), back.transformer().unwrap().from_lonlat(at).unwrap());
+        assert!((p.x - q.x).hypot(p.y - q.y) < 1e-3, "{def}: {p:?} {q:?} ({:?})", back.custom_def().map(|d| d.proj4.clone()));
+        // And through a file, as GeoTIFF writes and reads it.
+        let gt = GeoTransform { origin_x: p.x, origin_y: p.y, pixel_width: 1.0, pixel_height: -1.0 };
+        let r = Raster::new("k", 1, 1, vec![vec![1.0]], gt, crs, None, ColorHint::Gray, "Float32").unwrap();
+        let file = read(std::io::Cursor::new(write(&r, 0).unwrap()), "k").unwrap_or_else(|e| panic!("{def}: {e}"));
+        let q = file.crs.transformer().unwrap().from_lonlat(at).unwrap();
+        assert!((p.x - q.x).hypot(p.y - q.y) < 1e-3, "{def}: file {p:?} {q:?}");
+        (k, dd, a, back)
     }
 
     /// Orthographic and Robinson systems from WKT are written as keys (CT_Orthographic 21 and
@@ -2445,17 +3010,9 @@ mod tests {
             ("+proj=eqc +lat_ts=30 +lon_0=-90 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs", 17),
             ("+proj=eqc +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +a=3396190 +rf=169.894447223612 +units=m +no_defs", 17),
         ] {
-            let (k, d, a) = keys_from_proj4(def, "x").unwrap_or_else(|| panic!("{def}"));
+            let (k, d, a, _) = keys_round_trip(def);
             assert_eq!(geokey(&k, &d, &a, 3075).map(|v| matches!(v, KeyValue::Short(c) if c == ct)), Some(true), "{def}");
-            let back = custom_crs(&k, &d, &a).unwrap().custom_def().unwrap().proj4.clone();
-            assert!(same_projection(def, &back), "{def}: {back}");
         }
-        // PROJ 9.8 computes it on the ellipsoid: on the sphere of its semi-major axis it is
-        // another projection.
-        assert!(!same_projection(
-            "+proj=eqc +lat_ts=0 +lon_0=0 +datum=WGS84 +units=m +no_defs",
-            "+proj=eqc +lat_ts=0 +lon_0=0 +R=6378137 +units=m +no_defs"
-        ));
     }
 
     #[test]
@@ -2600,6 +3157,29 @@ mod tests {
         let Partial::Done(back) = read_sparse_limited(&kept, "back", 1 << 20).unwrap() else { panic!("parts missing") };
         assert_eq!((back.width, back.height), (r.width, r.height));
         assert_eq!(back.value(0, 517, 300), r.value(0, 517, 300));
+    }
+
+    /// #1965: an overview a pixel short of every k-th pixel of the full image, as a writer that
+    /// rounds its overviews' sizes down makes it (terrio's 10439 × 9842 for 83517 × 78739 over 8),
+    /// is read rather than the whole full image, whose every k-th pixel is only a pixel larger. A
+    /// 10 GB mosaic took minutes to open so.
+    #[test]
+    fn an_overview_rounded_down_is_read_rather_than_the_full_image() {
+        use super::super::cog::{Example, example_with};
+        // 1001 pixels a side in 256-pixel tiles, overviews of 500 and 250. At most 260,000
+        // samples: every second pixel is 501 × 501, the 500 overview a pixel short each way.
+        let file = example_with(&Example { size: 1001, tile: 256, rounded_down: true, ..Example::default() });
+        let max = 260_000;
+        let whole = read_limited(reader(std::io::Cursor::new(&file)).unwrap(), "rounded", max, None).unwrap();
+        assert_eq!((whole.width, whole.height, whole.overview), (500, 500, Some((1001, 1001))));
+        // Only the overview's tiles are read, none of the full image's (most of the file).
+        let (r, parts) = read_in_parts(&file, 64 << 10, max);
+        assert_eq!((r.width, r.height), (500, 500));
+        assert!(parts.held() < file.len() as u64 / 3, "{} of {}", parts.held(), file.len());
+        // One rounded up, as GDAL writes it, is read as before.
+        let up = example_with(&Example { size: 1001, tile: 256, ..Example::default() });
+        let r = read_limited(reader(std::io::Cursor::new(&up)).unwrap(), "up", max, None).unwrap();
+        assert_eq!((r.width, r.height), (501, 501));
     }
 
     #[test]
@@ -2925,6 +3505,150 @@ mod tests {
         }
     }
 
+    /// A SampleFormat of 4 (undefined) is shown to the decoder as 1, unsigned (#2593): in the
+    /// entry when its values fit there, else in the array it points to, in both byte orders and
+    /// both TIFF sizes. The file itself is unchanged.
+    #[test]
+    fn void_sample_format_patches_handle_both_byte_orders_and_tiff_sizes() {
+        for big in [false, true] {
+            for little in [false, true] {
+                for samples in [1u16, 3, 5] {
+                    let short = |v: u16| if little { v.to_le_bytes() } else { v.to_be_bytes() };
+                    let long = |v: u32| if little { v.to_le_bytes() } else { v.to_be_bytes() };
+                    let wide = |v: u64| if little { v.to_le_bytes() } else { v.to_be_bytes() };
+                    let count = |v: usize| if big { wide(v as u64).to_vec() } else { long(v as u32).to_vec() };
+                    let mut bytes = if little { b"II".to_vec() } else { b"MM".to_vec() };
+                    bytes.extend(short(if big { 43 } else { 42 }));
+                    let at = if big { 16 } else { 8 };
+                    if big {
+                        bytes.extend(short(8));
+                        bytes.extend(short(0));
+                        bytes.extend(wide(at));
+                        bytes.extend(wide(3));
+                    } else {
+                        bytes.extend(long(at as u32));
+                        bytes.extend(short(3));
+                    }
+                    let (entry_len, field) = if big { (20, 8) } else { (12, 4) };
+                    let entries_at = bytes.len();
+                    for (tag, value) in [(262, 1), (277, samples)] {
+                        bytes.extend(short(tag));
+                        bytes.extend(short(3));
+                        bytes.extend(count(1));
+                        bytes.extend(short(value));
+                        bytes.extend(vec![0; field - 2]);
+                    }
+                    // SampleFormat: 4 for each sample, in the entry or after the IFD.
+                    let n = usize::from(samples);
+                    let values: Vec<u8> = (0..n).flat_map(|_| short(4)).collect();
+                    let inline = 2 * n <= field;
+                    let array_at = entries_at + 3 * entry_len + field;
+                    bytes.extend(short(339));
+                    bytes.extend(short(3));
+                    bytes.extend(count(n));
+                    if inline {
+                        bytes.extend(&values);
+                        bytes.extend(vec![0; field - values.len()]);
+                    } else {
+                        bytes.extend(count(array_at));
+                    }
+                    bytes.extend(vec![0; field]);
+                    if !inline {
+                        bytes.extend(&values);
+                    }
+                    let original = bytes.clone();
+                    let mut r = Unpaletted::new(std::io::Cursor::new(bytes)).unwrap();
+                    assert!(!r.first_is_wide_rgb() && !r.first_is_palette());
+                    let mut patched = Vec::new();
+                    // Reading a byte at a time exercises patches split between reads.
+                    let mut byte = [0u8; 1];
+                    while r.read(&mut byte).unwrap() != 0 {
+                        patched.push(byte[0]);
+                    }
+                    let mut want = original.clone();
+                    let first = if inline { entries_at + 2 * entry_len + if big { 12 } else { 8 } } else { array_at };
+                    for j in 0..n {
+                        want[first + 2 * j..first + 2 * j + 2].copy_from_slice(&short(1));
+                    }
+                    assert_eq!(patched, want, "big {big}, little {little}, {samples} samples");
+                    assert_eq!(r.inner.into_inner(), original);
+                }
+            }
+        }
+    }
+
+    /// Sets every SampleFormat value in a little-endian classic TIFF to `format`, in the entry or in
+    /// the array it points to, each image's; returns how many it set.
+    fn set_sample_format(file: &mut [u8], format: u16) -> usize {
+        let short = |b: &[u8], at: usize| u16::from_le_bytes([b[at], b[at + 1]]);
+        let long = |b: &[u8], at: usize| u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]) as usize;
+        let (mut ifd, mut set) = (long(file, 4), 0);
+        while ifd != 0 {
+            let n = usize::from(short(file, ifd));
+            let entries: Vec<usize> = (0..n).map(|i| ifd + 2 + 12 * i).filter(|e| short(file, *e) == 339).collect();
+            for e in entries {
+                let count = long(file, e + 4);
+                let at = if count <= 2 { e + 8 } else { long(file, e + 8) };
+                for j in 0..count {
+                    file[at + 2 * j..at + 2 * j + 2].copy_from_slice(&format.to_le_bytes());
+                    set += 1;
+                }
+            }
+            ifd = long(file, ifd + 2 + 12 * n);
+        }
+        set
+    }
+
+    /// A GeoTIFF whose SampleFormat is 4, undefined (the CBERS-4 scenes of the Brazil Data Cube),
+    /// reads as unsigned whole numbers, as libtiff and GDAL read it (#2593): the same type and
+    /// values as the file with 1. A one-band 8-bit Deflate image in strips; a tiled three-band one
+    /// with overviews, whose SampleFormat values are arrays apart from their entries, whole and a
+    /// tile at a time as a COG window reads it.
+    #[test]
+    fn a_void_sample_format_reads_as_unsigned() {
+        use tiff::encoder::{Compression, DeflateLevel, TiffEncoder, colortype};
+        let mut strips = Vec::new();
+        TiffEncoder::new(std::io::Cursor::new(&mut strips))
+            .unwrap()
+            .with_compression(Compression::Deflate(DeflateLevel::Balanced))
+            .write_image::<colortype::Gray8>(2, 2, &[3, 70, 140, 255])
+            .unwrap();
+        let (w, h) = (600u32, 600u32);
+        let bands = (0..3).map(|b| (0..w * h).map(|i| ((i + 40 * b) % 256) as f32).collect()).collect();
+        let gt = GeoTransform { origin_x: 10.0, origin_y: 46.0, pixel_width: 0.001, pixel_height: -0.001 };
+        let rgb = Raster::new("rgb", w, h, bands, gt, Crs::LonLat, None, ColorHint::Rgb { alpha: false }, "Byte").unwrap();
+        let tiled = crate::raster::cogwrite::write(&rgb, 0).unwrap();
+        for (name, file, values) in [("strips", strips, 1), ("tiled", tiled, 6)] {
+            let mut void = file.clone();
+            assert!(set_sample_format(&mut void, 4) >= values, "{name}: SampleFormat set");
+            let want = read(std::io::Cursor::new(&file), name).unwrap();
+            let got = read(std::io::Cursor::new(&void), name).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!((got.data_type.as_str(), got.band_count()), (want.data_type.as_str(), want.band_count()), "{name}");
+            assert!(got.bands.iter().zip(&want.bands).all(|(a, b)| a.data == b.data), "{name}: the values");
+            if name == "strips" {
+                continue;
+            }
+            // A tile at a time, each level, as a COG window reads it. Compared bit for bit: an
+            // overview's tile past its image's edge is NaN.
+            let layout = |file: &[u8]| match super::super::cog::layout(&Sparse::default().with(0, file.to_vec())).unwrap() {
+                super::super::cog::Parse::Done(l) => l,
+                _ => panic!("{name}: not read a tile at a time"),
+            };
+            let (l, lv) = (layout(&void), layout(&file));
+            assert!(l.levels.len() > 1, "{name}: overviews");
+            for level in 0..l.levels.len() {
+                let (at, n) = (l.levels[level].offsets[0] as usize, l.levels[level].counts[0] as usize);
+                let tile = |file: &[u8], l: &super::super::cog::Layout| {
+                    let bands =
+                        super::super::cog::decode_tile(&Sparse::default().with(0, file.to_vec()), l, level, 0, file[at..at + n].to_vec())
+                            .unwrap_or_else(|e| panic!("level {level}: {e}"));
+                    bands.into_iter().map(|b| b.into_iter().map(f32::to_bits).collect::<Vec<u32>>()).collect::<Vec<_>>()
+                };
+                assert_eq!(tile(&void, &l), tile(&file, &lv), "level {level}");
+            }
+        }
+    }
+
     #[test]
     fn rgbi_strips_preserve_samples_and_real_alpha_is_unchanged() {
         use tiff::encoder::{Compression, DeflateLevel, TiffEncoder, colortype};
@@ -2967,6 +3691,58 @@ mod tests {
         }
     }
 
+    /// Sets the ExtraSamples value of each image with one, in turn, of a file
+    /// [`rgb_tiled_samples`] wrote.
+    fn set_extra_samples(bytes: &mut [u8], values: &[u16]) {
+        // The tag's entry: 338, type 3 (short), count 1, the value 0 as written.
+        let entry = [0x52, 0x01, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0];
+        let at: Vec<usize> = (0..bytes.len().saturating_sub(12)).filter(|i| bytes[*i..*i + 12] == entry).collect();
+        assert_eq!(at.len(), values.len());
+        for (at, value) in at.iter().zip(values) {
+            bytes[at + 8..at + 10].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    /// An overview with the full image's sample count but another alpha role (an RGBA overview of
+    /// an RGBI image, or the reverse) is left out and said, not decoded with the full image's
+    /// colour layout; one with the same role is a level, with nothing said.
+    #[test]
+    fn cog_overviews_require_a_matching_alpha_sample() {
+        use super::super::cog::{self, Parse, Sparse};
+        for (full, overview) in [(0, 0), (2, 2), (0, 2), (2, 0)] {
+            let mut bytes = rgb_tiled_samples(&[(40, 16, 4), (20, 16, 4)], 8, 1, |b, x, y| (b * 10 + x + y) as u16);
+            set_extra_samples(&mut bytes, &[full, overview]);
+            let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+            let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+            let said: Vec<_> = layout.lost.iter().filter(|n| n.contains("overview(s)")).collect();
+            if full == overview {
+                assert_eq!(layout.levels.len(), 2);
+                assert!(said.is_empty(), "{:?}", layout.lost);
+            } else {
+                assert_eq!(layout.levels.len(), 1);
+                let role = if overview == 2 { "image 1 (4, with alpha)" } else { "image 1 (4, without alpha)" };
+                assert!(said.len() == 1 && said[0].contains("an alpha sample") && said[0].contains(role), "{:?}", layout.lost);
+            }
+        }
+    }
+
+    /// The scan stops at its most levels, and says so when the file holds more images; a file
+    /// with fewer says nothing of it.
+    #[test]
+    fn cog_says_when_it_stops_at_its_most_levels() {
+        use super::super::cog::{self, Parse, Sparse};
+        const STOPPED: &str = "the scan for overviews stopped at 32 levels";
+        for (images, cut) in [(32u32, false), (33, true)] {
+            // The full image 64 wide, its overviews 63, 62, … wide, smallest last.
+            let sizes: Vec<(u32, u32, u16)> = (0..images).map(|k| (64 - k, 16, 3)).collect();
+            let bytes = rgb_tiled_samples(&sizes, 8, 1, |b, x, y| (b + x + y) as u16);
+            let whole = Sparse::default().with_len(bytes.len() as u64).with(0, bytes);
+            let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
+            assert_eq!(layout.levels.len(), 32.min(images as usize));
+            assert_eq!(layout.lost.iter().any(|n| n.contains(STOPPED)), cut, "{:?}", layout.lost);
+        }
+    }
+
     #[test]
     fn cog_overviews_require_matching_sample_counts() {
         use super::super::cog::{self, Parse, Sparse};
@@ -2984,11 +3760,9 @@ mod tests {
                     let Parse::Done(layout) = cog::layout(&whole).unwrap() else { panic!("not a COG") };
                     assert_eq!((layout.levels.len(), layout.bands), (1, usize::from(full)));
                     assert!(
-                        layout
-                            .lost
-                            .iter()
-                            .any(|n| n.contains(&format!("1 overview(s) with samples per pixel other than the full image's {full}"))
-                                && n.contains(&format!("image 1 ({overview})"))),
+                        layout.lost.iter().any(|n| n.contains(&format!(
+                            "1 overview(s) with samples per pixel or an alpha sample other than the full image's ({full})"
+                        )) && n.contains(&format!("image 1 ({overview})"))),
                         "{:?}",
                         layout.lost
                     );
@@ -3005,7 +3779,8 @@ mod tests {
             layout
                 .lost
                 .iter()
-                .any(|n| n.contains("1 overview(s) with samples per pixel other than the full image's 4") && n.contains("image 2 (3)")),
+                .any(|n| n.contains("1 overview(s) with samples per pixel or an alpha sample other than the full image's (4)")
+                    && n.contains("image 2 (3)")),
             "{:?}",
             layout.lost
         );
@@ -3548,6 +4323,61 @@ mod tests {
         assert!(custom_crs(&odd, &doubles, "").is_err());
     }
 
+    /// Axes in kilometres converted to metres in slots of their own; past the last slot a key can
+    /// address (65,535), refused rather than left in kilometres under a metre unit.
+    #[test]
+    fn axes_in_metres_need_room_for_their_slots() {
+        let keys = [1u16, 1, 0, 3, 2052, 0, 1, 9036, 2057, 34736, 1, 0, 2058, 34736, 1, 1];
+        let (k, d) = axes_in_metres(&keys, &[3396.19, 3376.2], "").unwrap();
+        assert_eq!((d[2], d[3], k[7]), (3_396_190.0, 3_376_200.0, 9001));
+        for len in [65_535, 65_536] {
+            let mut doubles = vec![0.0; len];
+            doubles[..2].copy_from_slice(&[3396.19, 3376.2]);
+            let e = axes_in_metres(&keys, &doubles, "").unwrap_err().to_string();
+            assert!(e.contains("too many double parameters"), "{len}: {e}");
+        }
+        // A semi-minor axis past the doubles isn't left in kilometres under a unit of metres.
+        let e = axes_in_metres(&keys, &[3396.19], "").unwrap_err().to_string();
+        assert!(e.contains("points past its double parameters"), "{e}");
+    }
+
+    /// An ESRI PE citation with a shift of its own (British National Grid with another TOWGS84) is
+    /// read by that WKT, as the `.prj` is, not as EPSG:27700 with the code's shift; without one it
+    /// is the code.
+    #[test]
+    fn a_citation_with_its_own_shift_is_not_its_epsg_code() {
+        let bng = r#"PROJCS["British_National_Grid",GEOGCS["GCS_OSGB_1936",DATUM["D_OSGB_1936",SPHEROID["Airy_1830",6377563.396,299.3249646],TOWGS84[375,-111,431,0,0,0,0]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",400000.0],PARAMETER["False_Northing",-100000.0],PARAMETER["Central_Meridian",-2.0],PARAMETER["Scale_Factor",0.9996012717],PARAMETER["Latitude_Of_Origin",49.0],UNIT["Meter",1.0]]"#;
+        let keys = |ascii: &str| vec![1, 1, 0, 3, 1024, 0, 1, 1, 1026, 34737, u16::try_from(ascii.len()).unwrap(), 0, 3072, 0, 1, 32767];
+        let cited = format!("ESRI PE String = {bng}|");
+        let crs = custom_crs(&keys(&cited), &[], &cited).unwrap();
+        assert_ne!(crs, Crs::Epsg(27700));
+        let prj = crate::raster::wkt::crs_from_wkt(bng).unwrap();
+        let at = rustgis_geom::Coord::new(400_000.0, 300_000.0);
+        let (a, b) = (crs.transformer().unwrap().to_lonlat(at).unwrap(), prj.transformer().unwrap().to_lonlat(at).unwrap());
+        assert!((a.x - b.x).abs() < 1e-12 && (a.y - b.y).abs() < 1e-12, "{a:?} {b:?}");
+        let plain = format!("ESRI PE String = {}|", bng.replace(",TOWGS84[375,-111,431,0,0,0,0]", ""));
+        assert_eq!(custom_crs(&keys(&plain), &[], &plain).unwrap(), Crs::Epsg(27700));
+        // Read from its `.prj` and written as keys, it keeps its shift: read back, it places
+        // points as the `.prj` does.
+        let (k, d, a) = terrio_keys(&prj.custom_def().unwrap()).unwrap();
+        assert!(!k.chunks(4).any(|e| e == [3072, 0, 1, 27700]), "{k:?}");
+        assert!(k.chunks(4).skip(1).any(|e| e[0] == 2062), "{k:?}");
+        let back = custom_crs(&k, &d, &a).unwrap();
+        let c = back.transformer().unwrap().to_lonlat(at).unwrap();
+        assert!((c.x - b.x).abs() < 1e-9 && (c.y - b.y).abs() < 1e-9, "{c:?} {b:?}");
+        // A shift of zero on another datum than WGS 84 (Lambert 93 on RGF93, as Esri writes it)
+        // is written as user-defined keys with that shift, as GDAL 3.10.3 writes them too (no
+        // 2154), and as RustGIS wrote it before: read back, it places points as the `.prj` does.
+        let l93 = r#"PROJCS["RGF93_Lambert_93",GEOGCS["GCS_RGF_1993",DATUM["D_RGF_1993",SPHEROID["GRS_1980",6378137.0,298.257222101],TOWGS84[0,0,0,0,0,0,0]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Lambert_Conformal_Conic"],PARAMETER["False_Easting",700000.0],PARAMETER["False_Northing",6600000.0],PARAMETER["Central_Meridian",3.0],PARAMETER["Standard_Parallel_1",44.0],PARAMETER["Standard_Parallel_2",49.0],PARAMETER["Latitude_Of_Origin",46.5],UNIT["Meter",1.0]]"#;
+        let l93 = crate::raster::wkt::crs_from_wkt(l93).unwrap();
+        let (k, d, a) = terrio_keys(&l93.custom_def().unwrap_or_else(|| panic!("{l93:?}"))).unwrap();
+        assert!(k.chunks(4).any(|e| e == [3072, 0, 1, 32767]), "{k:?}");
+        let at = rustgis_geom::Coord::new(652_469.0, 6_862_035.0);
+        let (back, prj) = (custom_crs(&k, &d, &a).unwrap().transformer().unwrap(), l93.transformer().unwrap());
+        let (c, e) = (back.to_lonlat(at).unwrap(), prj.to_lonlat(at).unwrap());
+        assert!((c.x - e.x).abs() < 1e-9 && (c.y - e.y).abs() < 1e-9, "{c:?} {e:?}");
+    }
+
     /// MODIS's sinusoidal grid (coordinate transformation 24), as a MOD13Q1 tile's GeoKeys give
     /// it: h12v10, whose corner is at 60.925597° W, 10° S (pyproj 3.7.1).
     #[test]
@@ -3573,7 +4403,7 @@ mod tests {
         }
         let r = read(std::io::Cursor::new(&tiff), "modis").unwrap();
         let p = r.crs.custom_def().unwrap().proj4.clone();
-        assert!(p.contains("+proj=sinu") && p.contains("+a=6371007.181 +b=6371007.181"), "{p}");
+        assert!(p.contains("+proj=sinu") && crate::raster::crs::def_params(&p).is_some_and(|e| e.a == 6_371_007.181 && e.b == e.a), "{p}");
         let t = r.crs.transformer().unwrap();
         let ll = t.to_lonlat(rustgis_geom::Coord::new(-6_671_703.118, -1_111_950.519_667)).unwrap();
         assert!((ll.x + 60.925_597).abs() < 1e-6 && (ll.y + 10.0).abs() < 1e-9, "{ll:?}");
@@ -3584,18 +4414,11 @@ mod tests {
         assert_eq!(back.crs.custom_def().unwrap().proj4, p);
         let again: Crs = serde_json::from_str(&serde_json::to_string(&r.crs).unwrap()).unwrap();
         assert_eq!(again.custom_def().unwrap().proj4, p);
-        // ESRI:54008's definition, on WGS 84, is written as keys too.
-        let (k, d, a) = keys_from_proj4("+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs", "World_Sinusoidal").unwrap();
-        assert!(custom_crs(&k, &d, &a).unwrap().custom_def().unwrap().proj4.starts_with("+proj=sinu"));
-        // A central meridian and false origin away from 0 (ESRI:102011, Africa Sinusoidal, at 15°)
-        // go through the keys and back as the same projection.
-        let africa = "+proj=sinu +lon_0=15 +x_0=200000 +y_0=-100000 +datum=WGS84 +units=m +no_defs";
-        let (k, d, a) = keys_from_proj4(africa, "Africa_Sinusoidal").unwrap();
-        let back = custom_crs(&k, &d, &a).unwrap().custom_def().unwrap().proj4.clone();
-        assert!(same_projection(africa, &back), "{back}");
-        // A false easting or northing of its own is another projection.
-        assert!(!same_projection(africa, "+proj=sinu +lon_0=15 +x_0=0 +y_0=-100000 +datum=WGS84 +units=m +no_defs"));
-        assert!(!same_projection(africa, "+proj=sinu +lon_0=15 +x_0=200000 +y_0=0 +datum=WGS84 +units=m +no_defs"));
+        // ESRI:54008's definition, on WGS 84, and one with a central meridian and false origin
+        // away from 0 (ESRI:102011, Africa Sinusoidal, at 15°) go through the keys and back as the
+        // same projection.
+        keys_round_trip("+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs");
+        keys_round_trip("+proj=sinu +lon_0=15 +x_0=200000 +y_0=-100000 +datum=WGS84 +units=m +no_defs");
     }
 
     /// A tiled, LZW-compressed Float32 GeoTIFF, `w × h` in `tile`-pixel tiles, written as GDAL

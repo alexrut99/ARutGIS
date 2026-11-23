@@ -56,16 +56,20 @@ impl Whole {
         Whole { name: l.name.clone(), rows }
     }
 
-    /// Every feature, with the fields the layer lists (so a field's index in the layer is its
-    /// index here), and the rows of its source that couldn't be read. A source read a chunk at a
-    /// time looks at Cancel between chunks; one read at once (a GeoJSON file, a database table)
-    /// is a single step that doesn't, as for Load All Features.
+    /// Every feature in longitude/latitude, whatever system the layer holds its coordinates in
+    /// (its work reads places there), with the fields the layer lists (so a field's index in the
+    /// layer is its index here), and the rows of its source that couldn't be read. A source read
+    /// a chunk at a time looks at Cancel between chunks; one read at once (a GeoJSON file, a
+    /// database table) is a single step that doesn't, as for Load All Features.
     pub(crate) fn read(self) -> Result<(Dataset, Unread), String> {
         let Whole { name, rows } = self;
-        let (ds, unread) = match rows {
+        let (mut ds, unread) = match rows {
             Rows::Held(ds) => (ds, Unreadable::default()),
             Rows::Source(l) => l.load_all_counted().map_err(|e| format!("{name}: {e}"))?,
         };
+        if ds.coord_crs() != rustgis_data::raster::Crs::LonLat {
+            ds = ds.in_lonlat()?.into_owned();
+        }
         Ok((ds, Unread::of(name, unread)))
     }
 }
@@ -164,7 +168,7 @@ pub(crate) fn load_into(l: &mut Layer) -> Result<Unread, String> {
 }
 
 /// The notice for `unread` rows of `layer`'s source that couldn't be read.
-pub(crate) fn unread_notice(layer: &str, unread: usize) -> String {
+pub fn unread_notice(layer: &str, unread: usize) -> String {
     match unread {
         1 => format!("{layer}: 1 row couldn't be read and was left out"),
         n => format!("{layer}: {n} rows couldn't be read and were left out"),

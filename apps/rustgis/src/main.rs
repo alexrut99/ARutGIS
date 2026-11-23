@@ -577,6 +577,8 @@ fn main() -> eframe::Result {
         println!("rustgis {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
+    // Datum grids: RustGIS's own folder, then those PROJ uses on this computer (#2032 A4).
+    rustgis_engine::data::raster::crs::use_grid_folders();
     // What an earlier session left, before this one can write a new log.
     let crashed = crash::take_previous(prefs::dir());
     // Whether it closed cleanly: if not, the Start With project isn't opened (it may be what
@@ -898,11 +900,11 @@ mod tests {
         }
         assert!(!ctx.has_requested_repaint(), "clean preferences keep the window idle");
         // A full disk: said once, not for every setting that follows.
-        prefs::saved(Err("could not save preferences: no space left".into()));
-        prefs::saved(Err("could not save preferences: no space left".into()));
+        prefs::saved(Err("no space left".into()));
+        prefs::saved(Err("no space left".into()));
         frame();
         assert!(ctx.has_requested_repaint(), "the pending failure requests its delivery frame");
-        assert_eq!(prefs::take_notices(), [Notice::NotSaved("could not save preferences: no space left".into())]);
+        assert_eq!(prefs::take_notices(), [Notice::NotSaved("no space left".into())]);
         for _ in 0..4 {
             frame();
         }
@@ -916,8 +918,8 @@ mod tests {
         assert!(prefs::take_notices().is_empty(), "equivalent recovery outcomes stay quiet");
         // Once a save works, the next failure is news again.
         prefs::saved(Ok(None));
-        prefs::saved(Err("could not save preferences: read-only".into()));
-        assert_eq!(prefs::take_notices(), [Notice::NotSaved("could not save preferences: read-only".into())]);
+        prefs::saved(Err("read-only".into()));
+        assert_eq!(prefs::take_notices(), [Notice::NotSaved("read-only".into())]);
         prefs::saved(Ok(None));
         // A malformed file set aside says where it went.
         let bad = std::path::PathBuf::from("prefs.json.bad");
@@ -926,7 +928,7 @@ mod tests {
         let text = prefs::text(&Notice::SetAside(bad));
         assert!(text.contains("prefs.json.bad"), "{text}");
         // Both a failed replacement and an unconfirmed final flush give an accurate notice.
-        for error in ["could not save preferences: read-only", "preferences were replaced, but their durability could not be confirmed"] {
+        for error in ["read-only", "preferences were replaced, but their durability could not be confirmed"] {
             let text = prefs::text(&Notice::NotSaved(error.into()));
             assert!(text.contains("Settings could not be saved reliably") && text.contains(error), "{text}");
             assert!(!text.contains("changes last only until"), "{text}");

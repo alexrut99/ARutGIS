@@ -26,6 +26,9 @@ impl FeatureSource for Chunks {
             skipped: 0,
             unread_dates: Vec::new(),
             rounded_dates: Vec::new(),
+            null_text: Vec::new(),
+            notes: Vec::new(),
+            not_utf8: Vec::new(),
         })
     }
     fn streams_chunks(&self) -> bool {
@@ -107,6 +110,9 @@ fn complete_chunks_preserve_painter_order_filters_transparency_labels_and_select
                 skipped: 0,
                 unread_dates: Vec::new(),
                 rounded_dates: Vec::new(),
+                null_text: Vec::new(),
+                notes: Vec::new(),
+                not_utf8: Vec::new(),
             })
         }
         fn streams_chunks(&self) -> bool {
@@ -533,6 +539,8 @@ fn layout_export_keeps_all_drawn_legend_classes() {
             extent_of: None,
             extent_color: INDICATOR_COLOR,
             extent_width: INDICATOR_WIDTH,
+            border_color: rustgis_map::layout::FRAME_BORDER_COLOR,
+            border_width: rustgis_map::layout::FRAME_BORDER_WIDTH,
             bearing: 0.0,
             pitch: 0.0,
             exclude: Vec::new(),
@@ -552,6 +560,8 @@ fn layout_export_keeps_all_drawn_legend_classes() {
             look: Default::default(),
             columns: 1,
             labels: Default::default(),
+            color: None,
+            text_size: rustgis_map::layout::LEGEND_TEXT_PT,
         },
     );
     let expected = layout::render(&page, &mut [base.clone()], 96.0, &layout::PageInfo::default()).unwrap();
@@ -564,6 +574,88 @@ fn layout_export_keeps_all_drawn_legend_classes() {
     let mut failed = base.clone();
     failed.layers[0] = streamed(&base.layers[0], 0);
     assert!(layout::render(&page, &mut [failed], 96.0, &layout::PageInfo::default()).is_err());
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("classes.shp");
+        rustgis_data::io::write_path(&base.layers[0].dataset, &path).unwrap();
+        let source = SourceLayer::from_path(path.to_string_lossy(), None, rustgis_data::source::open_path(&path, None).unwrap());
+        // SVG records elements separately: visit the legend before the frame can fail instead.
+        page.elements.reverse();
+        for missing in [false, true] {
+            if missing {
+                std::fs::remove_file(&path).unwrap();
+            }
+            for format in ["png", "pdf", "svg"] {
+                let mut map = base.clone();
+                map.layers[0].name = "Survey classes".into();
+                map.layers[0].source = Some(source.clone());
+                let info = layout::PageInfo::default();
+                let maps = std::slice::from_mut(&mut map);
+                let result = match format {
+                    "png" => layout::render(&page, maps, 96.0, &info).map(|_| ()),
+                    "pdf" => layout::render_drawing(&page, maps, 96.0, &info).map(|_| ()),
+                    _ => crate::svg::layout_svg(&page, maps, 96.0, &info).map(|_| ()),
+                };
+                if missing {
+                    let error = result.unwrap_err();
+                    assert!(error.starts_with("Survey classes: "), "{format}: {error}");
+                    for detail in [path.to_str().unwrap(), "moved or deleted", "Repair Data Source"] {
+                        assert!(error.contains(detail), "{format}: missing {detail:?} in {error:?}");
+                    }
+                } else {
+                    assert!(result.is_ok(), "{format}: {result:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn legend_sizing_clears_recovered_source_errors_and_reports_a_later_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("classes.shp");
+    let moved = dir.path().join("moved.shp");
+    let mut ds = Dataset::new("classes", GeometryType::Point, vec![]);
+    ds.push(Some(Geometry::Point(Coord::new(0.0, 0.0))), vec![]);
+    rustgis_data::io::write_path(&ds, &path).unwrap();
+    let source = SourceLayer::from_path(path.to_string_lossy(), None, rustgis_data::source::open_path(&path, None).unwrap());
+    let mut map = Map::new("legend recovery");
+    let id = map.add_streamed("Survey classes", source);
+    let mut first_error = None;
+    for missing in [false, true, false, true] {
+        if missing {
+            std::fs::rename(&path, &moved).unwrap();
+        } else if moved.exists() {
+            std::fs::rename(&moved, &path).unwrap();
+        }
+        // Size the legend alone: no frame read, reopen or notice pass can clear the error.
+        let sizes = layout::legend_sizes_with_no_data_mm(
+            &mut map,
+            300000.0,
+            false,
+            false,
+            (false, rustgis_map::layout::LEGEND_TEXT_PT),
+            (&[], &Default::default()),
+            &Default::default(),
+        );
+        let source = map.layer_mut(id).unwrap().source.as_mut().unwrap();
+        if missing {
+            assert!(sizes.is_none());
+            let error = source.error_unsaid().expect("each failed traversal after recovery must be reportable");
+            assert!(source.error_unsaid().is_none());
+            if let Some(first) = &first_error {
+                assert_eq!(&error, first);
+            } else {
+                first_error = Some(error);
+            }
+        } else {
+            assert!(sizes.is_some());
+            assert!(source.error.is_none());
+        }
+    }
 }
 
 #[test]
@@ -701,6 +793,67 @@ fn perspective_reports_shapefile_open_failure() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
+fn hidden_source_error_does_not_replace_an_unrelated_drawing_failure() {
+    let mut map = Map::new("hidden source");
+    let id = map.add_dataset(Dataset::new("broken", GeometryType::Point, vec![]));
+    let dir = tempfile::tempdir().unwrap();
+    let mut source = SourceLayer::default();
+    source.path = Some(dir.path().join("missing.shp").display().to_string());
+    map.layer_mut(id).unwrap().source = Some(source);
+    let mut view = View { width: 120.0, height: 90.0, pixels_per_point: 1.0, camera: map.camera, sky: false };
+    assert!(render_png(&mut map, &view).unwrap_err().contains("missing.shp"));
+    map.layer_mut(id).unwrap().visible = false;
+    assert!(render_png(&mut map, &view).is_ok(), "the hidden source does not break a normal drawing");
+    // A non-finite width makes canvas allocation fail independently of the hidden source's
+    // retained read error. Report that drawing failure, rather than blaming the hidden layer.
+    view.width = f64::NAN;
+    assert_eq!(render_png(&mut map, &view).unwrap_err(), "could not draw the map");
+    assert_eq!(render_drawing(&mut map, &view).map(|_| ()).unwrap_err(), "could not draw the map");
+    assert_eq!(
+        layout::frame_map(&mut map, (&[], &Default::default()), view.camera, view.width, view.height, view.pixels_per_point).unwrap_err(),
+        "could not draw the map frame"
+    );
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn source_failure_names_the_layer_that_stopped_the_current_render() {
+    let mut data = Dataset::new("Current sites", GeometryType::Point, vec![]);
+    data.push(Some(Geometry::Point(Coord::new(0.0, 0.0))), vec![]);
+    let mut base = Map::new("source failures");
+    let current = base.add_dataset(data);
+    *base.layer_mut(current).unwrap() = streamed(base.layer(current).unwrap(), 0);
+    base.layer_mut(current).unwrap().source.as_mut().unwrap().path = Some("current.shp".into());
+    let old = base.add_dataset(Dataset::new("Earlier sites", GeometryType::Point, vec![]));
+    let mut source = SourceLayer::default();
+    source.path = Some("earlier.fgb".into());
+    source.error = Some("an earlier window read failed".into());
+    base.layer_mut(old).unwrap().source = Some(source);
+    // Earlier sites is first in map.layers, still visible, and retains its window read error.
+    // Current sites draws first in painter order and fails during this complete traversal.
+    assert_eq!(base.layers[0].id, old);
+    for (pitch, bearing) in [(0.0, 0.0), (0.0, 25.0), (35.0, 0.0)] {
+        let mut map = base.clone();
+        let mut view = View {
+            width: 120.0,
+            height: 90.0,
+            pixels_per_point: 1.0,
+            camera: Camera { pitch, bearing, ..Camera::new(Coord::new(0.0, 0.0), 80.0) },
+            sky: false,
+        };
+        let why = render_png(&mut map, &view).unwrap_err();
+        assert!(why.starts_with("Current sites: ") && why.contains("current.shp"), "{why}");
+        assert!(!why.contains("Earlier sites") && !why.contains("earlier.fgb"), "{why}");
+        assert!(map.layer(old).unwrap().source.as_ref().unwrap().error.is_some());
+        // A later allocation failure isn't a source failure, even while the old source is visible.
+        map.layer_mut(current).unwrap().visible = false;
+        view.width = f64::NAN;
+        assert_eq!(render_png(&mut map, &view).unwrap_err(), "could not draw the map");
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
 fn pitched_mixed_sources_keep_windows_and_pending_on_the_owner() {
     use std::sync::{Arc, Condvar, Mutex};
     struct WindowSource {
@@ -724,6 +877,9 @@ fn pitched_mixed_sources_keep_windows_and_pending_on_the_owner() {
                 skipped: 0,
                 unread_dates: Vec::new(),
                 rounded_dates: Vec::new(),
+                null_text: Vec::new(),
+                notes: Vec::new(),
+                not_utf8: Vec::new(),
             })
         }
     }
@@ -775,7 +931,7 @@ fn pitched_mixed_sources_keep_windows_and_pending_on_the_owner() {
         drop(release);
         // Wait for the same owning request, then verify the next frame retains its window.
         let bands = view.camera.tilt_bands(view.width, view.height);
-        sync_tilted(&mut map, &view, &bands, true);
+        sync_tilted(&mut map, &view, &bands, true, &Default::default());
         assert_eq!(map.layers[1].dataset.features.len(), 2);
         assert!(map.layers[1].source.as_ref().unwrap().reads > 0);
         let output = render_with_backend(&mut map, &view, true, backend).unwrap();
@@ -905,13 +1061,13 @@ fn masks_skip_undrawn_targets_and_reuse_one_complete_source_with_distinct_swipes
     };
     let flat = base.flat();
     let scale = base.ground_res_at(&view.camera) / rustgis_geom::PIXEL_M;
-    let expected = layer_masks(&mut base.clone(), &ctx, 120, 90, &flat, "test", scale).unwrap();
+    let expected = layer_masks(&mut base.clone(), &ctx, 120, 90, &flat, "test", scale, &mut None).unwrap();
     let info = streamed(base.layer(mask).unwrap(), 1).source.unwrap().info().unwrap().clone();
     let calls = Arc::new(AtomicUsize::new(0));
     let mut actual = base.clone();
     actual.layer_mut(mask).unwrap().source =
         Some(SourceLayer::from_path("mask.shp", None, Box::new(Counted { chunks: Chunks { info, ds, size: 1 }, calls: calls.clone() })));
-    let got = layer_masks(&mut actual, &ctx, 120, 90, &flat, "test", scale).unwrap();
+    let got = layer_masks(&mut actual, &ctx, 120, 90, &flat, "test", scale, &mut None).unwrap();
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert_eq!(got.len(), 2);
     for ((id, got), (expected_id, expected)) in got.iter().zip(&expected) {
@@ -940,7 +1096,7 @@ fn masks_skip_undrawn_targets_and_reuse_one_complete_source_with_distinct_swipes
                 _ => {}
             }
         }
-        let got = layer_masks(&mut map, &ctx, 120, 90, &flat, "test", scale);
+        let got = layer_masks(&mut map, &ctx, 120, 90, &flat, "test", scale, &mut None);
         if mode == 4 {
             assert!(got.is_none(), "a failed required mask must still fail the frame");
         } else {
@@ -1161,6 +1317,8 @@ fn layout_export_rejects_unopened_local_shapefiles_and_required_masks() {
                 extent_of: None,
                 extent_color: INDICATOR_COLOR,
                 extent_width: INDICATOR_WIDTH,
+                border_color: rustgis_map::layout::FRAME_BORDER_COLOR,
+                border_width: rustgis_map::layout::FRAME_BORDER_WIDTH,
                 bearing: 0.0,
                 pitch,
                 exclude: Vec::new(),
@@ -1171,15 +1329,27 @@ fn layout_export_rejects_unopened_local_shapefiles_and_required_masks() {
             let mut map = base.clone();
             let owner = if masked { mask } else { point };
             let mut source = SourceLayer::default();
-            source.path = Some(dir.path().join("missing.SHP").display().to_string());
+            let path = dir.path().join("missing.SHP").display().to_string();
+            source.path = Some(path.clone());
             map.layer_mut(owner).unwrap().source = Some(source);
             if masked {
                 map.layer_mut(point).unwrap().mask = Some("MASK".into());
             }
-            assert!(
-                layout::render(&page, std::slice::from_mut(&mut map), 96.0, &layout::PageInfo::default()).is_err(),
-                "missing complete source must fail the page: pitch {pitch}, masked {masked}"
-            );
+            for format in ["png", "pdf", "svg"] {
+                let maps = std::slice::from_mut(&mut map);
+                let info = layout::PageInfo::default();
+                let error = match format {
+                    "png" => layout::render(&page, maps, 96.0, &info).err(),
+                    "pdf" => layout::render_drawing(&page, maps, 96.0, &info).err(),
+                    _ => crate::svg::layout_svg(&page, maps, 96.0, &info).err(),
+                }
+                .unwrap_or_else(|| panic!("missing source must fail the page: pitch {pitch}, masked {masked}, format {format}"));
+                let layer = map.layer(owner).unwrap();
+                assert!(error.starts_with(&format!("{}: ", layer.name)), "{error}");
+                for detail in [layer.name.as_str(), path.as_str(), "moved or deleted", "Repair Data Source"] {
+                    assert!(error.contains(detail), "missing {detail:?} in {error:?}");
+                }
+            }
             assert!(map.layer(owner).unwrap().source.as_ref().unwrap().error.is_some());
         }
         let mut unused = base.clone();
@@ -1231,6 +1401,65 @@ fn gpu_mesh_limit_spans_a_streamed_layers_batches() {
     assert!(!meshed.is_empty(), "the first batches still mesh");
     assert!(meshed.iter().sum::<usize>() <= mesh::MAX_LAYER_VERTICES, "the layer's meshes: {meshed:?}");
     assert!(scene.cmds.iter().any(|c| matches!(c, gpu_scene::DrawCmd::Image { .. })), "the rest drawn on the CPU");
+}
+
+/// A tilted view of a streamed layer too dense to mesh, on the GPU backend, is drawn on the CPU
+/// as the CPU backend draws it. The GPU frame tried first stops at the layer's batch past the
+/// limit (#2540), which is no error of its source.
+#[test]
+fn a_tilted_view_of_a_streamed_layer_too_dense_to_mesh_is_drawn_on_the_cpu() {
+    let mut ds = Dataset::new("dense", GeometryType::Polygon, vec![]);
+    for i in 0..270 {
+        for j in 0..270 {
+            let (x, y) = (i as f64 * 0.01, j as f64 * 0.01);
+            let ring = vec![Coord::new(x, y), Coord::new(x + 0.008, y), Coord::new(x, y + 0.008)];
+            ds.push(Some(Geometry::Polygon(vec![vec![ring]])), vec![]);
+        }
+    }
+    let mut map = Map::new("dense");
+    map.add_dataset(ds);
+    map.layers[0] = streamed(&map.layers[0], 72_900 / 8 + 1);
+    let camera = Camera { center: lonlat_to_merc(Coord::new(1.35, 1.35)), res: 1000.0, bearing: 0.0, pitch: 50.0 };
+    let view = View { width: 400.0, height: 400.0, pixels_per_point: 1.0, camera, sky: false };
+    // The GPU attempt alone: it declines, with no error for the source and no failed source.
+    crate::MESHED.with(|m| m.borrow_mut().clear());
+    let mut failed = None;
+    assert!(crate::gpu_turned(&mut map, &view, false, false, &mut failed, &crate::Env::default()).is_none());
+    assert!(crate::MESHED.with(|m| m.borrow().iter().any(|(_, too_dense)| *too_dense)), "a batch past the limit");
+    assert!(failed.is_none() && map.layers[0].source.as_ref().is_some_and(|s| s.error.is_none()), "no error: {failed:?}");
+    let Some(RenderOutput::Cpu(gpu)) = render_backend(&mut map, &view, Backend::Gpu) else { panic!("drawn on the CPU") };
+    let cpu = render_backend(&mut map, &view, Backend::Cpu);
+    let Some(RenderOutput::Cpu(cpu)) = cpu else { panic!("cpu") };
+    assert!(gpu.pixmap.data() == cpu.pixmap.data(), "as the CPU backend draws it");
+}
+
+/// A streamed layer whose first batch is drawn on the CPU (reaching too far for f32) and whose
+/// next one meshes, putting that picture in the scene: the GPU frame tried first for a tilted view
+/// stops there, before the layer above (#2540), and the view is drawn as the CPU backend draws it.
+#[test]
+fn a_tilted_view_stops_trying_the_gpu_at_a_picture_already_in_the_scene() {
+    let square = |x: f64, y: f64, s: f64| {
+        Some(Geometry::Polygon(vec![vec![vec![Coord::new(x, y), Coord::new(x + s, y), Coord::new(x + s, y + s), Coord::new(x, y + s)]]]))
+    };
+    let mut map = Map::new("mixed");
+    map.basemap = rustgis_map::Basemap::Blank;
+    let mut ds = Dataset::new("mixed", GeometryType::Polygon, vec![]);
+    ds.push(square(1.0 - 0.025, 0.5 - 0.025, 0.05), vec![]);
+    ds.push(square(1.0, 0.5, 1e-7), vec![]);
+    map.add_dataset(ds);
+    map.layers[0] = streamed(&map.layers[0], 1);
+    let mut top = Dataset::new("top", GeometryType::Polygon, vec![]);
+    top.push(square(1.0 + 2e-7, 0.5, 1e-7), vec![]);
+    map.add_dataset(top);
+    let camera = Camera { center: lonlat_to_merc(Coord::new(1.0, 0.5)), res: rustgis_map::camera::MIN_RES, bearing: 0.0, pitch: 50.0 };
+    let view = View { width: 400.0, height: 400.0, pixels_per_point: 1.0, camera, sky: false };
+    crate::MESHED.with(|m| m.borrow_mut().clear());
+    let Some(RenderOutput::Cpu(gpu)) = render_backend(&mut map, &view, Backend::Gpu) else { panic!("drawn on the CPU") };
+    let meshed = crate::MESHED.with(|m| m.borrow().clone());
+    assert!(meshed.iter().filter(|(n, _)| n == "mixed").count() >= 2, "both batches tried: {meshed:?}");
+    assert!(!meshed.iter().any(|(n, _)| n == "top"), "went on: {meshed:?}");
+    let Some(RenderOutput::Cpu(cpu)) = render_backend(&mut map, &view, Backend::Cpu) else { panic!("cpu") };
+    assert!(gpu.pixmap.data() == cpu.pixmap.data(), "as the CPU backend draws it");
 }
 
 /// Counts full render traversals independently of interaction-window reads.

@@ -10,18 +10,25 @@ pub mod ascii;
 pub mod cog;
 pub mod cogwrite;
 pub mod crs;
-pub(crate) mod epsg_axes;
-mod epsg_gap;
-mod esri;
+pub mod crs_search;
+mod decoded;
+pub mod dted;
+#[cfg(not(target_arch = "wasm32"))]
+mod file_revision;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gdal;
 pub mod geotiff;
+pub mod grib;
+pub mod hgt;
 mod image_grid;
 mod lerc;
 mod lzw;
 mod mask;
 pub mod pam;
+#[cfg(feature = "pdf")]
+pub mod pdf;
 pub mod planetary;
+pub mod reproject;
 pub mod wkt;
 pub mod world;
 pub mod zarr;
@@ -30,6 +37,7 @@ use std::path::Path;
 
 pub use crs::{Crs, Transformer};
 pub use image_grid::ImageGrid;
+pub use reproject::Reprojection;
 use rustgis_geom::{Coord, Extent};
 use serde::{Deserialize, Serialize};
 
@@ -88,18 +96,100 @@ pub const SAMPLES_CEILING: usize = 1_000_000_000;
 /// Most samples (pixels × bands) held in memory: on the desktop, as many as a quarter of the
 /// computer's memory holds at 8 bytes each (a sample takes 4, and reading briefly needs about
 /// twice that), from [`SAMPLES_FLOOR`] up to [`SAMPLES_CEILING`] (#1291 step 2, #1318).
+/// Less once RustGIS holds more than half the memory, never below the floor ([`crate::memory::planned`], #2431).
 pub fn max_samples() -> usize {
-    crate::memory::scaled(crate::memory::physical(), SAMPLES_FLOOR, SAMPLES_CEILING, 8)
+    crate::memory::planned(SAMPLES_FLOOR, SAMPLES_CEILING, 8)
 }
+
+// Shared by the elevation readers ([`hgt`], [`dted`]) and pictures read at a step.
+
+/// The transform of a grid of posts (samples on grid lines) whose south-west post is at
+/// (`west`, `south`), `cols` × `rows` of them `dx` and `dy` degrees apart, read every `step`-th
+/// post from the north-west one: each post kept becomes a cell centered on it, `step` posts wide,
+/// so the grid's edges lie half a cell beyond the outer posts kept. (At `step` 1, half a post's
+/// spacing beyond the outer posts.)
+fn post_transform(west: f64, south: f64, rows: usize, dx: f64, dy: f64, step: usize) -> GeoTransform {
+    let north = south + (rows.saturating_sub(1)) as f64 * dy;
+    let k = step.max(1) as f64;
+    let (cell_x, cell_y) = (dx * k, dy * k);
+    GeoTransform { origin_x: west - cell_x / 2.0, origin_y: north + cell_y / 2.0, pixel_width: cell_x, pixel_height: -cell_y }
+}
+
+/// The step at which a `w` × `h` grid fits in `max` samples: 1, or the smallest power of two
+/// whose every-`step`-th sample does ([`read_scan`] reduces pictures with it too). `None`
+/// when none does, up to a step of 2^20.
+fn step_within(w: usize, h: usize, max: usize) -> Option<usize> {
+    let mut k = 1usize;
+    while w.div_ceil(k).saturating_mul(h.div_ceil(k)) > max {
+        k = k.checked_mul(2)?;
+        if k > 1 << 20 {
+            return None;
+        }
+    }
+    Some(k)
+}
+
+/// What a tile says of its heights' vertical reference, once a layer (a raster's `lost`): the
+/// layer's coordinate system is horizontal only, so this is where it is said.
+fn vertical_note(surface: &str) -> String {
+    format!(
+        "heights are meters above {surface}, not the WGS 84 ellipsoid; the layer's coordinate system doesn't carry a vertical datum, so compare it with ellipsoidal heights (GPS, many lidar files) only after a geoid correction"
+    )
+}
+
+/// What reading a grid's no-data posts says: `None` when there are none.
+fn void_note(voids: u64, total: u64, value: i16) -> Option<String> {
+    match voids {
+        0 => None,
+        1 => Some(format!("1 of its {total} heights is a void ({value}), read as no data")),
+        n => Some(format!("{n} of its {total} heights are voids ({value}), read as no data")),
+    }
+}
+
 /// Largest ASCII grid file read (1 GiB).
 pub const MAX_ASCII_BYTES: u64 = 1 << 30;
-/// File extensions read as rasters.
-pub const READ_EXTENSIONS: &[&str] = &["tif", "tiff", "asc", "png", "jpg", "jpeg"];
+/// File extensions read as rasters. SRTM height tiles (`.hgt`) and DTED (`.dt0`–`.dt2`) are
+/// read natively ([`hgt`], [`dted`]), on the desktop and in the browser: the last four are
+/// [`ELEVATION_EXTENSIONS`] (a test holds them to it).
+pub const READ_EXTENSIONS: &[&str] =
+    &["tif", "tiff", "asc", "png", "jpg", "jpeg", "grb", "grib", "grb2", "grib2", "hgt", "dt0", "dt1", "dt2"];
+/// The extensions of the elevation files read natively: SRTM height tiles and DTED levels 0–2.
+pub const ELEVATION_EXTENSIONS: [&str; 4] = ["hgt", "dt0", "dt1", "dt2"];
 
-/// Whether a file name is a raster this module reads.
+/// Whether a file name is an SRTM height tile's or a DTED file's ([`ELEVATION_EXTENSIONS`]).
+pub fn is_elevation_name(name: &str) -> bool {
+    let ext = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    ELEVATION_EXTENSIONS.contains(&ext.as_str())
+}
+
+/// Whether a file name is a raster this module reads: a PDF's page too (refused with
+/// [`PDF_ELSEWHERE`] where [`PDF_PAGES`] is false).
 pub fn is_raster_name(name: &str) -> bool {
     let ext = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    READ_EXTENSIONS.contains(&ext.as_str())
+    READ_EXTENSIONS.contains(&ext.as_str()) || ext == "pdf"
+}
+
+/// Whether a file name is a PDF's (`.pdf`): its pages are read as rasters ([`PDF_PAGES`]).
+pub fn is_pdf_name(name: &str) -> bool {
+    Path::new(name).extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+}
+
+/// Whether this build reads PDF pages (the `pdf` feature, #2336).
+pub const PDF_PAGES: bool = cfg!(feature = "pdf");
+
+/// Why a PDF isn't read in a build without the `pdf` feature (the browser, phones).
+pub const PDF_ELSEWHERE: &str = "PDFs are read in the desktop app, the command line and Python, not here: open it there";
+
+/// Reads page `page` of a PDF file (its number; the first when `None`), placed by its coordinates
+/// when `place` (a scan otherwise), or says it isn't read here.
+fn read_pdf_page(path: &Path, page: Option<&str>, place: bool) -> Result<Raster> {
+    #[cfg(feature = "pdf")]
+    return pdf::read_file(path, page, place);
+    #[cfg(not(feature = "pdf"))]
+    {
+        let _ = (path, page, place);
+        Err(DataError::Unsupported(PDF_ELSEWHERE.into()))
+    }
 }
 
 /// Whether a file name is JPEG 2000's (`.jp2`, `.j2k`): read through GDAL on the desktop, from a
@@ -620,15 +710,27 @@ pub struct Raster {
     pub data_type: String,
     /// Where it was read from, if anywhere.
     pub source: Option<String>,
+    /// The original local GeoTIFF's revision or capture failure, retained with these pixels and never serialized.
+    #[cfg(not(target_arch = "wasm32"))]
+    source_file: Option<std::result::Result<file_revision::FileRevision, String>>,
     /// Whether the pixels come from a reduced-resolution overview.
     pub overview: Option<(u32, u32)>,
     /// With `overview`, whether the pixels are every `step`-th of the file's, from its top-left
     /// corner (a picture too large to read whole): each then spans exactly `step` of its pixels,
     /// where an overview's span its size over the file's. 1 otherwise.
     pub(crate) step: u32,
+    /// With `step`, whether each pixel read is centered on the file pixel it was read from (a
+    /// grid of posts, SRTM and DTED: [`post_transform`]) rather than starting at it, as a
+    /// picture's does.
+    pub(crate) posts: bool,
     /// `false` for a scan (a TIFF with no GeoTIFF tags, a PNG, a JPEG): `transform` is then only
     /// a stand-in until the picture is placed or georeferenced, and says nothing about the ground.
     pub georeferenced: bool,
+    /// Whether `crs` is WGS 84 assumed for a file that doesn't say its system, its coordinates
+    /// looking like degrees (an ASCII grid without a `.prj`, a GeoTIFF without one), or says only
+    /// that it is in degrees (a GeoTIFF's geographic model with no EPSG code, its datum unread):
+    /// it names no system to give (a project taking its system from the first layer added).
+    pub crs_assumed: bool,
     /// What reading it left out or cut (a colour table, names), one line a kind with a count,
     /// for whoever adds it to the map to say (AGENTS.md, Never silent). Empty when nothing was
     /// left out.
@@ -819,9 +921,13 @@ impl Raster {
             color,
             data_type,
             source: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            source_file: None,
             overview: None,
             step: 1,
+            posts: false,
             georeferenced: true,
+            crs_assumed: false,
             lost: Vec::new(),
             rounded: Vec::new(),
             rounded_some: Vec::new(),
@@ -949,13 +1055,18 @@ impl Raster {
         if self.georeferenced {
             Ok(())
         } else {
-            Err(format!("{} has no coordinates: georeference it first (raster.georeference)", self.name))
+            Err(format!("{} has no coordinates: georeference it first (raster.georeference, with the Imagery extension on)", self.name))
         }
     }
 
     /// This raster as a scan: its pixels with no coordinates, as `"as": "scan"` opens a picture.
     pub fn into_scan(mut self) -> Result<Raster> {
         if self.georeferenced {
+            // Its pixels no longer follow the file's own grid, so no grid read may pair with them.
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                self.source_file = None;
+            }
             self.crs = Crs::LonLat;
             self.transformer = self.crs.transformer().map_err(DataError::Format)?;
             self.transform = unreferenced(self.width, self.height);
@@ -995,13 +1106,43 @@ impl Raster {
     }
 
     /// How many of the file's pixels one pixel read spans, across and down: exactly `step` for
-    /// every `step`-th pixel, an overview's size over the file's, else 1.
-    fn file_pixels(&self) -> (f64, f64) {
+    /// every `step`-th pixel, an overview's size over the file's, else 1. (`overview` stays the
+    /// file's own size, which `step` needn't divide, so a reader at a step goes by `step`.)
+    pub fn file_pixels(&self) -> (f64, f64) {
         if self.step > 1 {
             return (f64::from(self.step), f64::from(self.step));
         }
         let (full_w, full_h) = self.overview.unwrap_or((self.width, self.height));
         (f64::from(full_w) / f64::from(self.width.max(1)), f64::from(full_h) / f64::from(self.height.max(1)))
+    }
+
+    /// Where this raster's top-left corner lies in the file's pixels: the origin of
+    /// [`Raster::file_pixels`]. A grid of posts read at a step centers each cell on its post, so
+    /// the corner is `(step - 1) / 2` file pixels before the first post's own; otherwise 0.
+    pub fn file_origin(&self) -> (f64, f64) {
+        if self.posts && self.step > 1 {
+            let o = -(f64::from(self.step) - 1.0) / 2.0;
+            return (o, o);
+        }
+        (0.0, 0.0)
+    }
+
+    /// For other crates' tests: [`Raster::read_at_step`] of a grid of posts, as the SRTM and
+    /// DTED readers mark one.
+    #[doc(hidden)]
+    pub fn posts_read_at_step(self, step: u32, full: (u32, u32)) -> Raster {
+        let mut r = self.read_at_step(step, full);
+        r.posts = true;
+        r
+    }
+
+    /// For other crates' tests: this raster as if read at every `step`-th pixel of a file of
+    /// `full` pixels, as the readers mark one read within the memory budget.
+    #[doc(hidden)]
+    pub fn read_at_step(mut self, step: u32, full: (u32, u32)) -> Raster {
+        self.step = step.max(1);
+        self.overview = Some(full);
+        self
     }
 
     /// A scan placed by its world file, in `crs`: georeferenced. The world file speaks of the
@@ -1042,16 +1183,21 @@ impl Raster {
                 old.stats = new.stats.clone();
                 *new = old;
             }
-            // A picture read at a reduced size still says so, as a turned GeoTIFF does: of the
-            // turned grid at the file's resolution, so the two sizes said are alike.
-            let full = |n: u32, s: f64| (f64::from(n) * s).round().clamp(1.0, f64::from(u32::MAX)) as u32;
-            r.overview = self.overview.map(|_| (full(ow, sx), full(oh, sy)));
+            // A picture read at a reduced size still says so, as a turned GeoTIFF does, with the
+            // size the whole file has turned at its own resolution (its corners turned, over a
+            // cell of its pixels' area, as `north_up` sizes a grid).
+            let [_, xc, xr, _, yc, yr] = wf.affine();
+            let file_cell = (xc * yr - xr * yc).abs().sqrt();
+            r.overview = self.overview.map(|(fw, fh)| turned_size([xc, xr, yc, yr], fw, fh));
+            // Each turned cell is exactly `step` of the file's pixels across, unless the turned
+            // grid had to be made coarser to fit; then the sizes' ratio is the scale.
+            let exact = (r.transform.pixel_width.abs() / (f64::from(self.step) * file_cell) - 1.0).abs() < 1e-9;
+            r.step = if exact { self.step } else { 1 };
             (r.source, r.lost, r.copyright) = (self.source, self.lost, self.copyright);
             (r.rounded, r.rounded_some) = (self.rounded, self.rounded_some);
             r
         };
         r.georeferenced = true;
-        r.step = 1;
         Ok(r)
     }
 
@@ -1161,7 +1307,8 @@ pub fn read_path(path: &Path) -> Result<Raster> {
     read_path_placing(path, true)
 }
 
-/// [`read_path_with`] without the world file beside a picture: the picture as the file holds it,
+/// [`read_path_with`] without the world file beside a picture, or a PDF page's own coordinates:
+/// the picture as the file holds it,
 /// for one opened as a scan (`"as": "scan"`, or a layer laid over a placement reopened), so a
 /// world file that is there, or turns up later, doesn't place or resample it. A GDAL file's
 /// `subdataset` and `crs`, a Zarr store's variable, are read as [`read_path_with`] reads them.
@@ -1184,6 +1331,11 @@ fn read_path_placing(path: &Path, world: bool) -> Result<Raster> {
     }
     let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("raster").to_string();
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    // A PDF's first page, placed by its own coordinates when it has them (never a world file),
+    // unless it is read as a scan.
+    if is_pdf_name(&path.to_string_lossy()) {
+        return read_pdf_page(path, None, world);
+    }
     // The `.aux.xml` sidecar, read first: a no-data value it gives (for a file that has none) keeps
     // those pixels out of the rounded count as they are read.
     let pam = pam::read(path);
@@ -1193,16 +1345,33 @@ fn read_path_placing(path: &Path, world: bool) -> Result<Raster> {
             #[cfg(not(target_arch = "wasm32"))]
             let r = geotiff::read_file_with_nodata(path, &name, sidecar_nodata)?;
             #[cfg(target_arch = "wasm32")]
-            let r = geotiff::read_with_nodata(std::io::BufReader::new(std::fs::File::open(path)?), &name, sidecar_nodata)?;
+            let r = geotiff::read_with_nodata(std::io::BufReader::new(crate::provenance::open(path)?), &name, sidecar_nodata)?;
             r
         }
-        "png" | "jpg" | "jpeg" => read_scan(&name, std::io::BufReader::new(std::fs::File::open(path)?))?,
+        "png" | "jpg" | "jpeg" => read_scan(&name, std::io::BufReader::new(crate::provenance::open(path)?))?,
         "asc" => {
             if meta.len() > MAX_ASCII_BYTES {
                 return Err(DataError::Format("the ASCII grid is too large to open".into()));
             }
-            let text = std::fs::read_to_string(path)?;
+            let text = crate::provenance::read_to_string(path)?;
             read_ascii(path, &text, &name, sidecar_nodata)?
+        }
+        // Read message by message, never whole.
+        "grb" | "grib" | "grb2" | "grib2" => {
+            grib::read_with_nodata(std::io::BufReader::new(crate::provenance::open(path)?), &name, sidecar_nodata)?
+        }
+        // Elevation, streamed a row or record at a time once its name and size are checked, so the
+        // file's bytes are never held whole: an SRTM tile's size says its grid, and a DTED file is
+        // no larger than its largest cell when checked (bytes past its last column are counted).
+        e if ELEVATION_EXTENSIONS.contains(&e) => {
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            let source = std::io::BufReader::new(crate::provenance::open(path)?);
+            if ext == "hgt" {
+                let checked = hgt::check(file_name, meta.len())?;
+                hgt::read_checked_from(file_name, checked, source)?
+            } else {
+                dted::read_file(file_name, meta.len(), source)?
+            }
         }
         #[cfg(not(target_arch = "wasm32"))]
         _ if gdal::is_gdal_raster_name(&path.to_string_lossy()) => {
@@ -1215,24 +1384,27 @@ fn read_path_placing(path: &Path, world: bool) -> Result<Raster> {
     // left out of the rounded count: it left out the sidecar's no-data for all bands. When the two
     // differ (a record for a band the raster lacks, or one only some bands give), the file is read
     // again with the one applied (none, when the bands it has give none), so the rounded count
-    // leaves out just its pixels. Only an ASCII grid, or a GeoTIFF of a type `f32` can round, is read again.
+    // leaves out just its pixels. Only an ASCII grid, a GRIB file, or a GeoTIFF of a type `f32` can
+    // round, is read again.
     let applied = pam.as_ref().map(|p| p.nodata_within(r.bands.len()));
     if let Some(nd) = applied
         && nd != sidecar_nodata
         && r.nodata.is_none()
-        && (ext == "asc"
+        && (matches!(ext.as_str(), "asc" | "grb" | "grib" | "grb2" | "grib2")
             || (matches!(ext.as_str(), "tif" | "tiff")
                 && matches!(r.data_type.as_str(), "UInt32" | "Int32" | "UInt64" | "Int64" | "Float64")))
     {
         // The second read gives all the first did: the first goes before it, so two aren't held.
         drop(r);
         r = if ext == "asc" {
-            read_ascii(path, &std::fs::read_to_string(path)?, &name, nd)?
+            read_ascii(path, &crate::provenance::read_to_string(path)?, &name, nd)?
+        } else if grib::EXTENSIONS.contains(&ext.as_str()) {
+            grib::read_with_nodata(std::io::BufReader::new(crate::provenance::open(path)?), &name, nd)?
         } else {
             #[cfg(not(target_arch = "wasm32"))]
             let again = geotiff::read_file_with_nodata(path, &name, nd)?;
             #[cfg(target_arch = "wasm32")]
-            let again = geotiff::read_with_nodata(std::io::BufReader::new(std::fs::File::open(path)?), &name, nd)?;
+            let again = geotiff::read_with_nodata(std::io::BufReader::new(crate::provenance::open(path)?), &name, nd)?;
             again
         };
     }
@@ -1319,30 +1491,82 @@ pub fn read_path_with(path: &Path, subdataset: Option<&str>, crs: Option<&str>) 
     read_path_with_placing(path, subdataset, crs, true)
 }
 
+/// [`read_path_with`], placing a picture by its world file, and a PDF page by its own coordinates,
+/// when `world` (a scan's reads pass `false`): a Zarr store's variable, a PDF's page or a GDAL
+/// file's subdataset by `subdataset`, else the file as [`read_path_placing`] reads it.
 fn read_path_with_placing(path: &Path, subdataset: Option<&str>, crs: Option<&str>, world: bool) -> Result<Raster> {
     // A Zarr store's variable and slice (`t2m[time=3]`).
     #[cfg(not(target_arch = "wasm32"))]
     if zarr::is_store(path) {
         return zarr::read_dir(path, subdataset.unwrap_or(""), crs);
     }
+    // A PDF's page, by its number.
+    if subdataset.is_some() && is_pdf_name(&path.to_string_lossy()) {
+        return read_pdf_page(path, subdataset, world);
+    }
     #[cfg(not(target_arch = "wasm32"))]
     if (subdataset.is_some() || crs.is_some()) && gdal::is_gdal_raster_name(&path.to_string_lossy()) {
         return read_converted(path, &gdal::convert(path, subdataset, crs)?);
     }
-    let _ = (subdataset, crs);
-    read_path_placing(path, world)
+    let ignored = elevation_ignores(&path.to_string_lossy(), subdataset, crs);
+    let mut r = read_path_placing(path, world)?;
+    r.lost.extend(ignored);
+    Ok(r)
+}
+
+/// What reading an SRTM tile or DTED file (`name`) with a subdataset (`"layer"`) or a coordinate
+/// system (`"crs"`) says: they hold one band and give their own coordinates, so neither applies,
+/// and the file is read without them. A command may give them, and so may a project saved when
+/// these files went through GDAL. `None` for other files, or when neither is given.
+pub fn elevation_ignores(name: &str, subdataset: Option<&str>, crs: Option<&str>) -> Option<String> {
+    if !is_elevation_name(name) {
+        return None;
+    }
+    // A DTED file naming a datum other than WGS 84 says so as it is read (`dted::read`).
+    const PLACE: &str = "give their own coordinates, read as WGS 84 longitude/latitude (a DTED file naming another datum says so)";
+    const BAND: &str = "hold one band of heights, with no layers to choose from";
+    let given = |v: Option<&str>| v.is_some_and(|v| !v.trim().is_empty());
+    Some(match (given(subdataset), given(crs)) {
+        (true, true) => format!("the \"layer\" and \"crs\" given are ignored: SRTM and DTED files {BAND}, and {PLACE}"),
+        (true, false) => format!("the \"layer\" given is ignored: SRTM and DTED files {BAND}"),
+        (false, true) => format!("the \"crs\" given is ignored: SRTM and DTED files {PLACE}"),
+        (false, false) => return None,
+    })
 }
 
 /// Reads the GeoTIFF GDAL converted `path` to, named and sourced as `path` (and its subdataset).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn read_converted(path: &Path, c: &gdal::Converted) -> Result<Raster> {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("raster");
-    let mut r = geotiff::read_file(&c.path, stem)?;
+    crate::provenance::path(path);
+    let mut r = crate::provenance::without(|| geotiff::read_file(&c.path, stem))?;
+    // This revision belongs to GDAL's cache copy, not the original source named below.
+    r.source_file = None;
     if let Some(s) = &c.subdataset {
         r.name = format!("{stem} {}", gdal::short_name(s));
     }
     r.source = Some(path.display().to_string());
+    // What converting found that the GeoTIFF it made doesn't say (that file names the system GDAL
+    // assumed as if it had been the file's own): said with the raster's other losses, whichever way
+    // it is read, as a reload says them again.
+    if c.assumed_lonlat {
+        r.crs_assumed = true;
+        r.lost.push(format!("{} (give \"crs\" if not)", assumed_wgs84_note("it doesn't say its coordinate system")));
+    }
+    if !c.others.is_empty() {
+        let shown: Vec<&str> = c.others.iter().take(20).map(String::as_str).collect();
+        let more = c.others.len().saturating_sub(shown.len());
+        let tail = if more > 0 { format!(", and {more} more") } else { String::new() };
+        r.lost.push(format!("it has {} more variables ({}{tail}): add one with \"layer\"", c.others.len(), shown.join(", ")));
+    }
     Ok(r)
+}
+
+/// What a reader says when a grid whose file gives no usable coordinate system is read as WGS 84
+/// longitude/latitude, because its coordinates fit in degrees (AGENTS.md, Never silent): `why` is
+/// what the file lacks or gets wrong. One line a raster, whatever its size.
+pub(crate) fn assumed_wgs84_note(why: &str) -> String {
+    format!("{why}; its coordinates look like longitude/latitude, so it's read as WGS 84")
 }
 
 /// The stand-in transform of a scan of `w` × `h` pixels: square pixels, the longer side one degree,
@@ -1422,13 +1646,9 @@ fn read_scan_limited<R: std::io::BufRead + std::io::Seek>(name: &str, mut source
     };
     let (w, h) = (img.width(), img.height());
     let ch = usize::from(img.color().channel_count());
-    let mut k = 1u32;
-    while (w.div_ceil(k) as usize).saturating_mul(h.div_ceil(k) as usize).saturating_mul(ch) > max {
-        k = k.saturating_mul(2);
-        if k > 1 << 20 {
-            return Err(too_large());
-        }
-    }
+    // The step a picture is read at to fit the budget, shared by its channels: a × ch > max
+    // exactly when a > ⌊max / ch⌋.
+    let k = step_within(w as usize, h as usize, max / ch.max(1)).and_then(|k| u32::try_from(k).ok()).ok_or_else(too_large)?;
     let (bands, color, data_type) = match &img {
         D::ImageLuma8(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::Gray, "UInt8"),
         D::ImageLumaA8(i) => (deinterleave(i.as_raw(), w, h, ch, k)?, ColorHint::GrayAlpha, "UInt8"),
@@ -1504,6 +1724,20 @@ fn rotate(r: &Raster, degrees: f64) -> Result<Raster> {
     Raster::new(r.name.clone(), ow, oh, bands, transform, r.crs, None, r.color.clone(), r.data_type.clone())
 }
 
+/// The size, in cells of a pixel's area, of the north-up box around `w`×`h` pixels placed by
+/// `[x per column, x per row, y per column, y per row]`, as [`north_up`] sizes its grid.
+fn turned_size([xc, xr, yc, yr]: [f64; 4], w: u32, h: u32) -> (u32, u32) {
+    let cell = (xc * yr - xr * yc).abs().sqrt();
+    let (fw, fh) = (f64::from(w), f64::from(h));
+    let span = |a: f64, b: f64| (0.0f64).max(a).max(b).max(a + b) - (0.0f64).min(a).min(b).min(a + b);
+    // A thousandth of a cell of slack, so a size that is whole on paper isn't rounded up by noise.
+    let n = |len: f64| ((len / cell) - 1e-3).ceil().clamp(1.0, f64::from(u32::MAX)) as u32;
+    if !cell.is_normal() {
+        return (w.max(1), h.max(1));
+    }
+    (n(span(fw * xc, fh * xr)), n(span(fw * yc, fh * yr)))
+}
+
 /// A `w`×`h` image placed by a rotated or skewed `affine` (GDAL's order: x, x per column, x per
 /// row, y, y per column, y per row), resampled (nearest pixel) to the north-up grid of square
 /// pixels over its bounding box: pixels of the same area, coarser if that would hold more than
@@ -1558,6 +1792,7 @@ fn north_up<B: AsRef<[f32]>>(bands: &[B], w: u32, h: u32, affine: [f64; 6], max:
     Ok((out, ow, oh, GeoTransform { origin_x: min_x, origin_y: max_y, pixel_width: cell, pixel_height: -cell }))
 }
 
+/// Decodes a bounded image and reserves each output band fallibly before converting its pixels.
 fn from_image_unrotated(name: &str, bytes: &[u8], bbox: [f64; 4]) -> Result<Raster> {
     let [w, s, e, n] = bbox;
     if !(w < e && s < n) {
@@ -1573,7 +1808,7 @@ fn from_image_unrotated(name: &str, bytes: &[u8], bbox: [f64; 4]) -> Result<Rast
     reader.limits(limits);
     let img = reader.decode().map_err(|e| DataError::Format(format!("{name}: {e}")))?.into_rgba8();
     let (width, height) = img.dimensions();
-    let mut bands: Vec<Vec<f32>> = (0..4).map(|_| Vec::with_capacity(width as usize * height as usize)).collect();
+    let mut bands = (0..4).map(|_| grid::<f32>(width as usize, height as usize)).collect::<Result<Vec<_>>>()?;
     for px in img.pixels() {
         for (b, v) in bands.iter_mut().zip(px.0) {
             b.push(f32::from(v));
@@ -1584,8 +1819,45 @@ fn from_image_unrotated(name: &str, bytes: &[u8], bbox: [f64; 4]) -> Result<Rast
     Raster::new(name, width, height, bands, transform, Crs::LonLat, None, ColorHint::Rgb { alpha: true }, "UInt8")
 }
 
-/// Reads a raster from a file's name and bytes (a browser upload).
+/// [`read_bytes`], and for a PDF its page `page` (its number; the first when `None`), placed by
+/// its coordinates when `place` (a scan otherwise): an upload or download of a PDF, and a
+/// project's copy of one reopened at the page it was added at.
+pub fn read_bytes_page(file_name: &str, bytes: &[u8], page: Option<&str>, place: bool) -> Result<Raster> {
+    if !is_pdf_name(file_name) {
+        return read_bytes(file_name, bytes);
+    }
+    #[cfg(feature = "pdf")]
+    {
+        // Refused before the contents are copied.
+        if bytes.len() as u64 > pdf::MAX_BYTES {
+            return Err(DataError::Format(format!("the PDF is larger than {} MB, too large to open", pdf::MAX_BYTES >> 20)));
+        }
+        let name = Path::new(file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("raster");
+        pdf::read_bytes(name, bytes.to_vec(), page, place)
+    }
+    #[cfg(not(feature = "pdf"))]
+    {
+        let _ = (page, place);
+        Err(DataError::Unsupported(PDF_ELSEWHERE.into()))
+    }
+}
+
+/// Reads an owned upload or embedded raster without copying PDF bytes for the decoder.
+/// Other formats borrow the same buffer, as [`read_bytes_page`] does.
+pub fn read_shared_page(file_name: &str, bytes: std::sync::Arc<Vec<u8>>, page: Option<&str>, place: bool) -> Result<Raster> {
+    #[cfg(feature = "pdf")]
+    if is_pdf_name(file_name) {
+        let name = Path::new(file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("raster");
+        return pdf::read_shared(name, bytes, page, place);
+    }
+    read_bytes_page(file_name, &bytes, page, place)
+}
+
+/// Reads a raster from a file's name and bytes (a browser upload); a PDF's first page.
 pub fn read_bytes(file_name: &str, bytes: &[u8]) -> Result<Raster> {
+    if is_pdf_name(file_name) {
+        return read_bytes_page(file_name, bytes, None, true);
+    }
     let p = Path::new(file_name);
     let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("raster").to_string();
     let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -1604,6 +1876,10 @@ pub fn read_bytes(file_name: &str, bytes: &[u8]) -> Result<Raster> {
             let text = std::str::from_utf8(bytes).map_err(|_| DataError::Format("not a text file".into()))?;
             ascii::read(text, &name, None)
         }
+        "grb" | "grib" | "grb2" | "grib2" => grib::read_bytes(bytes, &name),
+        // An upload keeps its file name, which places an SRTM tile.
+        "hgt" => hgt::read(file_name, bytes),
+        e if ELEVATION_EXTENSIONS.contains(&e) => dted::read(file_name, bytes),
         other => Err(DataError::Unsupported(format!(".{other}"))),
     }
 }
@@ -1611,13 +1887,13 @@ pub fn read_bytes(file_name: &str, bytes: &[u8]) -> Result<Raster> {
 /// An ASCII grid at `path` (its `text`), in the coordinate system of the `.prj` next to it.
 fn read_ascii(path: &Path, text: &str, name: &str, nodata: Option<f64>) -> Result<Raster> {
     let (crs, note) = sidecar_crs(path)?;
-    let mut r = ascii::read_with_nodata(text, name, crs, nodata)?;
-    // Planetary body notices have their own path. Preserve the method warning without duplicating
-    // those, and only assume lon/lat for an unreadable definition.
-    r.lost.extend(note.map(|message| match crs {
-        Some(_) => format!("the .prj file: {message}"),
-        None => format!("the .prj file: {message}; coordinates are read as longitude/latitude"),
-    }));
+    let note = note.map(|message| format!("the .prj file: {message}"));
+    // An unreadable definition explains the assumption itself; a missing definition says it is
+    // missing. A readable system keeps its other notes, without repeating the planetary body.
+    let mut r = ascii::read_with_nodata(text, name, crs, nodata, note.as_deref().filter(|_| crs.is_none()))?;
+    if crs.is_some() {
+        r.lost.extend(note);
+    }
     Ok(r)
 }
 
@@ -1701,7 +1977,7 @@ pub fn read_prj(path: &Path) -> Option<String> {
     if !meta.is_file() || meta.len() > 1 << 20 {
         return None;
     }
-    std::fs::read_to_string(prj).ok()
+    crate::provenance::read_to_string(prj).ok()
 }
 
 /// Longitude/latitude bounds of a `width` × `height` grid placed by `transform` in `transformer`'s
@@ -1777,6 +2053,16 @@ fn extent_of(transform: &GeoTransform, transformer: &Transformer, width: u32, he
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn elevation_files_are_raster_names() {
+        for ext in ELEVATION_EXTENSIONS {
+            assert!(READ_EXTENSIONS.contains(&ext), "{ext}");
+            assert!(is_raster_name(&format!("/d/N37W122.{}", ext.to_uppercase())), "{ext}");
+            assert!(is_elevation_name(&format!("x.{ext}")), "{ext}");
+        }
+        assert!(!is_elevation_name("x.tif") && !is_elevation_name("hgt") && !is_elevation_name(""));
+    }
 
     /// A large band's statistics, counted on any number of threads, are those of one pass on
     /// one thread (#1252) to the bit: the sums in the band's order, the counts, range, histogram
@@ -2338,12 +2624,114 @@ pub(crate) mod tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// An ASCII grid on disk says it is read as WGS 84 when no `.prj` gives its system, and says
+    /// nothing when one does; a `.prj` that can't be read adds why, and the assumption is said once.
+    #[test]
+    fn an_ascii_grid_on_disk_says_what_its_prj_leaves_out() {
+        let dir = std::env::temp_dir().join(format!("rustgis-ascii-assumed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let asc = dir.join("g.asc");
+        std::fs::write(&asc, "ncols 2\nnrows 1\nxllcorner 10\nyllcorner 40\ncellsize 1\n1 2\n").unwrap();
+        let r = read_path(&asc).unwrap();
+        assert_eq!(r.crs, Crs::LonLat);
+        assert_eq!(r.lost.len(), 1, "{:?}", r.lost);
+        assert!(r.lost[0].contains("doesn't say its coordinate system") && r.lost[0].contains("WGS 84"), "{:?}", r.lost);
+        std::fs::write(dir.join("g.prj"), wkt::to_wkt(Crs::LonLat).unwrap()).unwrap();
+        let r = read_path(&asc).unwrap();
+        assert!(r.lost.is_empty(), "{:?}", r.lost);
+        std::fs::write(dir.join("g.prj"), "not a coordinate system").unwrap();
+        let r = read_path(&asc).unwrap();
+        assert_eq!(r.lost.len(), 1, "{:?}", r.lost);
+        let note = &r.lost[0];
+        assert!(note.starts_with("the .prj file: ") && note.contains("so it's read as WGS 84"), "{note}");
+        assert!(!note.contains("it doesn't say its coordinate system"), "{note}");
+        std::fs::write(&asc, "ncols 2\nnrows 1\nxllcorner 1000\nyllcorner 4000\ncellsize 1\n1 2\n").unwrap();
+        let error = read_path(&asc).unwrap_err().to_string();
+        assert!(error.contains("the .prj file:") && error.contains("unknown coordinate system"), "{error}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// What GDAL's conversion found (a coordinate system it assumed, variables it didn't add) stays
+    /// with the raster read from the converted file, whichever way it is read; a conversion that found
+    /// nothing says nothing.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_converted_raster_keeps_what_converting_found() {
+        let dir = std::env::temp_dir().join(format!("rustgis-converted-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let gt = GeoTransform { origin_x: 10.0, origin_y: 41.0, pixel_width: 1.0, pixel_height: -1.0 };
+        let made = Raster::new("g", 2, 1, vec![vec![1.0, 2.0]], gt, Crs::LonLat, None, ColorHint::Gray, "Float32").unwrap();
+        let tif = dir.join("converted.tif");
+        std::fs::write(&tif, geotiff::write(&made, 0).unwrap()).unwrap();
+        let lossy = gdal::Converted {
+            path: tif.clone(),
+            subdataset: Some("temperature".into()),
+            others: vec!["pressure".into(), "wind".into()],
+            assumed_lonlat: true,
+        };
+        let r = read_converted(Path::new("/data/climate.nc"), &lossy).unwrap();
+        assert_eq!(r.lost.len(), 2, "{:?}", r.lost);
+        assert!(
+            r.lost.iter().any(|n| n.contains("doesn't say its coordinate system") && n.contains("WGS 84") && n.contains("\"crs\"")),
+            "{:?}",
+            r.lost
+        );
+        assert!(r.lost.iter().any(|n| n.contains("pressure") && n.contains("wind") && n.contains("\"layer\"")), "{:?}", r.lost);
+        // Past the 20 names shown, the count of the rest is said too.
+        let many = gdal::Converted {
+            path: tif.clone(),
+            subdataset: None,
+            others: (1..=35).map(|i| format!("band{i}")).collect(),
+            assumed_lonlat: false,
+        };
+        let r = read_converted(Path::new("/data/climate.nc"), &many).unwrap();
+        assert!(
+            r.lost
+                .iter()
+                .any(|n| n.contains("35 more variables") && n.contains("band20") && !n.contains("band21") && n.contains("and 15 more")),
+            "{:?}",
+            r.lost
+        );
+        let clean = gdal::Converted { path: tif, subdataset: None, others: Vec::new(), assumed_lonlat: false };
+        let r = read_converted(Path::new("/data/climate.nc"), &clean).unwrap();
+        assert!(r.lost.is_empty(), "{:?}", r.lost);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn annotation_grid_converted_pixels_do_not_claim_the_cache_revision() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("converted.tif");
+        std::fs::write(&cache, geotiff::write(&small(), 0).unwrap()).unwrap();
+        geotiff::read_file(&cache, "cache").unwrap().check_original_file(&cache).unwrap();
+        let converted = gdal::Converted { path: cache.clone(), subdataset: None, others: Vec::new(), assumed_lonlat: false };
+        let source = dir.path().join("original.nc");
+        let pixels = read_converted(&source, &converted).unwrap();
+        assert_eq!(pixels.source.as_deref(), source.to_str());
+        let error = pixels.check_original_file(&cache).unwrap_err();
+        assert!(error.contains("no verified original file revision"), "{error}");
+        assert!(!error.contains("file changed"), "{error}");
+    }
 }
 
 #[cfg(test)]
 mod scan_tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn a_turned_size_is_the_grid_north_up_makes() {
+        let (w, h) = (40u32, 17u32);
+        let band = vec![1.0f32; (w * h) as usize];
+        for degrees in [0.0f64, 30.0, 90.0, 135.0, 200.0, 271.0] {
+            let (sin, cos) = degrees.to_radians().sin_cos();
+            let (xc, xr, yc, yr) = (2.5 * cos, 2.5 * sin, 2.5 * sin, -2.5 * cos);
+            let (_, ow, oh, _) = north_up(&[band.as_slice()], w, h, [100.0, xc, xr, 50.0, yc, yr], usize::MAX).unwrap();
+            assert_eq!(turned_size([xc, xr, yc, yr], w, h), (ow, oh), "{degrees}°");
+        }
+    }
 
     fn tiff(tags: &[(u16, &[f64])]) -> Vec<u8> {
         use tiff::encoder::{TiffEncoder, colortype};
@@ -2413,7 +2801,13 @@ mod scan_tests {
         let e = r.extent();
         assert!((e.min_x - 10.0).abs() < 1e-9 && (e.max_y - 41.0).abs() < 1e-9);
         assert!(r.place([1.0, 1.0, 0.0, 2.0]).is_err() && r.place([0.0, f64::NAN, 1.0, 2.0]).is_err());
-        assert!(from_image("o", &encode(picture(4, 4, true), image::ImageFormat::Png), [0.0, 0.0, 1.0, 1.0], 0.0).unwrap().georeferenced);
+        let placed = from_image("o", &encode(picture(4, 4, true), image::ImageFormat::Png), [0.0, 0.0, 1.0, 1.0], 0.0).unwrap();
+        assert!(placed.georeferenced);
+        assert_eq!(placed.color, ColorHint::Rgb { alpha: true });
+        for (band, expected) in placed.bands.iter().zip([3.0, 2.0, 7.0, 200.0]) {
+            assert_eq!(band.data.len(), 16);
+            assert_eq!(band.data.get(11).copied(), Some(expected));
+        }
     }
 
     #[test]

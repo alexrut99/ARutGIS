@@ -13,9 +13,11 @@ use rustgis_map::{Camera, Map, Rgba};
 use rustgis_tiles::cache::{self, Payload, State, Want};
 use rustgis_tiles::template::{self, TileId};
 
+mod outline;
 mod water;
 
-pub(crate) use water::Water;
+pub use outline::Outline;
+pub(crate) use water::{Glint, SHORE_PX, Water, paint_shore};
 
 /// Cells along each side of a tilted view's band laid over the relief while the map moves (the
 /// drape, `tilt_drape` in the app): few enough to lay out every frame.
@@ -96,8 +98,9 @@ enum Heights {
 }
 
 /// A map's block diagram as a frame draws it (#1914, `TerrainBlock`): the box the ground is cut
-/// to (Web Mercator) and the height of its base.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// to (Web Mercator; for a round block the square round its circle, for one cut to polygons the
+/// box round their outline) and the height of its base.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Block {
     pub x0: f64,
     pub y0: f64,
@@ -110,6 +113,16 @@ pub struct Block {
     /// that arrives, so the walls wait (the ground is cut all the same).
     pub settled: bool,
     pub walls: Rgba,
+    /// A round block (#2318): its circle's centre and radius (Web Mercator), the box above being
+    /// the one round it. None: the box.
+    pub circle: Option<(Coord, f64)>,
+    /// A block cut to polygons (#2318): their outline, the box above being the one round it.
+    /// None: the box, or the circle.
+    pub outline: Option<Arc<Outline>>,
+    /// The share (0 to 1) of the ground read for the base that had no height (off the DEM, its
+    /// nodata, an elevation tile that failed) and was taken as 0, as it is drawn; 0 while the
+    /// base isn't settled.
+    pub without_height: f64,
 }
 
 impl Block {
@@ -118,6 +131,12 @@ impl Block {
     /// base move, so `settled` alone is not enough once the ground has been sampled.
     pub fn walls_stand(&self, ground: &Ground) -> bool {
         self.settled && !ground.pending()
+    }
+
+    /// What to say of the ground in it with no height ([`Block::without_height`]), taken as 0;
+    /// `None` when all of it has a height.
+    pub fn without_height_notice(&self) -> Option<String> {
+        (self.without_height > 0.0).then(|| crate::approximations::ground_without_height_text(self.without_height))
     }
 }
 
@@ -140,7 +159,7 @@ impl Ground {
     /// there.
     pub fn of(map: &Map, camera: &Camera) -> Option<Ground> {
         let mut ground = Ground::heights_of(map, camera)?;
-        ground.attach_water(map);
+        ground.attach_water(map, camera);
         Some(ground)
     }
 
@@ -148,8 +167,8 @@ impl Ground {
     /// on their way, taken again from its cache, leaves these heights pending too: inside its
     /// lakes no tile is read, and a frame or an export waiting for tiles must still wait for the
     /// levels to be read again.
-    fn attach_water(&mut self, map: &Map) {
-        self.water = water::of(map, self);
+    fn attach_water(&mut self, map: &Map, camera: &Camera) {
+        self.water = water::of(map, camera, self);
         if self.water.as_ref().is_some_and(|w| w.waits_for_tiles())
             && let Heights::Tiles { pending, .. } = &self.heights
         {
@@ -158,10 +177,17 @@ impl Ground {
     }
 
     /// How many polygons of `map`'s water layer have their shore read at wider steps than half a
-    /// cell of the heights a view of `camera` reads (#1915; see [`Ground::water_coarse`]), from
-    /// their shapes alone: nothing is read, no elevation tile asked for. 0 without water.
+    /// cell of the heights a view of `camera` reads, to keep a long shore's reading bounded, so
+    /// their level may lie a little above their lowest shore (#1915). From their shapes alone:
+    /// nothing is read, no elevation tile asked for. 0 without water.
     pub fn water_coarse_unread(map: &Map, camera: &Camera) -> usize {
-        Ground::heights_of(map, camera).map_or(0, |g| water::coarse_shores(map, &g))
+        Ground::heights_of(map, camera).map_or(0, |g| water::coarse_shores(map, camera, &g))
+    }
+
+    /// Whether a view of `camera` has terrain on `map` ([`Ground::of`] is `Some`), without reading
+    /// its water.
+    pub(crate) fn has_heights(map: &Map, camera: &Camera) -> bool {
+        Ground::heights_of(map, camera).is_some()
     }
 
     /// [`Ground::of`] without its water.
@@ -235,13 +261,6 @@ impl Ground {
         self.water.as_ref().map_or(0, |w| w.unlevelled)
     }
 
-    /// How many polygons of the terrain's water layer had their shore read at wider steps than
-    /// half the ground's cell, to keep a long shore's reading bounded: their level may lie a
-    /// little above their lowest shore (#1915). 0 without water.
-    pub fn water_coarse(&self) -> usize {
-        self.water.as_ref().map_or(0, |w| w.coarse)
-    }
-
     /// How high the ground stands at `m` in a view of `cam`, in logical pixels at the centre's
     /// scale (what `Camera::project_raised` takes): its height over the metres a map unit spans
     /// there (Web Mercator stretches the ground toward the poles). 0 where nothing is known.
@@ -254,6 +273,11 @@ impl Ground {
     /// ground toward the poles): a height over it is in map units.
     pub fn per_unit(&self, m: Coord) -> f64 {
         per_unit(m, self.body)
+    }
+
+    /// How much the heights are stretched (`Terrain::exaggeration`, as read).
+    pub(crate) fn exaggeration(&self) -> f64 {
+        self.exaggeration
     }
 
     /// Where the Web Mercator point `m` falls on the ground's grid, in its cells (column, row):
@@ -334,8 +358,11 @@ impl Ground {
     }
 
     /// The block diagram `map`'s terrain is cut to, when it has one: its box (the DEM's extent
-    /// when none is given; none over elevation tiles then), and its base `depth` metres below the
-    /// lowest ground read in it (on a grid of [`BLOCK_SAMPLES`] cells a side; where a DEM has no
+    /// when none is given; none over elevation tiles then) or the circle in it, or the outline of
+    /// its polygons ([`Outline::of`]; none when they can't be read) and the box round it, and its
+    /// base `depth` metres below the lowest ground read in it (on a grid of [`BLOCK_SAMPLES`]
+    /// cells a side, inside the circle or the outline, and at the outline's corners; where a DEM
+    /// has no
     /// height, 0, as the ground is drawn there; while elevation tiles are on their way, not
     /// [`Block::settled`]), or
     /// half its relief, at least `BLOCK_MIN_DEPTH`, both exaggerated as the heights are.
@@ -345,11 +372,25 @@ impl Ground {
     /// base, which a coarser tile serves.
     pub fn block(&self, map: &Map) -> Option<Block> {
         let b = map.view.terrain.as_ref()?.block.as_ref()?;
-        let [x0, y0, x1, y1] = match (b.extent, &self.heights) {
+        let outline = match &b.shape {
+            rustgis_map::view::BlockShape::Polygon { layer, filter } => Some(Outline::of(map, layer, filter.as_deref())?),
+            _ => None,
+        };
+        let [x0, y0, x1, y1] = match (b.extent.or(outline.as_ref().map(|o| o.extent())), &self.heights) {
             (Some(e), _) => e,
             (None, Heights::Raster { raster, .. }) => raster_box(raster)?,
             (None, Heights::Tiles { .. }) => return None,
         };
+        // A round block (#2318): the largest circle in the box, or a smaller one, centred in it;
+        // the box is then the one round the circle.
+        let circle = match b.shape {
+            rustgis_map::view::BlockShape::Box | rustgis_map::view::BlockShape::Polygon { .. } => None,
+            rustgis_map::view::BlockShape::Circle { radius } => {
+                let r = (x1 - x0).min(y1 - y0) / 2.0;
+                Some((Coord::new((x0 + x1) / 2.0, (y0 + y1) / 2.0), radius.map_or(r, |q| q.min(r))))
+            }
+        };
+        let [x0, y0, x1, y1] = circle.map_or([x0, y0, x1, y1], |(c, r)| [c.x - r, c.y - r, c.x + r, c.y + r]);
         let world = 2.0 * std::f64::consts::PI * MERCATOR_R;
         let coarse = (world / (x1 - x0).max(y1 - y0).max(1e-9)).log2().floor();
         let coarse = if coarse.is_finite() { coarse.clamp(0.0, f64::from(MAX_TILE_ZOOM)) as u8 } else { 0 };
@@ -368,18 +409,36 @@ impl Ground {
             }
         };
         let n = BLOCK_SAMPLES as f64;
-        let (mut lo, mut hi, mut missing) = (f64::INFINITY, f64::NEG_INFINITY, false);
-        for (i, j) in (0..=BLOCK_SAMPLES).flat_map(|j| (0..=BLOCK_SAMPLES).map(move |i| (i as f64, j as f64))) {
-            match sample(Coord::new(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * j / n)) {
+        let (mut lo, mut hi, mut missing, mut read) = (f64::INFINITY, f64::NEG_INFINITY, 0usize, 0usize);
+        // A thin polygon can slip between the grid's points: its corners count too (a few
+        // hundred of them, and each ring's first, so a small ring is never left out).
+        let corners = outline.iter().flat_map(|o| {
+            let step = (o.sides().len() / (4 * BLOCK_SAMPLES)).max(1);
+            o.sides().iter().enumerate().filter(move |(i, s)| i % step == 0 || s.along == 0.0).map(|(_, s)| s.a)
+        });
+        let grid = (0..=BLOCK_SAMPLES).flat_map(|j| (0..=BLOCK_SAMPLES).map(move |i| (i as f64, j as f64)));
+        let grid = grid.map(|(i, j)| (Coord::new(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * j / n), false));
+        for (m, on_outline) in grid.chain(corners.map(|m| (m, true))) {
+            // A round block's ground off its circle isn't drawn, so doesn't set its base; nor
+            // ground off a polygon block's outline.
+            if circle.is_some_and(|(c, r)| (m.x - c.x).hypot(m.y - c.y) > r * (1.0 + 1e-9)) {
+                continue;
+            }
+            if !on_outline && outline.as_ref().is_some_and(|o| !o.contains(m)) {
+                continue;
+            }
+            read += 1;
+            match sample(m) {
                 Some(h) => (lo, hi) = (lo.min(h), hi.max(h)),
-                None => missing = true,
+                None => missing += 1,
             }
         }
         // Elevation tiles still on their way: the base would move with each one that arrives.
         let settled = !self.pending();
         // Ground with no height (a DEM's nodata or ground off it, a tile that failed) is drawn at
         // 0 (`up_px`): once settled, the base goes below it too.
-        if missing && settled {
+        let without_height = if missing > 0 && settled { missing as f64 / read.max(1) as f64 } else { 0.0 };
+        if without_height > 0.0 {
             lo = lo.min(0.0);
         }
         if lo > hi {
@@ -390,7 +449,7 @@ impl Ground {
             Some(d) => d * self.exaggeration,
             None => (0.5 * (hi - lo)).max(rustgis_map::view::BLOCK_MIN_DEPTH * self.exaggeration),
         };
-        Some(Block { x0, y0, x1, y1, base: lo - depth, settled, walls: b.walls })
+        Some(Block { x0, y0, x1, y1, base: lo - depth, settled, walls: b.walls, circle, outline, without_height })
     }
 
     /// Whether elevation tiles are still on their way (drawing again later shows more).
@@ -705,6 +764,8 @@ mod tests {
             depth: Some(1000.0),
             walls: rustgis_map::view::BLOCK_WALLS,
             walls_layer: None,
+            water: None,
+            shape: rustgis_map::view::BlockShape::Box,
         };
         m.view.terrain = Some(rustgis_map::view::Terrain {
             source: rustgis_map::view::TerrainSource::Layer("dem".into()),
@@ -715,6 +776,18 @@ mod tests {
         let camera = Camera { center: Coord::new(100.0, 50.0), res: 1.0, bearing: 0.0, pitch: 60.0 };
         let b = Ground::of(&m, &camera).and_then(|g| g.block(&m)).expect("a block");
         assert!((b.base + 1000.0).abs() < 1e-6, "{}", b.base);
+        // Said, with how much of it (#2639): the grid's points the nodata cell leaves without a
+        // height (a quarter of them, the cells' heights blended between their centres).
+        assert!((0.2..0.3).contains(&b.without_height), "{}", b.without_height);
+        let said = b.without_height_notice().unwrap_or_default();
+        assert!(said.starts_with("Block diagram: about 26%") && said.contains("taken as 0 m"), "{said}");
+        // Ground with a height everywhere says nothing.
+        let whole =
+            Raster::new("dem", 2, 1, vec![vec![5000.0, 4000.0]], gt, Crs::WebMercator, Some(-9999.0), ColorHint::Gray, "Float32").unwrap();
+        m.layers.clear();
+        m.add_raster("dem", rustgis_map::RasterLayer::from_path(whole, "dem.tif"));
+        let b = Ground::of(&m, &camera).and_then(|g| g.block(&m)).expect("a block");
+        assert_eq!((b.without_height, b.without_height_notice()), (0.0, None));
     }
 
     #[test]
@@ -748,6 +821,8 @@ mod tests {
             depth: Some(300.0),
             walls: rustgis_map::view::BLOCK_WALLS,
             walls_layer: None,
+            water: None,
+            shape: rustgis_map::view::BlockShape::Box,
         };
         m.view.terrain = Some(rustgis_map::view::Terrain {
             source: rustgis_map::view::TerrainSource::Tiles {
@@ -759,7 +834,8 @@ mod tests {
             water: None,
         });
         let waiting = ground(true).block(&m).expect("a block");
-        assert!(!waiting.settled);
+        // Not said while the tiles are on their way: they may bring the heights.
+        assert!(!waiting.settled && waiting.without_height_notice().is_none());
         let done = ground(false).block(&m).expect("a block");
         assert!(done.settled && (done.base + 300.0).abs() < 1e-6, "{done:?}");
         // The block read from cached tiles, then finer mesh samples asking for tiles on their way:

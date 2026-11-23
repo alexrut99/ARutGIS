@@ -43,6 +43,9 @@ pub fn commands() -> Vec<C> {
         C::new("map.goToXY", "By Coordinates…", "Home › Navigate › Locate", go_to_xy).roles(&[]).effects(crate::policy::Effects::NONE)
             .view()
             .params(r#"{"lon" | "x": degrees (-74.006, or text such as 74°0′22″W), "lat" | "y": degrees (40.7128, or text such as 40°42′46″N), "position"?: text in place of lon and lat, as the search box reads it, latitude first (40.7128, -74.006; 18north 583959 4507351; 18TWL8395907350), "scale"?: number, "bearing"?: degrees clockwise from north, "pitch"?: degrees of tilt (0 to 85)}"#),
+        C::new("map.convertPosition", "Convert Position", "Home › Navigate › Locate", convert_position).roles(&[]).effects(crate::policy::Effects::NONE)
+            .view()
+            .params(r#"{"lon" | "x": degrees (-74.006, or text such as 74°0′22″W), "lat" | "y": degrees (40.7128, or text such as 40°42′46″N), "position"?: text in place of lon and lat, as the search box reads it, latitude first (40.7128, -74.006; 18north 583959 4507351; 18TWL8395907350; Z AC 77146 62481), "digits"?: MGRS digits per axis, 0 (100 km) to 5 (1 m, the default)}"#),
         C::new("map.goToLink", "Go To Map Link", "Home › Navigate", go_to_link).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files))
             .view()
             .params(r#"{"url": a map link ending in #zoom/lat/lon[/bearing[/pitch]] (as MapLibre writes them; also #map=…), or just zoom/lat/lon[/bearing[/pitch]]}"#),
@@ -74,9 +77,9 @@ pub fn commands() -> Vec<C> {
         .view()
         .params(r#"{"scale": number}"#),
         C::new("map.basemap", "Basemap", "Home › Add", basemap).roles(&[]).effects(crate::policy::Effects::NONE)
-            .params(r#"{"name": "paper"|"midnight"|"ocean"|"atlas"|"blank", "keepTiles"?: bool (keeps the web tile basemaps over it)}"#),
+            .params(r##"{"name": "paper"|"midnight"|"ocean"|"atlas"|"blank", "keepTiles"?: bool (keeps the web tile basemaps over it), "color"?: "#RRGGBB" (blank: the paper's colour, drawn where a blank map draws white, the tilted view's sky included; null or #FFFFFF: white; default: as it was. Another basemap takes the paper off and keeps its own colours; a color given with it is said as a warning)}"##),
         C::new("map.graticule", "Graticule", "View › Display", graticule).roles(&[]).effects(crate::policy::Effects::NONE)
-        .params(r#"{"on"?: bool (toggles when omitted, on when a type or crs is given), "type"?: "degrees"|"measured"|"utm", "crs"?: a projected system for the measured grid (EPSG:2056, WKT or a PROJ string; "" or null: the map's own when projected, else the UTM zone at the view's centre)}"#),
+        .params(r##"{"on"?: bool (toggles when omitted, on when a type or crs is given, kept as it is when only onTop or color is given), "type"?: "degrees"|"measured"|"utm"|"mgrs", "crs"?: a projected system for the measured grid (EPSG:2056, WKT or a PROJ string; "" or null: the map's own when projected, else the UTM zone at the view's centre), "onTop"?: bool (the lines over the layers, under the labels; false or null: with the basemap, under the layers), "color"?: "#RRGGBB"|"#RRGGBBAA" ("" or null: the basemap's)}"##),
         C::new("map.reloadWebLayers", "Reload Web Layers", "View › Display", |_, _| {
             // The map view draws again when the tile cache's generation moves.
             crate::render::rustgis_tiles::cache::clear();
@@ -137,6 +140,7 @@ pub fn commands() -> Vec<C> {
             if let Some(b) = s.project.maps.get_mut(mi).and_then(|m| m.bookmarks.get_mut(bi)) {
                 b.name = name.clone();
             }
+            super::say_name_cut(s, "Rename Bookmark", "the name given", &new, &name);
             Ok(json!({"name": name}))
         }).inputs(bookmark_inputs).roles(&[]).effects(crate::policy::Effects::NONE)
         .params(r#"{"name": string, "newName": string (a number is added when another bookmark has it), "map"?: name}"#),
@@ -194,10 +198,12 @@ pub fn commands() -> Vec<C> {
         C::new("map.rename", "Rename Map", "Layers", |s, p| {
             let (i, name) = rename_choice(&super::InputSource::input_context(&*s), p)?;
             let old = s.project.maps.get(i).map(|m| m.name.clone()).ok_or("no map")?;
+            super::workspace::bind_offline_map_before_rename(&mut s.project, i)?;
             if let Some(m) = s.project.maps.get_mut(i) {
                 m.name = name.clone();
             }
             follow_renamed_map(s, &old, &name);
+            super::say_name_cut(s, "Rename Map", "the name given", s_name(p)?.trim(), &name);
             Ok(json!({"name": name}))
         }).transition(rename_transition).inputs(map_inputs).roles(&[]).effects(crate::policy::Effects::NONE)
         .params(r#"{"name": string (the new name; a number is added when another map has it), "map"?: name (default: the active map)}"#),
@@ -258,8 +264,13 @@ pub(crate) fn map_at(input: &impl super::InputSource, p: &Value) -> Result<usize
 /// map, so the copy keeps them; layouts aren't copied and keep showing the original.
 fn duplicate_map(s: &mut Session, p: &Value) -> CmdResult {
     let i = map_at(s, p)?;
+    // A name given past the limit is refused, as map.rename refuses it, not cut (#2639).
+    let given = super::name_given(p, "a map's name", super::MAX_NAME)?;
     let mut m = s.project.maps.get(i).ok_or("no map")?.clone();
-    m.name = super::copy_name(ps(p, "name"), &m.name, |n| s.project.maps.iter().any(|x| x.name.eq_ignore_ascii_case(n)));
+    let (name, cut) =
+        super::copy_name("Duplicate Map", given.as_deref(), &m.name, |n| s.project.maps.iter().any(|x| x.name.eq_ignore_ascii_case(n)));
+    m.name = name;
+    m.offline_area_id = None;
     m.label_lock = None;
     m.label_lock_line_anchors.clear();
     m.renew_instance_id();
@@ -276,12 +287,15 @@ fn duplicate_map(s: &mut Session, p: &Value) -> CmdResult {
         s.active_layer = s.map().layers.first().map(|l| l.id);
         s.table_layer = None;
     }
+    if let Some(cut) = cut {
+        s.notify(cut, false);
+    }
     Ok(json!({"name": name}))
 }
 
 /// Points layout map frames, presentation map pages and offline areas at a renamed map (#287),
 /// so they keep finding it.
-fn follow_renamed_map(s: &mut Session, old: &str, new: &str) {
+pub(crate) fn follow_renamed_map(s: &mut Session, old: &str, new: &str) {
     let renamed = |m: &mut String| {
         if m.eq_ignore_ascii_case(old) {
             *m = new.to_string();
@@ -527,19 +541,23 @@ fn degrees_text(v: f64) -> String {
     if v == 0.0 { "0".into() } else { format!("{v}") }
 }
 
-pub(crate) fn go_to_xy(s: &mut Session, p: &Value) -> CmdResult {
+/// The place a command's parameters give, as `map.goToXY` and `map.convertPosition` take it: a
+/// `position` written as the search box reads one, or `lon` and `lat` (or `x` and `y`), each a
+/// number or text in degrees, minutes and seconds. With it, what the reading assumed, for a
+/// notice: two bare numbers taken in an order, or an MGRS square taken at its center (`moving`
+/// says whether the map goes there, which the notice's wording follows).
+fn typed_place(map: &Map, p: &Value, moving: bool) -> Result<(Coord, Option<crate::notice_text::NoticeText>), String> {
     let position = match p.get("position") {
         None | Some(Value::Null) => None,
         Some(Value::String(t)) => Some(t.as_str()),
         Some(_) => return Err("position must be text, such as \"40.7128, -74.006\" or \"18TWL8395907350\"".into()),
     };
     let given = |k: &str| !matches!(p.get(k), None | Some(Value::Null));
-    // What the reading assumed is said once the map has moved there, not before a refusal.
     let (lon, lat, notice) = if let Some(text) = position {
         if ["lon", "lat", "x", "y"].iter().any(|k| given(k)) {
             return Err("give a position or lon and lat, not both".into());
         }
-        let (c, read) = read_position(s.map(), text)?;
+        let (c, read) = read_position(map, text)?;
         let reference = || text.trim().to_string().into();
         let said = match read {
             PositionRead::AsWritten => None,
@@ -549,10 +567,13 @@ pub(crate) fn go_to_xy(s: &mut Session, p: &Value) -> CmdResult {
             )),
             PositionRead::Square(side) => {
                 let side = if side >= 1000.0 { format!("{} km", side / 1000.0) } else { format!("{side} m") };
-                Some(crate::notice_text::NoticeText::format(
-                    "{reference} names a {side} square, not a point: went to its center",
-                    [("reference", reference()), ("side", side.into())],
-                ))
+                // Both whole, as the translation catalogs take them.
+                let template = if moving {
+                    "{reference} names a {side} square, not a point: went to its center"
+                } else {
+                    "{reference} names a {side} square, not a point: gave its center"
+                };
+                Some(crate::notice_text::NoticeText::format(template, [("reference", reference()), ("side", side.into())]))
             }
         };
         (c.x, c.y, said)
@@ -570,6 +591,88 @@ pub(crate) fn go_to_xy(s: &mut Session, p: &Value) -> CmdResult {
     if !(-180.0..=180.0).contains(&lon) || !(-90.0..=90.0).contains(&lat) {
         return Err("longitude must be within ±180 and latitude within ±90".into());
     }
+    Ok((Coord::new(lon, lat), notice))
+}
+
+/// A place in every form RustGIS writes one (#1042): longitude and latitude, in decimal degrees
+/// and in degrees, minutes and seconds as the status bar shows them; UTM, or UPS from 84° N
+/// and south of 80° S, with the easting and northing (`grid` says which: `utm` and `ups` each hold
+/// only their own); and MGRS spaced as the readout writes it and in one word, to `digits` digits
+/// (5 by default: 1 m). The place is read as `map.goToXY` reads it, and what the reading assumed
+/// is said the same way. The map doesn't move. Every key is always there, `null` where it has no
+/// value; on another body's map the Earth's grids are `null` and `note` says why.
+fn convert_position(s: &mut Session, p: &Value) -> CmdResult {
+    let digits = match p.get("digits") {
+        None | Some(Value::Null) => 5,
+        // A whole number sent as 2.0 (as Python or JavaScript may) is as good as 2.
+        Some(v) => v
+            .as_f64()
+            .filter(|d| d.fract() == 0.0 && (0.0..=5.0).contains(d))
+            .ok_or("digits must be a whole number from 0 (100 km) to 5 (1 m)")? as u8,
+    };
+    let (c, notice) = typed_place(s.map(), p, false)?;
+    // Degrees to 1e-9 (under a millimeter), so text in degrees, minutes and seconds doesn't come
+    // back as -74.00600000000001; adding 0.0 turns a -0.0 from a tiny negative into 0. Every form
+    // below is made from this one place, so they all agree on its hemisphere.
+    let nano = |v: f64| (v * 1e9).round() / 1e9 + 0.0;
+    let c = Coord::new(nano(c.x), nano(c.y));
+    // Grid meters truncated to the millimeter, as MGRS truncates: rounding could lift a southern
+    // northing a hair short of the equator to 10,000,000 m, the equator itself.
+    let mm = |v: f64| (v * 1000.0).floor() / 1000.0;
+    let mut out = json!({
+        "lon": c.x,
+        "lat": c.y,
+        "decimal": rustgis_geom::format_lonlat(c),
+        "dms": rustgis_geom::format_dms(c),
+        "grid": null,
+        "utm": null,
+        "ups": null,
+        "zone": null,
+        "band": null,
+        "hemisphere": null,
+        "easting": null,
+        "northing": null,
+        "mgrs": null,
+        "mgrsCompact": null,
+        "note": null,
+    });
+    if !s.map().body().is_earth() {
+        out["note"] = json!("UTM, UPS and MGRS are the Earth's grids and name no place on this map");
+    } else {
+        if let Some(u) = rustgis_geom::to_utm(c) {
+            out["grid"] = json!("utm");
+            out["utm"] = json!(u.to_string());
+            out["zone"] = json!(u.zone);
+            out["band"] = json!(u.band.to_string());
+            out["hemisphere"] = json!(u.hemisphere());
+            out["easting"] = json!(mm(u.easting));
+            out["northing"] = json!(mm(u.northing));
+        } else if let Some(u) = rustgis_geom::to_ups(c) {
+            out["grid"] = json!("ups");
+            out["ups"] = json!(u.to_string());
+            out["hemisphere"] = json!(u.hemisphere());
+            out["easting"] = json!(mm(u.easting));
+            out["northing"] = json!(mm(u.northing));
+        }
+        match rustgis_geom::to_mgrs(c, digits) {
+            Some(m) => {
+                out["mgrs"] = json!(m.to_string());
+                out["mgrsCompact"] = json!(m.compact());
+            }
+            // Not reached by any place on the Earth today, but said rather than left a bare null.
+            None => out["note"] = json!("no MGRS reference names this place"),
+        }
+    }
+    if let Some(said) = notice {
+        s.notify_text(said, false);
+    }
+    Ok(out)
+}
+
+pub(crate) fn go_to_xy(s: &mut Session, p: &Value) -> CmdResult {
+    // What the reading assumed is said once the map has moved there, not before a refusal.
+    let (c, notice) = typed_place(s.map(), p, true)?;
+    let (lon, lat) = (c.x, c.y);
     // A scale that can't be used is refused, not dropped.
     let scale = match p.get("scale") {
         None | Some(Value::Null) => None,
@@ -774,9 +877,26 @@ fn set_bearing(s: &mut Session, p: &Value) -> CmdResult {
 
 /// Shows or hides the map's graticule, and sets what it draws: a type or a coordinate system
 /// given shows it too. A coordinate system is for the measured grid, and refused (naming it) when
-/// it can't be read or isn't projected.
+/// it can't be read or isn't projected. Whether its lines go over the layers, and their color,
+/// are set without showing or hiding it.
 fn graticule(s: &mut Session, p: &Value) -> CmdResult {
     use rustgis_map::graticule::GraticuleType;
+    let on_top = match p.get("onTop") {
+        None => None,
+        // As for the color: null puts the default back (under the layers).
+        Some(Value::Null) => Some(false),
+        Some(v) => Some(super::bool_value(v).ok_or_else(|| format!("onTop must be true or false, not {v}"))?),
+    };
+    let color = match p.get("color") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(Value::String(c)) if c.trim().is_empty() => Some(None),
+        Some(v) => Some(Some(
+            v.as_str()
+                .and_then(rustgis_map::Rgba::from_hex)
+                .ok_or_else(|| format!("color must be #RRGGBB or #RRGGBBAA (\"\" or null for the basemap's), not {v}"))?,
+        )),
+    };
     let kind = match p.get("type") {
         None | Some(Value::Null) => None,
         Some(Value::String(t)) => Some(GraticuleType::from_name(t).ok_or_else(|| {
@@ -820,21 +940,70 @@ fn graticule(s: &mut Session, p: &Value) -> CmdResult {
         return Err(format!("crs is the measured grid's; the graticule is \"{}\" (give \"type\": \"measured\")", kind_after.code()));
     }
     let set = kind.is_some() || crs.is_some();
-    m.graticule = super::b(p, "on").unwrap_or(if set { true } else { !m.graticule });
+    // Only the lines' place or color given: shown or hidden as it was.
+    let styled = on_top.is_some() || color.is_some();
+    m.graticule = super::b(p, "on").unwrap_or(if set {
+        true
+    } else if styled {
+        m.graticule
+    } else {
+        !m.graticule
+    });
     m.graticule_type = kind_after;
     if let Some(c) = crs {
         m.graticule_crs = c;
     }
-    Ok(json!({"on": m.graticule, "type": m.graticule_type.code(), "crs": m.graticule_crs}))
+    if let Some(t) = on_top {
+        m.graticule_on_top = t;
+    }
+    if let Some(c) = color {
+        m.graticule_color = c;
+    }
+    Ok(json!({
+        "on": m.graticule,
+        "type": m.graticule_type.code(),
+        "crs": m.graticule_crs,
+        "onTop": m.graticule_on_top,
+        "color": m.graticule_color.map(rustgis_map::Rgba::hex),
+    }))
 }
 
 fn basemap(s: &mut Session, p: &Value) -> CmdResult {
     let n = s_name(p)?;
+    let basemap = Basemap::from_code(n).ok_or_else(|| format!("unknown basemap '{n}'"))?;
+    // The blank basemap's paper (#2532): absent keeps it, null takes it off (white).
+    let paper = match p.get("color") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        // Six hex digits: `from_hex` alone would take a sign in a pair ("#+F0000").
+        Some(Value::String(c)) => match c
+            .trim()
+            .strip_prefix('#')
+            .filter(|h| h.len() == 6 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+            .and_then(rustgis_map::Rgba::from_hex)
+        {
+            Some(rgba) => Some(Some(rgba)),
+            None => return Err(format!("color must be \"#RRGGBB\" (opaque), not '{c}'")),
+        },
+        Some(_) => return Err("color must be \"#RRGGBB\" or null".into()),
+    };
     let m = s.map_mut();
-    m.basemap = Basemap::from_code(n).ok_or_else(|| format!("unknown basemap '{n}'"))?;
+    m.basemap = basemap;
     // A built-in basemap takes the place of the web basemaps (tile overlays stay).
     if !super::b(p, "keepTiles").unwrap_or(false) {
         m.tiles.retain(|t| t.overlay);
+    }
+    if basemap != Basemap::Blank {
+        // Another basemap draws its own colours: the paper goes, not to be saved unseen.
+        m.paper = None;
+        if paper.is_some_and(|c| c.is_some()) {
+            let warning = format!("color is for the blank basemap only: {} keeps its own colours", basemap.label());
+            s.warn(&warning);
+            return Ok(json!({"warning": warning}));
+        }
+    } else if let Some(paper) = paper {
+        // White is the blank basemap's own paper: nothing to keep, or to require of a reader.
+        m.paper = paper.filter(|c| *c != rustgis_map::Rgba::rgb(0xFF, 0xFF, 0xFF));
     }
     Ok(Value::Null)
 }
@@ -855,6 +1024,7 @@ fn add_bookmark(s: &mut Session, p: &Value) -> CmdResult {
     let name = unique_bookmark_name(s, mi, None, &base);
     let m = s.project.maps.get_mut(mi).ok_or("no map")?;
     m.bookmarks.push(Bookmark { description, ..Bookmark::new(name.clone(), m.camera) });
+    super::say_name_cut(s, "New Bookmark", "the name given", &base, &name);
     Ok(json!({"name": name}))
 }
 
@@ -948,8 +1118,8 @@ pub fn new_bookmark_name(map: &Map) -> String {
 pub(crate) const MAX_BOOKMARK_NAME: usize = 120;
 const MAX_DESCRIPTION: usize = 2_000;
 
-/// Most bookmarks a map keeps.
-pub(crate) const MAX_BOOKMARKS: usize = 10_000;
+/// Most bookmarks a map keeps: as many as a QGIS project import reads.
+pub(crate) use rustgis_map::qgis::MAX_BOOKMARKS;
 
 /// The map's bookmarks as a bookmarks file. Places are lon/lat and metres per pixel, so they
 /// open in the same place on a map in any projection.
@@ -1086,12 +1256,47 @@ fn new_map(s: &mut Session, p: &Value) -> CmdResult {
         name = format!("{base}{i}");
     }
     let mut m = Map::new(name.clone());
-    m.basemap = s.map().basemap;
+    (m.basemap, m.paper) = (s.map().basemap, s.map().paper);
+    // Drawn in the project's coordinate system, where the active map is looking; one a map can't
+    // be drawn in is said, and the map starts in Web Mercator as without one.
+    if let Some(crs) = s.project.coordinate_system {
+        match map_projection_for(crs) {
+            Ok(projection) => {
+                (m.projection, m.camera) = (s.map().projection.clone(), s.map().camera);
+                m.camera.bearing = 0.0;
+                m.camera.pitch = 0.0;
+                m.set_projection(projection);
+            }
+            Err(why) => s.notify(format!("New map '{name}' is drawn in Web Mercator: {why}"), false),
+        }
+    }
     s.project.maps.push(m);
     s.project.active_map = s.project.maps.len() - 1;
     s.active_layer = None;
     s.table_layer = None;
     Ok(json!({"name": name}))
+}
+
+/// The map projection for a coordinate system, or why a map can't be drawn in it: a map is
+/// drawn in Web Mercator, a world projection or a projected system with an EPSG or ESRI code.
+pub fn map_projection_for(crs: rustgis_data::raster::Crs) -> Result<Projection, String> {
+    use rustgis_data::raster::Crs;
+    match crs {
+        Crs::WebMercator => Ok(Projection::WebMercator),
+        c if c.is_geographic() => {
+            Err(format!("the project's coordinate system, {}, is in degrees, and a map is drawn in a projected one", c.label()))
+        }
+        // An ESRI system is a custom one named by its code.
+        c => {
+            let code = match c {
+                Crs::Epsg(_) => c.code(),
+                _ => Some(c.label()).filter(|l| l.starts_with("ESRI:")).ok_or_else(|| {
+                    format!("a map is drawn in a system with an EPSG or ESRI code, and the project's, {}, has none", c.label())
+                })?,
+            };
+            Projection::from_code(&code).map_err(|e| format!("a map can't be drawn in the project's coordinate system, {}: {e}", c.label()))
+        }
+    }
 }
 
 /// Uses the strict map selector for operations that accept map names or null.

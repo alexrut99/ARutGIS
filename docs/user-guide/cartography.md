@@ -48,7 +48,10 @@ Select a layer in Layers and open **Style › Symbology** (or the Symbology pane
   while those stay under 40% of the values they were taken from: for a few very large values among
   many small ones (city sizes, incomes). It sets its own number of classes, at most the number
   asked. Manual keeps the bounds you type: each class's upper bound is a number to edit or take out, **Split the widest
-  class** adds one, and the field's largest value closes the last class. If no field is
+  class** adds one, and the field's largest value closes the last class. On a layer read in
+  place, whose values aren't all at hand, the field's range is unknown: the first class takes
+  every value up to its bound, and one more class takes every value past the last bound, shown
+  as "up to 4" and "more than 25" in the legend. If no field is
   chosen, the current renderer's field is kept when it is numeric; otherwise the first numeric
   field is used. If the layer has no numeric field, or the
   switch fails for another reason, the pane shows why and keeps the current renderer. When numeric
@@ -56,6 +59,30 @@ Select a layer in Layers and open **Style › Symbology** (or the Symbology pane
   A problem no field can fix, such as a definition query that keeps no features, needs fixing
   first. Closing the pane or selecting another layer drops the retry.
 - **Proportional Symbols**: point size grows with a numeric field, chosen as for Graduated Colors.
+
+A point layer of Unique Values or Graduated Colors can also be sized by a number field, its classes
+keeping their colours: **Size by**, under **Rotation**, picks the field. Choose **Use field range**
+to apply its detected bounds, or enter the **Values** drawn smallest and largest and click
+**Apply**. Explicit bounds work even when the field is constant or has no values yet. Set the
+**Sizes** they take (points), and the
+**Scaling**: **By area**, as Proportional Symbols grow, or **By radius**, the size in a straight
+line with the value, as GeoLibre and MapLibre size circles. Values past either end take that end's
+size; a feature whose value is empty or not a number keeps its class's size. A final size of zero
+draws no marker. A web style or web layer shared from it draws the classes' sizes, and says so;
+while its points are aggregated into bins, the bins are drawn instead, and that is said too.
+The legend lists the
+classes, then the smallest, middle and largest size. Switching to another renderer keeps the
+setting unused, for when you switch back; a **Size** by expression, if set, wins over it. By
+command:
+
+```text
+layer.sizeBy={"layer":"Earthquakes","field":"mag","min":2.5,"max":7.5,"minSize":4,"maxSize":36,"scaling":"radius"}
+layer.sizeBy={"layer":"Earthquakes","field":null}
+```
+
+A project, map or layer file containing this setting declares format 2 and the
+`classified-point-size` capability. Readers that cannot keep it refuse the file. Files without
+the setting don't list it; removing the last mapping removes the requirement.
 
 A point's **Shape** is a circle, square, triangle, diamond or star, or a **Character**: any
 character of an installed font, picked under **Font**, as map signs often are (a symbol font's
@@ -68,6 +95,31 @@ draws a circle, so the point still shows. By command:
 layer.marker={"layer":"Peaks","char":"▲","font":"DejaVu Sans","size":12}
 ```
 
+A marker can also be an **image**: a PNG or JPEG, picked with **Image…** at the end of **Shape**
+(choose it again for another image), or given by command as base64 (at most 2 MiB of base64 text,
+an image of about 1.5 MiB) and of at most 2048 × 2048 pixels (by area: a 4096 × 1024 strip is
+taken). Other formats, such as GIF, aren't taken: a file in another format, one too large, or one
+that doesn't decode is said in a notice and leaves the marker as it was. Each image is decoded
+once until RustGIS restarts, and kept decoded, at most 700 pixels a side: in all at most
+256 megapixels of different marker images and 128 MiB once decoded (as many images as it keeps,
+at 177 × 177 each), so that a crafted file can't hold it for minutes; past it a new image is
+refused, or drawn as a circle, with a notice saying so, until RustGIS is restarted. A vector
+export keeps a compressed copy of each image it draws, at most about as much again (some 256 MiB
+in all), which counts too and leaves less for new images.
+Its size is its width, and it is as tall as its proportions make it, as QGIS draws a raster image
+marker; the symbol's fill and outline don't show. It turns with **Rotation**, is ringed when
+selected, and is kept in the project file. A project that has one opens only in a RustGIS that
+draws them. An image that doesn't decode draws a circle, so the point still shows; opening a
+project, map file or layer file, or adding styles, says which layers and styles have such an image,
+or one too large to keep. A PDF or SVG export keeps the image once, however many points and lines
+draw it (in an SVG each place is a `<use>` of it, a clone in a vector editor). The **Layers**
+pane, its legend and the editors' previews (the symbol's, the strokes' and the fills') show the
+image too, whole within their patch and not turned:
+
+```text
+layer.marker={"layer":"Schools","image":"iVBORw0KGgo…","size":16}
+```
+
 **Rotation** turns each point's marker by the angle in a number field, in degrees clockwise
 (**Counterclockwise** for angles as mathematics counts them), as wind arrows or the signs of a
 topographic map turn. **Marks** stack several markers at a point, bottom first, in place of the
@@ -75,8 +127,9 @@ symbol's: a white disc under a sign, say, so it reads on any background. Each ma
 colour, outline, shape, size and angle, and is shifted right (**Offset right**) and down
 (**Offset down**); its offset turns with its angle, as QGIS turns it. **With the field** turns a
 mark by the rotation field too, or keeps it still. A layer with classes can have marks for one
-class of its own, as line strokes can. By command, `layer.markerRotation` and the point layer's
-strokes of markers:
+class of its own, as line strokes can. A mark can be an image too, with **Image…** under its
+**Shape** or by command, as along a line (below). By command, `layer.markerRotation` and the
+point layer's strokes of markers:
 
 ```text
 layer.markerRotation={"layer":"Signs","field":"angle","counterclockwise":true}
@@ -246,7 +299,8 @@ Widths and offsets are in points: they keep their size on screen at every scale,
 keep their coordinates. A positive offset shifts the stroke to the right of the line's direction
 (the order of its vertices) and a negative one to the left, so two copies of an edge drawn in
 opposite directions land on opposite sides of it. Strokes are saved with the project and drawn in
-exports. By command, bottom stroke first (`[]` goes back to the single stroke):
+exports, in a layout legend's swatch, and in the patches of the Layers and Symbology panes (along
+a straight line). By command, bottom stroke first (`[]` goes back to the single stroke):
 
 ```text
 layer.lineStrokes={"layer":"Rivers","strokes":[{"color":"#000000","width":11.5,"offset":8.5},{"color":"#FF8C00","width":7,"offset":8.5,"cap":"round","join":"round"}]}
@@ -272,7 +326,9 @@ A stroke can be dashed: **Dash** takes the lengths in points, dash and gap in tu
 `4 2 1 2` for dash-dot; an odd list is repeated, as in SVG), and its menu offers dashed,
 dotted, dash-dot and long-dash patterns sized to the stroke's width. Empty is a solid line. With
 flat caps the dashes are as long as given; round and square caps add half the width at each end.
-By command, `"dash"` on a stroke (`null` for solid):
+Where one round of the pattern is shorter than a pixel, or a line would be cut into more than
+100,000 dashes, the line is drawn solid in the map and in PNG and PDF exports, and a notice
+names the layer and how many lines. By command, `"dash"` on a stroke (`null` for solid):
 
 ```text
 layer.lineStrokes={"layer":"Paths","strokes":[{"color":"#000000","width":1.2,"cap":"flat","dash":[6,3]}]}
@@ -300,13 +356,20 @@ Markers take a **Shape** (a character of a font too, as for points) and a **Size
 its start), at its vertices or its inner ones, at either end or both, or in its middle. **With the
 line** turns each mark with the line's direction; the **Angle** turns it further, clockwise. Marks
 take the stroke's colour, its width as a hash mark's line (or a marker's outline, by command), and
-its offset to either side. Stack them with line strokes: a casing, a core and ticks across it. By
-command, `"markers"` on a stroke:
+its offset to either side. Stack them with line strokes: a casing, a core and ticks across it. A
+marker can also be an image, with **Image…** under **Shape** or by command (`"image"`, a PNG or
+JPEG as base64 of at most 2 MiB and 2048 × 2048 pixels): as wide as its **Size** and as tall as
+its proportions make it, turned with the line, the stroke's colour and outline left out; selected,
+each is framed. An image a file gave that can't be drawn (too large to keep, one that doesn't
+decode or that has too many pixels) shows as a circle; changing the strokes in the pane makes it
+the circle, and says so. One past what RustGIS decodes until it restarts shows as a circle and is
+kept as it is. By command, `"markers"` on a stroke:
 
 ```text
 layer.lineStrokes={"layer":"Railways","strokes":[{"color":"#333333","width":1.5},{"color":"#333333","width":1,"markers":{"mark":"hash","size":6,"interval":10}}]}
 layer.lineStrokes={"layer":"Rivers","strokes":[{"width":1},{"markers":{"mark":"triangle","size":7,"at":"middle"}}]}
 layer.lineStrokes={"layer":"Trails","strokes":[{"markers":{"mark":"character","char":"»","font":"DejaVu Sans","size":8,"interval":16}}]}
+layer.lineStrokes={"layer":"Pipelines","strokes":[{"width":1},{"markers":{"image":"iVBORw0KGgo…","size":12,"at":"middle"}}]}
 ```
 
 `"at"` takes `"interval"`, `"vertices"`, `"innerVertices"`, `"first"`, `"last"`, `"middle"` and
@@ -324,9 +387,10 @@ arrows move one up or down and the cross removes it; the top fill is listed firs
 **Solid**, **Hatch lines** (parallel lines at an **Angle**, anticlockwise from east, **Spacing**
 apart, of a **Line width**, shifted across by an **Offset**), **Markers** (a **Marker** shape
 of a **Size** on a grid **Spacing across** and **Spacing down** apart, **Rows shifted** to
-stagger them), **Gradient** or **Shapeburst**. A gradient shades each feature from its colour to
-a **Second color**: by default top to bottom, of a **Type** that runs **Linear** (straight
-across), **Radial** (in rings from its first point) or **Conical** (round its first point),
+stagger them; the marker can be an image, with **Image…** under **Marker** or by command,
+`"image"`, as along a line), **Gradient** or **Shapeburst**. A gradient shades each feature from
+its colour to a **Second color**: by default top to bottom, of a **Type** that runs **Linear**
+(straight across), **Radial** (in rings from its first point) or **Conical** (round its first point),
 turned by an **Angle** (anticlockwise), and past its points a **Spread** of **Pad** (its end
 colours), **Reflect** or **Repeat**. A shapeburst shades from its colour at the polygon's edge to
 the second colour inside, a **Distance** in, or over the **Whole shape** to the point deepest
@@ -351,8 +415,22 @@ A gradient's `from` and `to` are places in the feature's box (`[across, down]`, 
 (`[[0.5, "#RRGGBB"], …]`), held rather than blended with `"discrete": true`.
 
 `[]` goes back to the single fill (for a class, to the layer's fills). Fills draw on the CPU (on the
-globe, patterns keep to the screen rather than the map as it turns); the
-legend shows the symbol's colour.
+globe, patterns keep to the screen rather than the map as it turns). A layout legend draws
+them in the polygon's swatch, and the Layers and Symbology panes in its patch.
+
+**Hatch only flagged polygons.** Use an overlay to hatch unreliable estimates while keeping
+the choropleth's colours visible.
+
+1. On the choropleth layer, use **Select By Attributes** with `FLAG = 1`, then **Data ›
+   Selection › Make Layer From Selected Features**. Clear the selection on the original layer.
+2. Keep the new layer above the choropleth and rename it **Unreliable estimates (hatched)**.
+   In its **Symbology › Fills**, add one fill and set **Draw** to **Hatch lines**. Set the line
+   colour and spacing so the choropleth shows through. Set **Outline width** to 0 if the
+   choropleth already draws the boundaries.
+3. Include both layers in the [layout legend](layouts.md#layouts). The overlay's swatch
+   shows its hatch lines, as does its patch in the Layers pane.
+
+The new layer contains a copy of the selected features. Recreate it if the flag values change.
 
 ### Reference scale
 
@@ -600,8 +678,33 @@ Turn labels on per layer (Labeling › Labels › **Label**), then:
   in view, centred on the line and kept upright, and may run past its ends by about a letter; a
   line too short for its text, or (curved) one bending more than 25° from one character to the
   next, is left unlabelled. A text over 200 characters long is set straight rather than
-  curved. Points and polygons with these placements are labelled as automatic
-  (`labels.placement={"layer": "Rivers", "position": "curved"}`).
+  curved. Points with these placements, and polygons placed parallel, are labelled as automatic
+  (`labels.placement={"layer": "Rivers", "position": "curved"}`). A polygon placed **Curved**
+  has its label on one line along its centre line, the longest path down the middle of its part
+  in view, as a lake's or a valley's name follows its shape: from its middle, else as near it as
+  the text fits, with the polygon at least half the text's height either side and the centre
+  line trimmed short of its tips. A polygon too short, narrow or sharply bent for its text is
+  labelled as automatic (`labels.placement={"layer": "Lakes", "position": "curved"}`).
+- **Guide lines**: a point's or a polygon's label can be curved along a line of another layer,
+  as a range's name follows its ridge (ridge and valley lines from GeoLibre's
+  `ridge_and_valley_vectors`, or lines drawn by hand; the guide layer needn't be shown). Each
+  label follows the guide line with the same value in the given field as its feature has: a
+  polygon's wherever that line runs in view, a point's only when it is within the text's width.
+  With no field, or no such line the text fits along, a polygon's goes on the longest guide line
+  in view whose stretch under the text is inside it, and a point's on the nearest guide line
+  within the text's width.
+  A feature with no guide line its text fits along is labelled as without a guide
+  (`labels.placement={"layer": "Serras", "guide": {"layer": "Cumeadas", "field": "nome"}}`;
+  `"guide": null` removes it).
+- **Square to a line**: a point's label can start at the point and run square to the nearest line
+  of another layer, as the name of a bridge or a gauge reads across its river (Labeling pane ›
+  Position › Square to a line › **Perpendicular**, then the **Line layer**, a line or polygon
+  layer; the button starts on the map's first). `to` names the layer and `within` how near its
+  line must be, 1 to 500 points (20 by default); `side` runs the text `"away"` from the line, to
+  the side the point isn't on (the default), or to its `"left"` or `"right"` as the line runs. A
+  point with no line that near is labelled as automatic, and so is every point while the layer is
+  missing (`labels.placement={"layer": "Gauges", "position": "perpendicular", "to": {"layer":
+  "Rivers", "within": 30}, "side": "left"}`; another position takes it off).
 - **Other places round points**: a point's label whose place another label takes tries the
   other places round the point, corners first (above right, above left, below right, below left,
   right, left, above, below, leaving out its own), and goes to the first where
@@ -619,6 +722,27 @@ Turn labels on per layer (Labeling › Labels › **Label**), then:
   the setting does nothing there or at a position off the line. Off by default, for the same reason
   as round points, and Lock keeps the place each label took
   (`labels.placement={"layer": "Rivers", "position": "curved", "otherPositions": true}`).
+- **Names that fit their line**: a Curved label with `"fit": "auto"` is fitted to the room its
+  line gives, as hand-lettered maps name streams. A name that can't follow the line anywhere it is
+  tried is abbreviated (whole words: Córrego → Cór., Ribeirão → Rib., Rio → R., Creek → Cr.,
+  River → R., Arroyo → Ao., from a built-in English, Portuguese and Spanish list, or the class's
+  own `"abbreviations"`, which go first) and tried again; still too long, it is left out. A name
+  that takes more than a third of the line goes on its straightest stretch rather than at the
+  middle: the stretch whose ends are farthest apart for its length. With other places along the
+  line on, the next straightest stretches are its other places. On a line with room to spare
+  (more than three times the name), the letters are spread, more as the room grows, toward
+  `"stretch"` of the line (`labels.style`, 0.1 to 1; 0.6 by default), which they reach on a line
+  six times the name or longer (a `"stretch"` under a sixth spreads only once the line is more
+  than 1/`"stretch"` times the name). They are never more than three letters' widths apart, so on
+  a much longer line the name covers less. A spread name is tried at the middle first, then
+  farther along; where it can't follow the line, it is set close. A spread name follows a
+  smoother course, so it can also go where the close-set name was too bent to follow. With a
+  `repeat`, a line more than two spread names long gets the spread name at its middle and the
+  close-set name at the repeats clear of it, as a river is named along its valley and again
+  toward its ends; a shorter line keeps its repeats close-set.
+  Text size by a stream's importance (a Strahler order or a class field) comes from label classes
+  or `labels.by` `"size"` (`labels.placement={"layer": "Rivers", "position": "curved", "fit":
+  "auto", "abbreviations": {"Creek": "Ck"}}`).
 - **Lock** keeps the labelled features fixed while you pan and zoom; **Pause** stops drawing
   labels for faster navigation; **View Unplaced** draws the labels that didn't fit in red. They
   apply to the whole map, so they are on the ribbon (Labeling › Map Labeling), not in the pane.
@@ -733,6 +857,11 @@ the height or the factor. The `layer.extrusionBase` command does the same (`fiel
 `"field": null` clears the field). Turning extrusion off drops the base with it. Without a tilt,
 and on a tilted map drawn without the graphics card, extrusions are painted in the order they
 stand on the ground, so a part raised over a building behind it may be painted under it.
+
+A city model (CityJSON or CityGML) comes in standing: when it is added, the polygon layers of its
+volumes are extruded by `height` on `base_height`, and its surfaces stay flat (see
+[Data formats](data-formats.md), CityJSON). **Style › Extrusion › Type › None** turns one off, and undo
+takes the layers away with their extrusion. Other data with the same fields comes in flat.
 
 Layers that go together, such as a city model's layers, are raised at once: pick them in the
 Layers pane, right-click one of them and choose **Extrusion › None** or **By** a numeric field

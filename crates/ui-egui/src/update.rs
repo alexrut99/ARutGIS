@@ -369,9 +369,10 @@ pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
     }
     let install = *app.update.install.get_or_insert_with(this_install);
     // The download finished: on success, the app closes to install it (the Save Changes
-    // question first, when the project has some).
+    // question first, when the project has some). A worker that panicked holding the slot still
+    // leaves what it put there.
     let finished = match &app.update.get {
-        Get::Downloading { done, .. } => done.lock().ok().and_then(|mut s| s.take()),
+        Get::Downloading { done, .. } => done.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take(),
         _ => None,
     };
     match (finished, install) {

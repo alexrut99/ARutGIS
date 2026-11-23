@@ -39,8 +39,16 @@ pub const MAX_FORM_FIELD_ID: usize = 64;
 pub const MAX_FORM_CHOICES: usize = 256;
 /// The most options a dropdown (`choice`) holds.
 pub const MAX_CHOICES: usize = 1_000;
+/// Whether a kind takes its value from a list of `options`: a dropdown, or a tab row, which is the
+/// same thing drawn as a row of labels instead of a menu. They differ only in how they look, so
+/// everything from `options` to the value they keep is shared.
+#[must_use]
+pub fn picks_an_option(kind: &str) -> bool {
+    matches!(kind, "choice" | "tabs")
+}
+
 /// The widget kinds.
-pub const KINDS: &[&str] = &["text", "checkbox", "slider", "button", "tree", "form", "choice", "date", "range", "pick"];
+pub const KINDS: &[&str] = &["text", "checkbox", "slider", "button", "tree", "form", "choice", "tabs", "date", "range", "pick"];
 /// What a pick asks for on the map: a point (the default) or a box.
 pub const PICK_SHAPES: &[&str] = &["point", "box"];
 /// The longest coordinate system a pick's value names, in characters (a PROJ definition).
@@ -85,6 +93,7 @@ pub struct PanelItemDecl {
     /// A text's first contents, until the plugin sets them.
     #[serde(default)]
     pub text: String,
+    /// The command it runs: a button's when clicked; a checkbox's when ticked or cleared; a
     /// slider's or a range's when let go (or stepped); a tree's or a dropdown's when a node or an
     /// option is chosen; a form's when one of its fields changes; a date's when a date is picked;
     /// a pick's when the place is picked on the map. Optional for all but buttons, whose values
@@ -124,7 +133,7 @@ impl PanelItemDecl {
     /// Whether it has a value (a checkbox, a slider, a tree, a form, a dropdown, a date, a range or
     /// a pick).
     pub fn has_value(&self) -> bool {
-        matches!(self.kind.as_str(), "checkbox" | "slider" | "tree" | "form" | "choice" | "date" | "range" | "pick")
+        matches!(self.kind.as_str(), "checkbox" | "slider" | "tree" | "form" | "choice" | "tabs" | "date" | "range" | "pick")
     }
 
     /// Whether it is a pick that asks for a box (a pick with no shape asks for a point).
@@ -259,7 +268,7 @@ impl PanelDecl {
             let kind = item.kind.as_str();
             if !KINDS.contains(&kind) {
                 return Err(format!(
-                    "plugin.json: panel item kind '{}' isn't text, checkbox, slider, button, tree, form, choice, date, range or pick",
+                    "plugin.json: panel item kind '{}' isn't text, checkbox, slider, button, tree, form, choice, tabs, date, range or pick",
                     clip(kind, 40)
                 ));
             }
@@ -293,17 +302,17 @@ impl PanelDecl {
             if !item.ranged() && (item.min != 0 || item.max != 0 || item.steps) {
                 return Err(what("min, max and steps are for sliders and ranges"));
             }
-            if kind != "choice" && !item.options.is_empty() {
-                return Err(what("options are for dropdowns (choice)"));
+            if !picks_an_option(kind) && !item.options.is_empty() {
+                return Err(what("options are for dropdowns and tab rows (choice, tabs)"));
             }
             let mut option_changes = Dropped::default();
-            let options = if kind == "choice" { choice_options_reported(&item.options, &mut option_changes) } else { Vec::new() };
+            let options = if picks_an_option(kind) { choice_options_reported(&item.options, &mut option_changes) } else { Vec::new() };
             if let Some(notice) = option_changes.notice() {
                 return Err(what(&format!("option labels or fields are invalid: {notice}")));
             }
             if options.len() != item.options.len() {
                 return Err(what(&format!(
-                    "a dropdown's options are at most {MAX_CHOICES} objects, each with a unique id of 1 to {MAX_TREE_ID} characters"
+                    "options (dropdown or tab row) are at most {MAX_CHOICES} objects, each with a unique id of 1 to {MAX_TREE_ID} characters"
                 )));
             }
             if kind != "text" && !item.text.is_empty() {
@@ -319,11 +328,13 @@ impl PanelDecl {
                 ("range", Some(v)) if pair(v).is_some_and(|(a, b)| item.min <= a && a <= b && b <= item.max) => {}
                 ("range", Some(_)) => return Err(what("a range's default is [low, high], whole numbers from min to max, low first")),
                 ("checkbox", Some(_)) => return Err(what("a checkbox's default is true or false")),
-                ("choice", Some(Value::String(d))) if options.iter().any(|o| o.id == *d) => {}
-                ("choice", Some(_)) => return Err(what("a dropdown's default is the id of one of its options")),
+                ("choice" | "tabs", Some(Value::String(d))) if options.iter().any(|o| o.id == *d) => {}
+                ("choice" | "tabs", Some(_)) => {
+                    return Err(what("a dropdown's or a tab row's default is the id of one of its options"));
+                }
                 ("date", Some(Value::String(d))) if date(d).is_some() => {}
                 ("date", Some(_)) => return Err(what("a date's default is a date written YYYY-MM-DD")),
-                _ => return Err(what("only checkboxes, sliders, ranges, dropdowns and dates have a default")),
+                _ => return Err(what("only checkboxes, sliders, ranges, dropdowns, tab rows and dates have a default")),
             }
             if item.ranged() && (item.min > item.max || item.min < -SLIDER_LIMIT || item.max > SLIDER_LIMIT) {
                 return Err(what(&format!("a slider's or a range's min must not be above its max, both within ±{SLIDER_LIMIT}")));
@@ -342,10 +353,24 @@ fn clip(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-/// A bounded, single-line name for a diagnostic, without terminal control characters.
+/// A bounded, single-line name for a diagnostic, without terminal control characters: one longer
+/// than [`MAX_TREE_ID`] ends in `…` to show it was cut.
 fn diagnostic_name(s: &str) -> String {
-    s.chars()
-        .take(MAX_TREE_ID)
+    diagnostic_cut(s, MAX_TREE_ID)
+}
+
+/// A diagnostic name of a widget id and a suffix (`.label`): the id is cut, not the suffix.
+fn diagnostic_suffixed(id: &str, suffix: &str) -> String {
+    let room = MAX_TREE_ID.saturating_sub(suffix.chars().count()).max(1);
+    format!("{}{suffix}", diagnostic_cut(id, room))
+}
+
+/// `s` as [`diagnostic_name`] makes it, at most `n` characters with the last a `…` when cut.
+fn diagnostic_cut(s: &str, n: usize) -> String {
+    let cut = s.chars().count() > n;
+    let mut out: String = s
+        .chars()
+        .take(if cut { n.saturating_sub(1) } else { n })
         .map(|c| {
             if c.is_control() || matches!(c,'\u{061c}'|'\u{200e}'|'\u{200f}'|'\u{2028}'..='\u{202e}'|'\u{2066}'..='\u{2069}') {
                 ' '
@@ -353,7 +378,11 @@ fn diagnostic_name(s: &str) -> String {
                 c
             }
         })
-        .collect()
+        .collect();
+    if cut {
+        out.push('…');
+    }
+    out
 }
 
 /// A whole number from an integer or a float with no fraction (JSON from other languages).
@@ -479,7 +508,9 @@ const MAX_NAMED: usize = 10;
 
 /// Counts and bounded name samples for what a panel update left out or changed. `values`,
 /// `fields`, `clipped` and `label_fields` retain at most ten names, each at most 200 characters.
-/// The unlisted counters retain the remaining totals; `labels` is the full clipped-label count.
+/// The unlisted counters retain the remaining totals; `labels` is the full clipped-label count;
+/// `cut` holds each tree cut at [`MAX_TREE_NODES`] (its id and the nodes it was given), and the
+/// notice names the first ten.
 /// Use `notice()` for the complete counts and sampled locations.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Dropped {
@@ -503,7 +534,7 @@ impl Dropped {
     fn clip_label(&mut self, id: &str) {
         self.labels = self.labels.saturating_add(1);
         if self.label_fields.len() < MAX_NAMED {
-            self.label_fields.push(diagnostic_name(&format!("{id}.label")));
+            self.label_fields.push(diagnostic_suffixed(id, ".label"));
         }
     }
     /// Count every field, retaining only a bounded sample for diagnostics.
@@ -536,7 +567,7 @@ impl Dropped {
     pub fn notice(&self) -> Option<String> {
         let mut parts = Vec::new();
         if self.malformed > 0 {
-            parts.push(format!("{} panel object(s) not taken: expected an object", self.malformed));
+            parts.push(format!("{} update object(s) not taken: expected an object", self.malformed));
         }
         if self.labels > 0 {
             let names = self.label_fields.iter().map(|name| diagnostic_name(name)).collect::<Vec<_>>().join(", ");
@@ -545,8 +576,8 @@ impl Dropped {
             parts.push(format!("{} label(s) clipped to {MAX_STATE_LABEL} characters{location}", self.labels));
         }
         for (ids, unlisted, what) in [
-            (&self.fields, self.unlisted_fields, "item field(s) not taken (unknown, inapplicable, wrong type or invalid bounds)"),
-            (&self.clipped, self.unlisted_clipped, "item field(s) clipped or truncated"),
+            (&self.fields, self.unlisted_fields, "field(s) not taken (unknown, inapplicable, wrong type or invalid bounds)"),
+            (&self.clipped, self.unlisted_clipped, "field(s) clipped or truncated"),
             (
                 &self.adjusted,
                 0,
@@ -905,7 +936,7 @@ impl PanelState {
                     let (lo, hi) = (lo.clamp(d.min, max), hi.clamp(d.min, max));
                     values.insert(id.clone(), json!([lo.min(hi), hi.max(lo)]));
                 }
-                "tree" | "choice" | "date" => {
+                "tree" | "choice" | "tabs" | "date" => {
                     values.insert(id.clone(), d.default.clone().filter(Value::is_string).unwrap_or(Value::Null));
                 }
                 "form" => {
@@ -926,7 +957,7 @@ impl PanelState {
                     min: d.min,
                     max: d.max.max(d.min),
                     labels: Vec::new(),
-                    nodes: Arc::new(if d.kind == "choice" { choice_options(&d.options) } else { Vec::new() }),
+                    nodes: Arc::new(if picks_an_option(&d.kind) { choice_options(&d.options) } else { Vec::new() }),
                     cut: None,
                     fields: Arc::default(),
                 },
@@ -995,7 +1026,7 @@ impl PanelState {
             let Some(v) = given.get(id) else { continue };
             let new = match d.kind.as_str() {
                 "checkbox" => v.as_bool().map(Value::Bool),
-                "tree" | "choice" => match v {
+                "tree" | "choice" | "tabs" => match v {
                     Value::Null => Some(Value::Null),
                     Value::String(n) if self.items.get(id).is_some_and(|s| holds(&s.nodes, n)) => Some(v.clone()),
                     _ => None,
@@ -1092,11 +1123,12 @@ impl PanelState {
     /// Takes in a plugin's answer about its panel: `{"values": {...}, "items": {"id": {...}}}`.
     /// An item may set `label` (`null` for the declared one), `text`, `enabled`, `visible`, for a
     /// slider or a range `min`, `max` and `labels`, for a tree `nodes`, for a dropdown `options`,
-    /// and for a form `fields`. Unknown ids and fields, and values of the wrong type, are ignored;
+    /// and for a form `fields`. Unknown ids and fields, and values of the wrong type, aren't taken;
     /// texts are clipped, sliders' values kept within their ends, a tree's chosen node among its
     /// nodes, and a form's value to its fields (a field the plugin no longer gives is dropped; a
     /// new one starts at its default). A pick's value can only be cleared (`null`): the place is
-    /// the user's to pick. Returns the values, options and nodes left out.
+    /// the user's to pick. Everything not taken, clipped, adjusted or cut is counted and named in
+    /// the returned [`Dropped`], whose `notice` reports it.
     pub fn apply(&mut self, decl: &PanelDecl, update: &Value) -> Dropped {
         let mut dropped = Dropped::default();
         if !update.is_object() {
@@ -1128,7 +1160,7 @@ impl PanelState {
                         "text" => item.kind == "text",
                         "min" | "max" | "labels" => item.ranged(),
                         "nodes" => item.kind == "tree",
-                        "options" => item.kind == "choice",
+                        "options" => picks_an_option(&item.kind),
                         "fields" => item.kind == "form",
                         _ => false,
                     };
@@ -1155,7 +1187,7 @@ impl PanelState {
                 ("text", d.kind != "text" || u.get("text").is_none_or(Value::is_string)),
                 ("labels", !d.ranged() || u.get("labels").is_none_or(Value::is_array)),
                 ("nodes", d.kind != "tree" || u.get("nodes").is_none_or(Value::is_array)),
-                ("options", d.kind != "choice" || u.get("options").is_none_or(Value::is_array)),
+                ("options", !picks_an_option(&d.kind) || u.get("options").is_none_or(Value::is_array)),
                 ("fields", d.kind != "form" || u.get("fields").is_none_or(Value::is_array)),
             ] {
                 if !valid {
@@ -1241,7 +1273,7 @@ impl PanelState {
                     dropped.cut.push((id.to_string(), given));
                 }
             }
-            if d.kind == "choice"
+            if picks_an_option(&d.kind)
                 && let Some(options) = u.get("options").and_then(Value::as_array)
             {
                 st.nodes = Arc::new(choice_options_reported(options, &mut dropped));
@@ -1291,7 +1323,7 @@ impl PanelState {
                     let (a, b) = (a.clamp(st.min, st.max), b.clamp(st.min, st.max));
                     *v = json!([a.min(b), a.max(b)]);
                 }
-                "tree" | "choice" if v.as_str().is_some_and(|n| !holds(&st.nodes, n)) => *v = Value::Null,
+                "tree" | "choice" | "tabs" if v.as_str().is_some_and(|n| !holds(&st.nodes, n)) => *v = Value::Null,
                 "form" => {
                     // A field the plugin added starts at its default and one it removed goes
                     // with it: neither is a value changed. One kept but no longer fitting is.
@@ -1325,6 +1357,19 @@ impl PanelState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cut_diagnostic_name_ends_in_an_ellipsis_and_keeps_its_suffix() {
+        let id = "w".repeat(300);
+        let name = diagnostic_name(&id);
+        assert_eq!(name.chars().count(), MAX_TREE_ID);
+        assert!(name.ends_with('…'), "{name}");
+        let label = diagnostic_suffixed(&id, ".label");
+        assert_eq!(label.chars().count(), MAX_TREE_ID);
+        assert!(label.ends_with("….label"), "{label}");
+        assert_eq!(diagnostic_name("short"), "short");
+        assert_eq!(diagnostic_suffixed("short", ".label"), "short.label");
+    }
 
     fn form_decl() -> PanelDecl {
         PanelDecl {

@@ -9,10 +9,11 @@
 //! always in range, and read from a project through [`de_diagram`], which takes a malformed one
 //! (a hostile file) as `None` and leaves the rest of the layer reading.
 
-use rustgis_data::Dataset;
+use rustgis_data::{Dataset, GeometryType};
 use serde::{Deserialize, Serialize};
 
 use crate::color::Rgba;
+use crate::fills::{FillLayer, FillPattern};
 use crate::symbology::{LegendEntry, LineMark, LineMarkers, LineStroke, Marker, Symbol};
 
 /// The most categories one diagram lists (each is a slice or a bar).
@@ -256,9 +257,11 @@ impl DiagramSettings {
     }
 
     /// The legend rows of its categories: one per category, in draw order, its field the label.
-    /// On a line layer the colour goes in the stroke, which is what a line's swatch draws; else it
-    /// is the fill, with a white outline.
-    pub fn legend(&self, line: bool) -> Vec<LegendEntry> {
+    /// Each row carries its colour in a stack of its own, or it would take the layer's stacked
+    /// strokes or fills and every category would look the same: on a line layer one stroke, on a
+    /// polygon layer one fill (with a white outline), on a point layer its mark.
+    pub fn legend(&self, g: GeometryType) -> Vec<LegendEntry> {
+        let line = g == GeometryType::Polyline;
         self.categories
             .iter()
             .map(|c| LegendEntry {
@@ -270,7 +273,15 @@ impl DiagramSettings {
                     size: 7.0,
                     marker: Marker::Circle,
                 },
-                strokes: vec![category_mark(c.colour)],
+                strokes: match g {
+                    GeometryType::Point => vec![category_mark(c.colour)],
+                    GeometryType::Polyline => vec![LineStroke { color: Some(c.colour), width: Some(1.0), ..LineStroke::default() }],
+                    _ => Vec::new(),
+                },
+                fills: match g {
+                    GeometryType::Polygon => vec![FillLayer { color: Some(c.colour), pattern: FillPattern::Solid }],
+                    _ => Vec::new(),
+                },
                 fallback: false,
             })
             .collect()
@@ -289,19 +300,48 @@ impl DiagramLabel {
 /// not a diagram, as an empty one draws nothing. [`DiagramAudit`] counts what this changes, for
 /// the project reader's notices.
 pub fn de_diagram<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<DiagramSettings>, D::Error> {
+    read_diagram(d).map(|(kept, _)| kept)
+}
+
+/// A saved diagram as [`de_diagram`] keeps it, and what reading it so changed: the one place
+/// both read it, so the notices can't drift from what is read. A missing or null diagram is none
+/// and changes nothing.
+fn read_diagram<'de, D: serde::Deserializer<'de>>(d: D) -> Result<(Option<DiagramSettings>, DiagramAudit), D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Read {
         Settings(DiagramSettings),
         Other(serde::de::IgnoredAny),
     }
-    Ok(match Option::<Read>::deserialize(d)? {
-        Some(Read::Settings(s)) => {
-            let s = s.clamped();
-            (!s.categories.is_empty()).then_some(s)
+    let dropped = DiagramAudit { dropped: 1, ..DiagramAudit::default() };
+    let s = match Option::<Read>::deserialize(d)? {
+        None => return Ok((None, DiagramAudit::default())),
+        Some(Read::Other(_)) => return Ok((None, dropped)),
+        Some(Read::Settings(s)) => s,
+    };
+    let kept = s.clone().clamped();
+    if kept.categories.is_empty() {
+        return Ok((None, dropped));
+    }
+    let mut seen: Vec<&str> = Vec::with_capacity(kept.categories.len());
+    let mut repeated_fields = 0usize;
+    for c in &kept.categories {
+        if seen.iter().any(|f| f.eq_ignore_ascii_case(&c.field)) {
+            repeated_fields = repeated_fields.saturating_add(1);
+        } else {
+            seen.push(&c.field);
         }
-        _ => None,
-    })
+    }
+    // Any finite angle names the same direction after a whole number of turns: not counted.
+    let angle_adjusted = !s.start_angle.is_finite();
+    let adjusted = kept.size != s.size || angle_adjusted || kept.stroke_width != s.stroke_width;
+    let audit = DiagramAudit {
+        dropped: 0,
+        categories_removed: s.categories.len().saturating_sub(kept.categories.len()),
+        repeated_fields,
+        adjusted: usize::from(adjusted),
+    };
+    Ok((Some(kept), audit))
 }
 
 /// What reading a layer's saved diagram through [`de_diagram`] changed, counted without keeping
@@ -337,39 +377,7 @@ impl<'de> Deserialize<'de> for DiagramAudit {
     /// Reads a saved diagram as [`de_diagram`] does and counts what that changes; a missing or
     /// null diagram changes nothing.
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Read {
-            Settings(DiagramSettings),
-            Other(serde::de::IgnoredAny),
-        }
-        let s = match Option::<Read>::deserialize(d)? {
-            None => return Ok(DiagramAudit::default()),
-            Some(Read::Other(_)) => return Ok(DiagramAudit { dropped: 1, ..DiagramAudit::default() }),
-            Some(Read::Settings(s)) => s,
-        };
-        let kept = s.clone().clamped();
-        if kept.categories.is_empty() {
-            return Ok(DiagramAudit { dropped: 1, ..DiagramAudit::default() });
-        }
-        let mut seen: Vec<&str> = Vec::with_capacity(kept.categories.len());
-        let mut repeated_fields = 0usize;
-        for c in &kept.categories {
-            if seen.iter().any(|f| f.eq_ignore_ascii_case(&c.field)) {
-                repeated_fields = repeated_fields.saturating_add(1);
-            } else {
-                seen.push(&c.field);
-            }
-        }
-        // Any finite angle names the same direction after a whole number of turns: not counted.
-        let angle_adjusted = !s.start_angle.is_finite();
-        let adjusted = kept.size != s.size || angle_adjusted || kept.stroke_width != s.stroke_width;
-        Ok(DiagramAudit {
-            dropped: 0,
-            categories_removed: s.categories.len().saturating_sub(kept.categories.len()),
-            repeated_fields,
-            adjusted: usize::from(adjusted),
-        })
+        read_diagram(d).map(|(_, audit)| audit)
     }
 }
 
@@ -510,14 +518,26 @@ mod tests {
 
     #[test]
     fn legend_lists_one_row_per_category() {
-        let l = settings().legend(false);
+        let l = settings().legend(GeometryType::Point);
         assert_eq!(l.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), ["pop_male", "pop_female"]);
         assert_eq!(l[0].symbol.fill, CATEGORY_COLORS[0]);
         assert_eq!(l[0].symbol.stroke, Rgba::rgb(0xFF, 0xFF, 0xFF), "a white outline on a polygon or point layer");
         assert!(l.iter().all(|e| !e.fallback));
         assert_eq!(l[0].strokes[0].color, Some(CATEGORY_COLORS[0]), "its own mark, not the layer's stacked ones");
-        let line = settings().legend(true);
+        let line = settings().legend(GeometryType::Polyline);
         assert_eq!(line[0].symbol.stroke, CATEGORY_COLORS[0], "a line's swatch draws its stroke, so the colour is there");
+        assert_eq!(
+            line[0].strokes,
+            [LineStroke { color: Some(CATEGORY_COLORS[0]), width: Some(1.0), ..LineStroke::default() }],
+            "one stroke, not the layer's"
+        );
+        let area = settings().legend(GeometryType::Polygon);
+        assert_eq!(
+            area[0].fills,
+            [FillLayer { color: Some(CATEGORY_COLORS[0]), pattern: FillPattern::Solid }],
+            "one fill, not the layer's"
+        );
+        assert!(area[0].strokes.is_empty());
     }
 
     #[test]

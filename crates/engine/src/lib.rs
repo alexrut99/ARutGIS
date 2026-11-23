@@ -13,6 +13,8 @@ mod construction;
 pub mod durable;
 pub mod extensions;
 pub mod geometry_calc;
+pub mod grids;
+pub mod image_grid;
 pub mod model;
 mod notice_text;
 #[cfg(not(target_arch = "wasm32"))]
@@ -24,6 +26,7 @@ pub mod policy;
 pub mod prefs;
 pub mod project;
 mod roles;
+pub mod shape_conversion;
 pub use peer::Peer;
 pub(crate) use roles::{Document, ParamRole, Role};
 mod parameters;
@@ -38,9 +41,11 @@ pub mod sample;
 #[cfg(feature = "schema")]
 pub mod schema;
 pub mod service_logins;
+pub mod service_tokens;
 pub mod sources;
 #[cfg(test)]
 mod tests;
+mod undo_memory;
 
 pub use project::Project;
 pub use rustgis_analysis as analysis;
@@ -104,6 +109,9 @@ pub struct CommandSpec {
     /// Pure executor-owned resolution for commands whose inputs exceed the common layer selector.
     pub(crate) transition: Option<fn(&cmd::InputContext<'_>, &Value) -> Result<Option<cmd::Selection>, String>>,
     pub(crate) inputs: Option<fn(&cmd::InputContext<'_>, &Value) -> Result<cmd::Inputs, String>>,
+    /// As a step of another command, it is atomic: it runs in a [`Session::savepoint`], undone
+    /// whole when it fails, since a plugin may handle the error and go on.
+    pub(crate) atomic: bool,
 }
 
 fn always(_: &Session) -> Option<&'static str> {
@@ -142,7 +150,13 @@ impl CommandSpec {
             roles: None,
             inputs: None,
             transition: None,
+            atomic: false,
         }
+    }
+    /// See [`CommandSpec::atomic`].
+    pub(crate) const fn atomic(mut self) -> Self {
+        self.atomic = true;
+        self
     }
     /// Declares the effects reviewed for this command; omitted declarations fail closed.
     pub const fn effects(mut self, effects: policy::Effects) -> Self {
@@ -195,6 +209,19 @@ pub fn param_keys(desc: &str) -> Option<Vec<&str>> {
     let mut keys = Vec::new();
     param_entries(desc, |key, _| keys.push(key))?;
     Some(keys)
+}
+
+/// The keys of a parameter description whose value is an expression in the language of queries:
+/// those whose type is written `sql` or `expression` (`"where": sql`, `"size"?: expression|null`).
+/// A quoted type (`"where": "an SQL condition…"`) is prose for another language (a database's,
+/// a service's) and isn't one.
+pub fn expression_keys(desc: &str) -> Vec<&str> {
+    let is_expression = |p: &Param| {
+        let Some((_, ty)) = p.text.split_once(':') else { return false };
+        let word = ty.trim_start().split(|c: char| !c.is_ascii_alphabetic()).next().unwrap_or("");
+        matches!(word, "sql" | "expression")
+    };
+    param_list(desc).unwrap_or_default().into_iter().filter(|p| is_expression(p)).map(|p| p.key).collect()
 }
 
 /// One entry of a parameter description: its key, whether it may be left out, and its text as
@@ -355,6 +382,18 @@ fn param_entries<'a>(desc: &'a str, mut visit: impl FnMut(&'a str, bool)) -> Opt
 /// What a zoom to a place the map's projection doesn't reach says, once in a command.
 const BEYOND_PROJECTION: &str = "The place lies beyond what the map's projection shows, so the view wasn't moved to it.";
 
+/// What a command (#194) or a tool (#2307) says of the parameters it was given but doesn't read,
+/// so a script or an agent can correct itself: "Buffer ignores 'unit' (it reads input, distance,
+/// units, dissolve, output)". `None` when `unknown` is empty. The keys are listed as a tool's
+/// missing-parameter error lists them ([`rustgis_analysis::quoted_keys`]).
+pub(crate) fn ignored_keys(name: &str, unknown: Vec<&str>, known: &[&str]) -> Option<String> {
+    if unknown.is_empty() {
+        return None;
+    }
+    let reads = if known.is_empty() { "no parameters".to_string() } else { known.join(", ") };
+    Some(format!("{name} ignores {} (it reads {reads})", rustgis_analysis::quoted_keys(unknown)))
+}
+
 /// `s` cut to `n` characters, with `…` when cut.
 fn clip(s: &str, n: usize) -> String {
     if s.chars().count() > n { s.chars().take(n).chain(['…']).collect() } else { s.to_string() }
@@ -363,6 +402,13 @@ fn clip(s: &str, n: usize) -> String {
 /// The most layer names a notice lists (the rest counted), each cut to 80 characters: the notice
 /// stays well within what a notice keeps.
 const NAMES_SAID: usize = 5;
+
+/// The first ten of `v` for a notice, separated by `; `, then how many more.
+pub(crate) fn listed(v: &[String]) -> String {
+    let more = v.len().saturating_sub(10);
+    let shown = v.iter().take(10).cloned().collect::<Vec<_>>().join("; ");
+    if more > 0 { format!("{shown}; and {more} more") } else { shown }
+}
 
 /// Layer names for a notice: the first [`NAMES_SAID`], each clipped, and how many more.
 fn names_said(names: &[String]) -> String {
@@ -571,9 +617,15 @@ pub struct Notice {
     pub(crate) severity: rustgis_data::diagnostics::Severity,
     /// Describes a committed external write, which restoring a project cannot undo.
     written: bool,
+    loss: Option<rustgis_data::loss::LossCode>,
 }
 
 impl Notice {
+    /// The cause when this notice describes a classified data loss.
+    pub fn loss(&self) -> Option<rustgis_data::loss::LossCode> {
+        self.loss
+    }
+
     /// Deferred interface text, or `None` for an ordinary notice whose text is already final.
     /// The formatter returns logical-order text; the front end shapes the complete result once.
     /// Arguments are redacted before retention, and the result has the ordinary notice limits.
@@ -584,6 +636,7 @@ impl Notice {
 
 /// One counted, already-redacted loss, independent of the changes a command can roll back.
 struct LossNotice {
+    code: Option<rustgis_data::loss::LossCode>,
     template: &'static str,
     count: u32,
     text: rustgis_data::diagnostics::Redacted,
@@ -596,15 +649,37 @@ const MAX_LOSS_NOTICE_KINDS: usize = 32;
 
 const UNDO_LIMIT: usize = 40;
 
+/// The file a project belongs to, which undo restores with it.
+#[derive(PartialEq, Eq)]
 struct ProjectFiles {
     identity: u64,
     path: Option<PathBuf>,
     opened_package: Option<PathBuf>,
 }
 
+/// Room made in memory for an edit ([`Session::room_for_edit`]): the history steps set aside for
+/// it, and what to say or give back once it has run ([`Session::put_back`]).
+pub(crate) struct RoomMade {
+    slot: undo_memory::AsideSlot,
+    count: usize,
+    name: String,
+    /// The copy, counted as held while a background edit runs ([`undo_memory::Budget::reserve`]).
+    pub(crate) copy: u64,
+    /// The history when the steps were set aside ([`Session::history_stamp`]).
+    pub(crate) stamp: (u64, usize),
+}
+
+impl RoomMade {
+    /// The hook that frees the steps just before the edit copies, on the thread it runs on.
+    pub(crate) fn free_on_copy(&self) -> Box<dyn FnOnce()> {
+        undo_memory::free_on_copy(&self.slot)
+    }
+}
+
 /// An undo or redo step: the project before it, the layout open then, its label, who made it,
-/// and which state of the project it is ([`Session::dirty`]). File origins accompany changes
-/// made by the command only: undoing an ordinary edit must not undo a subsequent Save As.
+/// which state of the project it is ([`Session::dirty`]), and the identities of its feature
+/// allocations for memory accounting. File origins accompany changes made by the command only:
+/// undoing an ordinary edit must not undo a subsequent Save As.
 type Step = (
     Project,
     Option<usize>,
@@ -614,6 +689,7 @@ type Step = (
     Option<ProjectFiles>,
     (policy::Trust, policy::Trust, policy::Trust),
     construction::Cache,
+    undo_memory::Allocations,
 );
 
 /// What a project holds in the session beside itself: what [`Session::clear_history`] forgets
@@ -669,6 +745,8 @@ struct PutAside {
     landed_reads: Vec<(u64, LandedRead)>,
     #[cfg(not(target_arch = "wasm32"))]
     landed_windows: Vec<(u64, cmd::layer::CogWindow)>,
+    #[cfg(not(target_arch = "wasm32"))]
+    landed_pages: Vec<(u64, rustgis_data::raster::Raster)>,
     plugin_retries: Vec<cmd::plugins::fetch::Retry>,
     url_waits: cmd::plugins::fetch::UrlWaits,
     /// A style of the project still loading, which mustn't move the next one's view.
@@ -679,6 +757,33 @@ struct PutAside {
     raster_results: Vec<(u64, cmd::workflows::Made)>,
     raster_runs: Vec<(u64, policy::Continuation)>,
     edit_counts: std::collections::HashMap<u32, cmd::design::EditCounts>,
+}
+
+/// What the steps of one transaction did ([`Session::shared_step`]).
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct StepTally {
+    /// A step left a request or changed nothing ([`Session::request_only`]); the plugin bridge
+    /// reads it.
+    pub(crate) requested: bool,
+    /// A step mutated the project, or moved what [`Restored`] measures.
+    pub(crate) edited: bool,
+}
+
+/// What a step can move of what undo restores without saying so: the history state
+/// (`edit.undo`), the project replaced (`project.new`), its file (`project.saveAs`), the unsaved
+/// mark a write that changed layers leaves (Publish to Source), and which layers each map has,
+/// in what order, with the id its next layer takes. Measured before and after a shared step
+/// ([`Session::shared_step`]), not inferred from what the command may reach. The project's other
+/// contents (a layer's name, look or features) change only by commands that mutate, except its
+/// history log, where an export records itself as a log entry, not an edit, as when it runs by
+/// itself.
+#[derive(PartialEq, Eq)]
+struct Restored {
+    state: u64,
+    opened: u64,
+    files: ProjectFiles,
+    unsaved_marks: u64,
+    layers: Vec<rustgis_map::LayerMark>,
 }
 
 pub struct Session {
@@ -708,6 +813,9 @@ pub struct Session {
     /// The state last saved, or opened from its file; `None` when no state of the open project is
     /// (recovered work). The project has unsaved changes while another is open ([`Session::dirty`]).
     saved: Option<u64>,
+    /// How many times [`Session::mark_unsaved`] has run, so a save that finishes later can tell
+    /// whether a change outside undo came after the state it wrote.
+    unsaved_marks: u64,
     /// Favourite, recent and saved data sources (kept with the app's preferences, not the
     /// project).
     pub sources: sources::Sources,
@@ -740,6 +848,16 @@ pub struct Session {
     pub registry: Registry,
     /// Bumped on every change so views can cache.
     pub revision: u64,
+    /// The latest external selection admission, including changes on other layers. Mutations
+    /// conservatively record intent too; an older replay cannot advance it past newer intent.
+    pub(crate) selection_intent: u64,
+    /// External selection intent and Similar requests share one admission sequence.
+    pub(crate) selection_sequence: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// A prepared script/model's admission and its inner Similar request sequence.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) selection_admission: Option<(u64, std::sync::Arc<std::sync::atomic::AtomicU64>)>,
+    /// The last Similar request that applied selection here, independently of external intent.
+    pub(crate) similar_selected: (u64, u64),
     /// Bumped each time another project replaces this one (new, open, sample, template), however
     /// the command came (the app, an agent, a script): the interface drops what it kept for the
     /// old one.
@@ -793,11 +911,33 @@ pub struct Session {
     /// The definitions of the systems whose datum grid note this session has said
     /// ([`Session::say_grid_notes`]).
     crs_notes_said: Vec<String>,
+    /// The pairs of systems whose direct operation's grid note this session has said, so their
+    /// grids are asked for again when downloads are turned on ([`Session::want_grids_in_use`]),
+    /// as the systems in use are.
+    grid_pairs: Vec<(rustgis_data::raster::Crs, rustgis_data::raster::Crs)>,
     /// The coordinate systems a background export used on its worker thread, as (definition,
     /// label), for [`Session::say_grid_notes`].
     pub(crate) crs_used_elsewhere: Vec<(String, String)>,
     /// When the frame path last looked for missing datum grids ([`Session::say_grid_notes`]).
     grid_notes_checked: Option<web_time::Instant>,
+    /// Each layer held in another system (by instance): the geometry revision and system whose
+    /// places were last counted for [`Session::say_unplaced`], and the most it said of them, so a
+    /// version of a layer is said once, and again only for a count above it.
+    unplaced_checked: std::collections::HashMap<u64, (u64, rustgis_data::raster::Crs, Result<usize, String>)>,
+    /// The datum grids the map's layers were last projected with
+    /// ([`rustgis_data::raster::crs::grid_generation`]).
+    grid_generation: u64,
+    /// The datum grids whose download was said ([`Self::want_grids_in_use`]).
+    grid_downloads_said: std::collections::HashSet<String>,
+    /// [`crate::grids::turns`] when [`Self::grid_downloads_said`] was last cleared.
+    grid_turns: u64,
+    /// The last datum grid download news this session said ([`crate::grids::news_since`]).
+    grid_news_seen: u64,
+    /// The rebuild failures this session said ([`rustgis_data::raster::crs::rebuild_failures_since`]).
+    rebuild_failures_seen: (usize, usize),
+    /// Whether this front end has the Download Datum Grids setting (the desktop and web apps), so
+    /// a note about a missing grid can point to it; the command line and Python have none.
+    pub offers_grid_downloads: bool,
     /// The count of cloud-optimised GeoTIFF headers landed when [`Session::notice_landed_rasters`]
     /// last looked back at the dates a dated series has shown (`cog::landed_count`).
     cog_headers_seen: u64,
@@ -866,6 +1006,10 @@ pub struct Session {
     /// session's, so a step that added or moved layouts opens the right one when undone).
     undo: Vec<Step>,
     redo: Vec<Step>,
+    undo_memory: undo_memory::Budget,
+    /// History set aside for edits running in the background, and the project's state then
+    /// ([`Session::remember_room`]).
+    rooms: Vec<(undo_memory::AsideSlot, (u64, usize), usize, String)>,
     /// The key the next command's undo step merges by ([`Session::merge_undo`]), and the key the
     /// last step was made under.
     merge: Option<String>,
@@ -908,6 +1052,9 @@ pub struct Session {
     /// them (it keeps nothing between calls). Not saved with the project: a plugin's state
     /// command reads what it needs from the map when the panel opens.
     pub plugin_panels: std::collections::BTreeMap<String, rustgis_plugins::PanelState>,
+    /// Plugins whose panel state was made again from a changed declaration (the plugin updated)
+    /// since their state command last ran: the panel in view runs it again (#2550).
+    panels_to_refresh: std::collections::BTreeSet<String>,
     /// What running session plugins were last told of the map, to send them events.
     #[cfg_attr(target_arch = "wasm32", expect(dead_code, reason = "session plugins run on the desktop only"))]
     pub(crate) plugin_watch: cmd::plugins::Watch,
@@ -922,14 +1069,22 @@ pub struct Session {
     /// `layer.addDownload` too.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) landed_windows: Vec<(u64, cmd::layer::CogWindow)>,
+    /// PDF pages the app drew off the frame from a download whose bytes landed with them, waiting
+    /// for `layer.addDownload` too (#2336).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) landed_pages: Vec<(u64, rustgis_data::raster::Raster)>,
     /// Downloads a command asked for where nothing may wait (the browser): the parameters of
     /// `layer.addUrl` calls, for the front end to fetch and add (see [`Session::take_url_requests`]).
     pub(crate) url_requests: Vec<UrlRequest>,
     /// The view's box a window request being queued keeps ([`UrlRequest::view_asked`]).
     pub(crate) window_view: Option<[f64; 4]>,
     /// Set by [`Session::request_url`] for [`Session::guarded`]: the command running changed
-    /// nothing, it only left a request (a plugin's own answer can't claim that).
+    /// nothing, it only left a request (a plugin's own answer can't claim that). Also set by a move
+    /// that left everything where it was (`layout.arrange`, `layer.move`): no step to undo.
     request_only: bool,
+    /// What the commands run as steps of the transaction running now did ([`Session::shared_step`]):
+    /// the one account scripts, tasks and plugins decide their undo step from.
+    pub(crate) shared_steps: StepTally,
     /// Set by [`Session::run_leaving_downloads`]: `layer.addUrl` leaves what it would wait for
     /// to the front end ([`Session::request_url`]), as in the browser.
     leave_downloads: bool,
@@ -1005,6 +1160,9 @@ pub struct Session {
     /// ([`cmd::gp::FilesAhead`]).
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) files_ahead: Option<cmd::gp::FilesAhead>,
+    /// Original grids read by a script worker and consumed at landing without file I/O.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) grids_ahead: Option<image_grid::Ahead>,
     /// The zones' spectral means a script read on that copy, which its run here takes
     /// ([`cmd::imagery::ZonesAhead`]).
     #[cfg(not(target_arch = "wasm32"))]
@@ -1032,6 +1190,7 @@ const MAX_URL_REQUESTS: usize = 16;
 
 /// A finished tool run, held until `gp.finish` applies it.
 pub(crate) struct PendingRun {
+    pub(crate) inputs: Vec<rustgis_data::provenance::Fingerprint>,
     pub(crate) continuation: policy::Continuation,
     pub id: u64,
     pub tool: String,
@@ -1049,6 +1208,7 @@ fn strip_windows(p: &mut Project) {
     for l in p.maps.iter_mut().flat_map(|m| m.layers.iter_mut()) {
         if let Some(src) = &mut l.source {
             src.reset();
+            src.hold_read_notes();
             l.dataset.features = Vec::new().into();
             l.selection.clear();
             l.touch_geometry();
@@ -1175,20 +1335,63 @@ fn streamed_refusal(label: &str, layer: &str) -> String {
 
 /// Commands that change a layer's features or fields, refused on streamed layers (whose features
 /// are a window read again from the file as the view moves, so edits would be lost).
-fn edits_features(id: &str) -> bool {
-    const SETTINGS: &[&str] =
-        &["edit.enable", "edit.settings", "edit.status", "edit.template", "edit.snapping", "edit.snap", "edit.tools", "edit.copy"];
+pub(crate) fn edits_features(id: &str) -> bool {
+    const SETTINGS: &[&str] = &[
+        "edit.enable",
+        "edit.settings",
+        "edit.status",
+        "edit.template",
+        "edit.snapping",
+        "edit.snap",
+        "edit.tools",
+        "edit.copy",
+        "edit.elevation",
+        "edit.groundToGrid",
+    ];
     id.starts_with("edit.") && !SETTINGS.contains(&id)
 }
 
 impl Session {
-    /// Marks this thread as the desktop window owner for column statistics. Adapters with a
+    /// Attributes replayed selection effects to their initiating script/model. Ordinary
+    /// synchronous actions take a fresh admission, so later user intent wins over queued work.
+    pub(crate) fn selection_epoch(&self) -> u64 {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some((epoch, _)) = &self.selection_admission {
+            return *epoch;
+        }
+        self.selection_sequence.fetch_add(1, std::sync::atomic::Ordering::Relaxed).wrapping_add(1)
+    }
+
+    /// Marks this thread as the desktop window owner for column statistics and shape fitting. Adapters with a
     /// window use the prepared read queue; headless adapters leave this disabled.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn statistics_need_read_ahead(&mut self, enabled: bool) {
         self.statistics_window_thread = enabled.then(|| std::thread::current().id());
     }
 
+    /// Keeps the ids new features are given above those field packages hold, in every layer they
+    /// apply to ([`Project::keep_field_floors`]). Run when a project is opened, after every command
+    /// wherever it runs (`invoke`: run, landed from a copy or a read, or a line of a script or task),
+    /// after an export lands, and after Undo and Redo: a floor lives with a layer's rows, which a
+    /// reload, a renewal or a restored snapshot replaces.
+    pub(crate) fn keep_field_floors(&mut self) {
+        self.project.keep_field_floors();
+    }
+
+    /// Whether the open field package's rows are waiting to be kept on this device
+    /// (`offline.keepRows`), as opening a package from home asks.
+    pub fn field_rows_waiting(&self) -> bool {
+        self.project.given.is_some()
+    }
+
+    /// Lets go of the open field package's rows waiting to be kept, when they can't be: the rows
+    /// they share with the project are then no longer held for them.
+    pub fn forget_field_rows(&mut self) {
+        self.project.given = None;
+    }
+
+    /// Starts an independent session with fresh runtime selection intent and request order.
+    /// Prepared script copies explicitly share request order with their originating session.
     pub fn new(mut project: Project) -> Self {
         // The engine's tests never add Shapefile indexes to the user's cache (#1230).
         #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -1215,6 +1418,7 @@ impl Session {
             state: 0,
             states: 0,
             saved: Some(0),
+            unsaved_marks: 0,
             sources: sources::Sources::default(),
             extensions: extensions::State::default(),
             connections: connections::Connections::default(),
@@ -1227,6 +1431,11 @@ impl Session {
             layout_arrangements: serde_json::Map::new(),
             registry: Registry { commands: cmd::all() },
             revision: 1,
+            selection_intent: 0,
+            selection_sequence: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            selection_admission: None,
+            similar_selected: (0, 0),
             opened: 0,
             exchange: None,
             tool: Tool::Explore,
@@ -1246,8 +1455,18 @@ impl Session {
             notices_given: 0,
             beyond_said: None,
             crs_notes_said: Vec::new(),
+            grid_pairs: Vec::new(),
             crs_used_elsewhere: Vec::new(),
             grid_notes_checked: None,
+            unplaced_checked: Default::default(),
+            grid_generation: rustgis_data::raster::crs::grid_generation(),
+            grid_downloads_said: Default::default(),
+            grid_turns: 0,
+            grid_news_seen: crate::grids::news_told(),
+            // From the run's start: the transformers are the process's, so one this session uses
+            // may have failed before it began.
+            rebuild_failures_seen: (0, 0),
+            offers_grid_downloads: false,
             cog_headers_seen: 0,
             terrain_blocks_checked: Default::default(),
             table_layer: None,
@@ -1281,6 +1500,8 @@ impl Session {
             saved_over: Vec::new(),
             undo: Vec::new(),
             redo: Vec::new(),
+            undo_memory: undo_memory::Budget::default(),
+            rooms: Vec::new(),
             merge: None,
             merged: None,
             put_aside: None,
@@ -1299,18 +1520,22 @@ impl Session {
             started: Vec::new(),
             plugin_runs: Vec::new(),
             plugin_panels: std::collections::BTreeMap::new(),
+            panels_to_refresh: std::collections::BTreeSet::new(),
             plugin_watch: Default::default(),
             downloading: Vec::new(),
             downloaded: Vec::new(),
             landed_reads: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             landed_windows: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            landed_pages: Vec::new(),
             url_requests: Vec::new(),
             window_view: None,
             file_outputs: Vec::new(),
             #[cfg(test)]
             queue_gp_files: false,
             request_only: false,
+            shared_steps: StepTally::default(),
             leave_downloads: false,
             saved_secrets_opted_in: false,
             plugin_retries: Vec::new(),
@@ -1341,6 +1566,8 @@ impl Session {
             #[cfg(not(target_arch = "wasm32"))]
             files_ahead: None,
             #[cfg(not(target_arch = "wasm32"))]
+            grids_ahead: None,
+            #[cfg(not(target_arch = "wasm32"))]
             zones_ahead: None,
             #[cfg(not(target_arch = "wasm32"))]
             requests_into: None,
@@ -1353,6 +1580,8 @@ impl Session {
         for text in label_notices {
             session.notify_text(text, false);
         }
+        // A project opened: its layers keep new ids above those field packages hold.
+        session.keep_field_floors();
         session
     }
 
@@ -1414,6 +1643,19 @@ impl Session {
         let landed = self.landed(id);
         if landed {
             self.landed_windows.push((id, window));
+        }
+        landed
+    }
+
+    /// Hands over a PDF download's bytes with its page drawn off the frame
+    /// ([`cmd::raster::read_download_shared_page`]), for `layer.addDownload {"id"}` as
+    /// [`Session::download_landed`] does.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn download_landed_page(&mut self, id: u64, bytes: Vec<u8>, page: rustgis_data::raster::Raster) -> bool {
+        let landed = self.landed(id);
+        if landed {
+            self.downloaded.push((id, bytes));
+            self.landed_pages.push((id, page));
         }
         landed
     }
@@ -1586,7 +1828,14 @@ impl Session {
     pub fn run(&mut self, id: &str, params: &Value) -> CmdResult {
         self.command_epilogue(id, params, |s| {
             let native_maintenance = s.depth == 0 && s.policy_ingress_idle();
+            // Before every command, a script's or task's too: one before it in the same script may
+            // have changed a map's projection.
+            s.note_shown_systems();
             let result = s.run_command(id, params);
+            // A command may change a map's projection, or add layers to it.
+            if s.depth == 0 {
+                s.note_shown_systems();
+            }
             // Native sessions without a drawing loop recover their own failed overviews.
             // Named callers and sealed completions do not initiate unrelated maintenance.
             if native_maintenance && s.read_in_place_again() {
@@ -1597,8 +1846,10 @@ impl Session {
     }
 
     /// Shared command bookkeeping for ordinary dispatch and execution of an already pinned retry.
+    /// Trims history once after both the command and its maintenance have recorded their steps.
     pub(crate) fn command_epilogue(&mut self, id: &str, params: &Value, run: impl FnOnce(&mut Self) -> CmdResult) -> CmdResult {
         let outermost = self.depth == 0;
+        let _inputs = (outermost && self.log.on()).then(rustgis_data::provenance::Capture::start);
         #[cfg(not(target_arch = "wasm32"))]
         let _diagnostic_scope = self.requests_into.as_ref().map_or_else(|| self.diagnostics.enter(), |c| c.enter());
         #[cfg(target_arch = "wasm32")]
@@ -1607,6 +1858,7 @@ impl Session {
         // Restored on every path, including panics outside `guarded`, so a later notice is not
         // attributed to an aborted command. Mirrors the capture scope's restore-on-drop.
         let previous = std::mem::replace(&mut self.diagnostic_source, source);
+        let history_deferred = std::mem::replace(&mut self.undo_memory.deferred, true);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let notice_mark = self.notice_mark();
             if self.depth > 0 {
@@ -1625,6 +1877,7 @@ impl Session {
             let (at, start) = (project_log::now_ms(), web_time::Instant::now());
             #[cfg(not(target_arch = "wasm32"))]
             let files_before: Vec<String> = self.mbtiles_files().map(str::to_string).collect();
+            let history_before = self.history_position();
             let res = self.with_unread_bools(source, run);
             self.beyond_said = None;
             // Whichever command took its last layer away (removed, undone, the project closed):
@@ -1642,8 +1895,14 @@ impl Session {
                 cmd::terrain_blocks::after_command(self, id);
             }
             self.notice_landed_pixels();
+            if res.is_ok() && !history_deferred && self.history_position() != history_before {
+                self.trim_undo_memory();
+            }
+            // What the session holds now, for the limits that plan for what is left (#2431).
+            self.undo_memory.publish(&self.project, &self.undo, &self.redo);
             // And the coordinate systems that needed a missing datum grid, after every command.
             self.say_grid_notes();
+            self.say_unplaced();
             // A plugin's command waiting for its fetches answers `pending` and runs again when they
             // land: logged then, once. (Another command's `pending`, a download the web app makes, is
             // logged as it is asked for: nothing runs it again.)
@@ -1667,7 +1926,7 @@ impl Session {
                         };
                         let project = (project_log::kept_name(&self.title()), self.opened);
                         let e = project_log::entry(project, id, params, partial, &res, at, start.elapsed());
-                        if joins && res.is_ok() { self.log.join_last(e) } else { self.log.push(e) }
+                        self.log_entry(e, joins && res.is_ok());
                     }
                 }));
                 if logged.is_err() {
@@ -1684,6 +1943,7 @@ impl Session {
             res
         }));
         self.diagnostic_source = previous;
+        self.undo_memory.deferred = history_deferred;
         // Every top-level invocation consumes its key, even a refusal or panic before guarded.
         if outermost {
             self.merge = None;
@@ -1721,18 +1981,14 @@ impl Session {
         }
         // Keys the command does not read: said, so a script or an agent can correct itself.
         if let (Value::Object(given), Some(known)) = (params, spec.param_keys()) {
-            // Bounded: the keys come from the caller (the first few, each clipped).
-            let unknown: Vec<&String> = given.keys().filter(|k| !known.contains(&k.as_str())).collect();
-            if !unknown.is_empty() {
-                let mut said: Vec<String> = unknown.iter().take(5).map(|k| format!("'{}'", clip(k, 40))).collect();
-                if unknown.len() > 5 {
-                    said.push(format!("{} more", unknown.len() - 5));
-                }
-                let reads = if known.is_empty() { "no parameters".to_string() } else { known.join(", ") };
-                self.warn(format!("{id} ignores {} (it reads {reads})", said.join(", ")));
+            let unknown = given.keys().map(String::as_str).filter(|k| !known.contains(k)).collect();
+            if let Some(said) = ignored_keys(id, unknown, &known) {
+                self.warn(said);
             }
         }
         let active = self.active_layer;
+        // History a cancelled background edit set aside comes back before Undo is judged.
+        self.reclaim_rooms();
         let (blocked, named, table) = self.conditions(&spec, params);
         if let Some(why) = blocked {
             return Err(format!("{}: {why}", spec.label));
@@ -1745,8 +2001,23 @@ impl Session {
             return Err(e);
         }
         let op = self.authorize(id, params)?;
+        // After authorizing: an edit refused there (an Assistant call not approved) costs no history.
+        let room = match self.room_for_edit(id, mutates, label, named.or(active), table) {
+            Ok(room) => room,
+            Err(e) => {
+                self.notify(e.clone(), true);
+                return Err(e);
+            }
+        };
         self.merge = merge;
-        let res = self.invoke(op, policy::Txn::Own);
+        let res = match room.as_ref().filter(|room| room.count > 0) {
+            None => self.invoke(op, policy::Txn::Own),
+            Some(room) => {
+                let (res, _) = rustgis_data::before_rows_copy(undo_memory::free_on_copy(&room.slot), || self.invoke(op, policy::Txn::Own));
+                self.put_back(room, res.is_err(), true);
+                res
+            }
+        };
         if id == "layer.addDownload"
             && res.is_ok()
             && let Some(token) = params.get("geolibreLayer").and_then(|v| v.get("token")).and_then(serde_json::Value::as_str)
@@ -1767,8 +2038,9 @@ impl Session {
         if token.is_empty() {
             return;
         }
-        for (project, ..) in self.undo.iter_mut().chain(self.redo.iter_mut()) {
-            project.discard_import_reservation(token);
+        for step in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            step.0.discard_import_reservation(token);
+            step.8 = undo_memory::allocations(&step.0);
         }
     }
 
@@ -1785,9 +2057,12 @@ impl Session {
     /// the active one; a command that takes a standalone table is checked against the one they
     /// name.
     fn conditions(&mut self, spec: &CommandSpec, params: &Value) -> (Option<&'static str>, Option<u32>, Option<u32>) {
-        let named = match params.get("layer") {
+        // Apply carries its explicit target inside the preview, even when another layer is
+        // active. Conditions and the streamed-edit preflight must judge that same target.
+        let layer_params = if spec.id == "edit.applyShapeConversion" { params.get("preview").unwrap_or(params) } else { params };
+        let named = match layer_params.get("layer") {
             Some(serde_json::Value::Array(list)) => list.first().and_then(|v| self.layer_id(&serde_json::json!({"layer": v})).ok()),
-            Some(_) => self.layer_id(params).ok(),
+            Some(_) => self.layer_id(layer_params).ok(),
             None => None,
         };
         let active = self.active_layer;
@@ -1839,9 +2114,209 @@ impl Session {
         Some(streamed_refusal(label, &l.name))
     }
 
+    /// Makes room in memory for an edit of a layer's or table's features or fields (#2431 fix 3):
+    /// its first write copies the rows the Undo snapshot shares, so the copy has to fit beside what
+    /// the session holds. Older history is set aside ([`undo_memory::Budget::make_room`]): freed
+    /// just before the edit copies, given back by [`Session::put_back`] if it never does. An edit
+    /// that wouldn't fit even without history is refused before anything changes (`Err`).
+    ///
+    /// A command run by another (a script's, a task's step) isn't checked: its history belongs to
+    /// the command running it, which may still roll back. A table edit the desktop runs in the
+    /// background is checked when its work starts ([`cmd::reads::ReadAhead::refresh_table_input`]).
+    /// An edit of several layers is measured by the one it names, and memory outside the project
+    /// (results, caches, the clipboard) is left to the quarter [`rustgis_data::memory::usable`]
+    /// keeps free.
+    pub(crate) fn room_for_edit(
+        &mut self,
+        id: &str,
+        mutates: bool,
+        label: &str,
+        layer: Option<u32>,
+        table: Option<u32>,
+    ) -> Result<Option<RoomMade>, String> {
+        // Paste Special makes a layer of its own: it copies none of the active one's rows.
+        if !(mutates && edits_features(id)) || id == "edit.pasteSpecial" || self.depth > 0 || self.undo_memory.memory.is_none() {
+            return Ok(None);
+        }
+        let target = match table {
+            Some(t) => self.project.table(t).map(|t| (t.dataset.name.clone(), t.dataset.features.clone())),
+            None => {
+                layer.and_then(|l| self.map().layer(l)).filter(|l| !l.is_streamed()).map(|l| (l.name.clone(), l.dataset.features.clone()))
+            }
+        };
+        let Some((name, features)) = target else { return Ok(None) };
+        let copy = self.undo_memory.rows_bytes(&features);
+        drop(features);
+        match self.undo_memory.make_room(&self.project, &mut self.undo, &mut self.redo, copy) {
+            Ok(aside) => Ok(Some(RoomMade {
+                count: aside.as_ref().map_or(0, undo_memory::Aside::len),
+                slot: std::sync::Arc::new(std::sync::Mutex::new(aside)),
+                name,
+                copy,
+                stamp: self.history_stamp(),
+            })),
+            Err(undo_memory::NoRoom { free: Some(free), .. }) => Err(format!(
+                "{label}: not enough memory to edit {name}: the edit copies its rows (about {}), and the computer has only about {} free now, with about {} kept for drawing and the window, as other programs (and memory RustGIS freed but keeps for reuse) use the rest. Close other programs, or remove layers or tables you no longer need, then try again.",
+                undo_memory::size_said(copy),
+                undo_memory::size_said(free),
+                undo_memory::size_said(self.undo_memory.memory.map_or(0, rustgis_data::memory::margin)),
+            )),
+            Err(undo_memory::NoRoom { held, usable, free: None }) => Err(format!(
+                "{label}: not enough memory to edit {name}: the edit copies its rows (about {}), and the open layers and tables already hold about {} of the {} RustGIS plans to use on this computer. Remove layers or tables you no longer need, then try again.",
+                undo_memory::size_said(copy),
+                undo_memory::size_said(held),
+                undo_memory::size_said(usable),
+            )),
+        }
+    }
+
+    /// After an edit that had room made for it: steps it never needed freed (it failed, or wrote
+    /// nothing shared) go back where they were, Redo only when it failed, as success clears it.
+    /// `in_place` says the history still follows on from them: nothing else changed the project
+    /// since they were set aside (a background edit's may have); otherwise they are freed. Freed
+    /// steps are said, once a project.
+    pub(crate) fn put_back(&mut self, room: &RoomMade, failed: bool, in_place: bool) {
+        if room.count == 0 {
+            return;
+        }
+        let aside = room.slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+        // Redo goes back unless the edit made a step of its own, which cleared it.
+        let redo = in_place && (failed || room.stamp == self.history_stamp());
+        self.return_steps(aside, in_place, redo, room.count, &room.name);
+    }
+
+    /// What tells whether the history moved on since steps were set aside: the count of states
+    /// given (each edit makes one; Undo and Redo don't) and the number of steps, which trimming
+    /// lowers.
+    pub(crate) fn history_stamp(&self) -> (u64, usize) {
+        (self.states, self.undo.len() + self.redo.len())
+    }
+
+    fn return_steps(&mut self, aside: Option<undo_memory::Aside>, undo: bool, redo: bool, count: usize, name: &str) {
+        match aside {
+            // Redo not put back was cleared by the edit's own step, as it would have been anyway.
+            Some(aside) if undo => {
+                self.undo.splice(0..0, aside.undo);
+                if redo {
+                    self.redo.splice(0..0, aside.redo);
+                }
+                // The edit's own step went in while they were out.
+                let over = self.undo.len().saturating_sub(UNDO_LIMIT);
+                self.undo.drain(..over);
+            }
+            // Not taken by a copy, but the history changed while a background edit ran (another
+            // edit, Undo, trimming): the steps can't follow on from it. Rare, and not about making
+            // room, so said each time.
+            Some(_) => {
+                let template = "Undo history set aside for a background edit of {layer} is dropped ({count} Undo or Redo steps), as the Undo history changed while the edit ran.";
+                let args = [("count", count.to_string().into()), ("layer", name.to_string().into())];
+                self.notify_text(notice_text::NoticeText::format(template, args), false);
+            }
+            // Freed by the edit's copy (the hook took them).
+            None => {
+                if self.undo_memory.say_room() {
+                    let template = "Memory is nearly full: Redo steps, then the oldest Undo steps, are dropped to make room for edits ({count} before editing {layer}). An edit that still doesn't fit is refused.";
+                    let args = [("count", count.to_string().into()), ("layer", name.to_string().into())];
+                    self.notify_text(notice_text::NoticeText::format(template, args), false);
+                }
+            }
+        }
+    }
+
+    /// Keeps track of history set aside for an edit running in the background, so it can be given
+    /// back if the edit ends without landing ([`Session::reclaim_rooms`]).
+    pub(crate) fn remember_room(&mut self, room: &RoomMade) {
+        if room.count > 0 {
+            self.rooms.push((std::sync::Arc::clone(&room.slot), room.stamp, room.count, room.name.clone()));
+        }
+    }
+
+    /// Whether history is set aside for an edit running in the background.
+    pub(crate) fn room_pending(&self) -> bool {
+        !self.rooms.is_empty()
+    }
+
+    /// Forgets a background edit's set-aside history once it has landed.
+    pub(crate) fn forget_room(&mut self, room: &RoomMade) {
+        self.rooms.retain(|(slot, ..)| !std::sync::Arc::ptr_eq(slot, &room.slot));
+    }
+
+    /// Gives back the history set aside for background edits that ended without landing (cancelled,
+    /// failed to start, or their worker failed): only the session still holds it. It goes back
+    /// while nothing else changed the project since, newest set aside first so the oldest ends
+    /// in front, and is freed and said otherwise. Run before each command run by itself, and by
+    /// the desktop as its background jobs end, so Undo sees it.
+    pub fn reclaim_rooms(&mut self) {
+        if self.depth > 0 || self.rooms.is_empty() {
+            return;
+        }
+        let (ended, running): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.rooms).into_iter().partition(|(slot, ..)| std::sync::Arc::strong_count(slot) == 1);
+        self.rooms = running;
+        for (slot, stamp, count, name) in ended.into_iter().rev() {
+            let aside = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+            let in_place = stamp == self.history_stamp();
+            self.return_steps(aside, in_place, in_place, count, &name);
+        }
+    }
+
     /// Runs `f` as the command `label`: when it `mutates`, the project is snapshotted for undo
     /// and restored if `f` fails or panics.
     pub(crate) fn guarded(&mut self, label: &'static str, mutates: bool, f: impl FnOnce(&mut Session) -> CmdResult) -> CmdResult {
+        self.guarded_inner(label, mutates, true, f)
+    }
+
+    /// An atomic host-call savepoint. The enclosing plugin transaction owns Undo; a guest may
+    /// handle this call's error and still succeed, so failure must restore its changes here.
+    pub(crate) fn savepoint(&mut self, label: &'static str, f: impl FnOnce(&mut Session) -> CmdResult) -> CmdResult {
+        self.guarded_inner(label, true, false, f)
+    }
+
+    /// Runs `run`, the command `spec`, as a step of the command running now (a script's line, a
+    /// task's step, a plugin's call), in its transaction or, for an [atomic](CommandSpec::atomic)
+    /// command, in a [`Session::savepoint`] of it. It takes no undo step of its own, and what it
+    /// did goes into [`Session::shared_steps`].
+    /// Whether it left a request or changed nothing ([`Session::request_only`]) is its own, never
+    /// the enclosing command's. It edited when it mutates and didn't say it changed nothing, or
+    /// when [`Restored`] moved. A failed step that mutates counts too unless a savepoint undid it:
+    /// telling what it changed would cost a copy of each layer it touched.
+    pub(crate) fn shared_step(&mut self, spec: &CommandSpec, run: impl FnOnce(&mut Session) -> CmdResult) -> CmdResult {
+        let outer = std::mem::take(&mut self.request_only);
+        // Once the account holds an edit, nothing a step does changes it: no need to measure.
+        let before = (!self.shared_steps.edited).then(|| self.restored());
+        let step = |s: &mut Session| if spec.atomic { s.savepoint(spec.label, run) } else { run(s) };
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| step(self)));
+        let unchanged = std::mem::replace(&mut self.request_only, outer);
+        let moved = before.is_some_and(|before| self.restored() != before);
+        let kept = !spec.atomic || matches!(res, Ok(Ok(_)));
+        self.shared_steps.requested |= unchanged;
+        self.shared_steps.edited |= moved || (spec.mutates && kept && !unchanged);
+        res.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    }
+
+    fn restored(&self) -> Restored {
+        Restored {
+            state: self.state,
+            opened: self.opened,
+            files: self.project_files(),
+            unsaved_marks: self.unsaved_marks,
+            layers: self.project.maps.iter().map(Map::layer_mark).collect(),
+        }
+    }
+
+    fn project_files(&self) -> ProjectFiles {
+        ProjectFiles { identity: self.file_identity, path: self.path.clone(), opened_package: self.opened_package.clone() }
+    }
+
+    /// Commits the snapshot to history only for commands that own an Undo step. Nested guards
+    /// leave memory eviction to the enclosing transaction, which can still fail or replace them.
+    fn guarded_inner(
+        &mut self,
+        label: &'static str,
+        mutates: bool,
+        record_undo: bool,
+        f: impl FnOnce(&mut Session) -> CmdResult,
+    ) -> CmdResult {
         let snapshot = mutates.then(|| self.project.clone());
         let construction_snapshot = self.constructions.clone();
         let trust = (self.trusted_tasks.clone(), self.trusted_models.clone(), self.trusted_notebooks.clone());
@@ -1853,16 +2328,16 @@ impl Session {
         // The project's generation rolls back with it: a project opened part way (a task's step)
         // and then undone is the one before, still open.
         let opened = self.opened;
-        let files = mutates.then(|| ProjectFiles {
-            identity: self.file_identity,
-            path: self.path.clone(),
-            opened_package: self.opened_package.clone(),
-        });
+        // The layer chosen before the command comes back with the project when it fails.
+        let open_layer = self.active_layer;
+        let files = mutates.then(|| self.project_files());
         self.depth += 1;
         self.restorable += u32::from(mutates);
         // Edit counts roll back with the project when a command fails part way.
         let counts = mutates.then(|| self.edit_counts.clone());
         self.request_only = false;
+        // Its steps' account is its own: an enclosing command's comes back after it.
+        let outer_steps = std::mem::take(&mut self.shared_steps);
         self.quiet_failure = false;
         // Requests a failed command left for the front end go with its other changes.
         let requests = self.url_request_checkpoint();
@@ -1871,6 +2346,7 @@ impl Session {
         let said = self.notices_given;
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self)))
             .unwrap_or_else(|_| Err(format!("{label} failed unexpectedly; the project was restored")));
+        self.shared_steps = outer_steps;
         self.depth = self.depth.saturating_sub(1);
         self.restorable = self.restorable.saturating_sub(u32::from(mutates));
         // A command that changed a streamed layer's features or fields (not by reading its
@@ -1888,6 +2364,7 @@ impl Session {
             // [`Session::request_url`]) changed nothing: no undo step, nothing to save yet. The
             // session's own flag says so, not the answer, which a plugin's command could forge.
             (Ok(_), Some(_)) if std::mem::take(&mut self.request_only) => {}
+            (Ok(_), Some(_)) if !record_undo => {}
             (Ok(_), Some(mut snap)) => {
                 // A successful script may publish and then remove the layer. Its undo
                 // snapshot still needs the committed file record, even without a live layer
@@ -1918,11 +2395,20 @@ impl Session {
                 // A step made under the same merge key as the last one is part of it: undo goes
                 // back to before the first of them. Only a command run by itself merges.
                 let key = merge;
-                let files = files.filter(|files| {
-                    files.identity != self.file_identity || files.path != self.path || files.opened_package != self.opened_package
-                });
+                let files = files.filter(|files| *files != self.project_files());
                 if key.is_none() || key != self.merged || self.undo.is_empty() {
-                    self.undo.push((snap, open_layout, label, self.actor.clone(), state, files, trust.clone(), construction_snapshot));
+                    let allocations = undo_memory::allocations(&snap);
+                    self.undo.push((
+                        snap,
+                        open_layout,
+                        label,
+                        self.actor.clone(),
+                        state,
+                        files,
+                        trust.clone(),
+                        construction_snapshot,
+                        allocations,
+                    ));
                     if self.undo.len() > UNDO_LIMIT {
                         self.undo.remove(0);
                     }
@@ -1946,9 +2432,11 @@ impl Session {
                 // The project as it was before the command, so the layout open then, whatever
                 // the command opened on the way (a task's steps).
                 let committed = std::mem::replace(&mut self.project, snap);
+                self.keep_read_notes(&committed);
                 let sync_changed = self.keep_synced(&committed);
                 (self.trusted_tasks, self.trusted_models, self.trusted_notebooks) = trust;
                 self.active_layout = open_layout;
+                self.active_layer = open_layer;
                 // Replaced during the command: what it held beside itself (its undo history, its
                 // trust, its unsaved state) comes back with it.
                 if self.opened != opened {
@@ -2015,6 +2503,11 @@ impl Session {
         if self.depth == 0 {
             self.put_aside = None;
             self.published_syncs.clear();
+            // Frame maintenance and some policy adapters run a guard without command dispatch.
+            // Otherwise the command epilogue trims once, after any maintenance steps.
+            if res.is_ok() && !self.undo_memory.deferred && self.state != state {
+                self.trim_undo_memory();
+            }
         }
         self.fix_active_layer();
         self.revision = self.revision.wrapping_add(1);
@@ -2082,6 +2575,8 @@ impl Session {
             landed_reads: take(&mut self.landed_reads),
             #[cfg(not(target_arch = "wasm32"))]
             landed_windows: take(&mut self.landed_windows),
+            #[cfg(not(target_arch = "wasm32"))]
+            landed_pages: take(&mut self.landed_pages),
             url_requests: take(&mut self.url_requests),
             policy_work: self.take_policy_work(),
             plugin_retries: take(&mut self.plugin_retries),
@@ -2138,6 +2633,8 @@ impl Session {
             landed_reads,
             #[cfg(not(target_arch = "wasm32"))]
             landed_windows,
+            #[cfg(not(target_arch = "wasm32"))]
+            landed_pages,
             url_requests,
             policy_work,
             plugin_retries,
@@ -2170,6 +2667,7 @@ impl Session {
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.landed_windows = landed_windows;
+            self.landed_pages = landed_pages;
         }
         (self.trend_results, self.raster_results, self.raster_runs) = (trend_results, raster_results, raster_runs);
         #[cfg(feature = "geolibre")]
@@ -2189,8 +2687,35 @@ impl Session {
     /// read, and why; and what the header of a cloud-optimised GeoTIFF drawn as a tile layer
     /// leaves out, once that header lands (each date's file of a dated series as it is shown).
     /// Once for each layer's pixels, failure or file, one notice of each kind; the app calls it
-    /// each frame.
+    /// each frame. Also reports streamed vector read failures once, naming their linked file
+    /// and how to repair it when one is available.
     pub fn notice_landed_rasters(&mut self) {
+        // Datum grids that have arrived move what the map draws in a system they shift: its
+        // layers are projected again, and drawn.
+        let news = crate::grids::news_since(&mut self.grid_news_seen);
+        let missed: u64 = news.iter().map(|n| if let crate::grids::News::Missed(m) = n { *m } else { 0 }).sum();
+        if missed > 0 {
+            self.notify_text(crate::grids::missed_text(missed), false);
+        }
+        for (text, error) in crate::grids::news_texts(&news) {
+            self.notify(text, error);
+        }
+        for n in &news {
+            // Its download is over: one tried again (the setting turned on again) is said again.
+            if let crate::grids::News::Got { name, .. } | crate::grids::News::Failed { name, .. } = n {
+                self.grid_downloads_said.remove(name);
+            }
+        }
+        // A grid that arrived can bring up the next ones the systems in use need.
+        // (Missed news may have held one: asking again is harmless, downloads aren't repeated.)
+        if news.iter().any(|n| matches!(n, crate::grids::News::Got { .. } | crate::grids::News::Missed(_))) {
+            self.want_grids_in_use();
+        }
+        let grids = rustgis_data::raster::crs::grid_generation();
+        if grids != self.grid_generation {
+            self.grid_generation = grids;
+            self.touch_all_geometry();
+        }
         cmd::terrain_blocks::landed(self);
         self.notice_landed_pixels();
         // From frames too: a system a frame first drew needs no command after it to be said.
@@ -2203,8 +2728,26 @@ impl Session {
         // once, keeping the same counted notice channel as retained resident expressions.
         let mut landed = Vec::new();
         let mut dates = Vec::new();
+        let mut not_utf8 = Vec::new();
+        let mut source_errors = Vec::new();
+        let mut source_error_count = 0;
         for map in &mut self.project.maps {
             for layer in &mut map.layers {
+                // Only a source with a local file is said here; others keep their error for their own reports.
+                if let Some(source) = &mut layer.source
+                    && source.linked_file().is_some()
+                    && let Some(error) = source.error_unsaid()
+                    && let Some(path) = source.linked_file()
+                {
+                    source_error_count += 1;
+                    // Keep a moved folder's notice readable, marking every failure said.
+                    if source_errors.len() < 5 {
+                        source_errors.push(notice_text::NoticeText::format(
+                            "{name}: {path} ({error})",
+                            [("name", layer.name.clone().into()), ("path", path.to_string().into()), ("error", error.into())],
+                        ));
+                    }
+                }
                 // Values in date fields that weren't dates, once for a layer read in place.
                 let (unread, rounded) = layer.source.as_mut().map(|source| source.take_unread_dates()).unwrap_or_default();
                 if let Some(note) = unread {
@@ -2219,6 +2762,22 @@ impl Session {
                         layer.name
                     ));
                 }
+                if let Some(note) = layer.source.as_mut().and_then(|source| source.take_null_text()) {
+                    dates.push(format!(
+                        "{}: some text values written as Null in it show as empty (Load All Features counts them all); so far, {note}",
+                        layer.name
+                    ));
+                }
+                if let Some(note) = layer.source.as_mut().and_then(|source| source.take_not_utf8()) {
+                    not_utf8.push(notice_text::NoticeText::format(
+                        "{name}: so far, {note} (Load All Features counts them all)",
+                        [("name", layer.name.clone().into()), ("note", note.into())],
+                    ));
+                }
+                // What else the map's reads of it lost or assumed, each kind once for its opening.
+                for note in layer.source.as_mut().map(|source| source.take_read_notes()).unwrap_or_default() {
+                    dates.push(format!("{}: {note}", layer.name));
+                }
                 if layer.source.as_mut().is_some_and(|source| source.take_display_window()) {
                     landed.push(&*layer);
                 }
@@ -2229,6 +2788,12 @@ impl Session {
         }
         for note in dates {
             self.notify(note, false);
+        }
+        for note in not_utf8 {
+            self.notify_text(note, false);
+        }
+        if let Some(message) = notice_text::NoticeText::source_errors(source_error_count, source_errors, source_error_count) {
+            self.notify_text(message, true);
         }
         let (mut lost, mut held, mut failed, mut dropped) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for m in &mut self.project.maps {
@@ -2344,9 +2909,8 @@ impl Session {
     /// Says once a session that native HTTPS trusts the bundled Mozilla roots, as a Linux or BSD
     /// system with no CA certificates and no `SSL_CERT_FILE` or `SSL_CERT_DIR` makes it
     /// ([`rustgis_data::http::bundled_roots`]): the trust source was assumed, not the system's.
-    /// Checked after each command and each frame, as the clients are first made when a request is.
-    /// Says, once a session, that native HTTPS fell back to the bundled CA roots, if it did. Run
-    /// with [`Session::notice_landed_rasters`]; a reader of the notices that runs no command (the
+    /// Checked after each command and each frame (with [`Session::notice_landed_rasters`]), as the
+    /// clients are first made when a request is; a reader of the notices that runs no command (the
     /// Python package) calls it first, as a client made on a background thread chooses the trust.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn notice_trust(&mut self) {
@@ -2448,9 +3012,9 @@ impl Session {
     /// A notice about a file or database write that has committed, not a pending delivery or
     /// an in-memory edit. It follows the ordinary redaction, bounds and diagnostics path, but
     /// survives a later enclosing command's rollback.
-    pub(crate) fn notify_written(&mut self, text: impl Into<String>, error: bool) {
+    pub(crate) fn notify_written(&mut self, text: impl Into<String>) {
         let mark = self.notice_mark();
-        self.notify(text, error);
+        self.notify(text, false);
         self.retain_written_notices(mark);
     }
 
@@ -2493,7 +3057,12 @@ impl Session {
                 }
             }
         }
-        used.extend(codes.into_iter().filter_map(|code| rustgis_map::projection::lookup(code).ok()));
+        // A map's projection under the key its transformer is kept by (an ESRI code's catalog
+        // WKT, else its PROJ definition), as `systems_in_use` keys it too.
+        used.extend(codes.into_iter().filter_map(|code| {
+            let (def, label) = rustgis_map::projection::lookup(code).ok()?;
+            Some((rustgis_map::projection::transformer_key(&def, &label), label))
+        }));
         used.extend(systems.into_iter().filter_map(definition_and_label));
         // By definition: two typed systems share a label ("Custom PROJ").
         let mut found: Vec<(String, String)> = Vec::new();
@@ -2506,9 +3075,92 @@ impl Session {
         // and the custom systems a run keeps.
         if !found.is_empty() {
             let labels: Vec<String> = found.iter().map(|(_, label)| label.clone()).collect();
+            // What gets the grids: the downloads started for them, when the user has them on,
+            // else where to turn them on, where this front end has the setting.
+            // The systems behind them, by definition, for downloading the grids a note says are missing.
+            let behind = self.systems_in_use();
+            // And the direct operations between two systems a command converted between (an
+            // export from a layer's system to another), whose grids are their own.
+            let pairs: Vec<(&str, (rustgis_data::raster::Crs, rustgis_data::raster::Crs))> =
+                found.iter().filter_map(|(d, _)| Some((d.as_str(), rustgis_data::raster::crs::pair_systems(d)?))).collect();
+            for (_, pair) in &pairs {
+                if !self.grid_pairs.contains(pair) {
+                    self.grid_pairs.push(*pair);
+                }
+            }
+            let mut coming: Vec<String> = Vec::new();
+            let wanted = behind
+                .iter()
+                .filter(|(def, _)| found.iter().any(|(d, _)| d == def))
+                .flat_map(|(_, crs)| crate::grids::want(*crs))
+                .chain(pairs.iter().flat_map(|(_, (a, b))| crate::grids::want_between(*a, *b)));
+            for name in wanted {
+                if !coming.contains(&name) {
+                    coming.push(name);
+                }
+            }
+            let tail = if !self.offers_grid_downloads {
+                String::new()
+            } else if crate::grids::enabled() && !coming.is_empty() {
+                // Said here: not again by the next ask while they are under way.
+                self.sync_grid_turns();
+                self.grid_downloads_said.extend(coming.iter().cloned());
+                format!(". RustGIS is downloading {}", names_said(&coming))
+            } else if crate::grids::enabled()
+                && found.iter().all(|(d, _)| behind.iter().any(|(b, _)| b == d) || pairs.iter().any(|(p, _)| p == d))
+            {
+                ". None of the grids they need can be downloaded from PROJ's grid server now".to_string()
+            } else if crate::grids::enabled() {
+                // A system only a command used (an export's target): its grids aren't asked for
+                // here, so whether they can be downloaded isn't known.
+                String::new()
+            } else if behind
+                .iter()
+                .any(|(d, crs)| found.iter().any(|(f, _)| f == d) && !rustgis_data::raster::crs::missing_grids(*crs).is_empty())
+                || pairs.iter().any(|(_, (a, b))| !rustgis_data::raster::crs::missing_grids_between(*a, *b).is_empty())
+            {
+                ". Settings › Datum Grids › Download Datum Grids gets them from PROJ's grid server".to_string()
+            } else {
+                // None PROJ's grid server has openly, or a system only a command used: the
+                // setting wouldn't (or can't be known to) bring them.
+                String::new()
+            };
             // A few named, each cut, and the rest counted: the notice stays short however many.
-            self.notify(grid_notes_text(labels.len(), &names_said(&labels)), false);
+            self.notify(format!("{}{tail}", grid_notes_text(labels.len(), &names_said(&labels))), false);
             self.crs_notes_said.extend(found.into_iter().map(|(def, _)| def));
+        }
+        let (failed, shown) = rustgis_data::raster::crs::rebuild_failures_since(&mut self.rebuild_failures_seen);
+        if failed > 0 {
+            use notice_text::NoticeText;
+            // Those named, and the rest counted; with none named (all past those kept by name),
+            // the count alone. The names are the systems' own text, never translated.
+            let key = match (failed == 1, shown.is_empty(), failed > shown.len()) {
+                (true, false, _) => {
+                    "{count} coordinate system couldn't be built again with the datum grids that arrived, so it goes on without it: {names}"
+                }
+                (true, true, _) => {
+                    "{count} coordinate system couldn't be built again with the datum grids that arrived, so it goes on without it"
+                }
+                (false, true, _) => {
+                    "{count} coordinate systems couldn't be built again with the datum grids that arrived, so they go on without them"
+                }
+                (false, false, false) => {
+                    "{count} coordinate systems couldn't be built again with the datum grids that arrived, so they go on without them: {names}"
+                }
+                (false, false, true) => {
+                    "{count} coordinate systems couldn't be built again with the datum grids that arrived, so they go on without them: {names} and {more} more"
+                }
+            };
+            let text = NoticeText::format(
+                key,
+                [
+                    ("count", failed.to_string().into()),
+                    ("names", shown.join(", ").into()),
+                    ("more", (failed - shown.len()).to_string().into()),
+                ],
+            );
+            // As the note of a missing grid: it goes on as it was, places may be off.
+            self.notify_text(text, false);
         }
         if rustgis_data::raster::crs::take_unnamed_grid_need() {
             self.notify(
@@ -2518,6 +3170,69 @@ impl Session {
         }
     }
 
+    /// Forgets the downloads said when the setting was turned on again since: those dropped when
+    /// it was turned off are said again when asked for again.
+    fn sync_grid_turns(&mut self) {
+        let turns = crate::grids::turns();
+        if turns != self.grid_turns {
+            self.grid_turns = turns;
+            self.grid_downloads_said.clear();
+        }
+    }
+
+    /// The coordinate systems the project's maps are drawn in and their layers are in, with the
+    /// definitions their transformers are kept under.
+    fn systems_in_use(&self) -> Vec<(String, rustgis_data::raster::Crs)> {
+        use rustgis_data::raster::crs::definition_and_label;
+        let mut out: Vec<(String, rustgis_data::raster::Crs)> = Vec::new();
+        let mut add = |def: String, crs: rustgis_data::raster::Crs| {
+            if !out.iter().any(|(d, _)| *d == def) {
+                out.push((def, crs));
+            }
+        };
+        for map in &self.project.maps {
+            if let rustgis_map::Projection::Custom(code) = &map.projection
+                && let (Ok((def, label)), Ok(crs)) = (rustgis_map::projection::lookup(code), rustgis_data::raster::Crs::parse(code))
+            {
+                // Under the key its grid note is found by (`say_grid_notes`).
+                add(rustgis_map::projection::transformer_key(&def, &label), crs);
+            }
+            for layer in &map.layers {
+                let raster = layer.raster.as_ref().and_then(|r| r.data.as_ref()).map(|r| r.crs);
+                for crs in layer.dataset.crs.into_iter().chain(raster) {
+                    if let Some((def, _)) = definition_and_label(crs) {
+                        add(def, crs);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Starts downloading the datum grids the systems in use need, and those of the conversions
+    /// between two systems a grid note named, when downloads are on (the
+    /// setting turned on, a grid that arrived and brings up the next), and says which: the names of
+    /// those on their way.
+    pub fn want_grids_in_use(&mut self) -> Vec<String> {
+        let mut coming: Vec<String> = Vec::new();
+        let systems = self.systems_in_use().into_iter().flat_map(|(_, crs)| crate::grids::want(crs));
+        // And those of the conversions between two systems a note named.
+        let pairs = self.grid_pairs.iter().flat_map(|(a, b)| crate::grids::want_between(*a, *b));
+        for name in systems.chain(pairs).collect::<Vec<_>>() {
+            if !coming.contains(&name) {
+                coming.push(name);
+            }
+        }
+        // Each grid's download said once: a later ask finds those still coming.
+        self.sync_grid_turns();
+        let new: Vec<String> = coming.iter().filter(|n| !self.grid_downloads_said.contains(*n)).cloned().collect();
+        if !new.is_empty() {
+            self.notify(format!("Downloading the datum grids {} from PROJ's grid server", names_said(&new)), false);
+            self.grid_downloads_said.extend(new);
+        }
+        coming
+    }
+
     /// [`Self::say_grid_notes`] from the frame path: at most once a second, as a frame comes many
     /// times a second and a system first drawn waits no longer than that to be said.
     fn say_grid_notes_now_and_then(&mut self) {
@@ -2525,19 +3240,101 @@ impl Session {
         if due {
             self.grid_notes_checked = Some(web_time::Instant::now());
             self.say_grid_notes();
+            self.say_unplaced();
+        }
+    }
+
+    /// Tells every map's layers the system their map draws them straight into
+    /// ([`rustgis_map::Map::note_shown_system`]): before and after each command, and each frame
+    /// of the app, which also covers layers landing from a background read.
+    pub fn note_shown_systems(&mut self) {
+        for m in &mut self.project.maps {
+            m.note_shown_system();
+        }
+    }
+
+    /// Says, once for each version of a layer's geometry (and again for a larger count, as when the
+    /// globe leaves out what a map in the layer's own system drew), that a layer held in another
+    /// system has features with a place that can't be given in longitude/latitude, which the map
+    /// and the globe draw from: they draw such a feature without that place (a line broken there, a
+    /// point not at all), and labels' lines, block diagrams and terrain water leave it out. Or that
+    /// none of the layer is drawn, when its system can't be converted. The map counts them as it
+    /// converts the layer for drawing ([`rustgis_map::Layer::unplaced`]), so it costs nothing more,
+    /// and it is said once the layer was drawn. Layers in longitude/latitude, every layer read
+    /// today, have nothing to say.
+    fn say_unplaced(&mut self) {
+        // One notice per kind, with the count and the layers it is about.
+        let (mut features, mut partly, mut undrawn) = (0usize, Vec::new(), Vec::new());
+        let mut seen = std::collections::HashSet::new();
+        for map in &self.project.maps {
+            for l in map.layers.iter().filter(|l| !l.is_raster() && l.dataset.coord_crs() != rustgis_data::raster::Crs::LonLat) {
+                seen.insert(l.instance_id());
+                let Some(count) = l.unplaced() else { continue };
+                // Said again at the same version only for a larger count: a drawing that leaves out
+                // what an earlier one drew (the globe after the layer's own system), not each time
+                // a map's projection goes back to one already said.
+                let (rev, crs) = (l.geometry_rev(), l.dataset.coord_crs());
+                let above = |said: &Result<usize, String>| match (count, said) {
+                    (Err(_), Ok(_)) => true,
+                    (Ok(n), Ok(m)) => n > m,
+                    _ => false,
+                };
+                match self.unplaced_checked.get(&l.instance_id()) {
+                    Some((r, c, said)) if (*r, *c) == (rev, crs) && !above(said) => continue,
+                    _ => {
+                        self.unplaced_checked.insert(l.instance_id(), (rev, crs, count.clone()));
+                    }
+                }
+                let named = format!("map '{}', layer '{}'", map.name, l.name);
+                match count {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        features += n;
+                        partly.push(format!("{named} ({n})"));
+                    }
+                    Err(e) => undrawn.push(format!("{named}: {e}")),
+                }
+            }
+        }
+        // Layers gone are forgotten, so the map stays as small as the project.
+        self.unplaced_checked.retain(|id, _| seen.contains(id));
+        if features > 0 {
+            let text = format!(
+                "{features} feature(s) have a place that can't be given in longitude/latitude: the map and the globe draw them without it, and labels' lines, block diagrams and terrain water leave them out ({})",
+                listed(&partly)
+            );
+            self.notice(text, rustgis_data::diagnostics::Severity::Warning);
+        }
+        if !undrawn.is_empty() {
+            let text = format!(
+                "{} layer(s) aren't drawn, as their system can't be given in longitude/latitude: {}",
+                undrawn.len(),
+                listed(&undrawn)
+            );
+            self.notice(text, rustgis_data::diagnostics::Severity::Warning);
         }
     }
 
     /// Publishes English diagnostics and retains redacted templates for translated interfaces.
     pub(crate) fn notify_text(&mut self, text: notice_text::NoticeText, error: bool) {
+        use rustgis_data::diagnostics::Severity;
+        self.publish_text(text, if error { Severity::Error } else { Severity::Info }, None);
+    }
+
+    /// Reports loss from an in-memory result, with text for translated interfaces.
+    pub(crate) fn notify_loss(&mut self, code: rustgis_data::loss::LossCode, text: notice_text::NoticeText) {
+        self.publish_text(text, rustgis_data::diagnostics::Severity::Warning, Some(code));
+    }
+
+    /// Redacts deferred translations as well as the English notice before retaining them.
+    fn publish_text(
+        &mut self,
+        text: notice_text::NoticeText,
+        severity: rustgis_data::diagnostics::Severity,
+        loss: Option<rustgis_data::loss::LossCode>,
+    ) {
         let text = text.redacted();
-        let mark = self.notices_given;
-        self.notify(text.english(), error);
-        if self.notices_given != mark
-            && let Some(notice) = self.notices.last_mut()
-        {
-            notice.localized = Some(text);
-        }
+        self.publish_notice(Self::redacted(&text.english()), severity, self.diagnostic_source, Some(text), false, loss);
     }
 
     /// Runs `f`, then says the true/false parameters it could not read: text taken as false,
@@ -2585,59 +3382,74 @@ impl Session {
         self.notice_redacted(text, if error { Severity::Error } else { Severity::Info });
     }
 
-    /// A counted loss that remains true after rollback, unlike a completion such as "Deleted
-    /// 3 features". Only static engine templates with `{n}` and a count enter this channel.
-    /// Counts saturate and repeated templates aggregate once per outer command. Text is redacted
-    /// before retention; at most 32 kinds are held, with excess counts reported as one overflow.
-    /// Outside a guard it is published immediately. A native panic caught by `guarded` follows
-    /// the same outermost drain as an error; nothing is saved in project or undo state.
-    pub(crate) fn notify_loss(&mut self, template: &'static str, count: u32) {
-        use rustgis_data::diagnostics::{Redacted, Severity};
+    /// Counts a notice that remains true after rollback. Only static templates with `{n}` enter
+    /// this channel. Counts saturate and repeated templates with the same code aggregate once
+    /// per outer command. Unclassified advisories, such as withheld logins, have no code.
+    pub(crate) fn notify_counted(&mut self, code: Option<rustgis_data::loss::LossCode>, template: &'static str, count: u32) {
         if count == 0 {
             return;
         }
+        let text = |n: u32| Self::redacted(&template.replace("{n}", &n.to_string()));
         if self.depth == 0 {
-            self.notice_redacted(Redacted::new(&template.replace("{n}", &count.to_string())), Severity::Info);
-        } else if let Some(loss) = self.loss_notices.iter_mut().find(|loss| loss.template == template) {
+            self.publish_counted(text(count), code, self.diagnostic_source);
+        } else if let Some(loss) = self.loss_notices.iter_mut().find(|loss| loss.code == code && loss.template == template) {
             loss.count = loss.count.saturating_add(count);
-            loss.text = Redacted::new(&template.replace("{n}", &loss.count.to_string()));
+            loss.text = text(loss.count);
         } else if self.loss_notices.len() < MAX_LOSS_NOTICE_KINDS {
-            self.loss_notices.push(LossNotice {
-                template,
-                count,
-                text: Redacted::new(&template.replace("{n}", &count.to_string())),
-                source: self.diagnostic_source,
-            });
+            self.loss_notices.push(LossNotice { code, template, count, text: text(count), source: self.diagnostic_source });
         } else {
             self.loss_notice_overflow = self.loss_notice_overflow.saturating_add(count);
         }
     }
 
-    /// Publishes and empties runtime losses only after outermost success/error/panic cleanup.
-    /// Stored attribution keeps nested command losses assigned to their original command.
+    /// Publishes and empties runtime notices after outermost cleanup, retaining the originating command.
     fn flush_loss_notices(&mut self) {
-        use rustgis_data::diagnostics::Severity;
         for loss in std::mem::take(&mut self.loss_notices) {
-            self.notice_redacted_from(loss.text, Severity::Info, loss.source);
+            self.publish_counted(loss.text, loss.code, loss.source);
         }
         let overflow = std::mem::take(&mut self.loss_notice_overflow);
         if overflow > 0 {
-            self.notice(format!("{overflow} further loss(es) could not be described"), Severity::Info);
+            // The overflow count may combine several causes and unclassified advisories.
+            self.warn(format!("{overflow} further counted notice occurrence(s) could not be described"));
         }
     }
 
-    /// Uses current attribution for ordinary notices; delayed losses retain their own source.
-    fn notice_redacted(&mut self, text: rustgis_data::diagnostics::Redacted, severity: rustgis_data::diagnostics::Severity) {
-        self.notice_redacted_from(text, severity, self.diagnostic_source);
+    fn publish_counted(
+        &mut self,
+        text: rustgis_data::diagnostics::Redacted,
+        code: Option<rustgis_data::loss::LossCode>,
+        source: Option<&'static str>,
+    ) {
+        use rustgis_data::diagnostics::Severity;
+        let severity = if code.is_some() { Severity::Warning } else { Severity::Info };
+        self.publish_notice(text, severity, source, None, false, code);
     }
 
-    /// The one publication path for the ordinary notice queue and diagnostics; called once per
-    /// loss at drain, so neither sink sees a duplicate from queuing and publication.
-    fn notice_redacted_from(
+    fn notice_redacted(&mut self, text: rustgis_data::diagnostics::Redacted, severity: rustgis_data::diagnostics::Severity) {
+        self.publish_notice(text, severity, self.diagnostic_source, None, false, None);
+    }
+
+    /// Lands a worker's notice under the admitted command, preserving the notice's metadata.
+    pub(crate) fn relay_notice(&mut self, notice: Notice) {
+        self.publish_notice(
+            Self::redacted(&notice.text),
+            notice.severity,
+            self.diagnostic_source,
+            notice.localized,
+            notice.written,
+            notice.loss,
+        );
+    }
+
+    /// The one publication path for the notice queue and the diagnostic history.
+    fn publish_notice(
         &mut self,
         text: rustgis_data::diagnostics::Redacted,
         severity: rustgis_data::diagnostics::Severity,
         source: Option<&'static str>,
+        localized: Option<notice_text::NoticeText>,
+        written: bool,
+        loss: Option<rustgis_data::loss::LossCode>,
     ) {
         if severity == rustgis_data::diagnostics::Severity::Error && self.rerun_said.iter().any(|said| said == text.as_str()) {
             return;
@@ -2646,9 +3458,10 @@ impl Session {
         self.notices.push(Notice {
             text: text.into_string(),
             error: severity == rustgis_data::diagnostics::Severity::Error,
-            localized: None,
+            localized,
             severity,
-            written: false,
+            written,
+            loss,
         });
         self.notices_given += 1;
         if self.notices.len() > 200 {
@@ -2695,6 +3508,22 @@ impl Session {
         self.redo.last().map(|u| u.2)
     }
 
+    /// Labels of the retained changes leading to the current state, oldest first.
+    pub fn undo_labels(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.undo.iter().map(|step| step.2)
+    }
+
+    /// Labels of changes after the current state, in the order redo would restore them.
+    pub fn redo_labels(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.redo.iter().rev().map(|step| step.2)
+    }
+
+    /// Identifies the current position and the history it belongs to. Editing and then undoing
+    /// the edit returns to the same state with a different redo stack.
+    pub fn history_position(&self) -> (u64, u64) {
+        (self.state, self.states)
+    }
+
     /// Makes the next command's undo step part of the last one, when that was made under the same
     /// `key`: a held arrow key nudging a layout element is one step to undo, not one per repeat
     /// (and doesn't push the work before it out of the history). Any other change in between,
@@ -2707,6 +3536,7 @@ impl Session {
     /// front end setting up how the project starts): what [`PutAside`] holds, dropped.
     pub fn clear_history(&mut self) {
         drop(self.take_project_state());
+        self.undo_memory.clear();
         self.project_starts = self.project_starts.wrapping_add(1);
         // A state of its own: undo back past a replacement made within a command (a task's step)
         // reaches a state of the project before, which isn't this one's saved state.
@@ -2718,6 +3548,19 @@ impl Session {
     /// last saved or opened. Undo or redo back to that state leaves none.
     pub fn dirty(&self) -> bool {
         self.saved != Some(self.state)
+    }
+
+    /// The archive an open project came from. This is distinct from the file Save writes.
+    pub fn opened_package(&self) -> Option<&std::path::Path> {
+        self.opened_package.as_deref()
+    }
+
+    /// Restores file provenance after the shell has opened its own private recovery copy.
+    /// The restored project has unsaved work, even when its original file still exists.
+    pub fn restore_recovery_paths(&mut self, path: Option<PathBuf>, package: Option<PathBuf>) {
+        self.path = path;
+        self.opened_package = package;
+        self.mark_unsaved();
     }
 
     /// Which state the project is in: another after each change, an earlier one after undo. A
@@ -2736,6 +3579,7 @@ impl Session {
     /// crash: no state of it is in a file).
     pub fn mark_unsaved(&mut self) {
         self.saved = None;
+        self.unsaved_marks = self.unsaved_marks.wrapping_add(1);
     }
 
     /// A state of the project not given before in this session, for a change just made.
@@ -2744,9 +3588,18 @@ impl Session {
         self.states
     }
 
+    /// Applies the shared budget after a committed edit or a history move changes what the
+    /// stacks hold. Nested edits and savepoints can still roll back or discard temporary steps.
+    fn trim_undo_memory(&mut self) {
+        if let Some(notice) = self.undo_memory.trim(&self.project, &mut self.undo, &mut self.redo) {
+            self.notify_text(notice, false);
+        }
+    }
+
+    /// Restores the newest Undo snapshot, keeping the outgoing project's allocations for Redo.
     pub(crate) fn undo(&mut self) -> bool {
         self.merged = None;
-        let Some((p, saved, label, actor, state, mut files, trust, constructions)) = self.undo.pop() else { return false };
+        let Some((p, saved, label, actor, state, mut files, trust, constructions, _)) = self.undo.pop() else { return false };
         let (open, was) = (self.open_layout_name(), self.active_layout);
         let cur = std::mem::replace(&mut self.project, p);
         let old_constructions = std::mem::replace(&mut self.constructions, constructions);
@@ -2761,19 +3614,34 @@ impl Session {
             std::mem::swap(&mut self.opened_package, &mut files.opened_package);
         }
         self.project.keep_table_ids(&cur);
+        self.project.keep_field_ids(&cur);
+        self.keep_field_floors();
         self.reopen_layout(open, saved);
         self.keep_time_position(&cur);
         self.keep_tile_pick(&cur);
         self.keep_headers_said(&cur);
+        self.keep_read_notes(&cur);
         self.keep_synced(&cur);
-        self.redo.push((cur, was, label, actor, std::mem::replace(&mut self.state, state), files, old_trust, old_constructions));
+        let allocations = undo_memory::allocations(&cur);
+        self.redo.push((
+            cur,
+            was,
+            label,
+            actor,
+            std::mem::replace(&mut self.state, state),
+            files,
+            old_trust,
+            old_constructions,
+            allocations,
+        ));
         self.touch_all_geometry();
         true
     }
 
+    /// Restores the nearest Redo snapshot, keeping the outgoing project's allocations for Undo.
     pub(crate) fn redo(&mut self) -> bool {
         self.merged = None;
-        let Some((p, saved, label, actor, state, mut files, trust, constructions)) = self.redo.pop() else { return false };
+        let Some((p, saved, label, actor, state, mut files, trust, constructions, _)) = self.redo.pop() else { return false };
         let (open, was) = (self.open_layout_name(), self.active_layout);
         let cur = std::mem::replace(&mut self.project, p);
         let old_constructions = std::mem::replace(&mut self.constructions, constructions);
@@ -2788,12 +3656,26 @@ impl Session {
             std::mem::swap(&mut self.opened_package, &mut files.opened_package);
         }
         self.project.keep_table_ids(&cur);
+        self.project.keep_field_ids(&cur);
+        self.keep_field_floors();
         self.reopen_layout(open, saved);
         self.keep_time_position(&cur);
         self.keep_tile_pick(&cur);
         self.keep_headers_said(&cur);
+        self.keep_read_notes(&cur);
         self.keep_synced(&cur);
-        self.undo.push((cur, was, label, actor, std::mem::replace(&mut self.state, state), files, old_trust, old_constructions));
+        let allocations = undo_memory::allocations(&cur);
+        self.undo.push((
+            cur,
+            was,
+            label,
+            actor,
+            std::mem::replace(&mut self.state, state),
+            files,
+            old_trust,
+            old_constructions,
+            allocations,
+        ));
         self.touch_all_geometry();
         true
     }
@@ -2912,6 +3794,20 @@ impl Session {
                         t.headers_shown.push(address.clone());
                     }
                 }
+            }
+        }
+    }
+
+    /// After undo, redo or a rollback swaps the project: a streamed layer still on the same opening
+    /// of its source keeps what its reads have said ([`SourceLayer::keep_read_notes`]), so a note
+    /// isn't said again because a project from before it was said came back.
+    ///
+    /// [`SourceLayer::keep_read_notes`]: rustgis_map::source::SourceLayer::keep_read_notes
+    fn keep_read_notes(&mut self, before: &Project) {
+        for l in self.project.maps.iter_mut().flat_map(|m| m.layers.iter_mut()) {
+            let live = before.maps.iter().flat_map(|m| &m.layers).find(|o| o.instance_id() == l.instance_id());
+            if let (Some(source), Some(live)) = (l.source.as_mut(), live.and_then(|o| o.source.as_ref())) {
+                source.keep_read_notes(live);
             }
         }
     }

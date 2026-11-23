@@ -9,6 +9,7 @@ use rustgis_map::PopupMode;
 use serde_json::{Value, json};
 
 use super::{f, need_layer, need_layers, need_selection, ps};
+use crate::notice_text::NoticeText;
 use crate::{CmdResult, CommandSpec as C, Session};
 
 #[path = "select_info.rs"]
@@ -18,7 +19,7 @@ pub fn commands() -> Vec<C> {
     let mut commands = vec![
         C::new("select.byAttributes", "Select By Attributes", "Home › Selection", by_attributes).roles(&[]).effects(crate::policy::Effects::NONE)
             .when(need_layers)
-            .params(r#"{"layer"?, "where": "SQL clause", "mode"?: "new"|"add"|"remove"|"subset"}"#),
+            .params(r#"{"layer"?, "where": sql, "mode"?: "new"|"add"|"remove"|"subset"}"#),
         C::new("select.byRect", "Select (rectangle)", "Home › Selection", by_rect).roles(&[]).effects(crate::policy::Effects::NONE)
             .params(r#"{"minLon", "minLat", "maxLon", "maxLat", "mode"?: "new"|"add"|"remove"}"#),
         C::new("select.byPolygon", "Select by Polygon", "Home › Selection", by_polygon).roles(&[]).effects(crate::policy::Effects::NONE)
@@ -38,7 +39,7 @@ pub fn commands() -> Vec<C> {
         }).roles(&[]).effects(crate::policy::Effects::NONE)
         .params(r#"{"layer"?, "rows": [number], "mode"?}"#),
         C::new("select.clear", "Clear", "Home › Selection", |s, _| {
-            s.map_mut().clear_selection();
+            clear(s);
             Ok(Value::Null)
         }).roles(&[]).effects(crate::policy::Effects::NONE)
         .when(need_selection),
@@ -74,6 +75,11 @@ pub fn commands() -> Vec<C> {
                 return Err("nothing is selected in this layer".into());
             }
             let mut ds = rustgis_data::Dataset::new(format!("{} selection", l.name), l.geometry_type(), l.dataset.fields.clone());
+            // Its coordinates as they are, held in the layer's system, which it exports in.
+            ds.held_in = l.dataset.held_in;
+            ds.crs = l.dataset.crs;
+            // What the import lost, Define Projection can't recover in the copy either.
+            ds.crs_incomplete = l.dataset.crs_incomplete;
             for r in &l.selection {
                 if let Some(f) = l.dataset.features.get(*r) {
                     ds.push(f.geometry.clone(), f.attrs.clone());
@@ -84,7 +90,7 @@ pub fn commands() -> Vec<C> {
         }).roles(&[]).effects(crate::policy::Effects::NONE).params(r#"{"layer"?: name|id (default: the active layer, which need not be the layer last selected in)}"#)
         .when(need_selection),
         C::new("identify", "Identify", "Home › Inspect", identify).roles(&[]).effects(crate::policy::Effects::NONE).view().params(
-            r#"{"lon", "lat", "tolerancePx"?, "mode"?: "topmost"|"visible"|"selectable"|"selectedInContents"|"none" (the map's pop-up mode when omitted; the mode picks the layers, and every feature under the point in them, up to 100, is in "results"; topmost and visible take vector tile layers' features too, with "tileLayer" and "sourceLayer", from the tiles drawn there: one not loaded yet is asked for, and its features come on a later identify; and they list in "featureInfo" the WMS layers drawn there to ask, each {tileLayer, url} (its GetFeatureInfo request) or {tileLayer, capabilities} (its service's, when the layer doesn't know its request): identify.featureInfo reads what they answer; selectedInContents does both for the tile layer picked in the Layers pane (map.selectTiles) alone, whichever it is, a basemap or MapLibre style too)}"#,
+            r#"{"lon", "lat", "tolerancePx"?, "mode"?: "topmost"|"visible"|"selectable"|"selectedInContents"|"none" (the map's pop-up mode when omitted; the mode picks the layers, and every feature under the point in them, up to 100, is in "results"; topmost and visible take each raster's pixel there too (with "raster": true), ranked with the features by the drawing order, so a raster drawn over a polygon answers for it (a pixel found alone answers without "results"), while selectable and selectedInContents give the topmost raster's pixel only when no feature is found; topmost and visible take vector tile layers' features too, with "tileLayer" and "sourceLayer", from the tiles drawn there: one not loaded yet is asked for, and its features come on a later identify; and they list in "featureInfo" the WMS layers drawn there to ask, each {tileLayer, url} (its GetFeatureInfo request) or {tileLayer, capabilities} (its service's, when the layer doesn't know its request): identify.featureInfo reads what they answer; selectedInContents does both for the tile layer picked in the Layers pane (map.selectTiles) alone, whichever it is, a basemap or MapLibre style too)}"#,
         ),
         C::new("map.popupMode", "Pop-up Mode", "Home › Navigate", popup_mode).roles(&[]).effects(crate::policy::Effects::NONE)
             .params(r#"{"mode": "topmost"|"visible"|"selectable"|"selectedInContents"|"none"}"#),
@@ -122,8 +128,26 @@ fn area_mode(p: &Value) -> Result<Mode, String> {
     }
 }
 
+/// Records an external clear without a command/Undo step, as pop-up browsing requires.
+pub fn clear(s: &mut Session) {
+    s.map_mut().clear_selection();
+    s.selection_intent = s.selection_intent.max(s.selection_epoch());
+}
+
 /// Applies a selection to one layer (New clears the others too, like desktop GIS).
 pub fn set(s: &mut Session, id: u32, rows: Vec<usize>, m: Mode) {
+    s.selection_intent = s.selection_intent.max(s.selection_epoch());
+    apply(s, id, rows, m);
+}
+
+/// A queued Similar result must not invalidate the selection intent of later queued requests.
+/// External selection commands still advance the generation through `set`.
+pub(super) fn set_similar_result(s: &mut Session, id: u32, rows: Vec<usize>) {
+    apply(s, id, rows, Mode::New);
+}
+
+/// Applies either external intent or a validated result with the same row bounds and modes.
+fn apply(s: &mut Session, id: u32, rows: Vec<usize>, m: Mode) {
     if m == Mode::New {
         s.map_mut().clear_selection();
     }
@@ -157,10 +181,14 @@ fn by_attributes(s: &mut Session, p: &Value) -> CmdResult {
     rows.retain(|r| drawn.get(*r).is_none_or(|d| *d));
     let n = rows.len();
     set(s, id, rows, mode(p));
-    s.notify(format!("{n} features selected"), false);
+    // Templates, so a translated interface says them in its language (the CLI keeps English).
+    s.notify_text(NoticeText::format("{n} features selected", [("n", n.to_string().into())]), false);
     if matched > n {
-        s.notify(
-            format!("{} more features match but aren't drawn (the layer's definition query, time window or display filters hide them), and aren't selected", matched - n),
+        s.notify_text(
+            NoticeText::format(
+                "{n} more features match but aren't drawn (the layer's definition query, time window or display filters hide them), and aren't selected",
+                [("n", (matched - n).to_string().into())],
+            ),
             false,
         );
     }
@@ -180,7 +208,9 @@ fn by_rect(s: &mut Session, p: &Value) -> CmdResult {
     if !matches!(s.map().flat(), rustgis_map::projection::Flat::Mercator) {
         for (id, rows) in &mut hits {
             if let Some(l) = s.map().layer(*id) {
-                rows.retain(|r| l.dataset.features.get(*r).and_then(|f| f.geometry.as_ref()).is_some_and(|g| g.extent().intersects(&ll)));
+                // The rectangle in the layer's own coordinates, as its features' boxes are.
+                let own = l.dataset.extent_from_lonlat(&ll);
+                rows.retain(|r| l.dataset.features.get(*r).and_then(|f| f.geometry.as_ref()).is_some_and(|g| g.extent().intersects(&own)));
             }
         }
         hits.retain(|(_, rows)| !rows.is_empty());
@@ -359,13 +389,22 @@ fn identify(s: &mut Session, p: &Value) -> CmdResult {
     };
     let map = s.map();
     // Features and the vector tile layers' features (tiles are never selectable), in the drawing
-    // order of all the map's layers (#808): topmost takes the layer drawn on top of those with any.
-    let order = map.stack();
+    // order of all the map's layers (#808), a higher depth priority on top as drawn: topmost takes
+    // the layer drawn on top of those with any.
+    let order = map.draw_order();
     let place = |d: rustgis_map::Drawn| order.iter().position(|o| *o == d).unwrap_or(usize::MAX);
     let mut ranked: Vec<(usize, Value)> = hits
         .iter()
         .filter_map(|(id, row)| Some((place(rustgis_map::Drawn::Layer(map.layer_index(*id)?)), feature_json(map, *id, *row)?)))
         .collect();
+    // And each raster's pixel there, ranked with the features by its place in the drawing order
+    // (#2488): a raster drawn over a polygon is what a click on it shows, and one under it is
+    // listed after it. Selectable and Selected in Layers pick layers by another rule, and keep a
+    // raster's pixel for when no feature was found.
+    if matches!(mode, PopupMode::Topmost | PopupMode::Visible) {
+        let pixels = super::raster::pixels_at(s, lon, lat, keep, first_layer);
+        ranked.extend(pixels.into_iter().map(|(i, v)| (place(rustgis_map::Drawn::Layer(i)), v)));
+    }
     // A tile layer picked in the Layers pane is the one Selected in Layers asks (no map layer is
     // active then, so none of theirs was found).
     let picked = if mode == PopupMode::SelectedInContents { s.selected_tile() } else { None };
@@ -399,18 +438,21 @@ fn identify(s: &mut Session, p: &Value) -> CmdResult {
         // Only the tile layer picked is asked, not a raster's pixel.
         None if picked.is_some() && asks.is_empty() => return Ok(Value::Null),
         None if picked.is_some() => json!({}),
-        // No feature: report the pixel of the topmost raster instead.
+        // Nothing found (Topmost and Visible looked at the rasters already): Selectable and
+        // Selected in Layers report the pixel of the topmost raster instead.
         None if mode == PopupMode::SelectedInContents && active.and_then(|id| map.layer(id)).is_some_and(|l| !l.is_raster()) => {
             return Ok(Value::Null);
         }
-        None => match super::raster::identify(s, lon, lat) {
+        // (Topmost and Visible found no pixel either: no raster has one there.)
+        None => match if matches!(mode, PopupMode::Topmost | PopupMode::Visible) { None } else { super::raster::identify(s, lon, lat) } {
             Some(pixel) => pixel,
             None if asks.is_empty() => return Ok(Value::Null),
             None => json!({}),
         },
     };
     if let Value::Object(o) = &mut out {
-        if !results.is_empty() {
+        // A raster's pixel found alone answers as before, without a list.
+        if results.len() > 1 || results.first().is_some_and(|r| r["raster"] != true) {
             o.insert("results".into(), Value::Array(results));
         }
         if !asks.is_empty() {
@@ -450,7 +492,8 @@ fn tile_features(
     let map = s.map();
     let Some((at, m_per_px)) = info::merc_at(s, lon, lat).filter(|_| limit > 0) else { return Vec::new() };
     let mut out = Vec::new();
-    for (i, t) in map.tiles.iter().enumerate() {
+    // Top first as drawn (#2488): topmost reads the one drawn on top of those with any.
+    for (i, t) in map.tiles_in_draw_order().into_iter().filter_map(|i| Some((i, map.tiles.get(i)?))) {
         let data = picked.is_none_or(|p| p == i) && lists_features(t, picked.is_some());
         if !data || !t.draws() || t.opacity <= 0.0 || !keep(i) {
             continue;

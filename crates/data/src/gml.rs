@@ -37,6 +37,17 @@ fn text_of(n: &Node) -> String {
     n.children().filter(|t| t.is_text()).filter_map(|t| t.text()).collect::<String>()
 }
 
+/// A property's text without the indentation an XML writer lays it out with: a run of whitespace
+/// at either end is dropped when it holds a line break, as layout does; spaces on one line (`' R-1'`)
+/// are the value's and stay.
+fn without_layout(t: &str) -> &str {
+    let layout = |run: &str| run.contains(['\n', '\r']);
+    let start = t.len() - t.trim_start().len();
+    let t = if layout(t.get(..start).unwrap_or("")) { t.get(start..).unwrap_or(t) } else { t };
+    let end = t.trim_end().len();
+    if layout(t.get(end..).unwrap_or("")) { t.get(..end).unwrap_or(t) } else { t }
+}
+
 /// A coordinate system named by `srsName`, and whether its axes are latitude first.
 fn srs(name: &str) -> Option<(Crs, bool)> {
     let n = name.trim();
@@ -465,7 +476,8 @@ struct Kind {
     centred: usize,
 }
 
-/// Reads a GML file into a layer per feature type (those with features).
+/// Reads a GML file into a layer per feature type (those with features). Cancel is looked at
+/// between features; parsing the whole document first is one step without a look.
 pub fn read(file_name: &str, bytes: &[u8]) -> Result<Vec<(Dataset, ReadReport)>> {
     let stem = std::path::Path::new(file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("gml").to_string();
     let text = std::str::from_utf8(bytes).map_err(|_| DataError::Format(format!("{file_name} is not UTF-8 text")))?;
@@ -491,6 +503,8 @@ pub fn read(file_name: &str, bytes: &[u8]) -> Result<Vec<(Dataset, ReadReport)>>
     let mut over = 0usize;
     // Rings and parts left out of the geometries kept.
     for f in members {
+        // Read ahead, off the UI thread: a large file can be cancelled between features.
+        crate::progress::check()?;
         let name = local(&f).to_string();
         if !kinds.contains_key(&name) {
             if kinds.len() >= MAX_LAYERS {
@@ -570,7 +584,7 @@ pub fn read(file_name: &str, bytes: &[u8]) -> Result<Vec<(Dataset, ReadReport)>>
                     }
                     kind.columns.push(key.clone());
                 }
-                if attrs.insert(key.clone(), text_of(&p).trim().to_string()).is_some() {
+                if attrs.insert(key.clone(), without_layout(&text_of(&p)).to_string()).is_some() {
                     kind.repeated += 1;
                     kind.repeated_names.add(key);
                 }
@@ -622,29 +636,82 @@ pub fn read(file_name: &str, bytes: &[u8]) -> Result<Vec<(Dataset, ReadReport)>>
         let fields: Vec<Field> = kind
             .columns
             .iter()
-            .map(|c| Field::new(c.clone(), crate::io::text_type(kind.rows.iter().filter_map(|(_, a)| a.get(c)).map(String::as_str))))
+            .map(|c| {
+                Field::new(
+                    c.clone(),
+                    crate::io::text_type(
+                        kind.rows.iter().filter_map(|(_, a)| a.get(c)).map(String::as_str).filter(|v| !Value::is_null_marker(v)),
+                    ),
+                )
+            })
             .collect();
         let title = if single { stem.clone() } else { format!("{stem} {name}") };
         let mut ds = Dataset::new(title, GeometryType::None, fields);
         let (zm, unread, parts) = (kind.zm, kind.unread, kind.parts_lost);
         let unread_names = kind.unread_names.said();
-        let mut outside = false;
+        let (mut outside, mut null_text) = (false, Vec::new());
+        // Features with a place the file's system can't give in longitude/latitude, kept missing.
+        let mut unplaced = 0usize;
+        // Held as the file holds its coordinates, in its own system (in the axis order RustGIS
+        // gives every system's), when RustGIS converts it.
+        if let Some((Some(_), _)) = &transform
+            && let Some((c, _)) = file_srs
+        {
+            ds.held_in = c;
+        }
         for (g, attrs) in kind.rows {
             let g = g.map(|g| match &transform {
-                Some((t, swap)) => g.map_coords(&|c| {
-                    let c = if *swap { Coord::new(c.y, c.x) } else { c };
-                    match t {
-                        Some(t) => t.to_lonlat(c).unwrap_or(Coord::new(f64::NAN, f64::NAN)),
-                        None => c,
-                    }
-                }),
-                None => g,
+                Some((_, true)) => g.map_coords(&|c| Coord::new(c.y, c.x)),
+                _ => g,
             });
-            if let Some(g) = &g {
-                let e = g.extent();
+            // A place that can't be given in longitude/latitude is kept as a missing coordinate
+            // (NaN), as it was when the reader converted the file: the layer is drawn, saved and
+            // measured without it, as before. Its box in longitude/latitude from the rest.
+            let mut e = rustgis_geom::Extent::EMPTY;
+            let g = match (&transform, g) {
+                (Some((Some(t), _)), Some(g)) => {
+                    let lonlat = std::cell::Cell::new(rustgis_geom::Extent::EMPTY);
+                    let missing = std::cell::Cell::new(false);
+                    let kept = g.map_coords(&|c| match t.to_lonlat(c) {
+                        Some(l) if l.is_finite() => {
+                            let mut b = lonlat.get();
+                            b.expand(l);
+                            lonlat.set(b);
+                            c
+                        }
+                        _ if !c.is_finite() => c,
+                        _ => {
+                            missing.set(true);
+                            Coord::new(f64::NAN, f64::NAN)
+                        }
+                    });
+                    unplaced += usize::from(missing.get());
+                    e = lonlat.get();
+                    Some(kept)
+                }
+                (_, g) => {
+                    if let Some(g) = &g {
+                        e = g.extent();
+                    }
+                    g
+                }
+            };
+            if !e.is_empty() {
                 outside |= e.min_x < -180.0 || e.max_x > 180.0 || e.min_y < -90.0 || e.max_y > 90.0;
             }
-            let row = ds.fields.iter().map(|f| attrs.get(&f.name).map(|v| Value::parse_source(v, f.ty)).unwrap_or_default()).collect();
+            let row = ds
+                .fields
+                .iter()
+                .enumerate()
+                .map(|(k, f)| match attrs.get(&f.name) {
+                    Some(v) if Value::is_null_marker(v) => {
+                        crate::source::null_text_at(&mut null_text, k);
+                        Value::Null
+                    }
+                    Some(v) => Value::parse_file(v, f.ty),
+                    None => Value::Null,
+                })
+                .collect();
             ds.push_next(g, row);
         }
         ds.geometry_type = crate::io::dominant_type(&ds);
@@ -655,6 +722,14 @@ pub fn read(file_name: &str, bytes: &[u8]) -> Result<Vec<(Dataset, ReadReport)>>
         if kind.skipped > 0 {
             let what = if kind.skipped == 1 { "feature" } else { "features" };
             rep.messages.push(format!("{}: {} {what} had geometry that couldn't be read", ds.name, kind.skipped));
+        }
+        if unplaced > 0 {
+            let what = if unplaced == 1 { "feature has" } else { "features have" };
+            let system = file_srs.map_or_else(String::new, |(c, _)| format!(" in {}", c.label()));
+            rep.messages.push(format!(
+                "{}: {unplaced} {what} places{system} that can't be given in longitude/latitude; they are kept as missing coordinates and don't draw",
+                ds.name
+            ));
         }
         if file_srs.is_none() && outside {
             rep.messages.push("the GML doesn't say its coordinate system (srsName) and its coordinates aren't longitude/latitude".into());
@@ -671,6 +746,9 @@ pub fn read(file_name: &str, bytes: &[u8]) -> Result<Vec<(Dataset, ReadReport)>>
         if zm > 0 {
             ds.zm_dropped = true;
             rep.messages.push(format!("{}: {}", ds.name, crate::zm_note(Some(zm as u64))));
+        }
+        if let Some(n) = crate::source::null_text_note(&ds.fields, &null_text) {
+            rep.messages.push(format!("{}: {n}", ds.name));
         }
         if parts > 0 {
             let what = if parts == 1 { "part" } else { "parts" };
@@ -778,6 +856,47 @@ mod tests {
         assert!(layers.iter().all(|(_, r)| !r.messages.iter().any(|m| m.contains("nested"))), "{layers:?}");
     }
 
+    /// Property text read as the file has it (#2059): spaces kept, `<Null>` null and counted.
+    #[test]
+    fn property_text_keeps_its_spaces_and_counts_null_markers() {
+        let gml = r#"<ogr:FeatureCollection xmlns:ogr="http://ogr.maptools.org/" xmlns:gml="http://www.opengis.net/gml">
+<gml:featureMember><ogr:sites><ogr:code> R-1</ogr:code></ogr:sites></gml:featureMember>
+<gml:featureMember><ogr:sites><ogr:code>&lt;Null&gt;</ogr:code></ogr:sites></gml:featureMember>
+<gml:featureMember><ogr:sites><ogr:code>
+      Laid out
+    </ogr:code></ogr:sites></gml:featureMember>
+</ogr:FeatureCollection>"#;
+        let layers = read("s.gml", gml.as_bytes()).unwrap();
+        let (ds, report) = &layers[0];
+        let code = ds.field_index("code").unwrap();
+        assert_eq!(ds.value(0, code), &Value::Text(" R-1".into()));
+        assert_eq!(ds.value(1, code), &Value::Null);
+        assert_eq!(ds.value(2, code), &Value::Text("Laid out".into()), "an indented value loses its layout");
+        assert!(report.messages.iter().any(|m| m == "s: 1 value written as Null was read as empty, in 'code'"), "{:?}", report.messages);
+        let clean = gml.replace("&lt;Null&gt;", "B-2");
+        let layers = read("s.gml", clean.as_bytes()).unwrap();
+        assert!(layers[0].1.messages.iter().all(|m| !m.contains("written as Null")), "no marker, no notice: {:?}", layers[0].1.messages);
+    }
+
+    /// A place a file's system can't give in longitude/latitude is kept missing (NaN), as when the
+    /// reader converted the file, so the layer's places that convert are still read in
+    /// longitude/latitude; its other places keep the file's numbers.
+    #[test]
+    fn a_place_with_no_longitude_latitude_is_kept_missing() {
+        let gml = r#"<ogr:FeatureCollection xmlns:ogr="http://ogr.maptools.org/" xmlns:gml="http://www.opengis.net/gml">
+<gml:featureMember><ogr:roads fid="roads.0"><ogr:geometryProperty><gml:LineString srsName="EPSG:32633"><gml:coordinates>500000,4649776 1e15,4649776</gml:coordinates></gml:LineString></ogr:geometryProperty></ogr:roads></gml:featureMember>
+</ogr:FeatureCollection>"#;
+        let layers = read("r.gml", gml.as_bytes()).unwrap();
+        let (ds, _) = &layers[0];
+        assert_eq!(ds.coord_crs(), Crs::Epsg(32633));
+        let Some(Geometry::Line(parts)) = &ds.features[0].geometry else { panic!("a line") };
+        assert_eq!(parts[0][0], Coord::new(500000.0, 4649776.0), "the file's numbers");
+        assert!(parts[0][1].x.is_nan() && parts[0][1].y.is_nan(), "{:?}", parts[0][1]);
+        assert!(serde_json::to_string(ds).is_ok(), "saves");
+        assert!(layers[0].1.messages.iter().any(|m| m.contains("1 feature has places")), "{:?}", layers[0].1.messages);
+        assert!(ds.in_lonlat().is_ok());
+    }
+
     #[test]
     fn reads_gml2_and_projected() {
         // OGR-style GML 2: gml:coordinates, EPSG:32633 (easting/northing), a MultiPolygon.
@@ -790,9 +909,12 @@ mod tests {
         assert_eq!(layers.len(), 1);
         let (ds, rep) = &layers[0];
         assert_eq!(ds.name, "s");
+        // Held in its own system; placed in longitude/latitude.
+        let ds = ds.in_lonlat().unwrap().into_owned();
         let Some(Geometry::Point(c)) = &ds.features[0].geometry else { panic!() };
         assert!((c.x - 15.0).abs() < 1e-6 && (c.y - 42.0).abs() < 0.01, "{c:?}");
         assert_eq!(rep.skipped, 1);
+        assert!(!rep.messages.iter().any(|m| m.contains("can't be given")), "every place converts: {:?}", rep.messages);
         assert_eq!(srs("EPSG:4326").map(|s| s.1), Some(false));
         assert_eq!(srs("http://www.opengis.net/def/crs/EPSG/0/4326").map(|s| s.1), Some(true));
         assert_eq!(srs("urn:ogc:def:crs:EPSG::32633").map(|s| s.1), Some(false), "projected: easting first");
@@ -1297,5 +1419,14 @@ mod tests {
         for cut in (0..WFS.len()).step_by(53) {
             let _ = read("x.gml", WFS.as_bytes().get(..cut).unwrap_or_default());
         }
+    }
+
+    /// Read ahead, off the UI thread, the read stops when it is cancelled.
+    #[test]
+    fn a_cancelled_read_stops() {
+        let probe = std::sync::Arc::new(crate::progress::tests::Counted::default());
+        probe.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        let _g = crate::progress::install(Some(probe));
+        assert!(matches!(read("a.gml", WFS.as_bytes()), Err(DataError::Cancelled)));
     }
 }

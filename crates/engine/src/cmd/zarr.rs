@@ -20,7 +20,7 @@ pub fn commands() -> Vec<C> {
     vec![
         C::new("raster.zarrInfo", "Zarr Variables", "Home › Add › Add Data › Zarr", info).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Network).with(crate::policy::Effect::Files))
             .view()
-            .params(r#"{"path": "a Zarr store's folder" | "url": "https://… a store with consolidated metadata", "bbox"?: [west, south, east, north] (in the grid's coordinates: the window of cells it is in a variable's grid, for layer.addZarr's cells), "variable"?: (with bbox; default the first)} → variables with their dimensions, chunks and shards' chunks (innerChunks)"#),
+            .params(r#"{"path": "a Zarr store's folder" | "url": "https://… a store (one with no consolidated metadata needs variable)", "bbox"?: [west, south, east, north] (in the grid's coordinates: the window of cells it is in a variable's grid, for layer.addZarr's cells), "variable"?: (its path in the store: with bbox, or for a store with no consolidated metadata; default the first)} → variables with their dimensions, chunks and shards' chunks (innerChunks)"#),
         C::new("zarr.series", "Time Series at a Point", "View › Time Series", series).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Network).with(crate::policy::Effect::Files)).view().params(
             r#"{"lon", "lat", "layer"? (a Zarr layer: its store, variable and steps; default the active layer) | "path": folder | "url": "https://…", "variable"?, "index"?: {"level": 0} (the other dimensions' steps), "start"?, "end"?: dates (default: the layer's period, else the whole axis), "crs"?: for a projected store that doesn't say} → dates, values (null for no data) and labels along the variable's time dimension at the cell holding the point (desktop)"#,
         ),
@@ -28,7 +28,7 @@ pub fn commands() -> Vec<C> {
             r#"{"layer"? (a Zarr layer: its store, variable and steps; default the active layer) | "path": folder | "url": "https://…", "variable"?, "index"?, "stat": "mean"|"min"|"max"|"sum"|"std" (the population standard deviation, n)|"count"|"countAbove", "above"?: number (countAbove's threshold), "start"?, "end"?: dates (default: the layer's period, else the whole axis), "months"?: [1–12] (a season across years: [12, 1, 2]), "minValid"?: 0–1 (a cell with a smaller share of values is left empty; default 0), "name"?: text, "crs"?} → a raster layer of the statistic (desktop)"#,
         ),
         C::new("layer.addZarr", "Add Zarr Variable", "Home › Add › Add Data", add).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Network).with(crate::policy::Effect::Files)).params(
-            r#"{"path": folder | "url": "https://…", "variable"?: "its path in the store (default: the first)", "index"?: {"time": 3, "level": 0} (other dimensions' steps, default 0), "cells"?: [first column, first row, end column, end row] (a window of the map's cells as stored, the ends not included, at least 2 × 2: only the chunks it touches are read, and in shards only their chunks it needs, by range) | "bbox"?: [west, south, east, north] (a window by the grid's coordinates: degrees for a longitude/latitude grid; its coordinates are read to place it), "crs"?: "EPSG:… for a store that doesn't say", "name"?: text, "time"?: bool (follow the time slider: the layer shows the step the slider is at, and turns the slider on over the variable's dates when it is off; desktop), "start"?, "end"?: dates (with time: the period to take, for an axis longer than the slider's 20,000 steps), "ran"?: (internal: a slice the app has read), "summary"?: bool (internal: with ran, a summary over time rather than a slice)}"#,
+            r#"{"path": folder | "url": "https://…", "variable"?: "its path in the store (default: the first)", "index"?: {"time": 3, "level": 0} (other dimensions' steps, default 0), "cells"?: [first column, first row, end column, end row] (a window of the map's cells as stored, the ends not included, at least 2 × 2: only the chunks it touches are read, and in shards only their chunks it needs, by range) | "bbox"?: [west, south, east, north] (a window by the grid's coordinates: degrees for a longitude/latitude grid; its coordinates are read to place it), "crs"?: "EPSG:… for a store that doesn't say", "name"?: text, "time"?: bool (follow the time slider: the layer shows the step the slider is at, and turns the slider on over the variable's dates when it is off; with cells or bbox, each step reads only that window; desktop), "start"?, "end"?: dates (with time: the period to take, for an axis longer than the slider's 20,000 steps), "ran"?: (internal: a slice the app has read), "summary"?: bool (internal: with ran, a summary over time rather than a slice)}"#,
         ),
     ]
 }
@@ -238,24 +238,77 @@ mod transport_tests {
     }
 }
 
-/// A store's metadata from its web address.
+/// Rounds of [`zarr::member_keys`] a store whose root lists no arrays is read in: the variable
+/// and its groups, then its dimensions' coordinates, then theirs (none, in the stores seen).
 #[cfg(not(target_arch = "wasm32"))]
-fn store_at(url: &str) -> Result<zarr::Store, String> {
+const MEMBER_ROUNDS: usize = 3;
+
+/// A store's metadata from its web address ([`read_store`]).
+#[cfg(not(target_arch = "wasm32"))]
+fn store_at(url: &str, variable: &str) -> Result<zarr::Store, String> {
+    read_store(url, variable).map(|(store, _)| store)
+}
+
+/// A store's metadata from its web address, and whether it holds only what was found from
+/// `variable`. A root group that lists no arrays (no consolidated metadata,
+/// [`zarr::lists_no_arrays`]) has them found by name from `variable` ([`zarr::member_keys`]), in up
+/// to [`MEMBER_ROUNDS`] rounds; with no `variable`, that is refused.
+#[cfg(not(target_arch = "wasm32"))]
+fn read_store(url: &str, variable: &str) -> Result<(zarr::Store, bool), String> {
     let keys: Vec<String> = zarr::METADATA_KEYS.iter().map(|k| k.to_string()).collect();
     let (got, forbidden) = fetch(url, &keys)?;
     // Every metadata file refused: access is denied, not a store without metadata.
     if got.is_empty() && forbidden > 0 {
         return Err(crate::sources::message_with_address(url, "access denied (HTTP 403)"));
     }
-    let docs: Vec<(String, Vec<u8>)> = got.into_iter().collect();
-    zarr::parse_store(&docs).map_err(|e| crate::sources::message_with_address(url, &e.to_string()))
+    let mut docs: Vec<(String, Vec<u8>)> = got.into_iter().collect();
+    let partial = zarr::lists_no_arrays(&docs);
+    if partial {
+        if variable.trim().is_empty() {
+            return Err(crate::sources::message_with_address(
+                url,
+                "the store's root has no consolidated metadata, so its arrays aren't listed: give the variable's name (\"variable\"), or the address of one array",
+            ));
+        }
+        let mut tried = std::collections::HashSet::new();
+        for round in 0..MEMBER_ROUNDS {
+            let next: Vec<String> = zarr::member_keys(&docs, variable).into_iter().filter(|k| tried.insert(k.clone())).collect();
+            if next.is_empty() {
+                break;
+            }
+            let (found, refused) = fetch(url, &next)?;
+            // The variable's own files refused: access is denied. Later rounds' coordinates may
+            // just not exist, which S3 answers with 403 too (`is_absent`).
+            if round == 0 && refused > 0 && found.is_empty() {
+                return Err(crate::sources::message_with_address(url, "access denied (HTTP 403)"));
+            }
+            docs.extend(found);
+        }
+    }
+    // Found by name from the variable: one that isn't there is said, not read as an empty store.
+    let name = variable.trim().trim_matches('/');
+    let store = zarr::parse_store(&docs).ok().filter(|st| !partial || st.array(name).is_some());
+    let store = match store {
+        Some(st) => st,
+        None if partial => {
+            return Err(crate::sources::message_with_address(
+                url,
+                &format!("no array named {name} in the store, whose root has no consolidated metadata: check the variable's path"),
+            ));
+        }
+        None => zarr::parse_store(&docs).map_err(|e| crate::sources::message_with_address(url, &e.to_string()))?,
+    };
+    Ok((store, partial))
 }
 
 /// `raster.zarrInfo`. It reads the store's metadata and coordinates on the UI thread, with no
 /// Cancel, as it did before windows: the Add Data › Zarr dialog reads them off the frame, and none
 /// of the background paths takes a command that answers with what a store holds yet. A `"bbox"`
-/// adds the variable's two map coordinates, read whole: at most `MAX_COORDS` values each (32 MB
-/// as Float64), each file a download of at most 60 s.
+/// adds the variable's two map coordinates, read whole (none for a grid its `spatial:transform`
+/// places): at most `MAX_COORDS` values each (32 MB
+/// as Float64), each file a download of at most 60 s. A store whose root lists no arrays is read
+/// in up to [`MEMBER_ROUNDS`] more rounds of metadata files ([`store_at`]), each at most
+/// `zarr::member_keys`' 163 names (one or two files each), fetched several at a time.
 fn info(_s: &mut Session, p: &Value) -> CmdResult {
     #[cfg(target_arch = "wasm32")]
     {
@@ -301,7 +354,7 @@ fn info_of(p: &Value) -> Result<(String, zarr::Store, Value), String> {
                 if total > zarr::MAX_READ {
                     return Err(format!("{d}: the coordinates are too large to read"));
                 }
-                if let Ok(b) = std::fs::read(&path) {
+                if let Ok(b) = rustgis_data::provenance::read(&path) {
                     chunks.insert(k, b);
                 }
             }
@@ -309,7 +362,7 @@ fn info_of(p: &Value) -> Result<(String, zarr::Store, Value), String> {
             Ok((d, store, v))
         }
         Source::Url(u) => {
-            let store = store_at(&u)?;
+            let store = store_at(&u, ps(p, "variable").unwrap_or(""))?;
             let (chunks, _) = fetch(&u, &zarr::info_keys(&store))?;
             let v = zarr::info(&store, &chunks);
             Ok((u, store, v))
@@ -389,7 +442,8 @@ fn place_window(root: &str, store: &zarr::Store, sel: &mut zarr::Selection, aske
             let coords = store_files(root, &zarr::window_keys(store, &sel.variable).map_err(at)?)?;
             let (w, cut, widened) = zarr::window_of(store, &sel.variable, &coords, bbox).map_err(at)?;
             sel.window = Some(w);
-            let cells = format!("columns {}–{} and rows {}–{}", w.x0, w.x1, w.y0, w.y1);
+            // A window's ends are exclusive; the text gives the last column and row read.
+            let cells = format!("columns {}–{} and rows {}–{}", w.x0, w.x1.saturating_sub(1), w.y0, w.y1.saturating_sub(1));
             let mut said = Vec::new();
             if cut {
                 said.push(format!("the bbox reaches past the grid: only {cells} within it are read"));
@@ -406,15 +460,13 @@ fn place_window(root: &str, store: &zarr::Store, sel: &mut zarr::Selection, aske
 /// as it did before windows: the Add Data › Zarr dialog reads its slices off the frame and hands
 /// them over (`"ran"`), and none of the background paths takes a command that adds a layer from a
 /// store yet. A window bounds the read: `"cells"` reads only the chunks it touches and its part of
-/// the coordinates; `"bbox"` first reads the variable's two map coordinates whole, at most
+/// the coordinates; `"bbox"` first reads the variable's two map coordinates whole (none for a grid
+/// its `spatial:transform` places), at most
 /// `MAX_COORDS` values each (32 MB as Float64), each file a download of at most 60 s.
 pub(crate) fn add(s: &mut Session, p: &Value) -> CmdResult {
     let asked = asked_window(p)?;
     if b(p, "time") == Some(true) {
-        if asked.is_some() {
-            return Err("a window (cells or bbox) isn't read with time yet: leave time out to read it".into());
-        }
-        return add_following(s, p);
+        return add_following(s, p, asked);
     }
     let src = source(p)?;
     #[cfg_attr(target_arch = "wasm32", expect(unused_mut, reason = "windowed reads are desktop only"))]
@@ -468,7 +520,7 @@ pub(crate) fn add(s: &mut Session, p: &Value) -> CmdResult {
             // project opens again.
             let mut layer = if sel.window.is_some() {
                 r.source = Some(full.clone());
-                let tif = raster::geotiff::write(&r, 0).map_err(|e| e.to_string())?;
+                let tif = zarr::write_project_slice(&r).map_err(|e| e.to_string())?;
                 let mut layer = RasterLayer::from_bytes(r, format!("{}.tif", store_name(&full)), tif);
                 layer.path = Some(full);
                 layer
@@ -480,7 +532,7 @@ pub(crate) fn add(s: &mut Session, p: &Value) -> CmdResult {
             super::raster::add_raster(s, &name, layer)
         }
         Source::Url(u) => {
-            let store = store_at(&u)?;
+            let store = store_at(&u, &sel.variable)?;
             pick_variable(&store, &mut sel)?;
             let cut = place_window(&u, &store, &mut sel, asked)?;
             let plan = zarr::plan(&store, &sel).map_err(|e| crate::sources::message_with_address(&u, &e.to_string()))?;
@@ -498,7 +550,9 @@ pub(crate) fn add(s: &mut Session, p: &Value) -> CmdResult {
             crs_lost(&mut r, crs, &store, &sel.variable);
             r.source = Some(u.clone());
             // Kept in the project as a GeoTIFF: a web store isn't fetched again when it opens.
-            let tif = raster::geotiff::write(&r, 0).map_err(|e| e.to_string())?;
+            // The writer refuses systems its keys cannot preserve, as for a directory window or
+            // a slice handed over by the UI.
+            let tif = zarr::write_project_slice(&r).map_err(|e| e.to_string())?;
             let mut layer = RasterLayer::from_bytes(r, format!("{}.tif", store_name(&u)), tif);
             layer.subdataset = Some(sel.label());
             // The coordinate system given for a store that doesn't say, kept as a folder's slice
@@ -525,8 +579,8 @@ fn slices() -> &'static std::sync::Mutex<Vec<(String, std::sync::Arc<raster::Ras
 
 /// Web stores' metadata, read once per run (the last few stores).
 #[cfg(not(target_arch = "wasm32"))]
-fn stores() -> &'static std::sync::Mutex<Vec<(String, std::sync::Arc<zarr::Store>)>> {
-    static S: std::sync::OnceLock<std::sync::Mutex<Vec<(String, std::sync::Arc<zarr::Store>)>>> = std::sync::OnceLock::new();
+fn stores() -> &'static std::sync::Mutex<Vec<CachedStore>> {
+    static S: std::sync::OnceLock<std::sync::Mutex<Vec<CachedStore>>> = std::sync::OnceLock::new();
     S.get_or_init(Default::default)
 }
 
@@ -536,22 +590,39 @@ fn is_web(store: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
-/// A web store's metadata, from the run's cache when it was read before.
+/// A web store kept by [`cached_store`]: its address, the variable its arrays were found from (for
+/// a store whose root lists no arrays; `None` for one that lists them all), and its metadata.
 #[cfg(not(target_arch = "wasm32"))]
-fn cached_store(url: &str) -> Result<std::sync::Arc<zarr::Store>, String> {
-    if let Some((_, st)) = stores().lock().ok().and_then(|c| c.iter().find(|(u, _)| u == url).cloned()) {
+type CachedStore = (String, Option<String>, std::sync::Arc<zarr::Store>);
+
+/// A web store's metadata, from the run's cache when it was read before. A store whose root lists
+/// no arrays holds only those found from the variable it was read for, so it is taken from the
+/// cache only for that same variable, and each variable read of it is kept beside the others
+/// (among the last four kept): a nested `g/v` read first doesn't stand in for the root's `v`.
+#[cfg(not(target_arch = "wasm32"))]
+fn cached_store(url: &str, variable: &str) -> Result<std::sync::Arc<zarr::Store>, String> {
+    let wanted = variable.trim().trim_matches('/');
+    let fits = |(u, found_from, _): &&CachedStore| u == url && found_from.as_deref().is_none_or(|v| v == wanted);
+    if let Some((_, _, st)) = stores().lock().ok().and_then(|c| c.iter().find(fits).cloned()) {
         return Ok(st);
     }
-    let st = std::sync::Arc::new(store_at(url)?);
+    let (st, partial) = read_store(url, variable)?;
+    let st = std::sync::Arc::new(st);
     if let Ok(mut c) = stores().lock() {
-        c.push((url.to_string(), st.clone()));
+        c.push((url.to_string(), partial.then(|| wanted.to_string()), st.clone()));
         let excess = c.len().saturating_sub(4);
         c.drain(..excess);
     }
     Ok(st)
 }
 
-/// The key a slice is kept by: its store, selection and coordinate system.
+/// The window of cells a following layer's steps read.
+#[cfg(not(target_arch = "wasm32"))]
+fn zt_window(zt: &ZarrTime) -> Option<zarr::Window> {
+    zt.window.map(|[x0, y0, x1, y1]| zarr::Window { x0, y0, x1, y1 })
+}
+
+/// The key a slice is kept by: its store, selection (with its window) and coordinate system.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn slice_key(zt: &ZarrTime, i: usize) -> String {
     // A folder store rewritten on disk (a model run adding steps) is read again: its metadata's
@@ -736,9 +807,10 @@ pub(crate) fn read_slice(zt: &ZarrTime, i: usize) -> Result<Option<raster::Raste
     let sel = zt.selection(i);
     let crs = zt.crs.as_deref().map(str::trim).filter(|c| !c.is_empty());
     let (read, st) = if is_web(&zt.store) {
-        let st = cached_store(&zt.store)?;
+        let st = cached_store(&zt.store, &zt.variable)?;
         let plan = zarr::plan(&st, &zarr::Selection::parse(&sel)).map_err(|e| e.to_string())?;
-        let (chunks, forbidden) = fetch(&zt.store, &plan.keys)?;
+        // A window's coordinates and, in shards, only its chunks, by range.
+        let (chunks, forbidden) = fetch_plan(&zt.store, &st, &plan)?;
         // A chunk refused (HTTP 403) isn't one never written: it's said, not read as fill.
         if forbidden > 0 {
             return Err(crate::sources::message_with_address(
@@ -1174,10 +1246,10 @@ fn follow(s: &mut Session, wait: bool) {
 /// `layer.addZarr` with `"time": true`: the variable's time axis read from its coordinate, a layer
 /// that shows the step the slider is at, and the slider turned on over the axis when it is off.
 /// The stretch is fixed at the first slice's, so a colour means one value at every step.
-fn add_following(s: &mut Session, p: &Value) -> CmdResult {
+fn add_following(s: &mut Session, p: &Value, asked: Option<Asked>) -> CmdResult {
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (s, p);
+        let _ = (s, p, asked);
         Err("in the web app, a Zarr variable can't follow the time slider yet".into())
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -1208,7 +1280,7 @@ fn add_following(s: &mut Session, p: &Value) -> CmdResult {
                     if total > zarr::MAX_READ {
                         return Err(format!("{d}: the coordinates are too large to read"));
                     }
-                    if let Ok(b) = std::fs::read(&path) {
+                    if let Ok(b) = rustgis_data::provenance::read(&path) {
                         chunks.insert(k, b);
                     }
                 }
@@ -1216,16 +1288,27 @@ fn add_following(s: &mut Session, p: &Value) -> CmdResult {
                 (full, std::sync::Arc::new(store), chunks)
             }
             Source::Url(u) => {
-                let store = cached_store(&u)?;
+                let store = cached_store(&u, &sel.variable)?;
                 (u, store, HashMap::new())
             }
         };
         pick_variable(&store, &mut sel)?;
+        // A window: every step reads only its cells (and in shards only their chunks it needs).
+        let window_notes = place_window(&root, &store, &mut sel, asked)?;
         let chunks =
             if chunks.is_empty() && is_web(&root) { fetch(&root, &zarr::coordinate_keys(&store, &sel.variable))?.0 } else { chunks };
         let (dim, dates) = zarr::time_axis(&store, &sel.variable, &chunks).ok_or_else(|| {
-            format!("{} has no time dimension (a coordinate with CF units, such as \"days since 2001-01-01\")", sel.variable)
+            format!(
+                "{} has no time dimension (a coordinate with CF units, such as \"days since 2001-01-01\", or of whole years, such as 2017)",
+                sel.variable
+            )
         })?;
+        // A window is checked against the grid as a still window is (within it, 2 × 2 cells at
+        // least), before the slider is touched: the same for every step, so step 0 stands for all.
+        if sel.window.is_some() {
+            let first = zarr::Selection { index: sel.index.iter().filter(|(d, _)| *d != dim).cloned().collect(), ..sel.clone() };
+            zarr::plan(&store, &first).map_err(|e| crate::sources::message_with_address(&root, &e.to_string()))?;
+        }
         // Each date is a step: an axis out of order or with a date twice (stores joined end to end)
         // can't be followed step by step.
         if !dates.iter().all(|d| d.is_finite()) || !dates.windows(2).all(|w| w[0] < w[1]) {
@@ -1271,6 +1354,7 @@ fn add_following(s: &mut Session, p: &Value) -> CmdResult {
             offset: first as u64,
             dates: picked,
             crs,
+            window: sel.window.map(|w| [w.x0, w.y0, w.x1, w.y1]),
             shown: None,
             read_generation: rustgis_map::raster::next_read_generation(),
         };
@@ -1322,9 +1406,12 @@ fn add_following(s: &mut Session, p: &Value) -> CmdResult {
         });
         layer.time_zarr = Some(zt);
         let mut out = super::raster::add_raster(s, &name, layer)?;
-        if let Some(w) = part {
+        let said: Vec<String> = window_notes.into_iter().chain(part).collect();
+        for w in &said {
             s.warn(w.clone());
-            out["warning"] = serde_json::json!(w);
+        }
+        if !said.is_empty() {
+            out["warning"] = serde_json::json!(said.join("; "));
         }
         Ok(out)
     }
@@ -1335,6 +1422,7 @@ fn add_following(s: &mut Session, p: &Value) -> CmdResult {
 /// The store a series reads, and what of it: from a Zarr layer (one that follows the time slider,
 /// or a slice: its store, variable and steps), or from the parameters.
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug)]
 struct SeriesSource {
     root: String,
     sel: zarr::Selection,
@@ -1354,7 +1442,7 @@ fn series_source(s: &Session, p: &Value) -> Result<SeriesSource, String> {
         if let Some(zt) = &rl.time_zarr {
             return Ok(SeriesSource {
                 root: zt.store.clone(),
-                sel: zarr::Selection { variable: zt.variable.clone(), index: zt.index.clone(), window: None },
+                sel: zarr::Selection { variable: zt.variable.clone(), index: zt.index.clone(), window: zt_window(zt) },
                 period: Some((zt.offset, zt.dates.len())),
                 crs: zt.crs.clone(),
                 read_generation: zt.read_generation,
@@ -1386,12 +1474,25 @@ fn series_source(s: &Session, p: &Value) -> Result<SeriesSource, String> {
 /// store's fetched.
 #[cfg(not(target_arch = "wasm32"))]
 fn store_files(root: &str, keys: &[String]) -> Result<HashMap<String, Vec<u8>>, String> {
+    store_files_by(root, keys, &mut |_| Ok(()))
+}
+
+/// The files of a store read in batches of up to [`SERIES_BATCH`] files, as [`store_files`] reads
+/// them; `before` is called with each batch's size before it is read, and its error (a Cancel)
+/// stops the read there: requests already sent finish, none more is made.
+#[cfg(not(target_arch = "wasm32"))]
+fn store_files_by(
+    root: &str,
+    keys: &[String],
+    before: &mut dyn FnMut(usize) -> Result<(), String>,
+) -> Result<HashMap<String, Vec<u8>>, String> {
     if is_web(root) {
         // In batches, within the same total a folder's read takes: a store chunked a map a step
         // (one chunk per step) can't fill the memory.
         let mut out = HashMap::new();
         let mut total = 0u64;
-        for batch in keys.chunks(64) {
+        for batch in keys.chunks(SERIES_BATCH) {
+            before(batch.len())?;
             let (got, forbidden) = fetch(root, batch)?;
             // A file refused (HTTP 403) isn't one never written: said, not read as missing.
             if forbidden > 0 {
@@ -1409,7 +1510,10 @@ fn store_files(root: &str, keys: &[String]) -> Result<HashMap<String, Vec<u8>>, 
     }
     let mut out = HashMap::new();
     let mut total = 0u64;
-    for k in keys {
+    for (i, k) in keys.iter().enumerate() {
+        if i % SERIES_BATCH == 0 {
+            before((keys.len() - i).min(SERIES_BATCH))?;
+        }
         let path = Path::new(root).join(k);
         // A file that isn't there is a chunk never written (Zarr's fill value); one that is but
         // can't be taken is said, so a value isn't silently missing.
@@ -1421,14 +1525,54 @@ fn store_files(root: &str, keys: &[String]) -> Result<HashMap<String, Vec<u8>>, 
         if total > zarr::MAX_READ {
             return Err(format!("{root}: the series is too large to read"));
         }
-        let b = std::fs::read(&path).map_err(|e| format!("{root}: {k}: {e}"))?;
+        let b = rustgis_data::provenance::read(&path).map_err(|e| format!("{root}: {k}: {e}"))?;
         out.insert(k.clone(), b);
     }
     Ok(out)
 }
 
+/// Bytes of a store's files ([`zarr::Part`]s), each kept by its id, as [`store_files`] reads
+/// whole files: a web store's fetched by range, a folder's read in place.
+/// In batches of up to [`SERIES_BATCH`] parts, `before` called with each batch's size before it
+/// is read, as [`store_files_by`] reads whole files.
+#[cfg(not(target_arch = "wasm32"))]
+fn store_parts(
+    root: &str,
+    parts: &[zarr::Part],
+    before: &mut dyn FnMut(usize) -> Result<(), String>,
+) -> Result<HashMap<String, Vec<u8>>, String> {
+    let mut out = HashMap::new();
+    let mut total = 0u64;
+    for batch in parts.chunks(SERIES_BATCH) {
+        before(batch.len())?;
+        if is_web(root) {
+            let (got, forbidden) = fetch_parts(root, batch)?;
+            if forbidden > 0 {
+                return Err(crate::sources::message_with_address(root, &format!("access denied (HTTP 403) to {forbidden} of its files")));
+            }
+            // Within one total over all batches, as a folder's parts and `store_files_by` are.
+            for (k, b) in got {
+                total = total.saturating_add(b.len() as u64);
+                if total > zarr::MAX_READ {
+                    return Err(crate::sources::message_with_address(root, "the series is too large to read: take a shorter period"));
+                }
+                out.insert(k, b);
+            }
+        } else {
+            zarr::read_parts(Path::new(root), batch, &mut out, &mut total).map_err(|e| format!("{root}: {e}"))?;
+        }
+    }
+    Ok(out)
+}
+
+/// The files or parts a series reads in one go: a batch of requests in flight together, between
+/// two looks at Cancel (opengeos/RustGIS#2282).
+#[cfg(not(target_arch = "wasm32"))]
+const SERIES_BATCH: usize = 64;
+
 /// `zarr.series`: a variable's values along its time dimension at the cell holding a point,
-/// reading only the chunks that hold that cell.
+/// reading only the chunks that hold that cell. A script or the assistant waits for it here; the
+/// desktop app reads it on a thread of its own with [`series_start`] (opengeos/RustGIS#2282).
 fn series(s: &mut Session, p: &Value) -> CmdResult {
     #[cfg(target_arch = "wasm32")]
     {
@@ -1437,14 +1581,77 @@ fn series(s: &mut Session, p: &Value) -> CmdResult {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let num = |k: &str| super::f(p, k).ok_or_else(|| format!("{k} is required (degrees)"));
-        let (lon, lat) = (num("lon")?, num("lat")?);
-        if !lon.is_finite() || !(-90.0..=90.0).contains(&lat) {
-            return Err("lon is a longitude and lat a latitude from -90 to 90 (degrees)".into());
+        // What reading it said is said though the read then fails, as it was before #2282.
+        let mut notes = Vec::new();
+        let series = series_start(s, p)?.read(&mut notes);
+        for n in notes {
+            s.warn(n);
         }
-        let mut src = series_source(s, p)?;
+        series
+    }
+}
+
+/// A point's series, prepared on the session (the point and period checked, the store and its
+/// variable chosen) and read anywhere with [`SeriesRun::run`]: the desktop app reads it on a
+/// thread of its own, with the steps read and Cancel, so a long series doesn't hold the window
+/// (opengeos/RustGIS#2282).
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug)]
+pub struct SeriesRun {
+    lon: f64,
+    lat: f64,
+    src: SeriesSource,
+    start: Option<f64>,
+    end: Option<f64>,
+}
+
+/// The steps a series has read, for its progress: the reads made of those it plans (the chunks,
+/// or each shard's index and then its chunk), as steps of the series. It looks at Cancel before
+/// each batch of reads.
+#[cfg(not(target_arch = "wasm32"))]
+struct SeriesTally {
+    steps: usize,
+    reads: usize,
+    /// The reads of the batches done, and of the one in flight.
+    done: usize,
+    flight: usize,
+    /// The steps counted so far.
+    shown: usize,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl SeriesTally {
+    /// Counts the batch before as read, then stops the series if it was cancelled; `n` is the size
+    /// of the batch about to be read.
+    fn before(&mut self, n: usize) -> Result<(), String> {
+        self.done += std::mem::replace(&mut self.flight, n);
+        let steps = self.steps * self.done.min(self.reads) / self.reads.max(1);
+        rustgis_data::progress::step(steps.saturating_sub(self.shown)).map_err(|_| "cancelled".to_string())?;
+        self.shown = self.shown.max(steps);
+        Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl SeriesRun {
+    /// Reads the series under `control`: its count is the steps read of those asked, and Cancel
+    /// stops it before its next batch of reads, with no series. Gives the series as `zarr.series`
+    /// answers it, and what reading it said, which a read that fails said too.
+    pub fn run(&self, control: &std::sync::Arc<rustgis_analysis::control::Control>) -> (Result<Value, String>, Vec<String>) {
+        let mut notes = Vec::new();
+        let series = rustgis_analysis::run_under("Time Series at a Point", control, || self.read(&mut notes));
+        (series, notes)
+    }
+
+    /// Reads the series on this thread, looking at the run's Cancel (if any) between batches;
+    /// what reading it says goes in `notes` as it is found, so an error after it doesn't lose it.
+    fn read(&self, notes: &mut Vec<String>) -> Result<Value, String> {
+        let (lon, lat) = (self.lon, self.lat);
+        let mut src = self.src.clone();
+        let check = &mut |_: usize| rustgis_data::progress::check().map_err(|_| "cancelled".to_string());
+        check(0)?;
         let store = if is_web(&src.root) {
-            cached_store(&src.root)?
+            cached_store(&src.root, &src.sel.variable)?
         } else {
             std::sync::Arc::new(zarr::read_metadata(Path::new(&src.root)).map_err(|e| format!("{}: {e}", src.root))?)
         };
@@ -1452,23 +1659,14 @@ fn series(s: &mut Session, p: &Value) -> CmdResult {
         let var = src.sel.variable.clone();
         let mut keys = zarr::coordinate_keys(&store, &var);
         keys.extend(zarr::map_coordinate_keys(&store, &var));
-        let coords = store_files(&src.root, &keys)?;
+        let coords = store_files_by(&src.root, &keys, check)?;
         let (dim, dates) = zarr::time_axis(&store, &var, &coords)
-            .ok_or_else(|| format!("{var} has no time dimension (a coordinate with CF units, such as \"days since 2001-01-01\")"))?;
+            .ok_or_else(|| format!("{var} has no time dimension (a coordinate with CF units, such as \"days since 2001-01-01\", or of whole years, such as 2017)"))?;
         // A period is found along the axis in order, as following the slider takes it.
         if !dates.iter().all(|d| d.is_finite()) || !dates.windows(2).all(|w| w[0] < w[1]) {
             return Err(format!("{var}'s time axis isn't in increasing order without repeats, so its series can't be read by date"));
         }
-        // The period: the one asked for, else the layer's, else the whole axis.
-        let date = |k: &str| -> Result<Option<f64>, String> {
-            match p.get(k).filter(|v| !v.is_null()) {
-                None => Ok(None),
-                Some(v) => rustgis_data::time::parse_input(v)
-                    .map(Some)
-                    .ok_or_else(|| format!("{k} is a date (2015-06-01, a year, or milliseconds since 1970)")),
-            }
-        };
-        let (start, end) = (date("start")?, date("end")?);
+        let (start, end) = (self.start, self.end);
         let (from, count) = if start.is_some() || end.is_some() {
             let inside = |d: &f64| start.is_none_or(|a| *d >= a) && end.is_none_or(|z| *d <= z);
             let first = dates.iter().position(inside).ok_or("no step of the variable falls between start and end")?;
@@ -1483,47 +1681,91 @@ fn series(s: &mut Session, p: &Value) -> CmdResult {
         if count == 0 {
             return Err("no step to read".into());
         }
-        // The point in the grid's coordinates. A longitude/latitude grid's are read as such whatever
-        // its WKT says; a shift the WKT gives that isn't applied is still said, as its slices say it.
-        let (x, y) = if zarr::is_lonlat_grid(&store, &var) {
-            if let Some((_, Some(note))) = zarr::grid_crs(&store, &var) {
-                s.warn(format!("{var}: {note}"));
+        // Use the same system as a slice: degree axes retain a declared geographic datum, while
+        // contradictory projected definitions still fall back to WGS 84.
+        let given = zarr::grid_crs(&store, &var);
+        let lonlat = zarr::is_lonlat_grid(&store, &var);
+        if lonlat {
+            // A typed system is only a fallback. Invalid text wasn't used on degree axes either.
+            let typed = if given.is_none() { src.crs.as_deref().and_then(|text| Crs::parse(text).ok()) } else { None };
+            if let Some(note) = zarr::lonlat_assumption(given.as_ref().map(|(c, _)| *c), typed) {
+                notes.push(format!("{var}: {note}"));
             }
-            (lon, lat)
+        }
+        let crs = if lonlat {
+            given.as_ref().map(|(c, _)| *c).filter(|c| c.is_geographic()).unwrap_or(Crs::LonLat)
+        } else if let Some((c, _)) = &given {
+            *c
         } else {
-            let crs = match zarr::grid_crs(&store, &var) {
-                Some((c, note)) => {
-                    if let Some(note) = note {
-                        s.warn(format!("{var}: {note}"));
-                    }
-                    c
-                }
-                None => {
-                    let given =
-                        src.crs.as_deref().ok_or("the store doesn't say its coordinate system; give \"crs\" (such as EPSG:3035)")?;
-                    super::parse_crs(s, given)?
-                }
-            };
-            let m = crs
-                .transformer()?
-                .from_lonlat(rustgis_geom::Coord::new(lon, lat))
-                .ok_or("the point can't be placed in the store's coordinate system")?;
-            (m.x, m.y)
+            let text = src.crs.as_deref().ok_or("the store doesn't say its coordinate system; give \"crs\" (such as EPSG:3035)")?;
+            // Read as `parse_crs` reads it, its note said with the series'.
+            let crs = Crs::parse(text)?;
+            if let Some(note) = raster::wkt::typed_crs_note(text, crs) {
+                notes.push(format!("crs: {note}"));
+            }
+            crs
         };
+        if let Some((_, Some(note))) = given {
+            notes.push(format!("{var}: {note}"));
+        }
+        let m = crs
+            .transformer()?
+            .from_lonlat(rustgis_geom::Coord::new(lon, lat))
+            .ok_or("the point can't be placed in the store's coordinate system")?;
+        let (x, y) = (m.x, m.y);
         let (row, col) =
             zarr::locate(&store, &var, &coords, x, y).map_err(|e| e.to_string())?.ok_or("the point is outside the variable's grid")?;
         let plan = zarr::plan_series(&store, &src.sel, &dim, from as u64, count as u64, row, col).map_err(|e| e.to_string())?;
-        let chunks = store_files(&src.root, &plan.keys)?;
+        // The steps read: the chunks, or each shard's index then its chunk.
+        rustgis_data::progress::begin(count);
+        let mut tally = SeriesTally { steps: count, reads: plan.keys.len() + 2 * plan.parts.len(), done: 0, flight: 0, shown: 0 };
+        let mut before = |n: usize| tally.before(n);
+        let mut chunks = store_files_by(&src.root, &plan.keys, &mut before)?;
+        // A sharded variable: the shards' indexes, then the chunk holding the cell in each.
+        if !plan.parts.is_empty() {
+            chunks.extend(store_parts(&src.root, &plan.parts, &mut before)?);
+            let inner = zarr::series_inner_parts(&store, &plan, &chunks)
+                .map_err(|e| crate::sources::message_with_address(&src.root, &e.to_string()))?;
+            chunks.extend(store_parts(&src.root, &inner, &mut before)?);
+        }
+        // The last batch counted as read once it is, before decoding; cancelled during it, nothing
+        // is decoded, so no part of a series is given.
+        before(0)?;
         let values = zarr::assemble_series(&store, &plan, &chunks).map_err(|e| e.to_string())?;
         let picked = &dates[from..from + count];
         let labels: Vec<String> = picked.iter().map(|d| rustgis_data::time::format(*d, "YYYY-MM-DD HH:mm")).collect();
         let values: Vec<Value> = values.iter().map(|v| if v.is_finite() { serde_json::json!(v) } else { Value::Null }).collect();
         let units = store.array(&var).and_then(|a| a.attrs.get("units")).and_then(Value::as_str).map(str::to_string);
-        Ok(serde_json::json!({
+        let series = serde_json::json!({
             "variable": var, "units": units, "dimension": dim, "lon": lon, "lat": lat, "row": row, "col": col,
             "dates": picked, "labels": labels, "values": values,
-        }))
+        });
+        Ok(series)
     }
+}
+
+/// Prepares `zarr.series` with `p` on the session, to read on another thread with
+/// [`SeriesRun::run`]: the parameters are checked and the store chosen here, so a wrong request
+/// is said at once, before anything is read.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn series_start(s: &Session, p: &Value) -> Result<SeriesRun, String> {
+    let num = |k: &str| super::f(p, k).ok_or_else(|| format!("{k} is required (degrees)"));
+    let (lon, lat) = (num("lon")?, num("lat")?);
+    if !lon.is_finite() || !(-90.0..=90.0).contains(&lat) {
+        return Err("lon is a longitude and lat a latitude from -90 to 90 (degrees)".into());
+    }
+    let src = series_source(s, p)?;
+    // The period: the one asked for, else the layer's, else the whole axis.
+    let date = |k: &str| -> Result<Option<f64>, String> {
+        match p.get(k).filter(|v| !v.is_null()) {
+            None => Ok(None),
+            Some(v) => rustgis_data::time::parse_input(v)
+                .map(Some)
+                .ok_or_else(|| format!("{k} is a date (2015-06-01, a year, or milliseconds since 1970)")),
+        }
+    };
+    let (start, end) = (date("start")?, date("end")?);
+    Ok(SeriesRun { lon, lat, src, start, end })
 }
 
 // --- A summary over time (opengeos/RustGIS#556) ----------------------------------------------------
@@ -1562,7 +1804,7 @@ impl ReduceRun {
         use std::sync::atomic::Ordering;
         // The first slice's grid (its size, place and coordinate system), all the run keeps of it.
         let mut first: Option<(u32, u32, raster::GeoTransform, Crs)> = None;
-        let mut totals = super::cube::Totals::new(self.stat, 0)?;
+        let mut totals = super::cube::Totals::new(self.stat, 0, 0)?;
         // Steps never written (no chunk at all), read as having no value.
         let mut unwritten = 0usize;
         // What reading the slices said (a shift the store's system doesn't apply, …), once each:
@@ -1600,7 +1842,7 @@ impl ReduceRun {
                     if len > MAX_REDUCE_CELLS {
                         return Err(format!("{len} cells, more than a summary takes ({MAX_REDUCE_CELLS})"));
                     }
-                    totals = super::cube::Totals::new(self.stat, len)?;
+                    totals = super::cube::Totals::new(self.stat, len, 0)?;
                     first = Some((r.width, r.height, r.transform, r.crs));
                 }
                 // One grid for every step: the same size and coordinate system, its place within a
@@ -1646,8 +1888,9 @@ impl ReduceRun {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn reduce_start(s: &Session, p: &Value) -> Result<ReduceRun, String> {
     let stat = Stat::parse(p)?;
-    // A variable of classes is summarised by cube.reduce, which reads its dates in order.
-    if stat.categorical() {
+    // A variable of classes is summarised by cube.reduce, which reads its dates in order; so is a
+    // median, which holds every date's value, and first, which ranks them.
+    if stat.categorical() || matches!(stat, Stat::Median | Stat::First) {
         return Err(format!(
             "zarr.reduce takes mean, min, max, sum, std, count or countAbove: {} is cube.reduce's (give it this layer or store)",
             stat.code()
@@ -1699,15 +1942,18 @@ pub fn zarr_cube(s: &Session, p: &Value) -> Result<ZarrCube, String> {
         ));
     }
     let store = if is_web(&src.root) {
-        cached_store(&src.root)?
+        cached_store(&src.root, &src.sel.variable)?
     } else {
         std::sync::Arc::new(zarr::read_metadata(Path::new(&src.root)).map_err(|e| format!("{}: {e}", src.root))?)
     };
     pick_variable(&store, &mut src.sel)?;
     let var = src.sel.variable.clone();
     let coords = store_files(&src.root, &zarr::coordinate_keys(&store, &var))?;
-    let (dim, dates) = zarr::time_axis(&store, &var, &coords)
-        .ok_or_else(|| format!("{var} has no time dimension (a coordinate with CF units, such as \"days since 2001-01-01\")"))?;
+    let (dim, dates) = zarr::time_axis(&store, &var, &coords).ok_or_else(|| {
+        format!(
+            "{var} has no time dimension (a coordinate with CF units, such as \"days since 2001-01-01\", or of whole years, such as 2017)"
+        )
+    })?;
     // Every step a date, so a period and months pick the steps they say (a summary takes them
     // in any order; a trend asks for time order itself, in `cube_from`).
     if !dates.iter().all(|d| d.is_finite()) {
@@ -1728,6 +1974,7 @@ pub fn zarr_cube(s: &Session, p: &Value) -> Result<ZarrCube, String> {
         offset: 0,
         dates,
         crs: src.crs.clone(),
+        window: None,
         shown: None,
         read_generation: src.read_generation,
     };
@@ -1751,7 +1998,7 @@ fn reduce(s: &mut Session, p: &Value) -> CmdResult {
     {
         let run = reduce_start(s, p)?;
         let r = run.run(&std::sync::atomic::AtomicBool::new(false), &std::sync::atomic::AtomicUsize::new(0))?;
-        let tif = raster::geotiff::write(&r, 0).map_err(|e| e.to_string())?;
+        let tif = zarr::write_project_slice(&r).map_err(|e| e.to_string())?;
         let mut layer = RasterLayer::from_bytes(r, format!("{}.tif", store_name(&run.root)), tif);
         layer.subdataset = None;
         let mut out = super::raster::add_raster(s, &run.name, layer)?;

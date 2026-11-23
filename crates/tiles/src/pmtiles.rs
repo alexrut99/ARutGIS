@@ -814,7 +814,7 @@ fn read(archive: &str, at: u64, len: u64, done: Done) {
 pub(crate) fn read_file(archive: &str, at: u64, len: u64) -> Result<Vec<u8>, String> {
     use std::io::{Read, Seek, SeekFrom};
     let path = archive.strip_prefix("file://").unwrap_or(archive);
-    let mut f = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    let mut f = rustgis_data::provenance::open(path).map_err(|e| format!("{path}: {e}"))?;
     f.seek(SeekFrom::Start(at)).map_err(|e| e.to_string())?;
     let mut buf = Vec::with_capacity(usize::try_from(len).unwrap_or(0).min(MAX_BYTES));
     f.take(len).read_to_end(&mut buf).map_err(|e| e.to_string())?;
@@ -907,6 +907,10 @@ struct DirectorySummary {
 }
 
 /// An unfinished range encountered again is a cycle; completed ranges cost no further I/O or budget.
+///
+/// Reload and repair validate more strictly than an ordinary open: a tile run past
+/// `data_length` is refused even when the header gives 0 (where [`find`] reads it), and so is any
+/// entry over [`MAX_BYTES`], where the reader fails only that tile.
 #[cfg(not(target_arch = "wasm32"))]
 fn validate_directories(
     archive: &str,

@@ -16,10 +16,40 @@ pub(super) const MIN_SPREAD: f32 = 0.8;
 /// attribute value on many lines doesn't lay out, and draw, character by character.
 pub(super) const MAX_CURVED_CHARS: usize = 200;
 
+/// The most points a curved label's course ([`Line::curved`]) is sampled at.
+const MAX_SAMPLES: usize = 4096;
+
 /// Length of curved text including spacing, with no trailing gap or backward character step.
 pub(super) fn curved_len(advances: &[f32], gap: f32) -> f32 {
     let step = |adv: f32| (adv + gap).max(0.0);
     advances.iter().map(|a| step(*a)).sum::<f32>() - advances.last().map_or(0.0, |a| step(*a) - a)
+}
+
+/// The letter spacing (in `advances`' units) a fitted label is spread to along a line with `room`
+/// points of it in view (#2265): none while the text set `gap` apart takes a third of the room or
+/// more; from there it grows smoothly, until at a sixth or less of the room it covers `stretch`
+/// of it. At most three average letters' widths between letters.
+pub(super) fn spread_gap(advances: &[f32], gap: f32, room: f32, stretch: f32) -> Option<f32> {
+    let len = curved_len(advances, gap);
+    let (n, ratio) = (advances.len(), room / len);
+    if n < 2 || !(len > 0.0 && ratio.is_finite() && ratio > 3.0 && stretch.is_finite()) {
+        return None;
+    }
+    let grown = len + ((ratio - 3.0) / 3.0).min(1.0) * (stretch * room - len);
+    let widest = 3.0 * advances.iter().sum::<f32>() / n as f32;
+    let mut wide = gap + (grown - len) / (n - 1) as f32;
+    // Steps closed up to nothing by a negative gap open only once the gap passes them: solved on
+    // the same steps as `curved_len`, between none and every step open.
+    if advances[..n - 1].iter().any(|a| a + gap <= 0.0) {
+        let (mut lo, mut hi) = (gap, advances.iter().map(|a| -a).fold(gap, f32::max) + (grown - len));
+        for _ in 0..40 {
+            let g = (lo + hi) / 2.0;
+            if curved_len(advances, g) < grown { lo = g } else { hi = g }
+        }
+        wide = hi;
+    }
+    let wide = wide.min(widest);
+    (wide - gap > 0.01).then_some(wide)
 }
 
 /// A line in screen points, with how far along it each vertex is.
@@ -67,6 +97,63 @@ impl Path {
         let (da, db) = (self.along.get(i - 1)?, self.along.get(i)?);
         let t = if db > da { (d - da) / (db - da) } else { 0.0 };
         Some((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t))
+    }
+
+    /// The line's course from `from` to `to` points along it: sampled every so often and averaged
+    /// over `reach` points either side, twice (so it bends smoothly), its detail finer than that
+    /// smoothed away. The samples start `2 * reach` before `from` and are spaced the returned
+    /// number of points along the line apart.
+    fn smoothed(&self, from: f32, to: f32, reach: f32) -> Option<(Path, f32)> {
+        if !(from.is_finite() && to.is_finite() && reach.is_finite() && reach > 0.0 && to > from) {
+            return None;
+        }
+        // Eight samples per half window, and no more than a few thousand in all; twice `reach` more each
+        // side, so the averages at the text's ends are whole.
+        let (lo, hi) = (from - 2.0 * reach, to + 2.0 * reach);
+        let every = (reach / 8.0).max((hi - lo) / MAX_SAMPLES as f32);
+        let n = ((hi - lo) / every).ceil() as usize + 1;
+        let mut pts: Vec<(f32, f32)> = (0..n).map(|k| self.at(lo + k as f32 * every)).collect::<Option<_>>()?;
+        let r = (reach / every).round().max(1.0) as usize;
+        let mut sum = vec![(0.0f64, 0.0f64); n + 1];
+        for _ in 0..2 {
+            for (k, p) in pts.iter().enumerate() {
+                let s = sum.get(k).copied()?;
+                *sum.get_mut(k + 1)? = (s.0 + f64::from(p.0), s.1 + f64::from(p.1));
+            }
+            for (k, p) in pts.iter_mut().enumerate() {
+                let (a, b) = (k.saturating_sub(r), (k + r + 1).min(n));
+                let (sa, sb) = (sum.get(a).copied()?, sum.get(b).copied()?);
+                let c = (b - a) as f64;
+                *p = (((sb.0 - sa.0) / c) as f32, ((sb.1 - sa.1) / c) as f32);
+            }
+        }
+        let mut along = Vec::with_capacity(n);
+        let mut d = 0.0f32;
+        for (k, p) in pts.iter().enumerate() {
+            if let Some(q) = k.checked_sub(1).and_then(|j| pts.get(j)) {
+                d += (p.0 - q.0).hypot(p.1 - q.1);
+            }
+            along.push(d);
+        }
+        (d.is_finite() && d > 0.0).then_some((Path { pts, along }, every))
+    }
+
+    /// The least distance from `p` to the line between `from` and `to` points along it, carried on
+    /// past its ends (as text may overhang them).
+    fn distance(&self, p: (f32, f32), from: f32, to: f32) -> f32 {
+        let first = self.along.partition_point(|a| *a < from).saturating_sub(1);
+        let last = self.along.partition_point(|a| *a <= to).min(self.pts.len().saturating_sub(1));
+        let mut best = f32::INFINITY;
+        for i in first..last {
+            let (Some(a), Some(b)) = (self.pts.get(i), self.pts.get(i + 1)) else { continue };
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let l2 = dx * dx + dy * dy;
+            let low = if i == 0 { f32::NEG_INFINITY } else { 0.0 };
+            let high = if i + 2 == self.pts.len() { f32::INFINITY } else { 1.0 };
+            let t = if l2 > 0.0 { (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / l2).clamp(low, high) } else { 0.0 };
+            best = best.min((p.0 - a.0 - t * dx).hypot(p.1 - a.1 - t * dy));
+        }
+        best
     }
 }
 
@@ -148,6 +235,13 @@ pub(super) struct Line {
 }
 
 impl Line {
+    /// About how many bytes its paths take, for a budget: what they hold room for, since a candidate
+    /// kept shares the line rather than copying it.
+    pub(super) fn bytes(&self) -> usize {
+        let path = |p: &Path| p.pts.capacity() * size_of::<(f32, f32)>() + p.along.capacity() * size_of::<f32>();
+        size_of::<Line>() + path(&self.fwd) + path(&self.rev)
+    }
+
     /// `None` for a line of fewer than two distinct points.
     pub(super) fn new(line: &[(f32, f32)]) -> Option<Line> {
         Some(Line { fwd: Path::new(line, false)?, rev: Path::new(line, true)? })
@@ -214,6 +308,40 @@ impl Line {
         best
     }
 
+    /// Where text `len` points long is centred on the line's straightest stretches, straightest
+    /// first, at most `most` of them, none within half the text of another (#2265). A stretch's
+    /// straightness is its end-to-end distance over its length along the line; on a tie, the one
+    /// nearer the middle comes first. A line no longer than the text: its middle.
+    pub(super) fn straightest(&self, len: f32, most: usize) -> Vec<f32> {
+        let total = self.length();
+        let slack = total - len;
+        if !(len.is_finite() && len > 0.0 && slack > 0.0) {
+            return vec![total / 2.0];
+        }
+        // A stretch every quarter of the text, at most a few hundred in all, the last at the end.
+        let step = (len / 4.0).max(slack / 256.0);
+        let starts = (slack / step).ceil() as usize;
+        let mut stretches: Vec<(f32, f32)> = (0..=starts)
+            .filter_map(|k| {
+                let s = (k as f32 * step).min(slack);
+                let (a, b) = (self.fwd.at(s)?, self.fwd.at(s + len)?);
+                Some(((b.0 - a.0).hypot(b.1 - a.1) / len, s + len / 2.0))
+            })
+            .collect();
+        let mid = total / 2.0;
+        stretches.sort_by(|a, b| b.0.total_cmp(&a.0).then((a.1 - mid).abs().total_cmp(&(b.1 - mid).abs())));
+        let mut out: Vec<f32> = Vec::with_capacity(most);
+        for (_, at) in stretches {
+            if out.len() >= most {
+                break;
+            }
+            if out.iter().all(|o| (o - at).abs() >= len / 2.0) {
+                out.push(at);
+            }
+        }
+        out
+    }
+
     /// A placement's centre on the path, without laying out its characters.
     pub(super) fn anchor(&self, at: f32) -> Option<(f32, f32)> {
         self.fwd.at(at)
@@ -230,35 +358,61 @@ impl Line {
     }
 
     /// Characters `advances` wide, `gap` apart (letter spacing; both in the label's units, points ×
-    /// 1.33, as its text's size), in turn along the line, centred `at` points along it (its middle when
-    /// `None`): the label's centre, and each character's centre relative to it and angle (radians,
-    /// clockwise, upright). `None` when the line (with `overrun` past each end) is shorter than the
-    /// text, the text there runs past an end by more than that, or the line turns more than
-    /// [`MAX_TURN`] from one character to the next.
-    pub(super) fn curved(&self, advances: &[f32], gap: f32, overrun: f32, at: Option<f32>) -> Option<((f32, f32), Vec<(f32, f32, f32)>)> {
+    /// 1.33, as its text's `size`), in turn along the line, centred `at` points along it (its middle
+    /// when `None`): the label's centre, and each character's centre relative to it and angle
+    /// (radians, clockwise, upright).
+    ///
+    /// The characters go along the line's course rather than the line itself (#2259): the line
+    /// smoothed over `reach` either side, the larger of the text's size and the step from one
+    /// character to the next, so detail finer than that (a river's jitter, or meanders shorter
+    /// than widely spaced letters) neither turns them nor bunches them up, and they stay evenly
+    /// spaced. The course must stay within half `reach` of the line (carried on past its ends) at
+    /// each character: half the text's size for ordinary spacing, half a step for widely spaced
+    /// letters. `None` when the line (with `overrun` past each end) is shorter than the text, the
+    /// text there runs past an end by more than that, the course strays further, it turns more than [`MAX_TURN`] from one character to the next, or it turns a
+    /// character further past vertical than that (it would stand upside down).
+    pub(super) fn curved(
+        &self,
+        advances: &[f32],
+        gap: f32,
+        size: f32,
+        overrun: f32,
+        at: Option<f32>,
+    ) -> Option<((f32, f32), Vec<(f32, f32, f32)>)> {
         // Each step from a character to the next: its advance and the letter spacing (never back).
         let step = |adv: f32| (adv + gap).max(0.0);
         let len = curved_len(advances, gap);
         let (path, mid) = self.upright(len, overrun, at)?;
-        let centre = path.at(mid)?;
-        let mut d = mid - len / 2.0;
+        let pitch = advances.iter().map(|a| step(*a)).sum::<f32>() / advances.len().max(1) as f32;
+        let reach = if size.is_finite() { size.max(pitch) } else { pitch }.max(0.5);
+        let (from, to) = (mid - len / 2.0, mid + len / 2.0);
+        let (course, every) = path.smoothed(from, to, reach)?;
+        // The label's middle on the course: sampled every `every` points from `2 * reach` before `from`.
+        let k = (mid - from + 2.0 * reach) / every;
+        let (i, t) = (k.floor() as usize, k.fract());
+        let (a, b) = (course.along.get(i).copied()?, course.along.get(i + 1).copied().unwrap_or(course.length()));
+        let cmid = a + (b - a) * t;
+        let centre = course.at(cmid)?;
+        // Wrapped to within half a turn either way.
+        let wrap = |a: f32| (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        let mut d = cmid - len / 2.0;
         let mut out = Vec::with_capacity(advances.len());
         let mut last: Option<f32> = None;
         for adv in advances {
             let char_mid = d + adv / 2.0;
-            // A character's angle: across its own width, so it sits on the bend rather than a vertex.
-            let (a, b) = (path.at(char_mid - adv.max(0.5) / 2.0)?, path.at(char_mid + adv.max(0.5) / 2.0)?);
-            let (p, turn) = (path.at(char_mid)?, angle(a, b));
-            if !turn.is_finite() {
+            let w = adv.max(0.5) / 2.0;
+            let (a, b) = (course.at(char_mid - w)?, course.at(char_mid + w)?);
+            let (p, turn) = (course.at(char_mid)?, angle(a, b));
+            // Upright, or no further past vertical than a turn from one character to the next.
+            if !turn.is_finite() || wrap(turn).abs() > std::f32::consts::FRAC_PI_2 + MAX_TURN {
                 return None;
             }
-            if let Some(prev) = last {
-                let mut step = turn - prev;
-                // Wrapped to within half a turn either way.
-                step = (step + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
-                if step.abs() > MAX_TURN {
-                    return None;
-                }
+            if last.is_some_and(|prev| wrap(turn - prev).abs() > MAX_TURN) {
+                return None;
+            }
+            // Kept over the line: its nearest stretch around where the text goes.
+            if path.distance(p, from - 2.0 * reach, to + 2.0 * reach) > reach / 2.0 {
+                return None;
             }
             last = Some(turn);
             out.push((p.0 - centre.0, p.1 - centre.1, turn));
@@ -266,6 +420,56 @@ impl Line {
         }
         Some((centre, out))
     }
+}
+
+/// The words a fitted label abbreviates when it doesn't fit, unless its class says otherwise
+/// (#2265): streams' generic names in English, Portuguese and Spanish.
+const ABBREVIATIONS: &[(&str, &str)] = &[
+    ("Creek", "Cr."),
+    ("River", "R."),
+    ("Canyon", "Cyn."),
+    ("Brook", "Bk."),
+    ("Branch", "Br."),
+    ("Fork", "Fk."),
+    ("Córrego", "Cór."),
+    ("Ribeirão", "Rib."),
+    ("Rio", "R."),
+    ("Riacho", "Rch."),
+    ("Arroio", "Arr."),
+    ("Igarapé", "Ig."),
+    ("Río", "R."),
+    ("Arroyo", "Ao."),
+    ("Quebrada", "Qda."),
+    ("Riachuelo", "Rchlo."),
+    ("Cañada", "Cda."),
+    ("Barranco", "Bco."),
+];
+
+/// `text` with each whole word that `own`, or else the built-in list, abbreviates (matched
+/// ignoring case) put short; `None` when it has no such word (#2265).
+pub(super) fn abbreviated(text: &str, own: &std::collections::BTreeMap<String, String>) -> Option<String> {
+    let short = |word: &str| -> Option<&str> {
+        let lower = word.to_lowercase();
+        own.iter()
+            .find(|(w, _)| w.to_lowercase() == lower)
+            .map(|(_, s)| s.as_str())
+            .or_else(|| ABBREVIATIONS.iter().find(|(w, _)| w.to_lowercase() == lower).map(|(_, s)| *s))
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut changed = false;
+    // Each word with the spaces after it.
+    for piece in text.split_inclusive(char::is_whitespace) {
+        let word = piece.trim_end_matches(char::is_whitespace);
+        match short(word) {
+            Some(s) if !word.is_empty() => {
+                out.push_str(s);
+                out.push_str(&piece[word.len()..]);
+                changed = true;
+            }
+            _ => out.push_str(piece),
+        }
+    }
+    changed.then_some(out)
 }
 
 /// Middle first, then the nearest places either side, at most eight places in all.
@@ -349,6 +553,10 @@ pub(super) fn curved_off(
 /// The most labels a line repeats a label in (the one at its middle among them).
 pub(super) const MAX_REPEATS: usize = 32;
 
+/// The index of the close-set repeat at a line's middle when a spread label went off it (#2265):
+/// 0 is the spread label's, and [`repeats`] numbers none this high.
+pub(super) const MIDDLE_REPEAT: usize = 2 * MAX_REPEATS + 1;
+
 /// Where along a line `total` points long a label is centred, each with its repeat's index: its
 /// middle (0), and with `repeat`, every that many points either side of it (odd indices before
 /// the middle, even ones after), nearest first, at most [`MAX_REPEATS`]. A place too near an
@@ -370,9 +578,48 @@ pub(super) fn repeats(total: f32, repeat: Option<f32>) -> Vec<(usize, f32)> {
     out
 }
 
+/// The places of [`repeats`] at least `clear` from `at` (where a spread label is, #2265), with
+/// their indices, nearest the middle first: those nearer are skipped before counting, so a short
+/// repeat still names the line beyond the spread label. The middle is among them when the spread
+/// label is clear of it and the repeat names the line more than once, as [`MIDDLE_REPEAT`]. At
+/// most [`MAX_REPEATS`] less one.
+pub(super) fn repeats_clear_of(total: f32, repeat: Option<f32>, at: f32, clear: f32) -> Vec<(usize, f32)> {
+    let mut out = Vec::new();
+    let Some(step) = repeat.filter(|r| r.is_finite() && *r > 0.0) else { return out };
+    if !(total.is_finite() && at.is_finite() && clear.is_finite()) {
+        return out;
+    }
+    let (mid, step) = (f64::from(total) / 2.0, f64::from(step));
+    // (A repeat longer than half the line names it once: the spread label is that one.)
+    if step <= mid && (f64::from(at) - mid).abs() >= f64::from(clear) {
+        out.push((MIDDLE_REPEAT, total / 2.0));
+    }
+    // Each side's repeats nearer `at` than `clear`: those whose count from the middle is between.
+    let near =
+        |side: f64| ((side * (f64::from(at) - mid) - f64::from(clear)) / step, (side * (f64::from(at) - mid) + f64::from(clear)) / step);
+    let sides = [(-1.0, near(-1.0)), (1.0, near(1.0))];
+    let mut k = 1.0f64;
+    while k * step <= mid && out.len() < MAX_REPEATS - 1 {
+        let mut past = f64::INFINITY;
+        for (n, (side, (lo, hi))) in sides.into_iter().enumerate() {
+            if k > lo && k < hi {
+                past = past.min(hi.ceil());
+            } else if out.len() < MAX_REPEATS - 1 {
+                out.push(((k as usize).saturating_mul(2).saturating_sub(1).saturating_add(n), (mid + side * k * step) as f32));
+            }
+        }
+        // Both sides near it: on past the nearer end of the two stretches.
+        k = if past.is_finite() && sides.iter().all(|(_, (lo, hi))| k > *lo && k < *hi) { past.max(k + 1.0) } else { k + 1.0 };
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The text size the curved tests set their characters in (screen points).
+    const SIZE: f32 = 12.0;
 
     fn parallel(line: &[(f32, f32)], len: f32, overrun: f32, at: Option<f32>) -> Option<(f32, f32, f32)> {
         Line::new(line)?.parallel(len, overrun, at)
@@ -385,7 +632,7 @@ mod tests {
         overrun: f32,
         at: Option<f32>,
     ) -> Option<((f32, f32), Vec<(f32, f32, f32)>)> {
-        Line::new(line)?.curved(advances, gap, overrun, at)
+        Line::new(line)?.curved(advances, gap, SIZE, overrun, at)
     }
 
     #[test]
@@ -492,6 +739,147 @@ mod tests {
         assert!(curved(&[(0.0, 100.0), (100.0, 100.0), (100.0, 0.0)], &[10.0; 6], 0.0, 0.0, None).is_none());
     }
 
+    /// A gentle sine, smooth or drawn with a fine zigzag as a river's vertices are: read over each
+    /// character's own width the zigzag turns past [`MAX_TURN`] from one to the next; along the
+    /// course, smoothed over the text's height, each character is turned to the sine where it is,
+    /// but for the zigzag's own tilt over that height, steps no more than on the smooth line, and
+    /// they are evenly spaced (#2259).
+    #[test]
+    fn curved_text_follows_a_lines_course_not_its_jitter() {
+        // A vertex every `every` points, every other one `zigzag` off the course, either side.
+        let sine = |every: usize, zigzag: f32| -> Vec<(f32, f32)> {
+            (0..=400 / every)
+                .map(|i| {
+                    let x = (i * every) as f32;
+                    let jitter = if i % 2 == 1 { zigzag * if i % 4 == 1 { 1.0 } else { -1.0 } } else { 0.0 };
+                    (x, 100.0 + 20.0 * (x / 400.0 * std::f32::consts::TAU).sin() + jitter)
+                })
+                .collect()
+        };
+        let (smooth, rough) = (sine(1, 0.0), sine(3, 1.0));
+        let along =
+            |line: &[(f32, f32)], x: f32| Path::new(line, false).and_then(|p| Some(*p.along.get(p.pts.iter().position(|q| q.0 == x)?)?));
+        let steps = |glyphs: &[(f32, f32, f32)]| -> Vec<f32> { glyphs.windows(2).map(|w| (w[1].2 - w[0].2).abs()).collect() };
+        let advances = [7.0; 12];
+        // The zigzag's own tilt over a text's height either side.
+        let tilt = (1.0f32 / SIZE).atan();
+        for x in [99.0, 201.0, 300.0] {
+            let (_, even) = curved(&smooth, &advances, 0.0, 0.0, along(&smooth, x)).unwrap();
+            let (centre, wavy) = curved(&rough, &advances, 0.0, 0.0, along(&rough, x)).expect("placed on the zigzag");
+            let most = steps(&even).into_iter().fold(0.0f32, f32::max);
+            assert!(steps(&wavy).iter().all(|s| *s <= most + 2.0 * tilt && *s < MAX_TURN), "at {x}: {:?} past {most}", steps(&wavy));
+            // The sine's own direction where each character is.
+            let course = |gx: f32| (20.0 * std::f32::consts::TAU / 400.0 * (gx / 400.0 * std::f32::consts::TAU).cos()).atan();
+            assert!(wavy.iter().all(|g| (g.2 - course(centre.0 + g.0)).abs() <= tilt), "at {x}: turned to the course: {wavy:?}");
+            // Evenly spaced, a character's advance apart, as on a straight line.
+            assert!(wavy.windows(2).all(|w| ((w[1].0 - w[0].0).hypot(w[1].1 - w[0].1) - 7.0).abs() < 0.2), "at {x}: {wavy:?}");
+        }
+    }
+
+    /// Read over the text's height, a short label's course can point back against the way the text
+    /// reads (here: rightward text whose courses both run back left); it is left out rather than
+    /// drawn upside down. With no usable size, a character's angle is read over its own width.
+    #[test]
+    fn curved_text_never_reads_against_itself() {
+        let line = [(20.0, -1.0), (0.0, -1.0), (0.0, 0.0), (8.0, 0.0), (8.0, 1.0), (-12.0, 1.0)];
+        assert!(curved(&line, &[3.0; 2], 0.0, 0.0, Some(25.0)).is_none());
+        let level = [(0.0, 50.0), (100.0, 50.0), (100.0, 150.0)];
+        for size in [f32::NAN, f32::INFINITY] {
+            let (_, glyphs) = Line::new(&level).unwrap().curved(&[5.0; 3], 0.0, size, 0.0, Some(30.0)).unwrap();
+            assert!(glyphs.iter().all(|g| g.2.abs() < 1e-4), "{size}: {glyphs:?}");
+        }
+    }
+
+    /// Text may run past a line's ends by its overrun: the line is carried on there, so the text
+    /// over a straight line's end is on it, not off it (#2259).
+    #[test]
+    fn curved_text_may_overhang_a_lines_ends() {
+        let line = [(0.0, 50.0), (100.0, 50.0)];
+        let (_, glyphs) = curved(&line, &[10.0; 12], 0.36, 12.0, None).expect("overhangs by nearly 12 of 12");
+        assert!(glyphs.iter().all(|g| g.1.abs() < 1e-3 && g.2.abs() < 1e-4), "{glyphs:?}");
+    }
+
+    /// A bend of nearly half a turn under a label whose start-to-end direction is steep: one whose
+    /// characters would stand upside down is refused; one that is placed has none upside down.
+    #[test]
+    fn curved_text_past_the_turn_bound_is_refused() {
+        // Its course turns from -0.5 to 2.9 radians, so the text's ends are -0.3 and 2.7 and its
+        // start-to-end direction about 1.2: its far characters turn past the bound, so it is
+        // left out. A shorter text round the middle of the turn is placed, every character
+        // within the bound.
+        let arc: Vec<(f32, f32)> = (0..=340)
+            .map(|i| {
+                let t = -0.5 + i as f32 / 100.0;
+                (200.0 + 58.0 * t.sin(), 200.0 - 58.0 * t.cos())
+            })
+            .collect();
+        assert!(curved(&arc, &[7.0; 25], 0.0, 0.0, None).is_none());
+        let (_, glyphs) = curved(&arc, &[7.0; 8], 0.0, 0.0, None).expect("a short text round the turn is placed");
+        assert!(glyphs.iter().all(|g| g.2.abs() <= std::f32::consts::FRAC_PI_2 + MAX_TURN), "upside down: {glyphs:?}");
+    }
+
+    /// A hairpin tighter than the text, sharper than [`MAX_TURN`] over a text's height: still left out.
+    #[test]
+    fn curved_text_leaves_a_hairpin() {
+        // Out along y = 100, round a turn of radius 5 and back along y = 110: its middle at the turn.
+        let mut hairpin: Vec<(f32, f32)> = vec![(0.0, 100.0)];
+        hairpin.extend((0..=12).map(|i| {
+            let t = i as f32 / 12.0 * std::f32::consts::PI;
+            (200.0 + 5.0 * t.sin(), 105.0 - 5.0 * t.cos())
+        }));
+        hairpin.push((0.0, 110.0));
+        assert!(curved(&hairpin, &[7.0; 8], 0.0, 0.0, None).is_none());
+        // Off the turn, along one of its arms, the same text fits.
+        assert!(curved(&hairpin, &[7.0; 8], 0.0, 0.0, Some(100.0)).is_some());
+        // A 45° corner is rounded over the text's height: taken, the characters turning a little at
+        // a time from one leg to the other.
+        let (c, s) = (45f32.to_radians().cos(), 45f32.to_radians().sin());
+        let (_, glyphs) = curved(&[(0.0, 100.0), (100.0, 100.0), (100.0 + 100.0 * c, 100.0 + 100.0 * s)], &[7.0; 8], 0.0, 0.0, None)
+            .expect("a 45° corner");
+        assert!(glyphs.windows(2).all(|w| w[1].2 >= w[0].2 && w[1].2 - w[0].2 < MAX_TURN), "{glyphs:?}");
+        assert!(glyphs.iter().all(|g| (-1e-4..=45f32.to_radians() + 1e-4).contains(&g.2)), "between the legs: {glyphs:?}");
+    }
+
+    /// Round a corner the characters keep their spacing along the course, never bunched up at the
+    /// vertex, turning a little at a time; a corner too sharp for that (past 60° for this text) is
+    /// left out (#2259).
+    #[test]
+    fn curved_text_round_a_corner_keeps_its_spacing() {
+        for degrees in [30.0f32, 45.0, 60.0, 75.0, 90.0] {
+            for side in [1.0f32, -1.0] {
+                let turn = side * degrees.to_radians();
+                let corner = [(0.0, 100.0), (100.0, 100.0), (100.0 + 100.0 * turn.cos(), 100.0 + 100.0 * turn.sin())];
+                let on = curved(&corner, &[7.0; 8], 0.0, 0.0, None);
+                assert_eq!(on.is_some(), degrees <= 60.0, "{degrees}° {side}");
+                if let Some((_, glyphs)) = &on {
+                    let gaps: Vec<f32> = glyphs.windows(2).map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1)).collect();
+                    assert!(gaps.iter().all(|g| *g > 6.8 && *g <= 7.0 + 1e-3), "{degrees}° {side}: {gaps:?}");
+                }
+            }
+        }
+    }
+
+    /// Letters spaced wider than the text is tall sweep along the line's trend, smoothed over that
+    /// spacing: short meanders hardly turn them, and they stay within half a step of the line. Set
+    /// close together, the text follows the same meanders more closely, within half its height.
+    #[test]
+    fn widely_spaced_curved_text_follows_the_trend_not_the_meanders() {
+        let meanders: Vec<(f32, f32)> =
+            (0..=1600).map(|i| (i as f32 * 0.5, 100.0 + 4.0 * (i as f32 * 0.5 / 30.0 * std::f32::consts::TAU).sin())).collect();
+        let (_, wide) = curved(&meanders, &[7.0; 6], 30.0, 0.0, None).expect("widely spaced");
+        assert!(wide.iter().all(|g| g.2.abs() < 0.1), "along the trend: {wide:?}");
+        let line = Path::new(&meanders, false).unwrap();
+        let (cx, cy) = Line::new(&meanders).unwrap().curved(&[7.0; 6], 30.0, SIZE, 0.0, None).unwrap().0;
+        assert!(
+            wide.iter().all(|g| line.distance((cx + g.0, cy + g.1), 0.0, line.length()) <= 37.0 / 2.0),
+            "within half a step of the line: {wide:?}"
+        );
+        let (c, close) = Line::new(&meanders).unwrap().curved(&[7.0; 6], 0.0, SIZE, 0.0, None).expect("close together");
+        assert!(close.iter().all(|g| line.distance((c.0 + g.0, c.1 + g.1), 0.0, line.length()) <= SIZE / 2.0), "{close:?}");
+        let most = |g: &[(f32, f32, f32)]| g.iter().fold(0.0f32, |m, g| m.max(g.2.abs()));
+        assert!(most(&close) > most(&wide), "closer to the meanders: {close:?}");
+    }
+
     /// A distance from the line goes to the text's nearest edge, either side, and 0 is on it (#1187).
     #[test]
     fn a_distance_from_the_line_reaches_the_nearest_edge() {
@@ -540,5 +928,84 @@ mod tests {
         assert!(spread(&below) < spread(&on), "inside it, closer");
         // A quarter of the way to the bend's centre: they would run together.
         assert!(curved_off(on, -50.0).is_none());
+    }
+
+    /// Whole words only, ignoring case, a class's own over the built-in list, spaces kept (#2265).
+    #[test]
+    fn a_name_is_abbreviated_by_whole_words() {
+        let none = std::collections::BTreeMap::new();
+        assert_eq!(abbreviated("Ribeirão  das Pedras", &none).as_deref(), Some("Rib.  das Pedras"));
+        assert_eq!(abbreviated("Mill CREEK", &none).as_deref(), Some("Mill Cr."));
+        assert_eq!(abbreviated("Riozinho", &none), None, "not inside a word");
+        assert_eq!(abbreviated("", &none), None);
+        let own = std::collections::BTreeMap::from([("creek".to_owned(), "Ck".to_owned()), ("Fundo".to_owned(), "Fdo.".to_owned())]);
+        assert_eq!(abbreviated("Creek Fundo\n", &own).as_deref(), Some("Ck Fdo.\n"));
+    }
+
+    /// Spread (#2265) only past three times the text, growing to `stretch` of the line at six,
+    /// at most three letters apart; on the same clamped steps as `curved_len` with a negative gap.
+    #[test]
+    fn a_fitted_label_is_spread_only_where_its_line_has_room_to_spare() {
+        let advances = [10.0; 5];
+        let len = |gap: f32| curved_len(&advances, gap);
+        // Taking a third of the line or more: close-set.
+        assert_eq!(spread_gap(&advances, 0.0, 3.0 * len(0.0), 0.6), None);
+        // Then it grows smoothly with the room, and from six times the text covers `stretch` of it.
+        let gaps: Vec<f32> = [3.1, 4.0, 5.0, 6.0].iter().map(|r| spread_gap(&advances, 0.0, r * 50.0, 0.5).unwrap()).collect();
+        assert!(gaps.windows(2).all(|w| w[1] > w[0]), "{gaps:?}");
+        assert!(gaps[0] < 0.5, "{gaps:?}");
+        assert!((len(gaps[3]) - 0.5 * 300.0).abs() < 0.01, "{}", len(gaps[3]));
+        // Never more than three letters' widths apart, nor spread by a stretch under the text.
+        assert_eq!(spread_gap(&advances, 0.0, 10_000.0, 0.6), Some(30.0));
+        assert_eq!(spread_gap(&advances, 0.0, 400.0, 0.1), None);
+        assert_eq!(spread_gap(&[10.0], 0.0, 400.0, 0.6), None);
+        // A gap closing a step up to nothing: the spread still covers `stretch` of the line.
+        let tight = [1.0, 10.0, 1.0];
+        let wide = spread_gap(&tight, -5.0, 36.0, 0.6).unwrap();
+        assert!((curved_len(&tight, wide) - 0.6 * 36.0).abs() < 0.01, "{wide}");
+    }
+
+    /// The repeats clear of a spread label (#2265): as [`repeats`] beyond it, the nearer ones
+    /// skipped before counting, so a short repeat still names the line toward its ends.
+    #[test]
+    fn repeats_clear_of_a_spread_label_are_counted_beyond_it() {
+        let filtered = |at: f32, clear: f32| -> Vec<(usize, f32)> {
+            let middle = repeats(1000.0, Some(100.0)).into_iter().map(|(i, d)| (if i == 0 { MIDDLE_REPEAT } else { i }, d));
+            middle.filter(|(_, d)| (d - at).abs() >= clear).collect()
+        };
+        assert_eq!(repeats_clear_of(1000.0, Some(100.0), 500.0, 150.0), filtered(500.0, 150.0));
+        // Off the middle and clear of it: the middle is named close-set too, first.
+        assert_eq!(repeats_clear_of(1000.0, Some(100.0), 300.0, 150.0), filtered(300.0, 150.0));
+        assert_eq!(repeats_clear_of(1000.0, Some(100.0), 300.0, 150.0)[0], (MIDDLE_REPEAT, 500.0));
+        assert!(repeats_clear_of(1000.0, Some(100.0), 400.0, 150.0).iter().all(|(i, _)| *i != MIDDLE_REPEAT));
+        assert_eq!(repeats_clear_of(1000.0, Some(600.0), 300.0, 150.0), vec![], "named once: the spread label");
+        assert_eq!(repeats_clear_of(1000.0, None, 500.0, 150.0), vec![]);
+        // A short step: the nearest 32 would all be near the middle, the ones beyond it go.
+        let short = repeats_clear_of(1000.0, Some(5.0), 500.0, 122.0);
+        assert_eq!(short.len(), MAX_REPEATS - 1);
+        assert!(short.iter().all(|(_, d)| (d - 500.0).abs() >= 122.0), "{short:?}");
+        assert_eq!(short[..2], [(49, 375.0), (50, 625.0)], "indices as repeats numbers them");
+        let mut indices: Vec<usize> = short.iter().map(|r| r.0).collect();
+        indices.dedup();
+        assert_eq!(indices.len(), short.len(), "every index once");
+        assert!(repeats_clear_of(1000.0, Some(1e-30), 500.0, 122.0).len() < MAX_REPEATS);
+    }
+
+    /// Straightest first, none within half the text of another; a line no longer than the text,
+    /// its middle (#2265).
+    #[test]
+    fn the_straightest_stretches_come_first() {
+        // A zigzag 200 points long, then 200 points straight.
+        let mut line: Vec<(f32, f32)> = (0..=20).map(|i| (i as f32 * 10.0, if i % 2 == 1 { 8.0 } else { 0.0 })).collect();
+        line.push((400.0, 0.0));
+        let line = Line::new(&line).unwrap();
+        let at = line.straightest(60.0, 4);
+        assert!(!at.is_empty() && at.len() <= 4, "{at:?}");
+        let x = |d: f32| line.anchor(d).unwrap().0;
+        assert!(x(at[0]) > 230.0, "on the straight half: {at:?}");
+        assert!(at.iter().enumerate().all(|(i, a)| at.iter().skip(i + 1).all(|b| (a - b).abs() >= 30.0)), "{at:?}");
+        assert!(at.iter().all(|d| (30.0..=line.length() - 30.0).contains(d)), "{at:?}");
+        assert_eq!(Line::new(&[(0.0, 0.0), (50.0, 0.0)]).unwrap().straightest(60.0, 4), vec![25.0]);
+        assert_eq!(Line::new(&[(0.0, 0.0), (50.0, 0.0)]).unwrap().straightest(f32::NAN, 4), vec![25.0]);
     }
 }

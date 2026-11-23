@@ -204,12 +204,19 @@ fn a_compound_system_is_read_by_its_horizontal_part() {
     let out = read("model.gml", &bytes, None).unwrap();
     let ds = &out[0].0;
     assert_eq!(ds.crs, Some(Crs::Epsg(25832)));
-    let e = ds.extent();
+    let e = ds.lonlat_extent();
     assert!((e.min_x - 9.0).abs() < 0.01 && (e.min_y - 49.6).abs() < 0.1, "{e:?}");
     // One naming another system is refused.
     let other = inner.replace("EPSG:25832", "EPSG:25833");
     let err = read("model.gml", &model("EPSG:25832", &building("b1", &other)), None).unwrap_err().to_string();
     assert!(err.contains("different coordinate systems (EPSG:25832 and EPSG:25833)"), "{err}");
+    // One RustGIS doesn't know beside a known one: said as unknown, not as another system.
+    let unknown = inner.replace("EPSG:25832", "EPSG:999999");
+    let err = read("model.gml", &model("EPSG:25832", &building("b1", &unknown)), None).unwrap_err().to_string();
+    assert!(err.contains("a coordinate system RustGIS doesn't know (EPSG:999999 beside EPSG:25832)"), "{err}");
+    assert!(err.contains("give the coordinate system (crs)") && !err.contains("different coordinate systems"), "{err}");
+    // Given one, it is read in it.
+    assert!(read("model.gml", &model("EPSG:25832", &building("b1", &unknown)), Some(Crs::Epsg(25832))).is_ok());
 }
 
 /// A compound system's vertical part is said when its heights aren't metres upward: another unit, a
@@ -1055,7 +1062,7 @@ fn a_system_given_reads_the_coordinates_as_written() {
     let ground = square(500_000.0, 5_500_000.0, 10.0, 0.0);
     let bytes = model("urn:ogc:def:crs:EPSG::4258", &building("b1", &surface("GroundSurface", &[polygon("g", &ground)])));
     let out = read("model.gml", &bytes, Some(Crs::Epsg(25832))).unwrap();
-    let e = out[0].0.extent();
+    let e = out[0].0.lonlat_extent();
     assert!((e.min_x - 9.0).abs() < 0.01 && (e.min_y - 49.6).abs() < 0.1, "{e:?}");
     // Latitude 10 to 12, longitude 0 to 4, given as the system the file names.
     let inner = surface("GroundSurface", &[polygon("g", "10 0 0 10 4 0 12 4 0 12 0 0 10 0 0")]);
@@ -1109,6 +1116,11 @@ fn a_file_broken_in_the_middle_is_refused() {
     // Markup that `<!` starts and nothing knows, in the middle: refused too. Ending at `<!`: cut.
     let bang = lonlat(&[building("b1", &box_surfaces("b1")), "<!x>".to_string(), building("b2", &box_surfaces("b2"))].concat());
     assert!(read("model.gml", &bang, None).is_err());
+    // Broken in the middle and ending at `<!` too: still refused, not read as cut short there.
+    let mut bang_cut = bang.clone();
+    bang_cut.extend_from_slice(b"<!");
+    let err = read("model.gml", &bang_cut, None).unwrap_err().to_string();
+    assert!(!err.contains("cut short"), "{err}");
     let whole = lonlat(&[building("b1", &box_surfaces("b1")), "<!-- n -->".to_string(), building("b2", &box_surfaces("b2"))].concat());
     let cut = whole.windows(4).position(|w| w == b"<!--").unwrap() + 2;
     let out = read("model.gml", &whole[..cut], None).unwrap();
@@ -1935,6 +1947,21 @@ fn a_prototype_that_cant_be_read_is_said_once() {
     assert!(says(&out, "2 geometry instances are drawn as a point"), "{:?}", messages_of(&out));
 }
 
+/// An implicit geometry inside a prototype places nothing: said as such, not as a geometry of an
+/// unknown type.
+#[test]
+fn an_implicit_geometry_inside_a_prototype_is_said() {
+    let nested = format!(
+        "<core:relativeGMLGeometry><gml:MultiGeometry><gml:geometryMember><core:ImplicitGeometry>{}</core:ImplicitGeometry></gml:geometryMember></gml:MultiGeometry></core:relativeGMLGeometry>{}",
+        reference(1.0, 1.0, 0.0),
+        reference(5.0, 5.0, 0.0)
+    );
+    let out = read("model.gml", &lonlat(&furniture("t1", &nested)), None).unwrap();
+    assert!(says(&out, "1 implicit geometries inside a prototype aren't placed"), "{:?}", messages_of(&out));
+    assert!(!says(&out, "unknown types"), "{:?}", messages_of(&out));
+    assert!(says(&out, "its template or prototype is missing, in another file, can't be read or draws nothing"), "{:?}", messages_of(&out));
+}
+
 /// A prototype's geometry linked from outside an implicit geometry isn't read as the file's.
 #[test]
 fn a_prototype_linked_from_outside_is_said() {
@@ -2626,4 +2653,85 @@ fn an_extension_of_2_0_keeps_its_own_properties_named_as_3_0s() {
     let buildings = layer(&out, "model Building");
     assert_eq!(value(buildings, row_of(buildings, "p1"), "parent"), Value::Null, "no part made");
     assert_eq!(value(buildings, row_of(buildings, "b1"), "buildingPart"), Value::Text("#p1".into()));
+}
+
+/// An object of type `ty` with a floor and a roof 5 above it, as a member: in 2.0's building
+/// namespace, or in 3.0's core.
+fn raised(ty: &str, v3: bool) -> String {
+    let faces = format!(
+        "<gml:MultiSurface><gml:surfaceMember>{}</gml:surfaceMember><gml:surfaceMember>{}</gml:surfaceMember></gml:MultiSurface>",
+        polygon(&format!("{ty}-f"), &square(0.0, 0.0, 10.0, 0.0)),
+        polygon(&format!("{ty}-r"), &square(0.0, 0.0, 10.0, 5.0)),
+    );
+    if v3 {
+        format!(r#"<cityObjectMember><{ty} gml:id="{ty}"><lod1MultiSurface>{faces}</lod1MultiSurface></{ty}></cityObjectMember>"#)
+    } else {
+        format!(
+            r#"<core:cityObjectMember><bldg:{ty} gml:id="{ty}"><bldg:lod1MultiSurface>{faces}</bldg:lod1MultiSurface></bldg:{ty}></core:cityObjectMember>"#
+        )
+    }
+}
+
+/// Whether the layer of objects of type `ty` comes in extruded by `height` on `base_height`.
+fn stands_in(out: &[(Dataset, ReadReport)], ty: &str) -> bool {
+    let name = format!("m {ty}");
+    let (_, report) = out.iter().find(|(d, _)| d.name == name).unwrap_or_else(|| panic!("no layer {name}"));
+    report.extrusion.as_ref().is_some_and(|x| x.height_field == "height" && x.base_field == "base_height")
+}
+
+/// Volumes come in extruded by their CityGML names, 2.0's and 3.0's; surfaces on or below the
+/// ground, what lies inside another object and an extension's type stay flat (#2161).
+#[test]
+fn volumes_come_in_extruded_and_surfaces_flat() {
+    let standing_2 =
+        ["Building", "BuildingPart", "BuildingInstallation", "Bridge", "BridgeConstructionElement", "CityFurniture", "GenericCityObject"];
+    let flat_2 = [
+        "Road",
+        "Railway",
+        "Track",
+        "Square",
+        "TransportationComplex",
+        "WaterBody",
+        "LandUse",
+        "PlantCover",
+        "Tunnel",
+        "Room",
+        "IntBuildingInstallation",
+        "BuildingFurniture",
+        "NoiseBarrier",
+    ];
+    let members: String = standing_2.iter().chain(&flat_2).map(|ty| raised(ty, false)).collect();
+    let out = read("m.gml", &lonlat(&members), None).unwrap();
+    for ty in standing_2 {
+        assert!(stands_in(&out, ty), "2.0 {ty} should come in extruded");
+    }
+    for ty in flat_2 {
+        assert!(!stands_in(&out, ty), "2.0 {ty} should come in flat");
+    }
+    let standing_3 = [
+        "BuildingConstructiveElement",
+        "BridgeConstructiveElement",
+        "TunnelInstallation",
+        "GenericOccupiedSpace",
+        "OtherConstruction",
+        "SolitaryVegetationObject",
+    ];
+    let flat_3 = [
+        "Waterway",
+        "HollowSpace",
+        "BuildingRoom",
+        "Storey",
+        "BuildingUnit",
+        "GenericUnoccupiedSpace",
+        "GenericLogicalSpace",
+        "GenericThematicSurface",
+    ];
+    let members: String = standing_3.iter().chain(&flat_3).map(|ty| raised(ty, true)).collect();
+    let out = read("m.gml", &model3("EPSG:4326", &members), None).unwrap();
+    for ty in standing_3 {
+        assert!(stands_in(&out, ty), "3.0 {ty} should come in extruded");
+    }
+    for ty in flat_3 {
+        assert!(!stands_in(&out, ty), "3.0 {ty} should come in flat");
+    }
 }
