@@ -134,6 +134,12 @@ fn a_saved_scene_is_read_back() {
         (Some(-200.0), Some(1500.0), Some(10.0)),
         "from -200 m to 1,500 m, counted from 10 m"
     );
+    assert_eq!((scene.grid, scene.grid_step, scene.grid_z_step), (true, Some(500.0), Some(25.5)), "its grid, every 500 m and 25.5 m");
+    // Saved again, it requires what the fixture says.
+    let mut again = crate::Project::from_json(include_str!("../../../../schema/fixtures/scene_3d.rgis")).unwrap();
+    let (text, _) = again.saved_text(None).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(doc["requires"].as_array().is_some_and(|r| r.contains(&json!("scene-grid"))), "{}", doc["requires"]);
     assert!(scene.check().is_ok());
 }
 

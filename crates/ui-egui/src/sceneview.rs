@@ -606,10 +606,11 @@ fn metres_field(ui: &mut Ui, id: egui::Id, now: Option<f64>, auto: &str, name: &
         ui.data_mut(|d| d.insert_temp(id, text));
         return None;
     }
-    // Left (Enter, Tab or a click elsewhere): read, then shown as it is set.
+    // Left (Enter, Tab or a click elsewhere): read, then shown as it is set. Left as it was
+    // shown, nothing is set.
     let typed = ui.data_mut(|d| d.remove_temp::<String>(id));
     let typed = if r.lost_focus() { Some(text) } else { typed };
-    let typed = typed?;
+    let typed = typed.filter(|t| t.trim() != shown)?;
     match read_metres(&typed) {
         Ok(v) if v.map(f64::to_bits) == now.map(f64::to_bits) => None,
         Ok(v) => Some(Ok(v)),
@@ -630,11 +631,10 @@ fn read_metres(text: &str) -> Result<Option<f64>, ()> {
     digits.parse::<f64>().ok().filter(|v| v.is_finite()).map(Some).ok_or(())
 }
 
-/// `v` metres written as typed back: no thousands apart, no needless decimals.
+/// `v` metres written as typed back: no thousands apart, no needless decimals, and every digit
+/// it has, so reading it back gives the same number.
 fn plain_metres(v: f64) -> String {
-    let s = format!("{v:.3}");
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s == "-0" { "0".to_string() } else { s.to_string() }
+    if v == 0.0 { "0".to_string() } else { format!("{v}") }
 }
 
 /// The picture, turned by the mouse.
@@ -1248,7 +1248,11 @@ mod tests {
         assert_eq!(read_metres("Auto"), Ok(None));
         assert_eq!(read_metres("abc"), Err(()));
         assert_eq!(read_metres("1e400"), Err(()));
-        assert_eq!((plain_metres(1200.0), plain_metres(0.25), plain_metres(-0.0001)), ("1200".into(), "0.25".into(), "0".into()));
+        assert_eq!((plain_metres(1200.0), plain_metres(0.25), plain_metres(-0.0)), ("1200".into(), "0.25".into(), "0".into()));
+        // Every digit kept: a value read back from its box is the same number.
+        for v in [0.0004, 1234.56789, -200.125, 1e-7] {
+            assert_eq!(read_metres(&plain_metres(v)), Ok(Some(v)), "{v}");
+        }
     }
 
     /// The ruler's and the grid's settings are typed: Enter sets one, an emptied box sets it back
