@@ -480,8 +480,9 @@ fn shown_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
 fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
     let asked = scene.ruler_step.is_some() || scene.ruler_min.is_some() || scene.ruler_max.is_some() || scene.ruler_from.is_some();
     let label = if asked { format!("{} ●", tl!("Ruler Settings")) } else { tl!("Ruler Settings").to_string() };
-    // What the automatic ones are now: the block's base, its highest ground.
-    let (base, top) = app.scene3d.built.as_ref().map(|(_, b)| (b.height_of(b.z_range.0), b.height_of(b.z_range.1))).unzip();
+    // What the automatic foot is now: the block's base (its top, the ground at the corner it
+    // stands up, moves with the eye).
+    let base = app.scene3d.built.as_ref().map(|(_, b)| b.height_of(b.z_range.0));
     let metres =
         |v: Option<f64>| v.map(|v| format!("{} {}", tl!("Auto:"), plain_metres(v.round()))).unwrap_or_else(|| tl!("Auto").to_string());
     ui.menu_button(label, |ui| {
@@ -505,7 +506,7 @@ fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
                 tl!("Ruler top"),
                 tl!("The height of its top, metres above sea level. Empty: the ground at its corner"),
                 scene.ruler_max,
-                metres(top),
+                tl!("Auto").to_string(),
             ),
             (
                 "rulerFrom",
