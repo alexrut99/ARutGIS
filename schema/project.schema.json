@@ -53,6 +53,12 @@
                 },
                 "proj4": {
                   "type": "string"
+                },
+                "wkt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -166,6 +172,27 @@
       "description": "A field copy's exact home and offline-area identities (128 random bits each).",
       "properties": {
         "area": {
+          "type": "string"
+        },
+        "generation": {
+          "description": "The area's [`OfflineArea::generation`] when the package was made. Bring Back accepts a\npackage without a list of its changes only while the area still has it. Empty for a package\nmade before packages carried one.",
+          "type": "string"
+        },
+        "ids": {
+          "additionalProperties": false,
+          "description": "The highest feature id each of the package's layers had when it was made, by layer id: a\nfeature added in the field is given an id above it, even after the features with the\nhighest ids are deleted, so it is never taken for one the package gave.",
+          "patternProperties": {
+            "^\\d+$": {
+              "format": "uint64",
+              "maximum": 9223372036854775806,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "package": {
+          "description": "This package's own identity, new for each package made: Bring Back refuses a package whose\nidentity its area has brought back already ([`OfflineArea::returned`]), and the phone finds\nthe copy of the rows it was given by it. Empty for a package made before packages had one.",
           "type": "string"
         },
         "project": {
@@ -618,9 +645,26 @@
         "extent": {
           "$ref": "#/$defs/Extent"
         },
+        "generation": {
+          "description": "Which state of the area its field packages were made from: given when a package is first\nmade of the area, and replaced at every sync or Bring Back. A package without a list of its\nchanges, compared with the area as last synced, comes back only while the area still has the\none it was made with, so it can't undo or repeat what came home since. Empty until a package\nis made.",
+          "type": "string"
+        },
         "id": {
           "description": "Persistent identity, independent of the editable display name.",
           "type": "string"
+        },
+        "ids": {
+          "additionalProperties": false,
+          "description": "The highest feature id each layer of its map had in any field package made of the area, by\nlayer id: a feature added to the map here is given an id above it, so a package still out\nnever takes one added since for a feature it was given.",
+          "patternProperties": {
+            "^\\d+$": {
+              "format": "uint64",
+              "maximum": 9223372036854775806,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
         },
         "map": {
           "description": "The map it came from (by name).",
@@ -628,6 +672,13 @@
         },
         "name": {
           "type": "string"
+        },
+        "returned": {
+          "description": "The identities ([`FieldOrigin::package`]) of the field packages of this area already\nbrought back: each comes back once, so its changes can't be applied twice.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "synced": {
           "default": 0.0,
@@ -730,6 +781,18 @@
         },
         "geometry_type": {
           "$ref": "#/$defs/GeometryType"
+        },
+        "held_in": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Crs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The system its features are in, when not longitude/latitude (`Dataset::held_in`)."
         },
         "id": {
           "default": 0,
@@ -903,6 +966,21 @@
       "minimum": 0,
       "type": "integer"
     },
+    "coordinate_system": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Crs"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The project's coordinate system (#2032 C3a): new maps are drawn in it, when a map can be,\nand new empty layers hold their coordinates in it. Maps and layers already in the project\nkeep theirs. `None`: new maps in Web Mercator and new layers in longitude/latitude, as\nbefore there was one. Saved with [`PROJECT_CRS`], which an older reader refuses rather\nthan saving the project again without it."
+    },
+    "crs_from_first_layer": {
+      "description": "While the project has no coordinate system, the first layer added with one of its own\ngives it its system ([`Project::coordinate_system`]). Off by default.",
+      "type": "boolean"
+    },
     "data_stores": {
       "default": [],
       "items": {
@@ -1054,10 +1132,43 @@
       "items": {
         "enum": [
           "terrain-block",
+          "terrain-block-shape",
+          "terrain-block-polygon",
           "terrain-water",
+          "terrain-water-shore",
+          "terrain-block-water",
+          "terrain-block-walls-layer",
           "shaded-relief-effects",
           "normalized-legend-urls",
           "field-origin",
+          "slope-percent",
+          "shaded-relief-light",
+          "table-export-order",
+          "tabulate-intersection-unit",
+          "tabulate-intersection-empty-zones",
+          "layout-element-background",
+          "classified-point-size",
+          "picture-markers",
+          "graticule-mgrs",
+          "graticule-on-top",
+          "graticule-color",
+          "layout-element-ink",
+          "layout-element-wrap",
+          "layout-chart-data",
+          "layout-chart-look",
+          "layout-chart-classes",
+          "layout-chart-stack",
+          "field-generation",
+          "field-package",
+          "offline-map-area-id",
+          "crs-wkt",
+          "zarr-window",
+          "blank-paper",
+          "layout-frame-border",
+          "native-coordinates",
+          "layout-text-size",
+          "label-guide",
+          "project-crs",
           "frame-layers",
           "scene-3d",
           "scene-ruler",
@@ -1130,10 +1241,43 @@
   "type": "object",
   "x-rustgis-capabilities": [
     "terrain-block",
+    "terrain-block-shape",
+    "terrain-block-polygon",
     "terrain-water",
+    "terrain-water-shore",
+    "terrain-block-water",
+    "terrain-block-walls-layer",
     "shaded-relief-effects",
     "normalized-legend-urls",
     "field-origin",
+    "slope-percent",
+    "shaded-relief-light",
+    "table-export-order",
+    "tabulate-intersection-unit",
+    "tabulate-intersection-empty-zones",
+    "layout-element-background",
+    "classified-point-size",
+    "picture-markers",
+    "graticule-mgrs",
+    "graticule-on-top",
+    "graticule-color",
+    "layout-element-ink",
+    "layout-element-wrap",
+    "layout-chart-data",
+    "layout-chart-look",
+    "layout-chart-classes",
+    "layout-chart-stack",
+    "field-generation",
+    "field-package",
+    "offline-map-area-id",
+    "crs-wkt",
+    "zarr-window",
+    "blank-paper",
+    "layout-frame-border",
+    "native-coordinates",
+    "layout-text-size",
+    "label-guide",
+    "project-crs",
     "frame-layers",
     "scene-3d",
     "scene-ruler",

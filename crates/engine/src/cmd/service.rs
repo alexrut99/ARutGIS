@@ -141,12 +141,15 @@ const MAX_SERVICE_DOCUMENTS: usize = 32;
 /// well as its document count. The 32-document count is shared by all discovery kinds;
 /// this byte budget applies only to the linked dataset documents.
 pub(crate) const MAX_DATASET_BYTES: usize = if cfg!(test) { 64 << 10 } else { 64 << 20 };
-/// A notice for legend pictures a service listed that its layer cannot keep (an address too long).
-const LEGENDS_LEFT_OUT_NOTICE: &str = "{n} legend picture(s) the service listed were left out: their addresses are too long";
+/// A notice for legend pictures the layer cannot keep because of their addresses.
+const LEGENDS_LEFT_OUT_NOTICE: &str =
+    "{n} legend picture(s) the service listed were left out: their addresses are too long or do not use HTTP or HTTPS";
 
 /// Most bytes of document addresses a listing repeats: each listed layer's `source_url` is its
 /// document's address, which nothing bounds (a landing page links to any collections address).
-const MAX_LISTED_ADDRESS_BYTES: usize = if cfg!(test) { 8 << 20 } else { 64 << 20 };
+/// The budget [`rustgis_data::ogc::MAX_COPIED_ADDRESS_BYTES`] gives a document's own addresses;
+/// the engine's tests list 8 MiB, as the data crate's do (its `cfg!(test)` is off for them).
+const MAX_LISTED_ADDRESS_BYTES: usize = if cfg!(test) { 8 << 20 } else { rustgis_data::ogc::MAX_COPIED_ADDRESS_BYTES };
 
 /// Whether what this `service.add` would wait for is left off the frame: it is a plugin command's,
 /// run by the desktop app, which runs the command again when it has come (#1319).
@@ -477,9 +480,12 @@ fn added_layers(r: &Value) -> Vec<u32> {
 /// otherwise (#2080).
 pub(crate) fn apply_drawing_info(s: &mut Session, r: &Value, name: &str, drawing: &Value) {
     let mut notes = rustgis_map::arcgis_style::Notes::default();
+    // A new image is checked as `layer.marker` checks one: decoded once for the run, in its
+    // store, before it is kept.
+    let readable = |b64: &str| rustgis_render::picture_marker_check(b64).map(|_| ()).map_err(rustgis_render::MarkerRefusal::whose);
     for id in added_layers(r) {
         if let Some(l) = s.map_mut().layer_mut(id) {
-            rustgis_map::arcgis_style::apply(l, drawing, &mut notes);
+            rustgis_map::arcgis_style::apply(l, drawing, &readable, &mut notes);
         }
     }
     if !notes.is_empty() {
@@ -515,6 +521,49 @@ pub(crate) fn download_features(s: &mut Session, name: &str, url: &str, max: usi
         // Not given without protocol buffer pages.
         Downloaded::Read(..) => Err(crate::sources::message_with_address(url, "the pages were read as protocol buffers")),
     }
+}
+
+/// A service layer's features at `url` read whole while the command waits, as [`download_layer`]
+/// reads them (in pages, as protocol buffers when an ArcGIS layer lists them), and added with
+/// `p` (a GeoJSON answer under the file name `file` gives it, its axes checked against
+/// `bounds`); then known by `url`, and drawn as its ArcGIS service draws it or said why not
+/// (#2152), each by `name`. With `public`, only internet addresses are fetched. For
+/// `service.add`, and `layer.addUrl` with `"service": true` with no app to leave it to (#1144).
+#[cfg(not(target_arch = "wasm32"))]
+#[expect(clippy::too_many_arguments, reason = "the two adds differ in each of them")]
+pub(crate) fn add_service_layer(
+    s: &mut Session,
+    p: &Value,
+    name: &str,
+    url: &str,
+    bounds: Option<[f64; 4]>,
+    public: bool,
+    zoom: Option<bool>,
+    file: impl FnOnce(&[u8]) -> Result<String, String>,
+) -> CmdResult {
+    use crate::render::rustgis_tiles::{address::Reach, cache};
+    let (downloaded, drawing) = download_layer_with(s, name, url, cache::MAX_DOWNLOAD, true, |url, max, timeout, ceiling| {
+        let ceiling = if public { ceiling.min(Reach::Public) } else { ceiling };
+        cache::download_blocking_with_origin_within(url, max, timeout, &[], ceiling)
+    })?;
+    let r = match downloaded {
+        Downloaded::Bytes(bytes) => {
+            let bytes = features_answer(s, name, bytes, bounds);
+            let file = file(&bytes)?;
+            super::raster::add_named_bytes(s, p, file, bytes, zoom)?
+        }
+        // Read in protocol buffer pages: their positions as the service's system places them, so
+        // there are no axes to check.
+        Downloaded::Read(read) => super::layer::add_read(s, p, *read, zoom)?,
+    };
+    mark_service_source(s, &r, url);
+    match &drawing {
+        Some(Ok(drawing)) => apply_drawing_info(s, &r, name, drawing),
+        // Why the service's symbology couldn't be read (#2152).
+        Some(Err(note)) => s.notify(format!("{name}: {note}"), false),
+        None => {}
+    }
+    Ok(r)
 }
 
 /// How an ArcGIS layer's description says it is drawn (its `drawingInfo`), or a note saying why
@@ -665,28 +714,44 @@ fn advertised_template_with(
     withheld: &mut u32,
     mut read: impl FnMut(&str) -> Result<Vec<u8>, String>,
 ) -> AdvertisedTemplate {
+    let read = |doc: &str| Ok::<_, std::convert::Infallible>(read(doc).map_err(|e| crate::sources::message_with_address(doc, &e)));
+    match walk_template(source, list, vector, withheld, read) {
+        Ok(out) => out,
+        Err(never) => match never {},
+    }
+}
+
+/// The walk [`advertised_template_with`] and [`left_template`] share: at most two documents from
+/// `list`, each read by `read` (its body, or why it couldn't be read; `Err` stops the walk), keeping
+/// every foreign hop and counting the addresses whose query was withheld. A fallback to the
+/// standard tile address comes back as the notice to give, in `fallback`.
+fn walk_template<B: AsRef<[u8]>, E>(
+    source: &str,
+    list: &str,
+    vector: bool,
+    withheld: &mut u32,
+    mut read: impl FnMut(&str) -> Result<Result<B, String>, E>,
+) -> Result<AdvertisedTemplate, E> {
     use rustgis_data::ogc::{TilesStep, resolve_tiles};
     let mut out = AdvertisedTemplate { template: None, crossed_origin: crosses_origin(source, list), fallback: None };
     let mut doc = list.to_string();
-    // Each fallback is said, as [`left_template`] says it.
     for _ in 0..2 {
         let shown = crate::sources::address_in_message(&doc);
         if let Err(e) = crate::render::rustgis_tiles::address::check(&doc, Some(list)) {
             let e = crate::sources::message_with_address(&doc, &e);
             out.fallback = Some(format!("{shown}: this tile set document was refused, so the standard tile address is used: {e}"));
-            return out;
+            return Ok(out);
         }
-        let body = match read(&doc) {
+        let body = match read(&doc)? {
             Ok(body) => body,
             Err(e) => {
-                let e = crate::sources::message_with_address(&doc, &e);
                 out.fallback = Some(format!("{shown}: its tile sets couldn't be read, so the standard tile address is used: {e}"));
-                return out;
+                return Ok(out);
             }
         };
-        let Some(resolved) = resolve_tiles(list, &doc, &body, vector) else {
+        let Some(resolved) = resolve_tiles(list, &doc, body.as_ref(), vector) else {
             out.fallback = Some(format!("{shown}: it names no tiles of this layer, so the standard tile address is used"));
-            return out;
+            return Ok(out);
         };
         *withheld = withheld.saturating_add(resolved.withheld_addresses);
         match resolved.step {
@@ -700,7 +765,7 @@ fn advertised_template_with(
                         out.fallback = Some(format!("{shown}: its tile template was refused, so the standard tile address is used: {e}"));
                     }
                 }
-                return out;
+                return Ok(out);
             }
             TilesStep::Next(next) => {
                 out.crossed_origin |= crosses_origin(&doc, &next);
@@ -713,7 +778,7 @@ fn advertised_template_with(
         "{}: its tile sets lead on past two documents, so the standard tile address is used",
         crate::sources::address_in_message(list)
     ));
-    out
+    Ok(out)
 }
 
 /// What [`left_template`] has: the template, or the document it waits for.
@@ -722,62 +787,34 @@ enum LeftTemplate {
     Waiting(String),
 }
 
+/// Why [`left_template`]'s walk stopped before it had a template or a fallback.
+enum LeftStop {
+    /// The document it waits for.
+    Waiting(String),
+    /// The command fails.
+    Failed(String),
+}
+
 /// [`advertised_template`] read off the frame. It keeps every foreign hop and counts the addresses
 /// whose query was withheld, as that does. A document that can't be asked for now (too many being
 /// read) fails the command, as it does for the capabilities: it wasn't read, so it doesn't fall
 /// back to the standard tile address. Every fallback to that address is said.
 fn left_template(s: &mut Session, source: &str, list: &str, vector: bool, withheld: &mut u32) -> Result<LeftTemplate, String> {
-    use rustgis_data::ogc::{TilesStep, resolve_tiles};
-    let mut out = AdvertisedTemplate { template: None, crossed_origin: crosses_origin(source, list), fallback: None };
-    let mut doc = list.to_string();
-    for _ in 0..2 {
-        let shown = crate::sources::address_in_message(&doc);
-        if let Err(e) = crate::render::rustgis_tiles::address::check(&doc, Some(list)) {
-            let e = crate::sources::message_with_address(&doc, &e);
-            s.notify(format!("{shown}: this tile set document was refused, so the standard tile address is used: {e}"), false);
-            return Ok(LeftTemplate::Read(out));
+    let read = |doc: &str| match s.left_document(doc) {
+        Err(e) => Err(LeftStop::Failed(e)),
+        Ok(None) => Err(LeftStop::Waiting(doc.to_string())),
+        Ok(Some(read)) => Ok(read),
+    };
+    match walk_template(source, list, vector, withheld, read) {
+        Ok(mut out) => {
+            if let Some(text) = out.fallback.take() {
+                s.notify(text, false);
+            }
+            Ok(LeftTemplate::Read(out))
         }
-        let Some(read) = s.left_document(&doc)? else { return Ok(LeftTemplate::Waiting(doc)) };
-        let body = match read {
-            Ok(body) => body,
-            Err(e) => {
-                s.notify(format!("{shown}: its tile sets couldn't be read, so the standard tile address is used: {e}"), false);
-                return Ok(LeftTemplate::Read(out));
-            }
-        };
-        let Some(resolved) = resolve_tiles(list, &doc, &body, vector) else {
-            s.notify(format!("{shown}: it names no tiles of this layer, so the standard tile address is used"), false);
-            return Ok(LeftTemplate::Read(out));
-        };
-        *withheld = withheld.saturating_add(resolved.withheld_addresses);
-        match resolved.step {
-            TilesStep::Template(t) => {
-                out.crossed_origin |= crosses_origin(&doc, &t);
-                match checked_template(list, &t) {
-                    Ok(t) => out.template = Some(t),
-                    // (Its error names the template, which may carry keys.)
-                    Err(e) => {
-                        let e = crate::sources::message_with_address(&t, &e);
-                        s.notify(format!("{shown}: its tile template was refused, so the standard tile address is used: {e}"), false);
-                    }
-                }
-                return Ok(LeftTemplate::Read(out));
-            }
-            TilesStep::Next(next) => {
-                out.crossed_origin |= crosses_origin(&doc, &next);
-                // Resolved against the document read, never the original login.
-                doc = next;
-            }
-        }
+        Err(LeftStop::Waiting(doc)) => Ok(LeftTemplate::Waiting(doc)),
+        Err(LeftStop::Failed(e)) => Err(e),
     }
-    s.notify(
-        format!(
-            "{}: its tile sets lead on past two documents, so the standard tile address is used",
-            crate::sources::address_in_message(list)
-        ),
-        false,
-    );
-    Ok(LeftTemplate::Read(out))
 }
 
 /// In the browser nothing waits: the app reads the template itself and passes it as `"tiles"`.
@@ -925,10 +962,10 @@ pub(crate) fn adding_ahead(s: &mut Session, p: &Value) -> Result<Option<super::r
 fn prepared_discovery(s: &mut Session, command: &str) -> Option<Result<Discovery, String>> {
     super::reads::take::<DiscoveryRead>(s, command).map(|(result, notices, losses)| {
         for loss in losses {
-            s.notify_loss(loss.template, loss.count);
+            s.notify_counted(loss.code, loss.template, loss.count);
         }
         for notice in notices {
-            s.notify(notice.text, notice.error);
+            s.relay_notice(notice);
         }
         result
     })
@@ -1053,7 +1090,7 @@ fn layer_source(layer: &mut Value, source: CapabilitySource) {
 
 /// Counts destinations, not pairs; clean discovery emits no credential-forwarding notice.
 fn notify_withheld(s: &mut Session, count: u32) {
-    s.notify_loss(rustgis_data::ogc::QUERY_WITHHELD_NOTICE, count);
+    s.notify_counted(None, rustgis_data::ogc::QUERY_WITHHELD_NOTICE, count);
 }
 
 /// Adds one of a service's layers: map layers as tiles (an overlay), a style as a style, features
@@ -1253,11 +1290,14 @@ fn add_discovered(s: &mut Session, p: &Value, url: &str, want: &str, found: &Dis
                     }
                 }
             }
-            // (Those the layer wouldn't keep, an address too long, are left out, not refused,
-            // and counted in a notice.)
+            // Count pictures left out because their addresses fail the layer's checks.
             let legends = rustgis_map::tiles::checked_legends(layer.legends.iter().cloned());
             let offered = layer.legends.len().min(rustgis_data::ogc::MAX_LEGENDS);
-            s.notify_loss(LEGENDS_LEFT_OUT_NOTICE, u32::try_from(offered.saturating_sub(legends.len())).unwrap_or(u32::MAX));
+            s.notify_counted(
+                Some(rustgis_data::loss::LossCode::DroppedLegend),
+                LEGENDS_LEFT_OUT_NOTICE,
+                u32::try_from(offered.saturating_sub(legends.len())).unwrap_or(u32::MAX),
+            );
             if !legends.is_empty() {
                 add["legend"] = json!(legends);
             }
@@ -1416,25 +1456,9 @@ fn add_discovered(s: &mut Session, p: &Value, url: &str, want: &str, found: &Dis
                         }
                         r
                     } else {
-                        let max = crate::render::rustgis_tiles::cache::MAX_DOWNLOAD;
-                        let (downloaded, drawing) = download_layer(s, &name, from, max, true).map_err(|e| slow_whole_layer(e, given))?;
-                        let r = match downloaded {
-                            Downloaded::Bytes(bytes) => {
-                                let bytes = features_answer(s, &name, bytes, layer.bbox);
-                                super::raster::add_named_bytes(s, &json!({"name": name}), format!("{name}.geojson"), bytes, keep_view)?
-                            }
-                            // Read in protocol buffer pages: their positions as the service's system
-                            // places them, so there are no axes to check.
-                            Downloaded::Read(read) => super::layer::add_read(s, &json!({"name": name}), *read, keep_view)?,
-                        };
-                        mark_service_source(s, &r, from);
-                        match &drawing {
-                            Some(Ok(drawing)) => apply_drawing_info(s, &r, &name, drawing),
-                            // Why the service's symbology couldn't be read (#2152).
-                            Some(Err(note)) => s.notify(format!("{name}: {note}"), false),
-                            None => {}
-                        }
-                        r
+                        let file = |_: &[u8]| Ok(format!("{name}.geojson"));
+                        add_service_layer(s, &json!({"name": name}), &name, from, layer.bbox, false, keep_view, file)
+                            .map_err(|e| slow_whole_layer(e, given))?
                     };
                     // Over an area, the features crossing it: the view stays, or goes to a box given
                     // (the whole layer's bounds would show a country to fill one state).

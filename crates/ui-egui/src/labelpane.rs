@@ -876,6 +876,7 @@ fn position(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
         if ui.checkbox(&mut on, tl!("Try other places round the point")).on_hover_text(help).changed() {
             run(app, "labels.placement", c.params(json!({"otherPositions": on})));
         }
+        square_to(app, ui, l, c);
     }
     // Lines: the text along them, straight or bending with them.
     if l.geometry_type() == rustgis_engine::data::GeometryType::Polyline {
@@ -904,6 +905,64 @@ fn position(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
     offset(app, ui, l, c);
     ui.add_space(6.0);
     crowding(app, ui, l, c);
+}
+
+/// Points: the label square to the nearest line of another layer (#2263), as a river's or a
+/// road's crossing is named: the Perpendicular choice, then the layer its lines come from. It
+/// needs a line or polygon layer, so it starts on the first one the map has.
+fn square_to(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
+    use rustgis_engine::data::GeometryType;
+    let lines: Vec<String> = app
+        .session
+        .map()
+        .layers
+        .iter()
+        // As `labels.placement` takes them: a layer with any line or polygon.
+        .filter(|o| o.id != l.id && (o.has_geometry(GeometryType::Polyline) || o.has_geometry(GeometryType::Polygon)))
+        .map(|o| o.name.clone())
+        .collect();
+    let on = c.it.placement == LabelPlacement::Perpendicular;
+    let to = c.it.square_to.as_ref();
+    ui.add_space(4.0);
+    ui.label(RichText::new(tl!("Square to a line")).size(11.5));
+    // The layer kept from before when it can still be one (with its distance), else the first.
+    let kept = to.filter(|t| lines.iter().any(|n| n.eq_ignore_ascii_case(&t.layer)));
+    let first = kept.map(|t| t.layer.clone()).or_else(|| lines.first().cloned());
+    let button = egui::Button::selectable(on, tl!(LabelPlacement::Perpendicular.label())).truncate();
+    let clicked = ui
+        .add_enabled_ui(first.is_some(), |ui| ui.add_sized(vec2(124.0, 22.0), button))
+        .inner
+        .on_hover_text(tl!("The label starts at the point and runs square to the nearest line of the layer chosen below."))
+        .on_disabled_hover_text(tl!("The map has no line or polygon layer to be square to."))
+        .clicked();
+    if clicked
+        && !on
+        && let Some(layer) = first
+    {
+        let within = kept.map(|t| t.within);
+        run(app, "labels.placement", c.params(json!({"position": "perpendicular", "to": {"layer": layer, "within": within}})));
+    }
+    if !on {
+        return;
+    }
+    let cur = to.map(|t| t.layer.clone()).unwrap_or_default();
+    grid(ui, "square_to", |ui| {
+        let input_label = ui.label(tl!("Line layer"));
+        egui::ComboBox::from_id_salt("label_pane_square_to")
+            .selected_text(cur.clone())
+            .width(180.0)
+            .show_ui(ui, |ui| {
+                for name in &lines {
+                    if ui.selectable_label(*name == cur, name).clicked() && *name != cur {
+                        let within = to.map(|t| t.within);
+                        run(app, "labels.placement", c.params(json!({"to": {"layer": name, "within": within}})));
+                    }
+                }
+            })
+            .response
+            .labelled_by(input_label.id);
+        ui.end_row();
+    });
 }
 
 /// Where labels crowd: every one shown, over the others, rather than some left out; and
@@ -1459,6 +1518,37 @@ mod tests {
         assert!(h.query_by_role_and_label(Role::CheckBox, BOX).is_none(), "not for polygons");
     }
 
+    /// A point's label placed square to a line (#2263) is chosen in the pane, starting on a line
+    /// layer of the map, and shows as chosen however it was set.
+    #[test]
+    fn perpendicular_placement_is_chosen_and_shown_in_the_pane() {
+        use egui::accesskit::{Role, Toggled};
+        use rustgis_engine::map::LabelPlacement;
+        let mut h = harness(with_cities());
+        h.run();
+        open_tab(&mut h, "Position");
+        let chosen = |h: &egui_kittest::Harness<'_, RustGisApp>| {
+            h.get_by_role_and_label(Role::Button, "Perpendicular").accesskit_node().toggled() == Some(Toggled::True)
+        };
+        assert!(!chosen(&h));
+        assert!(h.query_by_role_and_label(Role::ComboBox, "Line layer").is_none(), "no layer to choose before it is chosen");
+        h.get_by_role_and_label(Role::Button, "Perpendicular").click();
+        h.run();
+        let labels =
+            |h: &egui_kittest::Harness<'_, RustGisApp>| h.state().session.map().layer_by_name("Cities").unwrap().labels.default.clone();
+        assert_eq!(labels(&h).placement, LabelPlacement::Perpendicular);
+        assert!(labels(&h).square_to.is_some());
+        assert!(chosen(&h));
+        // Set by a command, as a project or the Assistant sets it: shown chosen, with its layer.
+        h.state_mut().session.run("labels.placement", &json!({"position": "auto"})).unwrap();
+        h.run();
+        assert!(!chosen(&h));
+        h.state_mut().session.run("labels.placement", &json!({"position": "perpendicular", "to": {"layer": "Rivers"}})).unwrap();
+        h.run();
+        assert!(chosen(&h));
+        assert!(h.query_by_role_and_label(Role::ComboBox, "Line layer").is_some());
+    }
+
     /// A line layer's labels sit a distance from the line (#1187): the row is there for a placement
     /// along the line, the side waits for a distance, and Below puts the label under the line.
     #[test]
@@ -1824,6 +1914,28 @@ mod tests {
         h.run();
     }
 
+    /// The SQL tab's box suggests as the clause is typed: Enter takes the field offered rather
+    /// than break the line, and no error shows while a word is still being chosen.
+    #[test]
+    fn the_sql_box_suggests_as_the_clause_is_typed() {
+        use egui::accesskit::Role;
+        let mut h = harness(with_cities());
+        h.run();
+        h.get_by_label("+ New expression").click();
+        h.run();
+        // Counted, as the field buttons under the box name them too.
+        let shown = |h: &egui_kittest::Harness<'static, RustGisApp>| h.query_all_by_role_and_label(Role::Button, "pop_max").count();
+        let pop = shown(&h);
+        h.event(egui::Event::Text("pop_m".into()));
+        h.run();
+        assert_eq!(shown(&h), pop + 1, "the field offered");
+        assert!(h.query_by_label_contains("Invalid:").is_none(), "no error while it is offered");
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert_eq!(h.get_by_role(Role::MultilineTextInput).value().as_deref(), Some("pop_max"), "Enter took the field");
+        assert_eq!(shown(&h), pop, "the list closed");
+    }
+
     /// The SQL tab writes a draft: typing applies nothing, Check counts, Apply sets the clause in
     /// one undo step, and Clear takes it away in another (#618).
     #[test]
@@ -1874,7 +1986,7 @@ mod tests {
         let first = functions().find(|f| f.max > 0).unwrap();
         h.get_by_role_and_label(Role::Button, "Functions ▾").click();
         h.run();
-        h.get_by_role_and_label(Role::Button, first.signature).click();
+        h.get_by_role_and_label(Role::Button, &format!("{}()", first.name)).click();
         h.run();
         let var = VARS[0].names[0];
         h.get_by_role_and_label(Role::Button, "Variables ▾").click();

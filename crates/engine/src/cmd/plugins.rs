@@ -61,6 +61,8 @@ fn panel(s: &mut Session, p: &Value) -> CmdResult {
         }
     }
     if b(p, "refresh").unwrap_or(false) && !decl.state.is_empty() {
+        // Refreshed, whether it works or not: a failure is said, not run again on every frame.
+        s.panels_to_refresh.remove(id);
         // A failed refresh leaves the values as they were, as a failed command does.
         if let Err(e) = s.run(&rustgis_plugins::command_id(id, &decl.state), &json!({})) {
             *s.panel_state(id, &decl) = before;
@@ -285,10 +287,10 @@ fn fetch_registry(s: &mut Session, url: &str) -> Result<Vec<rustgis_plugins::reg
         Err(_) => Ok(Vec::new()),
     };
     match applied {
-        Ok(pulled) if !pulled.is_empty() => s.notify(
-            format!("{} plugin(s) were withdrawn from the plugin registry and turned off: {}", pulled.len(), pulled.join(", ")),
-            true,
-        ),
+        // A warning, not an error: the list was read and the withdrawal applied as asked.
+        Ok(pulled) if !pulled.is_empty() => {
+            s.warn(format!("{} plugin(s) were withdrawn from the plugin registry and turned off: {}", pulled.len(), pulled.join(", ")))
+        }
         Ok(_) => {}
         Err(e) => s.warn(format!("{blocklist}: {e}; the last blocklist read, if any, stays in force")),
     }
@@ -450,7 +452,7 @@ fn layers_of(s: &Session) -> Value {
                     "id": l.id, "name": l.name, "raster": l.is_raster(), "visible": l.visible,
                     "geometry": format!("{:?}", l.dataset.geometry_type), "features": l.dataset.features.len(),
                     "selected": l.selection.len(), "active": Some(l.id) == active,
-                    "extent": super::project::bbox(l.extent()), "transparency": l.transparency,
+                    "extent": super::project::bbox(l.extent()), "transparency": super::project::percent(l.transparency),
                     "crs": layer_crs(l).map(crs_name),
                     "group": s.map().group_of(l.id).map(|g| g.name.as_str()),
                     "fields": l.dataset.fields.iter().map(|f| json!({"name": f.name, "type": format!("{:?}", f.ty)})).collect::<Vec<_>>(),
@@ -495,13 +497,13 @@ fn map_crs(m: &rustgis_map::Map) -> Result<rustgis_data::raster::Crs, String> {
                 .and_then(|n| n.parse::<u32>().ok())
                 .or_else(|| rustgis_data::raster::crs::vn2000_epsg(&label).map(u32::from))
                 .and_then(Crs::from_epsg);
-            epsg.ok_or_else(|| format!("{label} has no EPSG code, so GeoJSON can't name it; use an EPSG code"))
+            epsg.ok_or_else(|| format!("{label} isn't a coordinate system RustGIS can name in GeoJSON; use an EPSG code"))
         }
     }
 }
 
 /// The system `host.features` was asked for with `crs`: `None` for WGS 84 (absent, or named so),
-/// `"layer"` the layer's own, `"map"` the map's, else an EPSG code (`"EPSG:32637"` or `32637`).
+/// `"layer"` the layer's own, `"map"` the map's, else an EPSG code (`"EPSG:32637"` or `"32637"`).
 /// Never WKT or a PROJ string: reading one registers a system in the process-wide table, which
 /// any plugin (the request needs no permission) could fill, and the answer names an EPSG code
 /// anyway. Every refusal starts with `crs:`.
@@ -541,10 +543,6 @@ struct Bridge<'a> {
     plugin: Arc<Plugin>,
     /// What this call fetched (`host.fetch`).
     fetches: fetch::Calls,
-    /// Whether a request could have changed the project (a command that mutates, a layer added).
-    changed: bool,
-    /// Whether a command left a request for the front end instead ([`Session::request_url`]).
-    requested: bool,
 }
 
 impl Bridge<'_> {
@@ -587,23 +585,44 @@ impl Bridge<'_> {
         let target = asked_crs(self.s.map(), l, p)?;
         let limit = uint(p, "limit").and_then(|n| usize::try_from(n).ok()).unwrap_or(usize::MAX);
         let rows: Vec<usize> = if b(p, "selected") == Some(true) { l.selection.clone() } else { (0..l.dataset.features.len()).collect() };
-        let ds = rustgis_data::Dataset {
+        // In longitude/latitude, which a response holds unless `crs` asks for another system,
+        // whatever system the layer holds its coordinates in.
+        let mut features = rustgis_data::Features::default();
+        // Made at the first feature with a geometry, once for the layer.
+        let mut conversion = None;
+        for r in rows.iter().take(limit).filter_map(|&i| l.dataset.features.row(i)) {
+            let n = features.len();
+            features.push_row(r.to_feature());
+            let Some(g) = r.geometry() else { continue };
+            let failed = |e: String| format!("{}: feature {}: {e}", l.name, r.id());
+            let to = match &mut conversion {
+                Some(to) => &*to,
+                slot @ None => slot.insert(l.dataset.lonlat_conversion().map_err(failed)?),
+            };
+            if let std::borrow::Cow::Owned(g) = rustgis_data::Dataset::geometry_to_lonlat_by(to, g).map_err(failed)? {
+                features.set_geometry(n, Some(g));
+            }
+        }
+        // Its geometry is longitude/latitude (above); `crs` stays the layer's, as the system it
+        // was read in, which `export_error` reads.
+        let mut ds = rustgis_data::Dataset {
             name: l.name.clone(),
             geometry_type: l.dataset.geometry_type,
             fields: l.dataset.fields.clone(),
-            features: rows.iter().take(limit).filter_map(|&i| l.dataset.features.get(i).cloned()).collect(),
+            features,
             source: None,
             crs: l.dataset.crs,
             crs_incomplete: false,
             zm_dropped: false,
             windowed: false,
+            held_in: rustgis_data::raster::Crs::LonLat,
+            shown_in: None,
         };
-        let mut ds = ds;
         let mut member = None;
         if let Some(crs) = target {
             // Only a system `host.addLayer` can read back is named, so a round trip works.
             if crs.epsg() == 0 {
-                return Err(format!("crs: {} has no EPSG code, so GeoJSON can't name it; use an EPSG code", crs.label()));
+                return Err(format!("crs: {} isn't a coordinate system RustGIS can name in GeoJSON; use an EPSG code", crs.label()));
             }
             if crs.is_geocentric() {
                 return Err(format!(
@@ -665,7 +684,8 @@ impl Bridge<'_> {
         let name = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).unwrap_or(&self.plugin.manifest.name).to_string();
         let gj = p.get("geojson").ok_or("geojson is required")?;
         let (ds, report) = rustgis_data::io::read_geojson(&gj.to_string(), &name).map_err(|e| e.to_string())?;
-        self.changed = true;
+        // Not a command: counted as the commands it runs are ([`Session::shared_step`]).
+        self.s.shared_steps.edited = true;
         let id = super::layer::add_dataset(self.s, ds);
         Ok(json!({"layer": id, "skipped": report.skipped}))
     }
@@ -688,7 +708,7 @@ impl Bridge<'_> {
             return Err(format!("plugins can't use a saved web-service connection's login ('{id}')"));
         }
         let spec = *self.s.registry.get(id).ok_or_else(|| format!("unknown command '{id}'"))?;
-        let (label, mutates) = (spec.label, spec.mutates);
+        let label = spec.label;
         let named = params.get("layer").and_then(|_| self.s.layer_id(params).ok());
         let active = self.s.active_layer;
         if named.is_some() {
@@ -708,18 +728,13 @@ impl Bridge<'_> {
         let tile_sources =
             |s: &Session| -> std::collections::HashSet<_> { s.project.maps.iter().flat_map(|m| &m.tiles).map(fetched).collect() };
         let before = (!self.plugin.manifest.has(Permission::Network)).then(|| tile_sources(self.s));
-        // The plugin command took the undo snapshot: the commands it runs are part of it. A
-        // command that only left a request for the front end ([`Session::request_url`]) changed
-        // nothing; a later one must not erase the undo step for an earlier edit.
-        self.s.request_only = false;
+        // The plugin command took the undo snapshot: the commands it runs are part of it, and say
+        // what they did in its account ([`Session::shared_step`]).
         let mut res = crate::service_logins::anonymously(self.s, true, |s| {
             let op = s.authorize(id, params)?;
             super::workflows::steps_of(s, |s| s.invoke(op, crate::policy::Txn::Shared))
         })
         .unwrap_or_else(|_| Err(format!("{label} failed unexpectedly")));
-        let requested = std::mem::take(&mut self.s.request_only);
-        self.requested |= requested;
-        self.changed |= mutates && !requested;
         if let Some(before) = before {
             let mut dropped = false;
             for m in &mut self.s.project.maps {
@@ -744,6 +759,19 @@ impl Bridge<'_> {
     }
 }
 
+/// The most characters of a plugin's notice shown.
+const MAX_PLUGIN_NOTICE: usize = 500;
+
+/// What `host.notify` shows of a plugin's `text`: all of it up to [`MAX_PLUGIN_NOTICE`]
+/// characters, else that much and how long it was, so the cut is said (#2639).
+fn plugin_notice(text: &str) -> String {
+    let n = text.chars().count();
+    if n <= MAX_PLUGIN_NOTICE {
+        return text.to_string();
+    }
+    format!("{}… (cut from {n} characters)", text.chars().take(MAX_PLUGIN_NOTICE).collect::<String>())
+}
+
 impl Host for Bridge<'_> {
     fn call(&mut self, op: &str, params: &Value) -> Result<Value, String> {
         match op {
@@ -753,7 +781,7 @@ impl Host for Bridge<'_> {
             "host.features" => self.features(params),
             "host.view" => Ok(view_of(self.s)),
             "host.notify" => {
-                let text: String = ps(params, "text").unwrap_or_default().chars().take(500).collect();
+                let text = plugin_notice(ps(params, "text").unwrap_or_default());
                 let error = b(params, "error").unwrap_or(false);
                 self.s.notify(format!("{}: {text}", self.plugin.manifest.name), error);
                 Ok(Value::Null)
@@ -890,7 +918,7 @@ impl Session {
         let mark = self.notice_mark();
         let res = self.guarded(label, mutates, |s| {
             let fetches = fetch::Calls::for_plugin(&plugin.manifest.id);
-            let mut bridge = Bridge { s, plugin, fetches, changed: false, requested: false };
+            let mut bridge = Bridge { s, plugin, fetches };
             let res = rustgis_plugins::run_command_with_panel(&cmd, &mut bridge, params, request);
             #[cfg(not(target_arch = "wasm32"))]
             let res = res.map_err(|e| match capped {
@@ -912,7 +940,8 @@ impl Session {
             }
             // Nor is a command that only left downloads for the front end: they add their
             // layers, each its own undo step, when they land.
-            bridge.s.request_only = res.is_ok() && (state_command || bridge.requested) && !bridge.changed;
+            let steps = bridge.s.shared_steps;
+            bridge.s.request_only = res.is_ok() && (state_command || steps.requested) && !steps.edited;
             res
         });
         if let Some(decl) = &panel {
@@ -983,18 +1012,31 @@ impl Session {
         // A plugin uninstalled, disabled or updated without a panel leaves no state behind.
         let Some(p) = rustgis_plugins::get(plugin).filter(|p| p.enabled && p.manifest.panel.is_some()) else {
             self.plugin_panels.remove(plugin);
+            self.panels_to_refresh.remove(plugin);
             return None;
         };
         let decl = p.manifest.panel.as_ref()?;
         Some(self.panel_state(plugin, decl))
     }
 
+    /// Whether `plugin`'s panel state was made again from a changed declaration (the plugin was
+    /// updated) since its state command last ran, which then needs to run again to fill it
+    /// (#2550). Asking clears it: the caller runs `plugin.panel` with `"refresh": true`.
+    pub fn take_panel_refresh(&mut self, plugin: &str) -> bool {
+        self.panels_to_refresh.remove(plugin)
+    }
+
     /// The kept state of `plugin`'s panel `decl`: made from the declaration the first time, and
-    /// made again when the plugin was updated with other widgets since.
+    /// made again when the plugin was updated with other widgets since. Made again, it has lost
+    /// what the state command set, so the panel is marked for a refresh (opening a panel runs
+    /// the command anyway, so a state made the first time isn't).
     fn panel_state(&mut self, plugin: &str, decl: &rustgis_plugins::PanelDecl) -> &mut rustgis_plugins::PanelState {
         let state = self.plugin_panels.entry(plugin.to_string()).or_insert_with(|| rustgis_plugins::PanelState::new(decl));
         if !state.matches(decl) {
             *state = rustgis_plugins::PanelState::new(decl);
+            if !decl.state.is_empty() {
+                self.panels_to_refresh.insert(plugin.to_string());
+            }
         }
         state
     }
@@ -1010,13 +1052,14 @@ struct Between<'a> {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Host for Between<'_> {
+    /// Keeps separately logged requests isolated, while reads retain the polling command's capture.
     fn call(&mut self, op: &str, params: &Value) -> Result<Value, String> {
         let plugin = self.plugin.clone();
         let bridge = |s: &mut Session| {
             let fetches = fetch::Calls::for_plugin(&plugin.manifest.id);
-            let mut bridge = Bridge { s, plugin: plugin.clone(), fetches, changed: false, requested: false };
+            let mut bridge = Bridge { s, plugin: plugin.clone(), fetches };
             let res = bridge.call(op, params);
-            (res, bridge.changed, bridge.requested)
+            (res, bridge.s.shared_steps.edited, bridge.s.shared_steps.requested)
         };
         // A fetch waits on the app's thread: between commands the program fetches for itself.
         if op == "host.fetch" {
@@ -1027,34 +1070,44 @@ impl Host for Between<'_> {
         let reads = Bridge::reads_only(op);
         let mutates =
             plugin.manifest.has(Permission::Edit) && (op == "host.addLayer" || self.s.registry.get(op).is_some_and(|c| c.mutates));
+        // Reads remain part of the polling command; only requests with their own entries are isolated.
+        if reads {
+            return self
+                .s
+                .as_session_plugin(plugin.clone(), |s| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| bridge(s).0))
+                        .unwrap_or_else(|_| Err(format!("'{op}' failed unexpectedly")))
+                })
+                .and_then(|r| r);
+        }
         // With the plugin's authority, exactly as during one of its commands.
-        self.s
-            .as_session_plugin(plugin.clone(), |s| {
-                if reads {
-                    return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| bridge(s).0))
-                        .unwrap_or_else(|_| Err(format!("'{op}' failed unexpectedly")));
-                }
-                let (at, start) = (crate::project_log::now_ms(), web_time::Instant::now());
-                let res = s.guarded(leak(&plugin.manifest.name), mutates, |s| {
-                    let (res, changed, requested) = bridge(s);
-                    // Only left downloads for the app (they add their layers when they land): no step.
-                    s.request_only = res.is_ok() && requested && !changed;
-                    // The answer goes to the program, which says what it makes of a refusal.
-                    s.quiet_failure = res.is_err();
+        // Earlier queued requests have their own entries, separate from the command polling them.
+        rustgis_data::provenance::without(|| {
+            self.s
+                .as_session_plugin(plugin.clone(), |s| {
+                    let _inputs = s.log.on().then(rustgis_data::provenance::Capture::start);
+                    let (at, start) = (crate::project_log::now_ms(), web_time::Instant::now());
+                    let res = s.guarded(leak(&plugin.manifest.name), mutates, |s| {
+                        let (res, changed, requested) = bridge(s);
+                        // Only left downloads for the app (they add their layers when they land): no step.
+                        s.request_only = res.is_ok() && requested && !changed;
+                        // The answer goes to the program, which says what it makes of a refusal.
+                        s.quiet_failure = res.is_err();
+                        res
+                    });
+                    // No command of its own carries it into the session log: it goes in by itself, as
+                    // a command run would.
+                    if s.log.on() && (op == "host.addLayer" || crate::project_log::is_logged(s, op, params)) {
+                        let (kept, partial) = crate::project_log::kept_and_partial(params);
+                        let project = (crate::project_log::kept_name(&s.title()), s.opened);
+                        let mut e = crate::project_log::entry(project, op, kept, partial, &res, at, start.elapsed());
+                        e.plugin = Some(plugin.manifest.id.clone());
+                        s.log_entry(e, false);
+                    }
                     res
-                });
-                // No command of its own carries it into the session log: it goes in by itself, as
-                // a command run would.
-                if s.log.on() && (op == "host.addLayer" || crate::project_log::is_logged(s, op, params)) {
-                    let (kept, partial) = crate::project_log::kept_and_partial(params);
-                    let project = (crate::project_log::kept_name(&s.title()), s.opened);
-                    let mut e = crate::project_log::entry(project, op, kept, partial, &res, at, start.elapsed());
-                    e.plugin = Some(plugin.manifest.id.clone());
-                    s.log.push(e);
-                }
-                res
-            })
-            .and_then(|r| r)
+                })
+                .and_then(|r| r)
+        })
     }
 
     fn log(&mut self, text: &str) {
@@ -1282,6 +1335,17 @@ fn capped_error(error: &str, timeout: u64) -> String {
 mod tests {
     use super::*;
 
+    /// A plugin's notice past 500 characters is cut and says how long it was; a short one is shown
+    /// as it is (#2639).
+    #[test]
+    fn a_long_plugin_notice_says_it_was_cut() {
+        assert_eq!(plugin_notice("done"), "done");
+        let edge = "a".repeat(MAX_PLUGIN_NOTICE);
+        assert_eq!(plugin_notice(&edge), edge);
+        let long = plugin_notice(&"é".repeat(MAX_PLUGIN_NOTICE + 7));
+        assert!(long.starts_with(&"é".repeat(MAX_PLUGIN_NOTICE)) && long.ends_with("… (cut from 507 characters)"), "{long}");
+    }
+
     /// Why a session plugin's program was stopped is said; one that ended by itself says nothing.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
@@ -1327,12 +1391,14 @@ mod tests {
         let mut s = Session::new(crate::Project::default());
         s.leave_downloads = true;
         let fetches = fetch::Calls::for_plugin("eng-bridge");
-        let mut bridge = Bridge { s: &mut s, plugin, fetches, changed: false, requested: false };
+        let mut bridge = Bridge { s: &mut s, plugin, fetches };
         bridge.call("layer.addUrl", &json!({"url": "https://x.org/a.geojson"})).unwrap();
-        assert!(bridge.requested && !bridge.changed, "a request alone changes nothing");
+        let steps = bridge.s.shared_steps;
+        assert!(steps.requested && !steps.edited, "a request alone changes nothing");
         bridge.call("map.new", &json!({"name": "B"})).unwrap();
         bridge.call("layer.addUrl", &json!({"url": "https://x.org/b.geojson"})).unwrap();
-        assert!(bridge.requested && bridge.changed, "the edit is still one");
+        let steps = bridge.s.shared_steps;
+        assert!(steps.requested && steps.edited, "the edit is still one");
         assert!(!bridge.s.request_only, "the bridge took the flag");
         assert_eq!(s.take_url_requests().len(), 2);
         rustgis_plugins::unload("eng-bridge");

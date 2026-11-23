@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 /// Whether a parameter is the address of a file on an Earthdata data host. Walks with a list, not
 /// by recursion: parameters are hostile.
-fn names_earthdata_host(params: &Value) -> bool {
+fn names_host(params: &Value, is_host: fn(&str) -> bool) -> bool {
     let mut left = vec![params];
     while let Some(value) = left.pop() {
         match value {
-            Value::String(text) if crate::render::rustgis_tiles::earthdata::is_data_host(text) => return true,
+            Value::String(text) if is_host(text) => return true,
             Value::Array(items) => left.extend(items),
             Value::Object(fields) => left.extend(fields.values()),
             _ => {}
@@ -561,7 +561,19 @@ impl<'a> Builder<'a> {
             CallKind::Adapter { what, effects, params } => {
                 self.charge(params)?;
                 let effects = if matches!(*what, "snapshot" | "view_map") {
-                    effects.union(crate::cmd::tiles::render_reach(self.context().map()))
+                    // A layout's look reaches what its frames' maps do, as exporting it does.
+                    let context = self.context();
+                    match (*what == "view_map").then(|| crate::cmd::layout::view_inputs(&context, params)).flatten() {
+                        Some(Ok(inputs)) => inputs
+                            .maps
+                            .iter()
+                            .filter_map(|id| context.project.maps.iter().find(|m| m.instance_id() == *id))
+                            .fold(*effects, |reach, map| reach.union(crate::cmd::tiles::render_reach(map))),
+                        // An unknown layout reaches nothing: a strict plan refuses it with the
+                        // inputs below, and view_map itself otherwise.
+                        Some(Err(_)) => *effects,
+                        None => effects.union(crate::cmd::tiles::render_reach(context.map())),
+                    }
                 } else {
                     *effects
                 };
@@ -772,8 +784,13 @@ impl<'a> Builder<'a> {
                 // The command line and Python read the remembered token only for a command that
                 // needs it, and it must be read before this snapshot or the command's first
                 // request changes the account and cancels it (#1626). The app reads it at launch.
-                if session.saved_secrets_opted_in && names_earthdata_host(params) {
+                if session.saved_secrets_opted_in && names_host(params, crate::render::rustgis_tiles::earthdata::is_data_host) {
                     crate::render::rustgis_tiles::earthdata::restore();
+                }
+                // Likewise the Copernicus Data Space sign-in remembered on this computer.
+                #[cfg(not(target_arch = "wasm32"))]
+                if session.saved_secrets_opted_in && names_host(params, crate::render::rustgis_tiles::copernicus::is_data_host) {
+                    crate::render::rustgis_tiles::copernicus::restore();
                 }
                 self.auth = Some(Arc::new(super::scope::RuntimeAccounts::capture(session)?));
             }
@@ -838,7 +855,11 @@ impl<'a> Builder<'a> {
             // Their caller-supplied effects can add reach, but cannot remove these owner inputs.
             let selected = match &n.op {
                 Op::Command(spec) => spec.inputs.map(|select| select(&self.context(), params)),
-                Op::Adapter("snapshot" | "view_map") => Some(Ok(crate::cmd::tiles::render_inputs(self.context().map()))),
+                Op::Adapter("view_map") => Some(
+                    crate::cmd::layout::view_inputs(&self.context(), params)
+                        .unwrap_or_else(|| Ok(crate::cmd::tiles::render_inputs(self.context().map()))),
+                ),
+                Op::Adapter("snapshot") => Some(Ok(crate::cmd::tiles::render_inputs(self.context().map()))),
                 _ => None,
             };
             let owner_selected = selected.is_some();
@@ -1433,6 +1454,34 @@ impl Session {
                 .collect::<Vec<_>>(),
             "web":{"selected":self.database_logins.web_selections(),"active":self.web_logins.active_ids()}
         })
+    }
+    /// What a continuation compares of the accounts. A token generation belongs to a login
+    /// identity, not to its display name or service path, and it holds identity only: no
+    /// connection's session secret (a live token included) stays in it, since `poll` checks the
+    /// target's login identity itself. Everything else, including which logins are active, keeps
+    /// the full check, so logging in or out of another connection while one is pending ends it.
+    pub(super) fn continuation_accounts(&self, node: &Node) -> Value {
+        let mut accounts = self.policy_accounts();
+        if node.id() != "connection.generateToken" {
+            return accounts;
+        }
+        let id = node.params.get("id").and_then(Value::as_str);
+        if let Some(rows) = accounts.get_mut("connections").and_then(Value::as_array_mut) {
+            for row in rows {
+                let Some(row) = row.as_object_mut() else { continue };
+                row.insert("password".into(), Value::Null);
+                let target = row.get("definition").and_then(|d| d.get("id")).and_then(Value::as_str) == id;
+                let keeps_origin = id
+                    .and_then(|id| self.connections.find(id))
+                    .filter(|c| c.auth == "arcgis" && crate::connections::SERVICE_KINDS.contains(&c.kind.as_str()));
+                if let (true, Some(c), Some(definition)) = (target, keeps_origin, row.get_mut("definition").and_then(Value::as_object_mut))
+                {
+                    definition.insert("name".into(), Value::Null);
+                    definition.insert("address".into(), json!(crate::connections::login_origin(c)));
+                }
+            }
+        }
+        accounts
     }
 }
 

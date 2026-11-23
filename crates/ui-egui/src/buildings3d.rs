@@ -132,7 +132,7 @@ fn read_files(urls: Vec<String>, area: [f64; 4]) -> Step {
                     req,
                     Box::new(move |r| {
                         let r = r
-                            .map(|(fields, batch)| rustgis_engine::cmd::portals::overture_features(&fields, &batch.features))
+                            .map(|(fields, batch)| rustgis_engine::cmd::portals::overture_features(&fields, batch.features.into()))
                             .map_err(|e| e.to_string());
                         *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
                     }),

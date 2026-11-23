@@ -25,9 +25,6 @@ pub const VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 /// The most messages one batch may hold.
 pub const MAX_BATCH: usize = 16;
 
-/// The largest map image `view_map` draws (pixels a side).
-const MAX_VIEW: f64 = 2048.0;
-
 /// The longest a screen snapshot waits for the map to finish drawing (seconds), and the default.
 pub const MAX_SNAPSHOT_WAIT: f64 = 30.0;
 const SNAPSHOT_WAIT: f64 = 5.0;
@@ -164,7 +161,16 @@ impl ArchiveBatch {
                 if name != "run_command"
                     || !matches!(
                         args.get("command").and_then(Value::as_str).map(str::trim),
-                        Some("map.reloadTiles" | "map.repairTiles" | "table.statistics")
+                        Some(
+                            "map.reloadTiles"
+                                | "map.repairTiles"
+                                | "table.statistics"
+                                | "data.similar"
+                                | "topology.validate"
+                                | "edit.previewShapeConversion"
+                                | "raster.imageGrid"
+                                | "layer.sizeBy"
+                        )
                     )
                 {
                     return None;
@@ -365,12 +371,16 @@ impl Server {
         let call = ToolCall { id: request.into(), name: name.into(), args: args.clone() };
         let result = match name {
             "view_map" => {
-                let result = (|| {
-                    let engine = tools::policy_call(&call)?.ok_or("missing view adapter")?;
-                    let owned = s.defer(scope, &engine, permit)?;
-                    s.finish_deferred(owned, |s| view_map(s, &args))?
-                })();
-                return result.unwrap_or_else(|e| text(e, true));
+                return match tools::view_map(s, &call, scope, permit) {
+                    Ok((caption, image)) => json!({
+                        "content": [
+                            {"type": "image", "data": image.base64(), "mimeType": "image/png"},
+                            {"type": "text", "text": caption},
+                        ],
+                        "isError": false,
+                    }),
+                    Err(e) => text(e, true),
+                };
             }
             "snapshot" => {
                 let admitted = (|| {
@@ -464,7 +474,7 @@ fn initialize(params: &Value, instructions: &str) -> Value {
 }
 
 /// The tools this server adds to the assistant's.
-const TOOL_NAMES: &[&str] = &["view_map", "run", "snapshot"];
+const TOOL_NAMES: &[&str] = &["run", "snapshot"];
 
 /// Tools that only look: list, search, read, view. A snapshot can be saved over a file.
 fn read_only(name: &str) -> bool {
@@ -476,7 +486,7 @@ fn tool_list() -> Vec<Value> {
         .into_iter()
         .map(|d| {
             let description = match d.name {
-                "run_command" => "Run a RustGIS command by id with JSON parameters (see search_commands for ids and parameters). Each run is one undo step (edit.undo undoes it). Commands that read or write files or use the network run only when the server was started with --yes.".to_string(),
+                "run_command" => "Run a RustGIS command by id with JSON parameters (see search_commands for ids and parameters). Each run that changes the project is one undo step (edit.undo undoes it). Commands that read or write files or use the network run only when the server was started with --yes.".to_string(),
                 "read_doc" => {
                     let pages: Vec<&str> = docs::PAGES.iter().map(|p| p.path).collect();
                     format!("Read a RustGIS documentation page or section as Markdown. Use next_offset to continue budgeted results. Pages: {}.", pages.join(", "))
@@ -488,7 +498,7 @@ fn tool_list() -> Vec<Value> {
         .collect();
     out.push(json!({
         "name": "run",
-        "description": "Run several RustGIS commands in one call, as one undo step: a script with one `command-id {json}` per line (# starts a comment), e.g. `map.basemap {\"name\": \"ocean\"}`. A failing line stops the script, nothing it did to the project is kept (a file an earlier line wrote stays written), and the error names the line. Returns {success, result (the last command's), lines, layersAdded, notices, error, duration_s}. Each line follows the same rules as run_command.",
+        "description": "Run several RustGIS commands in one call, as one undo step (none when its lines only read the project, moved the view, exported, left a request, or ran a command that reports it changed nothing, such as a move to where the layers already are; a line that sets a value to the one it has still counts): a script with one `command-id {json}` per line (# starts a comment), e.g. `map.basemap {\"name\": \"ocean\"}`. A failing line stops the script, nothing it did to the project is kept (a file an earlier line wrote stays written), and the error names the line. Returns {success, result (the last command's), lines, layersAdded, notices, error, duration_s}. Each line follows the same rules as run_command.",
         "inputSchema": {
             "type": "object",
             "properties": {"script": {"type": "string", "description": "One command per line: id {json}"}},
@@ -510,18 +520,6 @@ fn tool_list() -> Vec<Value> {
             }
         },
         "annotations": annotations("snapshot"),
-    }));
-    out.push(json!({
-        "name": "view_map",
-        "description": "The map as it looks now, as a PNG image: look after changing it. The current view, at a size of your choosing (default 1024 x 640).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "width": {"type": "integer", "description": "Pixels (64 to 2048)"},
-                "height": {"type": "integer", "description": "Pixels (64 to 2048)"}
-            }
-        },
-        "annotations": annotations("view_map"),
     }));
     out
 }
@@ -547,30 +545,6 @@ fn resource_list() -> Vec<Value> {
         .collect()
 }
 
-fn view_map(s: &mut Session, a: &Value) -> Result<Value, String> {
-    use base64::Engine;
-    let size = |k: &str, default: f64| a.get(k).and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(default).clamp(64.0, MAX_VIEW);
-    let (w, h) = (size("width", 1024.0), size("height", 640.0));
-    let png = rustgis_engine::cmd::share::map_png(s, Some(w), Some(h), None)?;
-    let m = s.map();
-    let c = m.center_lonlat();
-    let caption = format!(
-        "Map \"{}\", {} layers, centre {:.4}, {:.4} (lon, lat), scale 1:{:.0}, {w:.0} x {h:.0} px.",
-        m.name,
-        m.layers.len(),
-        c.x,
-        c.y,
-        m.scale()
-    );
-    Ok(json!({
-        "content": [
-            {"type": "image", "data": base64::engine::general_purpose::STANDARD.encode(png), "mimeType": "image/png"},
-            {"type": "text", "text": caption},
-        ],
-        "isError": false,
-    }))
-}
-
 /// Where a snapshot is to be saved, if anywhere.
 fn save_path(a: &Value) -> Option<&str> {
     a.get("save_path").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty())
@@ -584,13 +558,13 @@ pub fn snapshot_wait(a: &Value) -> f64 {
 /// A `snapshot` drawn offscreen at `max_width` in the view's shape, with `note` saying why when it
 /// was asked of the screen.
 pub(crate) fn render_snapshot_checked(s: &mut Session, a: &Value, note: Option<&str>, scope: &Scope) -> Result<Value, String> {
-    let asked = a.get("max_width").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(1024.0).clamp(64.0, MAX_VIEW);
+    let asked = a.get("max_width").and_then(Value::as_f64).filter(|v| v.is_finite()).unwrap_or(1024.0).clamp(64.0, tools::MAX_VIEW);
     // The view's shape, so the image shows what the window does: a very tall view is narrowed
     // to fit rather than squashed.
     let (vw, vh) = s.view_size;
     let shape = if vw >= 1.0 && vh >= 1.0 { vh / vw } else { 0.625 };
-    let width = asked.min(MAX_VIEW / shape.max(f64::MIN_POSITIVE)).max(64.0);
-    let height = (width * shape).clamp(64.0, MAX_VIEW);
+    let width = asked.min(tools::MAX_VIEW / shape.max(f64::MIN_POSITIVE)).max(64.0);
+    let height = (width * shape).clamp(64.0, tools::MAX_VIEW);
     let png = rustgis_engine::cmd::share::map_png(s, Some(width), Some(height), None)?;
     // Tiles still on their way are missing from it.
     let settled = rustgis_engine::render::rustgis_tiles::cache::in_flight() == 0;

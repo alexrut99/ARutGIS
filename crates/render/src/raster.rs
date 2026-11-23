@@ -601,7 +601,7 @@ fn draw_with(
     // Drawn at its own size and fully opaque: a plain copy over, much cheaper than the
     // rasteriser's general image drawing.
     if k == 1.0 && opacity >= 1.0 {
-        crate::blend_over(pm, &lay, x0 as i64, y0 as i64);
+        crate::blend_over(&mut pm.as_mut(), &lay, x0 as i64, y0 as i64);
         return;
     }
     let quality = if style.resampling == Resampling::Bilinear { FilterQuality::Bilinear } else { FilterQuality::Nearest };
@@ -1087,7 +1087,19 @@ mod tests {
 
     /// A Shaded Relief without a ramp or rock, lit from `azimuth` and `altitude`.
     fn grey_relief(azimuth: f64, altitude: f64, z_factor: f64, shadow: f64, sky: f64) -> RasterRenderer {
-        RasterRenderer::ShadedRelief { band: 0, ramp: None, azimuth, altitude, z_factor, shadow, sky, fill: 0.0, rock: None }
+        RasterRenderer::ShadedRelief {
+            band: 0,
+            ramp: None,
+            azimuth,
+            altitude,
+            z_factor,
+            shadow,
+            sky,
+            fill: 0.0,
+            rock: None,
+            ambient: None,
+            balanced: false,
+        }
     }
 
     /// A raster turned by a hair either side of none isn't turned: it is drawn at the view's
@@ -1181,6 +1193,8 @@ mod tests {
                 sky: 0.0,
                 fill: 0.0,
                 rock: None,
+                ambient: None,
+                balanced: false,
             };
             style.resampling = Resampling::Nearest;
             let mut pm = Pixmap::new(1, 1).unwrap();
@@ -1354,6 +1368,8 @@ mod tests {
                 sky: 0.0,
                 fill,
                 rock: None,
+                ambient: None,
+                balanced: false,
             };
             style.resampling = Resampling::Nearest;
             let view = View {
@@ -1686,8 +1702,19 @@ mod tests {
         let data = [0.0, 0.0, 20.0, 60.0, 120.0, 200.0].repeat(3);
         let r = Raster::new("relief", 6, 3, vec![data], gt, Crs::WebMercator, None, ColorHint::Gray, "Float32").unwrap();
         let mut style = RasterStyle::default_for(&r);
-        style.renderer =
-            RasterRenderer::ShadedRelief { band: 0, ramp: None, azimuth, altitude: 45.0, z_factor, shadow: 0.0, sky: 0.0, fill, rock };
+        style.renderer = RasterRenderer::ShadedRelief {
+            band: 0,
+            ramp: None,
+            azimuth,
+            altitude: 45.0,
+            z_factor,
+            shadow: 0.0,
+            sky: 0.0,
+            fill,
+            rock,
+            ambient: None,
+            balanced: false,
+        };
         style.resampling = resampling;
         let view = View {
             width: 600.0,

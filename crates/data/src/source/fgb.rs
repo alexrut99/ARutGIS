@@ -8,7 +8,7 @@
 //! sample are passed over without being fetched.
 
 use super::remote::{self, Remote};
-use super::{Batch, FeatureSource, Reproject, Request, Sampler, SourceInfo, clamp_limit, in_request, stride};
+use super::{Batch, FeatureSource, Reproject, Request, Sampler, SourceInfo, clamp_limit, stride};
 use crate::raster::Crs;
 use crate::{DataError, Feature, Field, FieldType, GeometryType, Result, Value, wkb};
 use flatgeobuf::geozero::{ColumnValue, CoordDimensions, PropertyProcessor, ToWkb};
@@ -35,10 +35,23 @@ impl<T: Read + Seek> ReadSeek for T {}
 
 #[derive(Clone, Debug)]
 enum Input {
-    Path(PathBuf),
+    /// A file, and for a conversion its original's fingerprints as they were when it was
+    /// opened ([`crate::provenance::snapshot`]).
+    Path(PathBuf, Option<Arc<Vec<crate::provenance::Fingerprint>>>),
     Bytes(super::Shared),
     /// A file by its web address.
     Remote(Arc<Remote>),
+}
+
+/// Opens the physical conversion while attributing reads to the original local input, as it was
+/// when the conversion was opened: a later change to the original isn't what this conversion holds.
+fn open_input_file(path: &Path, original: Option<&[crate::provenance::Fingerprint]>) -> std::io::Result<std::fs::File> {
+    if let Some(original) = original {
+        crate::provenance::record(original.iter().cloned());
+        std::fs::File::open(path)
+    } else {
+        crate::provenance::open(path)
+    }
 }
 
 /// A FlatGeobuf file.
@@ -79,7 +92,9 @@ impl FgbOpen {
                     "{} date/time columns are kept as ISO text to read this remote FlatGeobuf by range without scanning every feature",
                     date_columns.len()
                 )),
-                Input::Path(path) => src.classify_dates(BufReader::new(std::fs::File::open(path)?), &date_columns)?,
+                Input::Path(path, original) => {
+                    src.classify_dates(BufReader::new(open_input_file(path, original.as_deref().map(Vec::as_slice))?), &date_columns)?
+                }
                 Input::Bytes(bytes) => src.classify_dates(Cursor::new(bytes.clone()), &date_columns)?,
             }
         }
@@ -94,7 +109,28 @@ impl FgbSource {
     /// Reads a local header without classifying date columns; finish it on a worker when needed.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn prepare_path(path: &Path, name: &str) -> Result<FgbOpen> {
-        Self::prepare(BufReader::new(std::fs::File::open(path)?), Input::Path(path.to_path_buf()), name)
+        Self::prepare(BufReader::new(crate::provenance::open(path)?), Input::Path(path.to_path_buf(), None), name)
+    }
+
+    /// Reads a GDAL conversion's header, retaining its source identity for later worker reads.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn prepare_converted_path(path: &Path, name: &str, original: &Path) -> Result<FgbOpen> {
+        let ((), seen) = crate::provenance::snapshot(|| crate::provenance::path(original));
+        let seen = Arc::new(seen);
+        Self::prepare(BufReader::new(open_input_file(path, Some(&seen))?), Input::Path(path.to_path_buf(), Some(seen)), name)
+    }
+
+    /// Opens a GDAL conversion without treating its cache or workspace file as a user input.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn open_converted_path(
+        path: &Path,
+        name: &str,
+        original: &Path,
+        workspace: Option<Arc<super::gdal::ReloadWorkspace>>,
+    ) -> Result<Self> {
+        let mut source = Self::prepare_converted_path(path, name, original)?.finish()?;
+        source._workspace = workspace;
+        Ok(source)
     }
 
     /// The same staged open for bytes retained by a project, without copying them.
@@ -104,16 +140,8 @@ impl FgbSource {
     }
 
     pub fn open_path(path: &Path, name: &str) -> Result<Self> {
-        let f = BufReader::new(std::fs::File::open(path)?);
-        Self::new(f, Input::Path(path.to_path_buf()), name)
-    }
-
-    /// Opens a private conversion, keeping its files alive for every shared reader.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn open_owned_path(path: &Path, name: &str, workspace: Arc<super::gdal::ReloadWorkspace>) -> Result<Self> {
-        let mut source = Self::open_path(path, name)?;
-        source._workspace = Some(workspace);
-        Ok(source)
+        let f = BufReader::new(crate::provenance::open(path)?);
+        Self::new(f, Input::Path(path.to_path_buf(), None), name)
     }
 
     pub fn open_bytes(bytes: Vec<u8>, name: &str) -> Result<Self> {
@@ -345,14 +373,15 @@ impl FgbSource {
             if !late && !sample.wants() {
                 continue;
             }
-            let geometry = f.to_wkb(CoordDimensions::xy()).ok().as_deref().and_then(wkb::decode).and_then(|g| self.reproject.geometry(g));
+            let geometry = f.to_wkb(CoordDimensions::xy()).ok().as_deref().and_then(wkb::decode).and_then(|g| self.reproject.read(g));
             let Some(geometry) = geometry else {
                 out.skipped += 1;
                 continue;
             };
-            if !in_request(&geometry, req) || (late && !sample.wants()) {
+            if !geometry.in_request(req) || (late && !sample.wants()) {
                 continue;
             }
+            let geometry = geometry.geometry;
             let mut props = Props {
                 fields: &self.info.fields,
                 slots: &self.slots,
@@ -410,14 +439,15 @@ impl FgbSource {
             crate::progress::step(1)?;
             n += 1;
             let id = numbers.as_ref().and_then(|v| v.get(usize::try_from(n - 1).unwrap_or(usize::MAX)).copied()).unwrap_or(n);
-            let geometry = f.to_wkb(CoordDimensions::xy()).ok().as_deref().and_then(wkb::decode).and_then(|g| self.reproject.geometry(g));
+            let geometry = f.to_wkb(CoordDimensions::xy()).ok().as_deref().and_then(wkb::decode).and_then(|g| self.reproject.read(g));
             let Some(geometry) = geometry else {
                 out.skipped += 1;
                 continue;
             };
-            if !in_request(&geometry, &req) {
+            if !geometry.in_request(&req) {
                 continue;
             }
+            let geometry = geometry.geometry;
             let mut props = Props {
                 fields: &self.info.fields,
                 slots: &self.slots,
@@ -452,7 +482,9 @@ impl FgbSource {
             None
         };
         let r: Option<Box<dyn ReadSeek>> = match &self.input {
-            Input::Path(p) => std::fs::File::open(p).ok().map(|f| Box::new(BufReader::new(f)) as Box<dyn ReadSeek>),
+            Input::Path(p, original) => {
+                open_input_file(p, original.as_deref().map(Vec::as_slice)).ok().map(|f| Box::new(BufReader::new(f)) as Box<dyn ReadSeek>)
+            }
             Input::Bytes(b) => Some(Box::new(Cursor::new(b.clone()))),
             Input::Remote(f) => Some(Box::new(remote::Reader::new(f.clone()))),
         };
@@ -720,15 +752,15 @@ impl FgbSource {
                 continue;
             }
             let id = hits.items.get(this).map(|(_, i)| i + 1).unwrap_or(this as u64 + 1);
-            let geometry =
-                feat.to_wkb(CoordDimensions::xy()).ok().as_deref().and_then(wkb::decode).and_then(|g| self.reproject.geometry(g));
+            let geometry = feat.to_wkb(CoordDimensions::xy()).ok().as_deref().and_then(wkb::decode).and_then(|g| self.reproject.read(g));
             let Some(geometry) = geometry else {
                 out.skipped += 1;
                 continue;
             };
-            if !in_request(&geometry, req) || (late && !sample.wants()) {
+            if !geometry.in_request(req) || (late && !sample.wants()) {
                 continue;
             }
+            let geometry = geometry.geometry;
             let mut props = Props {
                 fields: &self.info.fields,
                 slots: &self.slots,
@@ -769,9 +801,16 @@ impl FeatureSource for FgbSource {
         &self.info
     }
 
+    /// Its own system, in which it gives its features as the file holds them.
+    fn coord_crs(&self) -> crate::raster::Crs {
+        self.reproject.crs()
+    }
+
     fn read(&self, req: &Request) -> Result<Batch> {
         match &self.input {
-            Input::Path(p) => self.read_with(&|| Ok(BufReader::new(std::fs::File::open(p)?)), req, false),
+            Input::Path(p, original) => {
+                self.read_with(&|| Ok(BufReader::new(open_input_file(p, original.as_deref().map(Vec::as_slice))?)), req, false)
+            }
             Input::Bytes(b) => self.read_with(&|| Ok(Cursor::new(b.clone())), req, false),
             Input::Remote(f) => self.read_remote(f, req),
         }
@@ -794,7 +833,9 @@ impl FeatureSource for FgbSource {
     fn visit_chunks(&self, extent: Option<Extent>, bytes: usize, visit: &mut dyn FnMut(Vec<Feature>) -> Result<()>) -> Result<Batch> {
         let mut chunks = super::chunk_memory::Chunker::new(bytes, visit)?;
         match &self.input {
-            Input::Path(p) => self.visit_with(&|| Ok(BufReader::new(std::fs::File::open(p)?)), extent, &mut chunks),
+            Input::Path(p, original) => {
+                self.visit_with(&|| Ok(BufReader::new(open_input_file(p, original.as_deref().map(Vec::as_slice))?)), extent, &mut chunks)
+            }
             Input::Bytes(b) => self.visit_with(&|| Ok(Cursor::new(b.clone())), extent, &mut chunks),
             Input::Remote(_) => Err(DataError::Unsupported("a whole FlatGeobuf by its web address read a chunk at a time".into())),
         }

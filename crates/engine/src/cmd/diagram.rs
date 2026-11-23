@@ -245,8 +245,9 @@ pub(crate) fn hidden_notice(s: &mut Session, id: u32) {
     }
 }
 
-/// What [`hidden_notice`] says about `l`, or `None` when its diagram (if any) shows: also given
-/// for each such layer a project, map file or layer file opens with.
+/// What [`hidden_notice`] says about `l`, or `None` when its diagram (if any) shows. Opening a
+/// project, map file or layer file checks only whether this is `Some`, counting such layers by
+/// kind in one notice each; this text isn't shown there.
 pub(crate) fn hidden_text(l: &rustgis_map::Layer) -> Option<String> {
     l.diagram.as_ref()?;
     // A name read from a file may be any length.
@@ -542,7 +543,7 @@ mod tests {
             "1 diagram(s) that could not be read or named no field removed",
             "1 diagram category(ies) with a blank field name",
             "1 diagram category(ies) repeating an earlier field kept",
-            "1 layout element(s) with a value out of range, a repeated id, an over-long name or a missing map frame reference repaired while opening the project (in \"Poster\")",
+            "1 layout element(s) with a value out of range, a repeated id, an over-long name, a missing map frame reference or a background on a map frame repaired while opening the project (in \"Poster\")",
         ] {
             assert!(said.iter().any(|t| t.contains(text)), "{text}: {said:?}");
         }
@@ -579,10 +580,7 @@ mod tests {
         let mark = full.notices.len();
         full.run("map.import", &json!({"text": map})).unwrap();
         let said: Vec<&str> = full.notices[mark..].iter().map(|n| n.text.as_str()).collect();
-        assert!(
-            said.iter().any(|t| t.contains("1 layout(s) beyond the 200 a project holds removed while checking the project")),
-            "{said:?}"
-        );
+        assert!(said.iter().any(|t| t.contains("1 layout(s) beyond the 200 a project holds removed while importing the map")), "{said:?}");
         // A map import takes the layers' diagrams, so says what reading them changed.
         let mut damaged_map: serde_json::Value = serde_json::from_str(&map).unwrap();
         let layer = damaged_map["layers"].as_array_mut().unwrap().iter_mut().find(|l| l["id"] == json!(id)).unwrap();

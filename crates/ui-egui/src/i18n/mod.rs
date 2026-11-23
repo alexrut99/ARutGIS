@@ -120,7 +120,7 @@ pub static LANGUAGES: [LangInfo; 23] = [
     // Taiwan's wording (GIS terms after the National Academy for Educational Research's
     // glossary), drawn in a Traditional Chinese face with Taiwan's glyph forms where one is
     // installed (Microsoft JhengHei, PingFang TC, Noto Sans CJK TC) or on the web.
-    lang!("zh-tw", "繁體中文（台灣）", "Chinese (Traditional, Taiwan)", Script::Cjk(CjkFont::TraditionalChinese), "zh-tw.tsv"),
+    lang!("zh-tw", "繁體中文（臺灣）", "Chinese (Traditional, Taiwan)", Script::Cjk(CjkFont::TraditionalChinese), "zh-tw.tsv"),
     lang!("ja", "日本語", "Japanese", Script::Cjk(CjkFont::Japanese), "ja.tsv"),
     lang!("ko", "한국어", "Korean", Script::Cjk(CjkFont::Korean), "ko.tsv"),
     lang!("ka", "ქართული", "Georgian", Script::Alphabetic, "ka.tsv"),
@@ -410,9 +410,11 @@ thread_local! {
     /// The same, in logical order, for messages whose placeholders are filled
     /// ([`fmt`]) or whose segments are joined ([`location`]) before they are shown.
     static PLUGIN_RAW_STRINGS: std::cell::RefCell<std::collections::HashSet<&'static str>> = Default::default();
-    /// Plugin lookups this frame and the ones before, misses included: (plugin revision, language,
-    /// logical and display results). `tr` runs for every label every frame.
-    static PLUGIN_CACHE_MAP: std::cell::RefCell<(u64, &'static str, std::collections::HashMap<String, Option<(&'static str, &'static str)>>)> =
+    /// Plugin lookups this frame and the ones before, misses included: (plugin and GeoLibre
+    /// translation revisions, language, logical and display results). `tr` runs for every label
+    /// every frame.
+    #[allow(clippy::type_complexity)]
+    static PLUGIN_CACHE_MAP: std::cell::RefCell<((u64, u64), &'static str, std::collections::HashMap<String, Option<(&'static str, &'static str)>>)> =
         Default::default();
 }
 
@@ -427,9 +429,10 @@ fn leak_once(seen: &mut std::collections::HashSet<&'static str>, s: String) -> &
     kept
 }
 
-/// `s` translated by a loaded plugin's `i18n`, in logical order and in display form.
+/// `s` translated by a loaded plugin's `i18n`, else by the GeoLibre tool translations kept for
+/// `lang` (#2224), in logical order and in display form.
 fn plugin_tr_pair(lang: Lang, s: &str) -> Option<(&'static str, &'static str)> {
-    let revision = rustgis_engine::plugins::revision();
+    let revision = (rustgis_engine::plugins::revision(), rustgis_engine::cmd::gp::geolibre_language_revision());
     PLUGIN_CACHE_MAP.with_borrow_mut(|(rev, code, map)| {
         if *rev != revision || *code != lang.code() || map.len() > PLUGIN_CACHE {
             *rev = revision;
@@ -439,7 +442,9 @@ fn plugin_tr_pair(lang: Lang, s: &str) -> Option<(&'static str, &'static str)> {
         if let Some(hit) = map.get(s) {
             return *hit;
         }
-        let found = rustgis_engine::plugins::translate(lang.code(), s).map(|t| {
+        let translated =
+            rustgis_engine::plugins::translate(lang.code(), s).or_else(|| rustgis_engine::cmd::gp::geolibre_translate(lang.code(), s));
+        let found = translated.map(|t| {
             let shown = rtl::visual(&t);
             let raw = PLUGIN_RAW_STRINGS.with_borrow_mut(|seen| leak_once(seen, t));
             let vis = PLUGIN_STRINGS.with_borrow_mut(|seen| leak_once(seen, shown));
@@ -463,9 +468,13 @@ fn plugin_tr_raw(lang: Lang, s: &str) -> Option<&'static str> {
 /// A location such as `Map › Navigate`, translated segment by segment and shown in
 /// display form as one line.
 pub fn location(loc: &str) -> String {
+    rtl::visual(&location_raw(loc))
+}
+
+/// A translated location in logical order, as typed into Command Search.
+pub(crate) fn location_raw(loc: &str) -> String {
     let lang = current();
-    let loc = loc.split(" › ").map(|s| tr_raw(lang, s)).collect::<Vec<_>>().join(" › ");
-    rtl::visual(&loc)
+    loc.split(" › ").map(|s| tr_raw(lang, s)).collect::<Vec<_>>().join(" › ")
 }
 
 /// Translates `template`, fills its `{name}` placeholders in one pass (values are never
@@ -478,11 +487,43 @@ pub fn fmt(template: &str, args: &[(&str, &str)]) -> String {
     rtl::visual(&fmt_raw(template, args))
 }
 
+/// An AI Assistant note (a transcript line, a picture refused), translated and filled in as
+/// [`fmt`] does.
+pub fn note(n: &rustgis_assistant::provider::Note) -> String {
+    rtl::visual(&note_raw(n))
+}
+
+/// [`note`] in logical order, for a value going into another message ([`fmt`] puts the whole
+/// in display form once).
+pub fn note_raw(n: &rustgis_assistant::provider::Note) -> String {
+    let args: Vec<(&str, &str)> = n.args.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    fmt_raw(n.template, &args)
+}
+
 /// [`fmt`] in logical order, without the display form: for a message shown with
 /// [`paragraph`], which fits a right-to-left message to its rows and puts each row in
 /// display form itself.
 pub fn fmt_raw(template: &str, args: &[(&str, &str)]) -> String {
     fill_placeholders(tr_raw(current(), template), args)
+}
+
+/// Translates a whole-file size refusal, keeping the file name and limit as literal arguments.
+pub(crate) fn file_size_error(error: &str, format: impl FnOnce(&str, &[(&str, &str)]) -> String) -> Option<String> {
+    use rustgis_engine::data::io::FileSizeAdvice;
+    let (name, limit, advice) = rustgis_engine::data::io::file_size_error_args(error)?;
+    let args = &[("name", name), ("limit", limit)];
+    let template = match advice {
+        FileSizeAdvice::Split => {
+            "{name} is too large to open (limit {limit} MiB). Split the data into smaller files and import each one separately."
+        }
+        FileSizeAdvice::Vector => {
+            "{name} is too large to open (limit {limit} MiB). Split it into smaller files, or convert vector data to FlatGeobuf or GeoPackage and open it on the desktop."
+        }
+        FileSizeAdvice::Shapefile => {
+            "{name} is too large to open (limit {limit} MiB). Split the whole Shapefile, or convert it to FlatGeobuf or GeoPackage and open it on the desktop."
+        }
+    };
+    Some(format(template, args))
 }
 
 /// Translates a template in its context, then fills placeholders before RTL display conversion.

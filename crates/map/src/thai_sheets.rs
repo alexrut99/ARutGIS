@@ -32,9 +32,9 @@ pub enum Datum {
     Indian1975,
 }
 
-/// Indian 1975's ellipsoid (Everest 1830) and EPSG's shift to WGS 84 for Thailand, as the app's
-/// Indian 1975 / UTM presets have them.
-const INDIAN_1975: &str = "+a=6377276.345 +b=6356075.41314024 +towgs84=210,814,289,0,0,0,0";
+/// Indian 1975's ellipsoid (Everest 1830) and EPSG's shift to WGS 84 for Thailand (EPSG:1812, the
+/// one PROJ picks), as the app's Indian 1975 / UTM presets have them.
+const INDIAN_1975: &str = "+a=6377276.345 +b=6356075.41314024 +towgs84=293,836,318,0.5,1.6,-2.8,2.1";
 
 impl Datum {
     /// Reads `wgs84` or `indian1975`.
@@ -593,7 +593,7 @@ mod tests {
         let w = to_utm(c, Datum::Wgs84, 47).unwrap();
         let i = to_utm(c, Datum::Indian1975, 47).unwrap();
         let d = ((w.x - i.x).powi(2) + (w.y - i.y).powi(2)).sqrt();
-        assert!((200.0..600.0).contains(&d), "{d}");
+        assert!((200.0..800.0).contains(&d), "{d}");
         let back = from_datum(to_datum(c, Datum::Indian1975).unwrap(), Datum::Indian1975).unwrap();
         assert!((back.x - c.x).abs() < 1e-7 && (back.y - c.y).abs() < 1e-7);
     }

@@ -22,6 +22,301 @@ fn dir() -> PathBuf {
 fn write_shapefile(ds: &Dataset, path: &Path) {
     crate::io::write_path(ds, path).unwrap();
 }
+/// A streamed Shapefile is framed by its records' own boxes (#1985): the header's box stands for
+/// them only when it is their box (the specification's minimum bounding rectangle), exact at any
+/// size. One with a corner that isn't a number (an infinity, a NaN), too small for the shapes
+/// (stale), or inverted is set aside with a note, so a NaN shape doesn't lose the layer its
+/// extent, nor does a false "not longitude/latitude" note come with it; one only larger than the
+/// shapes (editors that only grow it, or junk) is set aside without one. A shape whose box isn't
+/// one is counted, said, also from a cached index. A file whose records have no finite box (every
+/// shape null), or no records at all, has no extent rather than Null Island; the null one says so
+/// when its header claimed a box. A clean header is used as it is, without a note. A cached index
+/// whose stored box isn't one is built again, not believed.
+#[test]
+fn a_streamed_shapefile_is_framed_by_its_records() {
+    let tmp = tempfile::tempdir().unwrap();
+    let folder = tmp.path().to_path_buf();
+    let write = |name: &str, points: &[Option<(f64, f64)>]| {
+        let mut ds = Dataset::new("pts", GeometryType::Point, vec![]);
+        for p in points {
+            ds.push(p.map(|(x, y)| Geometry::Point(Coord::new(x, y))), vec![]);
+        }
+        let path = folder.join(name);
+        write_shapefile(&ds, &path);
+        path
+    };
+    // Little-endian f64s: the header's box at 36, 44, 52, 60; the first record's point x at 112.
+    let patch = |path: &Path, at: usize, v: f64| {
+        let mut b = std::fs::read(path).unwrap();
+        b[at..at + 8].copy_from_slice(&v.to_le_bytes());
+        std::fs::write(path, b).unwrap();
+    };
+    let three = [Some((10.0, 20.0)), Some((11.0, 21.0)), Some((12.0, 22.0))];
+    let whole = Extent::new(10.0, 20.0, 12.0, 22.0);
+    let has = |s: &ShpSource, what: &str| s.info().notes.iter().any(|n| n.contains(what));
+    const SET_ASIDE: &str = "header's bounding box doesn't hold its shapes";
+    const UNBOXED: &str = "have no usable bounding box (a coordinate";
+    const NO_SHAPE_BOX: &str = "has no shapes to frame: its header's box isn't used";
+    let quiet = |s: &ShpSource| [SET_ASIDE, UNBOXED, NO_SHAPE_BOX, "not longitude/latitude"].iter().all(|w| !has(s, w));
+    cache::with_index_dir(folder.join("cache"), || {
+        let open = |p: &Path| {
+            let s = ShpSource::open_path(p, "pts").unwrap();
+            assert!(s.info().indexed);
+            s
+        };
+        let clean = open(&write("clean.shp", &three));
+        assert_eq!(clean.info().extent, whole, "a clean header is used as it is");
+        assert!(quiet(&clean), "{:?}", clean.info().notes);
+        // Coordinates f32 can't hold, the records' boxes rounded outward past them: the header,
+        // exact, still matches them, with nothing said, at any size (UTM, a southern northing
+        // near 10,000 km where an f32 step is a meter).
+        let odd = [Some((10.1, 20.3)), Some((12.7, 22.9))];
+        let s = open(&write("odd.shp", &odd));
+        assert_eq!(s.info().extent, Extent::new(10.1, 20.3, 12.7, 22.9));
+        assert!(!has(&s, SET_ASIDE), "{:?}", s.info().notes);
+        let utm = [Some((500_000.123, 4_500_000.789)), Some((512_345.678, 9_999_999.3))];
+        let s = open(&write("utm.shp", &utm));
+        assert_eq!(s.info().extent.max_y, 9_999_999.3, "the header, exact");
+        assert!(!has(&s, SET_ASIDE), "{:?}", s.info().notes);
+        // A corner that isn't a number, one too small for the shapes (stale), or an inverted
+        // header: the records' boxes, said. One larger than the shapes but holding them (left so
+        // by editors that only grow it, or junk): the records' boxes, with nothing to say.
+        let corners = [
+            (44, f64::INFINITY, true),
+            (52, f64::NEG_INFINITY, true),
+            (60, f64::NAN, true),
+            (52, 11.0, true),
+            (36, 13.0, true),
+            (36, 5.0, false),
+            (60, 1e300, false),
+        ];
+        for (k, (at, v, said)) in corners.into_iter().enumerate() {
+            let p = write(&format!("corner-{k}.shp"), &three);
+            patch(&p, at, v);
+            let s = open(&p);
+            assert_eq!(s.info().extent, whole, "corner at {at} = {v}");
+            assert_eq!(has(&s, SET_ASIDE), said, "corner at {at} = {v}: {:?}", s.info().notes);
+            assert!(!has(&s, "not longitude/latitude"), "corner at {at} = {v}: {:?}", s.info().notes);
+        }
+        // A 0, 0, 0, 0 header over shapes (a writer that keeps no box): the shapes' box, and
+        // nothing wrong to say.
+        let p = write("zero-header.shp", &three);
+        for at in [36, 44, 52, 60] {
+            patch(&p, at, 0.0);
+        }
+        let s = open(&p);
+        assert_eq!(s.info().extent, whole);
+        assert!(quiet(&s), "{:?}", s.info().notes);
+        // A NaN shape and the box its writer made from it: the other shapes frame the layer, and
+        // the shape left out is counted.
+        let p = write("nan-shape.shp", &three);
+        patch(&p, 112, f64::NAN);
+        patch(&p, 36, f64::NAN);
+        let s = open(&p);
+        assert_eq!(s.info().extent, Extent::new(11.0, 21.0, 12.0, 22.0));
+        assert!(has(&s, SET_ASIDE) && !has(&s, "not longitude/latitude"), "{:?}", s.info().notes);
+        assert!(has(&s, &format!("1 shape(s) {UNBOXED}")), "{:?}", s.info().notes);
+        // Opened again from its cached index, it says the same: a probe table written into every
+        // index there is still there after, so the index was reused, not built again.
+        let indexes = || {
+            std::fs::read_dir(folder.join("cache"))
+                .unwrap()
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "sqlite"))
+                .collect::<Vec<_>>()
+        };
+        drop(s);
+        for index in indexes() {
+            rusqlite::Connection::open(&index).unwrap().execute_batch("CREATE TABLE reuse_probe(value INTEGER)").unwrap();
+        }
+        let s = open(&p);
+        let probed = |index: &Path| {
+            let db = rusqlite::Connection::open(index).unwrap();
+            db.query_row("SELECT count(*) FROM sqlite_master WHERE name='reuse_probe'", [], |r| r.get::<_, i64>(0)).unwrap() == 1
+        };
+        assert!(indexes().iter().all(|i| probed(i)), "the cached index reused");
+        assert!(has(&s, &format!("1 shape(s) {UNBOXED}")), "from the cache: {:?}", s.info().notes);
+        // Every record null (its shape type, at 108 + 28 per record, set to 0): no extent, not
+        // Null Island. Under the 0, 0, 0, 0 box writers give such a file, nothing to say; under a
+        // header claiming a box, said.
+        let nulled = |name: &str, header: [f64; 4]| {
+            let p = write(name, &three);
+            let mut b = std::fs::read(&p).unwrap();
+            for at in [108, 136, 164] {
+                b[at..at + 4].copy_from_slice(&0i32.to_le_bytes());
+            }
+            for (k, v) in header.iter().enumerate() {
+                b[36 + 8 * k..44 + 8 * k].copy_from_slice(&v.to_le_bytes());
+            }
+            std::fs::write(&p, b).unwrap();
+            open(&p)
+        };
+        let s = nulled("null.shp", [0.0; 4]);
+        assert!(s.info().extent.is_empty(), "{:?}", s.info().extent);
+        assert!(quiet(&s), "{:?}", s.info().notes);
+        let s = nulled("null-boxed.shp", [10.0, 20.0, 12.0, 22.0]);
+        assert!(s.info().extent.is_empty(), "{:?}", s.info().extent);
+        assert!(has(&s, NO_SHAPE_BOX) && !has(&s, UNBOXED), "{:?}", s.info().notes);
+        // Under a header that isn't a box (a corner that isn't a number), said too.
+        let s = nulled("null-nan.shp", [10.0, f64::NAN, 12.0, 22.0]);
+        assert!(s.info().extent.is_empty(), "{:?}", s.info().extent);
+        assert!(has(&s, NO_SHAPE_BOX) && !has(&s, UNBOXED), "{:?}", s.info().notes);
+        // A file of no records (its length, at 24, in 16-bit words), under a 0, 0, 0, 0 header box or
+        // one left from the records it had.
+        for (name, header) in [("empty.shp", [0.0f64; 4]), ("emptied.shp", [10.0, 20.0, 12.0, 22.0])] {
+            let p = write(name, &three);
+            for file in [p.clone(), p.with_extension("shx")] {
+                let mut b = std::fs::read(&file).unwrap();
+                b.truncate(100);
+                b[24..28].copy_from_slice(&50i32.to_be_bytes());
+                for (k, v) in header.iter().enumerate() {
+                    b[36 + 8 * k..44 + 8 * k].copy_from_slice(&v.to_le_bytes());
+                }
+                std::fs::write(&file, b).unwrap();
+            }
+            let s = open(&p);
+            assert_eq!(s.info().count, Some(0));
+            assert!(s.info().extent.is_empty(), "{name}: {:?}", s.info().extent);
+            // An empty layer loses nothing by its header's box: nothing said, whatever it holds.
+            assert!(quiet(&s), "{name}: {:?}", s.info().notes);
+        }
+    });
+    // A cached index whose stored box isn't one (inverted, as damage or a planted file could
+    // leave it) is built again.
+    let planted = folder.join("planted-cache");
+    cache::with_index_dir(planted.clone(), || {
+        let p = write("planted.shp", &three);
+        patch(&p, 52, f64::NAN);
+        drop(ShpSource::open_path(&p, "pts").unwrap());
+        let db_path = std::fs::read_dir(&planted)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|e| e == "sqlite"))
+            .unwrap();
+        // Inverted, or none while its records are covered: either way not the rule it was built by.
+        for stored in ["'[12,22,10,20]'", "'null'"] {
+            let db = rusqlite::Connection::open(&db_path).unwrap();
+            assert_eq!(db.execute(&format!("UPDATE metadata SET bounds = {stored}"), []).unwrap(), 1);
+            drop(db);
+            let s = ShpSource::open_path(&p, "pts").unwrap();
+            assert!(s.info().indexed, "{stored}: built again, not scanned: {:?}", s.info().notes);
+            assert_eq!(s.info().extent, whole, "{stored}: {:?}", s.info().extent);
+        }
+    });
+}
+/// A record of no points (an empty geometry, which some writers give a 0, 0, 0, 0 box), or too
+/// short to say, has no box, so it doesn't stretch the layer's extent to 0, 0 and set aside a
+/// header that's right, nor is it counted as a shape left out.
+#[test]
+fn an_empty_shape_has_no_box() {
+    // Shape type, the box, then a polygon's counts of parts and points, or a multipoint's points.
+    let record = |shape: i32, counts: &[i32]| {
+        let mut raw = shape.to_le_bytes().to_vec();
+        for v in [0.0f64, 0.0, 0.0, 0.0] {
+            raw.extend_from_slice(&v.to_le_bytes());
+        }
+        for c in counts {
+            raw.extend_from_slice(&c.to_le_bytes());
+        }
+        raw
+    };
+    // Nothing to frame (a null or empty shape): NaN, not counted. A record whose box isn't one
+    // (unreadable, an unknown type): infinite, counted as left out. A backwards box is kept as
+    // stored here; the index puts it right from the points (`index::scan_boxed`).
+    let none = |b: [f32; 4]| b.iter().all(|v| v.is_nan());
+    let unread = |b: [f32; 4]| b == [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
+    // The record as given, its length as long as it is.
+    let whole = |c: &[u8]| record_box(c, c.len() as u64);
+    assert!(none(whole(&0i32.to_le_bytes())), "a null shape");
+    assert!(none(whole(&record(5, &[0, 0]))), "an empty polygon");
+    assert!(none(whole(&record(3, &[0, 0]))), "an empty line");
+    assert!(none(whole(&record(8, &[0]))), "an empty multipoint");
+    assert!(none(record_box(&record(5, &[0, 4]), 108)), "a polygon of no parts");
+    assert!(unread(whole(&record(5, &[0, 4]))), "a polygon of no parts, too short for its 4 points");
+    assert!(unread(whole(&record(5, &[1, -1]))), "a count that can't be");
+    assert!(unread(whole(&record(31, &[1, 4]))), "a multipatch, which isn't read");
+    assert!(unread(whole(&record(5, &[]))), "a polygon too short for its counts");
+    assert!(unread(whole(&record(5, &[1]))), "a polygon too short for its points' count");
+    assert!(unread(whole(&record(8, &[]))), "a multipoint too short for its count");
+    assert!(unread(whole(&record(99, &[1, 4]))), "a shape type that isn't one");
+    assert!(unread(whole(&1i32.to_le_bytes())), "a point too short for its coordinates");
+    // Counts that say more points than the record holds: a read refuses it, so it frames nothing.
+    assert!(unread(whole(&record(8, &[1]))), "a multipoint of one point and no coordinates");
+    assert!(unread(record_box(&record(5, &[1, 4]), 111)), "a polygon a byte short of its 4 points");
+    assert!(unread(record_box(&record(8, &[2]), 71)), "a multipoint a byte short of its 2 points");
+    assert!(unread(record_box(&record(8, &[1 << 25]), u64::MAX)), "more points than a shape may have");
+    // A point's record shorter than its x and y, though its bytes run on into the next record.
+    let mut point = 1i32.to_le_bytes().to_vec();
+    point.extend_from_slice(&[0; 16]);
+    assert!(unread(record_box(&point, 19)), "a point a byte short of its coordinates");
+    assert_eq!(record_box(&point, 20), [0.0; 4], "a point with its coordinates");
+    // Long enough for its parts' starts and its points: 44 + 4 + 4 × 16, and 40 + 2 × 16.
+    assert_eq!(record_box(&record(5, &[1, 4, 0]), 112), [0.0; 4], "a polygon with points keeps its box");
+    // Parts' starts a read refuses (one past the points, past the next part's, below 0, or not
+    // there at all): it frames nothing. Starts in order, within the points, keep the box. A line
+    // of 1 part and 2 points is 44 + 4 + 32 bytes; of 2 parts and 4 points, 44 + 8 + 64.
+    assert!(unread(record_box(&record(3, &[1, 2, 3]), 80)), "a part starting past the points");
+    assert!(unread(record_box(&record(3, &[2, 4, 3, 1]), 116)), "a part starting past the next");
+    assert!(unread(record_box(&record(3, &[1, 2, -1]), 80)), "a part starting below 0");
+    assert!(unread(record_box(&record(3, &[1, 2]), 80)), "a start that isn't there");
+    assert_eq!(record_box(&record(3, &[2, 4, 0, 2]), 116), [0.0; 4], "two parts in order");
+    assert_eq!(record_box(&record(3, &[2, 4, 0, 4]), 116), [0.0; 4], "a last part of no points still reads");
+    // Every part empty (the first starts at the end of the points): read as an empty shape, it has
+    // nothing to frame, as a shape of no points hasn't, whatever its stored box.
+    assert!(none(record_box(&record(3, &[1, 2, 2]), 80)), "one part starting at the end of its points");
+    assert!(none(record_box(&record(5, &[2, 4, 4, 4]), 116)), "two parts, both empty");
+    assert_eq!(record_box(&record(8, &[2]), 72), [0.0; 4], "a multipoint with points keeps its box");
+    // A box that's backwards (min x 5, max x 1): kept as stored, and not a box where it's taken.
+    let mut backwards = 5i32.to_le_bytes().to_vec();
+    for v in [5.0f64, 0.0, 1.0, 1.0] {
+        backwards.extend_from_slice(&v.to_le_bytes());
+    }
+    backwards.extend_from_slice(&1i32.to_le_bytes());
+    backwards.extend_from_slice(&4i32.to_le_bytes());
+    backwards.extend_from_slice(&0i32.to_le_bytes());
+    let b = record_box(&backwards, 112);
+    assert_eq!(b, [5.0, 0.0, 1.0, 1.0]);
+    assert!(b[0] > b[2] && !none(b), "backwards, for the index to put right, not nothing");
+    // Backwards by less than an f32 step on both sides: rounded outward each side would come out
+    // in order, and be taken as a box; it stays backwards.
+    let mut slight = 5i32.to_le_bytes().to_vec();
+    for v in [1.000_000_02f64, 2.000_000_04, 1.000_000_01, 2.000_000_02] {
+        slight.extend_from_slice(&v.to_le_bytes());
+    }
+    slight.extend_from_slice(&1i32.to_le_bytes());
+    slight.extend_from_slice(&4i32.to_le_bytes());
+    slight.extend_from_slice(&0i32.to_le_bytes());
+    let [x0, y0, x1, y1] = record_box(&slight, 112);
+    assert!(x0 > x1 && y0 > y1, "still backwards: {x0} > {x1}, {y0} > {y1}");
+    // A whole file: a multipoint emptied (its box, at 112, made 0, 0, 0, 0 and its count of
+    // points, at 144, 0) under a header that's the others' box. The header stands, with nothing
+    // said, as the index and a scan of the records both read it.
+    let tmp = tempfile::tempdir().unwrap();
+    let mut ds = Dataset::new("pts", GeometryType::Point, vec![]);
+    for (x, y) in [(10.0, 20.0), (12.0, 22.0)] {
+        ds.push(Some(Geometry::MultiPoint(vec![Coord::new(x, y), Coord::new(x + 0.5, y + 0.5)])), vec![]);
+    }
+    let path = tmp.path().join("multi.shp");
+    write_shapefile(&ds, &path);
+    let mut b = std::fs::read(&path).unwrap();
+    assert_eq!(i32::from_le_bytes(b[108..112].try_into().unwrap()), 8, "a multipoint file");
+    b[112..144].fill(0);
+    b[144..148].copy_from_slice(&0i32.to_le_bytes());
+    for (k, v) in [12.0f64, 22.0, 12.5, 22.5].iter().enumerate() {
+        b[36 + 8 * k..44 + 8 * k].copy_from_slice(&v.to_le_bytes());
+    }
+    std::fs::write(&path, &b).unwrap();
+    let scanned = index::scanned(&path, b.len() as u64).unwrap();
+    assert_eq!((scanned.count, scanned.bounds, scanned.unboxed), (2, Some([12.0, 22.0, 12.5, 22.5]), 0));
+    cache::with_index_dir(tmp.path().join("cache"), || {
+        let s = ShpSource::open_path(&path, "pts").unwrap();
+        assert!(s.info().indexed);
+        assert_eq!(s.info().extent, Extent::new(12.0, 22.0, 12.5, 22.5), "the header, as written");
+        assert!(!s.info().notes.iter().any(|n| n.contains("bounding box")), "{:?}", s.info().notes);
+    });
+}
 fn points_shapefile(path: &Path) {
     let mut ds = Dataset::new("grid", GeometryType::Point, vec![]);
     for x in 0..30 {
@@ -200,7 +495,7 @@ fn disk_queries_match_legacy_scan_sampling_and_edges() {
                     raw.extend_from_slice(&1i32.to_le_bytes());
                     raw.extend_from_slice(&p.x.to_le_bytes());
                     raw.extend_from_slice(&p.y.to_le_bytes());
-                    let b = record_box(&raw);
+                    let b = record_box(&raw, raw.len() as u64);
                     extent
                         .is_none_or(|e| {
                             b[0] <= e.max_x as f32 && b[2] >= e.min_x as f32 && b[1] <= e.max_y as f32 && b[3] >= e.min_y as f32
@@ -247,7 +542,7 @@ fn shapefile_disk_index_benchmark() {
         let mut matched = 0u64;
         let bytes = std::fs::read(&path).unwrap();
         for raw in bytes.get(100..).unwrap().as_chunks::<28>().0 {
-            let [x0, y0, x1, y1] = record_box(raw.get(8..).unwrap());
+            let [x0, y0, x1, y1] = record_box(raw.get(8..).unwrap(), 20);
             if x0 <= 1.0 && x1 >= -1.0 && y0 <= 1.0 && y1 >= -1.0 {
                 matched += 1;
             }
@@ -347,4 +642,193 @@ fn shapefile_record_past_the_cap_is_skipped_not_allocated() {
         assert_eq!((chunked, batch.skipped), (1, 1));
     });
     std::fs::remove_dir_all(fixture).unwrap();
+}
+
+/// An area the layer's system can't bound (#1925) visits every record, so a NaN shape's stored box
+/// can't be placed in it: the note on such a read counts the whole layer and says so, rather than
+/// claiming the shapes for the area. Here, a UTM zone 17 layer of three lines near 40° N, two with
+/// a NaN point, read by a view reaching past 90° from the zone's meridian that holds none of them;
+/// the same file without the NaN points says nothing.
+#[test]
+fn a_nan_shape_outside_an_area_its_system_cant_bound_is_counted_as_of_the_layer() {
+    let fixture = dir();
+    cache::with_index_dir(fixture.join("cache"), || {
+        let crs = crate::source::Crs::from_epsg(32617).unwrap();
+        let write = |name: &str| {
+            let mut ds = Dataset::new("roads", GeometryType::Polyline, vec![]);
+            for k in 0..3 {
+                let k = f64::from(k);
+                ds.push(Some(Geometry::Line(vec![vec![Coord::new(-82.0 + k, 40.0 + k), Coord::new(-81.5 + k, 40.5 + k)]])), vec![]);
+            }
+            let p = fixture.join(name);
+            crate::io::write_path_in(&ds, &p, crs).unwrap();
+            p
+        };
+        let view = Extent::new(-120.0, -30.0, 10.0, 30.0);
+        let r = Reproject::from_crs(crs, &mut Vec::new());
+        assert!(r.extent_from_lonlat(&view).is_none(), "the view's edge is refused");
+        const SAID: &str = "have a coordinate that isn't a number under a bounding box that is one";
+        let said = |notes: &[String]| notes.iter().filter(|n| n.contains(SAID)).cloned().collect::<Vec<_>>();
+        let reads = |src: &dyn FeatureSource| {
+            let read = src.read(&Request { extent: Some(view), ..Request::all() }).unwrap();
+            let mut kept = 0;
+            let chunked = src
+                .visit_chunks(Some(view), 1 << 20, &mut |f| {
+                    kept += f.len();
+                    Ok(())
+                })
+                .unwrap();
+            ((read.features.len(), read.skipped, said(&read.notes)), (kept, chunked.skipped, said(&chunked.notes)))
+        };
+        let clean = open_path(&write("clean.shp"), None).unwrap();
+        assert_eq!(reads(clean.as_ref()), ((0, 0, Vec::new()), (0, 0, Vec::new())));
+        // The first two records' first x (each record 8 + 80 bytes; content at 108 + 88k, its
+        // first x 48 bytes in), their stored boxes left as they are.
+        let p = write("nan.shp");
+        let mut b = std::fs::read(&p).unwrap();
+        for at in [156, 244] {
+            b[at..at + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        }
+        std::fs::write(&p, b).unwrap();
+        let src = open_path(&p, None).unwrap();
+        // Every record is visited, so the NaN shapes can't be ruled out of the area: both reads
+        // skip them, and the note says its count is of the layer, not of the area.
+        let layer = vec![format!(
+            "2 shape(s) in the layer (a count of the whole layer, as the area couldn't be placed in its coordinates) {SAID}: they're left out of the read, but the layer's extent and its index still take in their stored boxes"
+        )];
+        assert_eq!(reads(src.as_ref()), ((0, 2, layer.clone()), (0, 2, layer)));
+        // A whole read keeps its plain count.
+        assert_eq!(said(&src.read(&Request::all()).unwrap().notes).first().map(|n| n.starts_with("2 shape(s) have")), Some(true));
+    });
+    std::fs::remove_dir_all(fixture).unwrap();
+}
+
+/// A line with a coordinate that isn't a number under a stored box that is one: the index takes
+/// the stored box (the points aren't read to build it), and a read leaves the line out. Both
+/// reads, sampled and in chunks, count it and say so, once with its count, whole or by area; a
+/// limited read says its count is of the shapes it read; a clean file says nothing.
+#[test]
+fn a_nan_shape_under_a_finite_box_is_said_when_left_out() {
+    let fixture = dir();
+    cache::with_index_dir(fixture.join("cache"), || {
+        let write = |name: &str| {
+            let mut ds = Dataset::new("roads", GeometryType::Polyline, vec![]);
+            for k in 0..3 {
+                let k = f64::from(k);
+                ds.push(Some(Geometry::Line(vec![vec![Coord::new(k, k), Coord::new(k + 1.0, k + 1.0)]])), vec![]);
+            }
+            let p = fixture.join(name);
+            write_shapefile(&ds, &p);
+            p
+        };
+        const SAID: &str = "have a coordinate that isn't a number under a bounding box that is one";
+        let said = |notes: &[String]| notes.iter().filter(|n| n.contains(SAID)).cloned().collect::<Vec<_>>();
+        let chunk_notes = |src: &dyn FeatureSource, extent| {
+            let batch = src.visit_chunks(extent, 1 << 20, &mut |_| Ok(())).unwrap();
+            (batch.skipped, said(&batch.notes))
+        };
+        let clean = open_path(&write("clean.shp"), None).unwrap();
+        let (_, report) = crate::source::materialize(clean.as_ref()).unwrap();
+        assert!(said(&report.messages).is_empty(), "{:?}", report.messages);
+        assert!(said(&clean.read(&Request::all()).unwrap().notes).is_empty());
+        assert_eq!(chunk_notes(clean.as_ref(), None), (0, Vec::new()));
+        // The second record (each record 8 + 80 bytes, so its content at 100 + 88 + 8): its first
+        // point's x at 196 + 48 = 244, its stored box (1, 1, 2, 2) left as it is.
+        let p = write("nan.shp");
+        let mut b = std::fs::read(&p).unwrap();
+        b[244..252].copy_from_slice(&f64::NAN.to_le_bytes());
+        std::fs::write(&p, b).unwrap();
+        let src = open_path(&p, None).unwrap();
+        assert!(src.info().indexed);
+        assert_eq!(src.info().extent, Extent::new(0.0, 0.0, 3.0, 3.0), "the stored box framed");
+        let one = vec![format!(
+            "1 shape(s) {SAID}: they're left out of the read, but the layer's extent and its index still take in their stored boxes"
+        )];
+        let (ds, report) = crate::source::materialize(src.as_ref()).unwrap();
+        assert_eq!((ds.features.len(), report.skipped), (2, 1));
+        assert_eq!(said(&report.messages).len(), 1, "{:?}", report.messages);
+        assert!(report.messages.iter().any(|m| m.ends_with(&one[0])), "{:?}", report.messages);
+        let all = src.read(&Request::all()).unwrap();
+        assert_eq!((all.skipped, said(&all.notes)), (1, one.clone()));
+        // By area, over the stored box only: matched by it, left out, said.
+        let area = Some(Extent::new(1.4, 1.4, 1.6, 1.6));
+        let by_area = src.read(&Request { extent: area, ..Request::all() }).unwrap();
+        assert_eq!((by_area.features.len(), by_area.skipped, said(&by_area.notes)), (0, 1, one.clone()));
+        assert_eq!(chunk_notes(src.as_ref(), None), (1, one.clone()));
+        assert_eq!(chunk_notes(src.as_ref(), area), (1, one.clone()));
+        // A limited read visits a sample (here the first and third records), so its count is of
+        // the shapes it read, not a total: the first record's point made NaN (content at 108,
+        // its first x at 108 + 48 = 156).
+        let p = write("nan_first.shp");
+        let mut b = std::fs::read(&p).unwrap();
+        b[156..164].copy_from_slice(&f64::NAN.to_le_bytes());
+        std::fs::write(&p, b).unwrap();
+        let src = open_path(&p, None).unwrap();
+        let some = src.read(&Request { limit: 2, ..Request::all() }).unwrap();
+        assert!(!some.complete);
+        assert_eq!(
+            (some.features.len(), some.skipped, said(&some.notes)),
+            (
+                1,
+                1,
+                vec![format!(
+                    "1 of the shapes read (a sample of the layer, which may hold more) {SAID}: they're left out of the read, but the layer's extent and its index still take in their stored boxes"
+                )]
+            )
+        );
+        // A whole read of the same file still gives the total.
+        assert_eq!(said(&src.read(&Request::all()).unwrap().notes), one);
+        // The second record's stored box made backwards, (2, 2, 1, 1) at 200..232, over the same
+        // NaN point: the index can't frame it from the points, so it's left out of the extent and
+        // said as having no usable box, and the read doesn't claim the index took it in. Reads by
+        // area (the map's) don't visit it, so no read note counts it: the source's open-time note
+        // ("1 shape(s) have no usable bounding box", `SourceInfo::notes`) says it, which Add Data
+        // gives as a notice when it adds the layer read in place, once (the engine's
+        // `a_streamed_shapefile_says_a_shape_without_a_usable_box_once_as_it_is_added`).
+        let p = write("nan_backwards.shp");
+        let mut b = std::fs::read(&p).unwrap();
+        for (at, v) in [(200, 2.0), (208, 2.0), (216, 1.0), (224, 1.0)] {
+            b[at..at + 8].copy_from_slice(&f64::to_le_bytes(v));
+        }
+        b[244..252].copy_from_slice(&f64::NAN.to_le_bytes());
+        std::fs::write(&p, b).unwrap();
+        let src = open_path(&p, None).unwrap();
+        let unboxed = "1 shape(s) have no usable bounding box";
+        let (ds, report) = crate::source::materialize(src.as_ref()).unwrap();
+        assert_eq!((ds.features.len(), report.skipped), (2, 1));
+        assert!(said(&report.messages).is_empty(), "{:?}", report.messages);
+        assert!(report.messages.iter().any(|m| m.contains(unboxed)), "{:?}", report.messages);
+        let all = src.read(&Request::all()).unwrap();
+        assert_eq!((all.skipped, said(&all.notes)), (1, Vec::new()));
+        assert_eq!(chunk_notes(src.as_ref(), None), (1, Vec::new()));
+    });
+    std::fs::remove_dir_all(fixture).unwrap();
+}
+/// A streamed Shapefile leaves a record marked deleted out with its shape, as a whole read does,
+/// and counts it; a clean one says nothing of it.
+#[test]
+fn a_streamed_shapefile_counts_its_deleted_records() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("pts.shp");
+    let mut ds = Dataset::new("pts", GeometryType::Point, vec![crate::Field::new("name", crate::FieldType::Text)]);
+    for (k, name) in ["a", "b", "c"].iter().enumerate() {
+        ds.push(Some(Geometry::Point(Coord::new(k as f64, k as f64))), vec![crate::Value::Text((*name).into())]);
+    }
+    write_shapefile(&ds, &path);
+    let said = |r: &crate::ReadReport| r.messages.iter().filter(|m| m.contains("marked deleted")).cloned().collect::<Vec<_>>();
+    cache::with_index_dir(tmp.path().join("cache"), || {
+        let (clean, report) = crate::source::materialize(&ShpSource::open_path(&path, "pts").unwrap()).unwrap();
+        assert_eq!(clean.features.len(), 3);
+        assert!(said(&report).is_empty(), "{:?}", report.messages);
+        let dbf_path = path.with_extension("dbf");
+        let mut dbf = std::fs::read(&dbf_path).unwrap();
+        let header = usize::from(u16::from_le_bytes([dbf[8], dbf[9]]));
+        let len = usize::from(u16::from_le_bytes([dbf[10], dbf[11]]));
+        dbf[header + len] = b'*';
+        std::fs::write(&dbf_path, &dbf).unwrap();
+        let (ds, report) = crate::source::materialize(&ShpSource::open_path(&path, "pts").unwrap()).unwrap();
+        let names: Vec<_> = ds.features.iter().map(|f| f.attrs[0].clone()).collect();
+        assert_eq!(names, [crate::Value::Text("a".into()), crate::Value::Text("c".into())]);
+        assert_eq!(said(&report), ["pts: 1 dBASE record marked deleted was left out, with its shape"]);
+    });
 }

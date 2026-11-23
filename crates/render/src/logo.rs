@@ -2,7 +2,9 @@
 //! dotted route, on a rounded tile shading from sky blue to blue with a black rim. This keeps
 //! the app free of image files.
 
-use tiny_skia::{Color, FillRule, GradientStop, LineCap, LinearGradient, Paint, PathBuilder, Pixmap, Point, SpreadMode, Stroke, Transform};
+use tiny_skia::{
+    BlendMode, Color, FillRule, GradientStop, LineCap, LinearGradient, Paint, PathBuilder, Pixmap, Point, SpreadMode, Stroke, Transform,
+};
 
 fn gradient(a: (u8, u8, u8), b: (u8, u8, u8), x0: f32, y0: f32, x1: f32, y1: f32) -> Paint<'static> {
     let mut p = Paint { anti_alias: true, ..Paint::default() };
@@ -49,14 +51,33 @@ fn rounded(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<tiny_skia::Path> {
 
 /// The logo as a premultiplied RGBA pixmap of `size`×`size` pixels (16..=1024).
 pub fn pixmap(size: u32) -> Option<Pixmap> {
+    draw(size, false)
+}
+
+/// The logo as one opaque white shape on a transparent background, `size`×`size` pixels
+/// (16..=1024): its white parts (the A and the pin's head) are cut out of the tile, so it still
+/// reads as the logo in one colour. For the icons a phone tints itself:
+/// Android's themed icons (the adaptive icon's monochrome layer) and iOS's tinted app icons.
+pub fn monochrome(size: u32) -> Option<Pixmap> {
+    draw(size, true)
+}
+
+fn draw(size: u32, mono: bool) -> Option<Pixmap> {
     let size = size.clamp(16, 1024);
     let mut pm = Pixmap::new(size, size)?;
     let t = Transform::from_scale(size as f32 / 512.0, size as f32 / 512.0);
-    let (white, ink) = (solid(255, 255, 255), solid(INK.0, INK.1, INK.2));
+    // In one colour, the tile and the ink are the shape and white cuts holes in it.
+    let (white, ink, sky) = if mono {
+        let mut cut = solid(255, 255, 255);
+        cut.blend_mode = BlendMode::DestinationOut;
+        (cut, solid(255, 255, 255), solid(255, 255, 255))
+    } else {
+        (solid(255, 255, 255), solid(INK.0, INK.1, INK.2), gradient(SKY, BLUE, 16.0, 16.0, 496.0, 496.0))
+    };
 
     // The tile, with its rim.
     let tile = rounded(16.0, 16.0, 480.0, 480.0, 110.0)?;
-    pm.fill_path(&tile, &gradient(SKY, BLUE, 16.0, 16.0, 496.0, 496.0), FillRule::Winding, t, None);
+    pm.fill_path(&tile, &sky, FillRule::Winding, t, None);
     pm.stroke_path(&tile, &ink, &Stroke { width: 10.0, ..Stroke::default() }, t, None);
 
     // The legs of the A.
@@ -197,6 +218,20 @@ mod tests {
         if let Ok(dir) = std::env::var("RUSTGIS_LOGO_PNG") {
             super::pixmap(512).unwrap().save_png(dir).unwrap();
         }
+    }
+
+    #[test]
+    fn monochrome_is_white_with_the_white_parts_cut_out() {
+        let pm = super::monochrome(512).unwrap();
+        let at = |x: u32, y: u32| pm.pixel(x, y).unwrap();
+        // Every pixel is white or clear (premultiplied: each channel equals the alpha).
+        assert!(pm.pixels().iter().all(|p| p.red() == p.alpha() && p.green() == p.alpha() && p.blue() == p.alpha()));
+        // The tile is solid and the corner outside it clear; the pin's head is cut out of it, and
+        // its ink centre solid again.
+        assert_eq!(at(80, 440).alpha(), 255);
+        assert_eq!(at(2, 2).alpha(), 0);
+        assert_eq!(at(256, 110).alpha(), 0);
+        assert_eq!(at(256, 160).alpha(), 255);
     }
 
     #[test]

@@ -100,7 +100,7 @@ pub fn commands() -> Vec<C> {
                 s.notify(format!("New Style: the style takes the first {MAX_STYLE_NAME} characters of the layer's name"), false);
             }
             if left_out > 0 {
-                s.notify(format!("Style {name} from {layer}: {left_out} fill(s) No Fill hid couldn't be put back in it, as their classes have fills of their own now, are gone or their opacity wasn't kept; it draws them as the layer does now"), false);
+                s.notify(format!("Style {name} from {layer}: {left_out} fill(s) No Fill hid couldn't be put back in it, as their classes have fills of their own now, are gone or their opacity wasn't kept; the style is saved without them"), false);
             }
             Ok(json!({"style": name}))
         }).roles(&[]).effects(crate::policy::Effects::NONE)
@@ -110,6 +110,9 @@ pub fn commands() -> Vec<C> {
             let text = read_text(p)?;
             crate::project::check_format(&text, "style file")?;
             let items: Vec<StyleItem> = serde_json::from_str(&text).map_err(|e| format!("not a RustGIS style file: {e}"))?;
+            for notice in crate::project::picture_notices([], items.iter().map(|i| (i.name.as_str(), &i.renderer))) {
+                s.notify_text(notice, false);
+            }
             Ok(json!({"added": add_file_styles(s, "Add Style", items)}))
         }).roles(&[]).effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Files))
         .params(r#"{"path"?: "*.rgisstyle", "text"?: style file JSON, "data"?: base64 file}"#),
@@ -309,7 +312,9 @@ pub fn commands() -> Vec<C> {
             }
             let kept = name.chars().count() - if i > 1 { format!(" {i}").chars().count() } else { 0 };
             if kept < base.chars().count() {
-                s.notify(format!("New Task: a task has that name already, so the name given is cut to {kept} characters to fit \" {i}\""), false);
+                // `task.import` adds its task through this command, and is named as itself.
+                let title = if b(p, "imported").unwrap_or(false) { "Import Task" } else { "New Task" };
+                s.notify(format!("{title}: a task has that name already, so the name given is cut to {kept} characters to fit \" {i}\""), false);
             }
             s.project.tasks.push(Task { name: name.clone(), description, steps });
             Ok(json!({"task": name}))
@@ -321,8 +326,8 @@ pub fn commands() -> Vec<C> {
                 return Err(format!("'{}' can't be a task step", step.command));
             }
             let t = task_mut(s, p)?;
-            if t.steps.len() >= 200 {
-                return Err("a task has at most 200 steps".into());
+            if t.steps.len() >= MAX_TASK_STEPS {
+                return Err(format!("a task has at most {MAX_TASK_STEPS} steps"));
             }
             t.steps.push(step);
             Ok(json!({"steps": t.steps.len()}))
@@ -506,6 +511,9 @@ fn import_maps(s: &mut Session, p: &Value) -> CmdResult {
             for notice in crate::project::label_losses::map_notices(&text, &m, true) {
                 s.notify(notice, false);
             }
+            for notice in crate::project::picture_notices(&m.layers, []) {
+                s.notify_text(notice, false);
+            }
             vec![m]
         }
         Err(_) => match Project::from_import_maps_json(&text, dir.as_deref(), MAX_IMPORTED_MAPS) {
@@ -529,7 +537,21 @@ fn import_maps(s: &mut Session, p: &Value) -> CmdResult {
     };
     let mut names = Vec::new();
     let first_map = s.project.maps.len();
+    let mut detached_offline = 0;
+    let mut renamed_offline = 0;
     for mut m in maps.into_iter().take(MAX_IMPORTED_MAPS) {
+        // A map imported without its home area becomes an independent copy.
+        detached_offline += usize::from(m.offline_area_id.take().is_some());
+        // Nor may its title make it one: an older project matches its offline copy by the name
+        // "<area> (offline)", and syncing an unrelated map would delete what it lacks.
+        let suffix = super::field::OFFLINE;
+        if m.name.len() > suffix.len()
+            && m.name.is_char_boundary(m.name.len() - suffix.len())
+            && m.name[m.name.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+        {
+            m.name = format!("{} (imported)", &m.name[..m.name.len() - suffix.len()]);
+            renamed_offline += 1;
+        }
         // A binding in a file is no authority to use a login here.
         crate::s3_connections::clear_bindings(m.addresses_mut());
         crate::project::clear_login_bindings(m.addresses_mut());
@@ -543,12 +565,25 @@ fn import_maps(s: &mut Session, p: &Value) -> CmdResult {
         m.renew_instance_id();
         s.project.maps.push(m);
     }
+    if detached_offline > 0 {
+        s.notify(
+            format!("{detached_offline} imported map(s) were detached from their offline areas, which aren't imported with maps"),
+            false,
+        );
+    }
+    if renamed_offline > 0 {
+        s.notify(
+            format!("{renamed_offline} imported map(s) titled as offline copies were renamed \"… (imported)\", so they aren't taken for this project's offline maps"),
+            false,
+        );
+    }
     if let Some(message) = super::design::display_area_messages(s.project.maps.iter().skip(first_map).flat_map(|map| map.layers.iter())) {
         s.notify(message, false);
     }
     // Repair what was read (rasters reopen, cameras clamp); the sources that read S3 wait for
     // the saved connection that is to read them.
-    for notice in s.project.normalize_text() {
+    let when = if s.project.maps.len().saturating_sub(first_map) == 1 { "while importing the map" } else { "while importing the maps" };
+    for notice in s.project.normalize_after(when) {
         s.notify_text(notice, false);
     }
     super::connections::restore_active(s);
@@ -628,10 +663,16 @@ fn import_styles(s: &mut Session, p: &Value) -> CmdResult {
         for notice in crate::project::label_losses::layer_notices(&text, &l, false) {
             s.notify(notice, false);
         }
+        for notice in crate::project::picture_notices([&l], []) {
+            s.notify_text(notice, false);
+        }
         vec![l]
     } else if let Ok(m) = serde_json::from_str::<Map>(&text) {
         for notice in crate::project::label_losses::map_notices(&text, &m, false) {
             s.notify(notice, false);
+        }
+        for notice in crate::project::picture_notices(&m.layers, []) {
+            s.notify_text(notice, false);
         }
         m.layers
     } else {
@@ -642,6 +683,9 @@ fn import_styles(s: &mut Session, p: &Value) -> CmdResult {
         let mut project = project.map_err(|e| not_a(e, "layer file, map file or project"))?;
         // Styles take the layers' renderers and labels, not their diagrams or the layouts.
         for notice in project.take_read_notices(&[crate::project::ReadPart::Labels]) {
+            s.notify_text(notice, false);
+        }
+        for notice in crate::project::picture_notices(project.maps.iter().flat_map(|m| &m.layers), []) {
             s.notify_text(notice, false);
         }
         project.maps.into_iter().flat_map(|m| m.layers).collect()
@@ -732,6 +776,7 @@ fn template(p: &Project) -> (Project, TemplateLosses) {
         })
         .saturating_add(t.tables.iter().filter(|table| table.source.is_some()).count());
     for m in &mut t.maps {
+        m.offline_area_id = None;
         for l in &mut m.layers {
             l.dataset.features.clear();
             l.selection.clear();
@@ -820,6 +865,11 @@ fn package_map(s: &mut Session, mobile: bool, tol: f64) -> Result<Vec<u8>, Strin
             if l.is_raster() || tol <= 0.0 {
                 continue;
             }
+            // Simplified in longitude/latitude, as the tolerance is in degrees, whatever system
+            // the layer holds its coordinates in; the package saves it there.
+            if let std::borrow::Cow::Owned(ds) = l.dataset.in_lonlat()? {
+                l.dataset = ds;
+            }
             for f in &mut l.dataset.features {
                 if let Some(g) = &f.geometry {
                     let (simple, said) = rustgis_analysis::simplify_geometry(g, tol * 111_320.0);
@@ -832,12 +882,12 @@ fn package_map(s: &mut Session, mobile: bool, tol: f64) -> Result<Vec<u8>, Strin
     }
     crate::project::ensure_map_imports_complete(&m)?;
     let name = m.name.clone();
-    let (text, report) = crate::durable::output_owned(m, |m| serde_json::to_string(m).map_err(|e| e.to_string()))?;
+    // With the map file's header, so an older reader refuses what it can't draw.
+    let (bytes, report) = crate::durable::output_owned(m, crate::project::map_file_bytes)?;
     crate::durable::notify(s, &report);
     let kind = if mobile { "mobile map package" } else { "map package" };
     let readme = format!("{} — a RustGIS {kind}.\nAdd it to a project with Data › Import.\n", name);
-    let archive =
-        rustgis_data::zip::write(&[(format!("{}.rgismap", safe(&name)), text.into_bytes()), ("README.txt".into(), readme.into_bytes())])?;
+    let archive = rustgis_data::zip::write(&[(format!("{}.rgismap", safe(&name)), bytes), ("README.txt".into(), readme.into_bytes())])?;
     for said in notes.without_polar().messages("Mobile map package, simplifying") {
         s.notify(said, false);
     }
@@ -863,7 +913,9 @@ fn package_gp(s: &mut Session) -> Result<Vec<u8>, String> {
             k += 1;
             file = format!("results/{base}_{k}.geojson");
         }
-        entries.push((file, rustgis_data::io::to_geojson(&l.dataset).to_string().into_bytes()));
+        // GeoJSON is longitude/latitude, whatever system the result holds its coordinates in.
+        let ds = l.dataset.in_lonlat()?;
+        entries.push((file, rustgis_data::io::to_geojson(&ds).to_string().into_bytes()));
     }
     rustgis_data::zip::write(&entries)
 }
@@ -888,7 +940,15 @@ fn layer_template(s: &mut Session, p: &Value) -> CmdResult {
         o => return Err(format!("unknown layer template '{o}'")),
     };
     let name = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).unwrap_or(title);
-    let id = super::layer::add_dataset(s, Dataset::new(name, gt, fields));
+    let mut ds = Dataset::new(name, gt, fields);
+    // Held in the project's coordinate system, when it has one (#2032 C3a).
+    // One that doesn't convert to longitude/latitude, which the map draws through, is said.
+    if let Some(crs) = s.project.coordinate_system
+        && let Err(e) = ds.hold_as(crs, Some(crs))
+    {
+        s.notify(format!("Layer '{name}' is held in longitude/latitude, not the project's coordinate system: {e}"), false);
+    }
+    let id = super::layer::add_dataset(s, ds);
     if let Some(l) = s.map_mut().layer_mut(id) {
         l.labels.default.field = "name".into();
     }
@@ -951,8 +1011,6 @@ fn run_task_steps(s: &mut Session, p: &Value) -> CmdResult {
         None => t.steps.iter().cloned().enumerate().collect(),
     };
     let mut done = Vec::new();
-    let mut edited = false;
-    let mut requested = false;
     for (i, st) in steps {
         if st.command.starts_with("task.") {
             return Err(format!("step {} would run another task", i + 1));
@@ -966,7 +1024,6 @@ fn run_task_steps(s: &mut Session, p: &Value) -> CmdResult {
             ));
         }
         let spec = *s.registry.get(&st.command).ok_or_else(|| format!("step {} runs an unknown command '{}'", i + 1, st.command))?;
-        let mutates = spec.mutates;
         // As when run directly, a step naming a layer is checked against that layer.
         if st.params.get("layer").is_some()
             && let Ok(id) = s.layer_id(&st.params)
@@ -978,9 +1035,6 @@ fn run_task_steps(s: &mut Session, p: &Value) -> CmdResult {
         if let Some(why) = blocked {
             return Err(format!("step {} ({}): {why}", i + 1, st.title));
         }
-        // These handlers share the task's one outer transaction. A final request must not
-        // erase the undo step for earlier edits.
-        s.request_only = false;
         // A step that panics fails the task instead of the app (the whole task is one undo step).
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let op = s.authorize(&st.command, &st.params)?;
@@ -988,11 +1042,11 @@ fn run_task_steps(s: &mut Session, p: &Value) -> CmdResult {
         }))
         .unwrap_or_else(|_| Err("failed unexpectedly".into()))
         .map_err(|e| format!("step {} ({}): {e}", i + 1, st.title))?;
-        requested |= s.request_only;
-        edited |= mutates && !s.request_only;
         done.push(json!({"step": i, "title": st.title, "result": r}));
     }
-    s.request_only = requested && !edited;
+    // An undo step only when a step edited ([`Session::shared_step`]); run inside a script, the
+    // script's account, earlier steps included, decides.
+    s.request_only = !s.shared_steps.edited;
     Ok(json!({"task": t.name, "ran": done}))
 }
 
@@ -1092,7 +1146,7 @@ fn export_3d(s: &mut Session, p: &Value) -> CmdResult {
             s.notify(note, false);
         }
         s.retain_written_notices(written);
-        s.notify_written(format!("Exported {path}"), false);
+        s.notify_written(format!("Exported {path}"));
         return Ok(json!({
             "path": path, "bytes": bytes.len(), "triangles": report.triangles,
             "skippedDegenerate": report.degenerate, "linesDropped": report.lines, "capsFanned": report.fanned,
@@ -1104,7 +1158,7 @@ fn export_3d(s: &mut Session, p: &Value) -> CmdResult {
         s.notify(note, false);
     }
     s.retain_written_notices(written);
-    s.notify_written(format!("Exported {path}"), false);
+    s.notify_written(format!("Exported {path}"));
     Ok(json!({"path": path, "bytes": obj.len()}))
 }
 
@@ -1231,14 +1285,15 @@ fn layer_mesh(s: &Session, p: &Value, keep_lines: bool) -> Result<Mesh, String> 
     };
     let mut mesh = Mesh { keep_lines, ..Mesh::default() };
     let rows = l.visible_rows();
+    let to = l.dataset.lonlat_conversion().map_err(|e| format!("{}: {e}", l.name))?;
     for (row, ft) in l.dataset.features.iter().enumerate() {
         if row.is_multiple_of(256) {
             rustgis_data::progress::check().map_err(|e| e.to_string())?;
         }
         // A feature with no geometry draws nothing, so its height is neither used nor reported.
-        if rows.get(row) != Some(&true) || ft.geometry.is_none() {
-            continue;
-        }
+        let Some(g) = ft.geometry.as_ref().filter(|_| rows.get(row) == Some(&true)) else { continue };
+        // Placed from longitude/latitude, whatever system the layer holds its coordinates in.
+        let g = rustgis_data::Dataset::geometry_to_lonlat_by(&to, g).map_err(|e| format!("{}: feature {}: {e}", l.name, ft.id))?;
         // A height that isn't a finite number takes the default, and is counted.
         let height = match hf {
             Some(fi) => match l.dataset.value(row, fi).as_f64().filter(|h| h.is_finite()) {
@@ -1256,13 +1311,13 @@ fn layer_mesh(s: &Session, p: &Value, keep_lines: bool) -> Result<Mesh, String> 
         let below = h < 0.0;
         let orient = |o: Orient| if below { o.reversed() } else { o };
         // A solid of zero height would be two coincident caps facing apart: STL leaves it out.
-        if !mesh.keep_lines && h == 0.0 && !matches!(ft.geometry, Some(Geometry::Line(_))) {
+        if !mesh.keep_lines && h == 0.0 && !matches!(&*g, Geometry::Line(_)) {
             mesh.flat += 1;
             continue;
         }
         let before = mesh.vertices;
-        match &ft.geometry {
-            Some(Geometry::Polygon(polys)) => {
+        match &*g {
+            Geometry::Polygon(polys) => {
                 for rings in polys {
                     // Each ring open (no closing vertex), outer first then holes.
                     let mut open: Vec<Vec<(f64, f64)>> = rings
@@ -1327,7 +1382,7 @@ fn layer_mesh(s: &Session, p: &Value, keep_lines: bool) -> Result<Mesh, String> 
                     }
                 }
             }
-            Some(Geometry::Line(parts)) => {
+            Geometry::Line(parts) => {
                 for part in parts {
                     let n = part.len();
                     if n < 2 {
@@ -1346,7 +1401,7 @@ fn layer_mesh(s: &Session, p: &Value, keep_lines: bool) -> Result<Mesh, String> 
                     mesh.face(Item::Polyline((0..n).map(|i| v + i).collect()))?;
                 }
             }
-            Some(g @ (Geometry::Point(_) | Geometry::MultiPoint(_))) => {
+            g @ (Geometry::Point(_) | Geometry::MultiPoint(_)) => {
                 let pts: Vec<rustgis_geom::Coord> = match g {
                     Geometry::Point(c) => vec![*c],
                     Geometry::MultiPoint(c) => c.clone(),
@@ -1369,7 +1424,6 @@ fn layer_mesh(s: &Session, p: &Value, keep_lines: bool) -> Result<Mesh, String> 
                     }
                 }
             }
-            None => {}
         }
         if mesh.vertices > before {
             s.constructions.count_feature(s.map().instance_id(), l, ft, &mut mesh.constructions);

@@ -95,6 +95,7 @@ pub fn commands() -> Vec<C> {
             };
             let r = with(s, p, |l| l.aggregation = agg)?;
             super::diagram::hidden_notice(s, id);
+            super::layer::size_hidden_notice(s, id);
             Ok(r)
         })
         .roles(&[])
@@ -106,7 +107,7 @@ pub fn commands() -> Vec<C> {
             .effects(crate::policy::Effects::NONE)
             .when(need_polygons)
             .params(
-                r#"{"layer"?: name|id | [name|id] (default: the active layer; a list is set alike in one step, or refused whole), "type": "none"|"height"|"field", "field"?: numeric field (metres), "height"?: metres, "factor"?: number}"#,
+                r#"{"layer"?: name|id | [name|id] (default: the active layer; a list is set alike in one step, or refused whole), "type": "none"|"height"|"field", "field"?: a numeric field's name (its values are metres), "height"?: metres, "factor"?: number}"#,
             ),
         C::new("layer.faces", "Faces", "Style › Faces", |s, p| {
             let (cull, light) = (b(p, "culling"), b(p, "lighting"));
@@ -142,7 +143,7 @@ pub fn commands() -> Vec<C> {
             .roles(&[])
             .effects(crate::policy::Effects::NONE)
             .when(need_polygons)
-            .params(r#"{"layer"?: name|id | [name|id] (as layer.extrusion), "field"?: numeric field (metres; null or "" clears it), "base"?: metres (0 to 10,000,000)}"#),
+            .params(r#"{"layer"?: name|id | [name|id] (as layer.extrusion), "field"?: a numeric field's name (its values are metres; null or "" clears it), "base"?: metres (0 to 10,000,000)}"#),
     ]
 }
 
@@ -157,12 +158,7 @@ fn display_filters(s: &mut Session, p: &Value) -> CmdResult {
         rustgis_data::query::parse(w, ds)?;
         let scale = |k: &str| v.get(k).and_then(Value::as_f64).filter(|x| x.is_finite() && *x > 0.0);
         filters.push(DisplayFilter {
-            name: super::within(
-                "a filter's name",
-                "a display filter's name",
-                v.get("name").and_then(Value::as_str).unwrap_or("Filter"),
-                100,
-            )?,
+            name: super::within("name", "a display filter's name", v.get("name").and_then(Value::as_str).unwrap_or("Filter"), 100)?,
             min_scale: scale("minScale"),
             max_scale: scale("maxScale"),
             where_: w.to_string(),
@@ -236,8 +232,10 @@ fn extrusion(s: &mut Session, p: &Value) -> CmdResult {
         } else {
             let own = field.map(|n| numeric_field(&l.dataset, n)).transpose()?;
             // A new extrusion starts at 1,000 m, so it shows; an extruded layer keeps its own height
-            // (the fallback where the field holds no number), as it keeps its factor.
-            let height = l.extrusion.as_ref().map(|x| x.height).filter(|h| h.is_finite()).unwrap_or(1000.0);
+            // (the fallback where the field holds no number), as it keeps its factor. A constant
+            // height of 0 shows nothing, so one kept at 0 (a city model's fallback) starts at
+            // 1,000 m too.
+            let height = l.extrusion.as_ref().map(|x| x.height).filter(|h| h.is_finite() && (t != "height" || *h > 0.0)).unwrap_or(1000.0);
             let keep = l.extrusion.clone().unwrap_or_default();
             Some(Extrusion {
                 field: own,
@@ -272,7 +270,7 @@ fn extrusion(s: &mut Session, p: &Value) -> CmdResult {
 }
 
 /// The name of the numeric field `n` (matched as `field_index` matches), or why there is none.
-fn numeric_field(ds: &rustgis_data::Dataset, n: &str) -> Result<String, String> {
+pub(crate) fn numeric_field(ds: &rustgis_data::Dataset, n: &str) -> Result<String, String> {
     ds.field_index(n)
         .and_then(|i| ds.fields.get(i))
         .filter(|f| f.ty.is_numeric())

@@ -33,9 +33,6 @@ struct Draft {
     check: Option<(String, u64, Result<(usize, usize), String>)>,
 }
 
-/// The longest list of fields offered as chips (a wider table is typed).
-const MAX_CHIPS: usize = 40;
-
 /// The box in `slot` for `owner`'s clause, `stored` in the project, over the fields of `ds`.
 /// `count` runs only on Check: how many features match a clause that reads, of how many; its
 /// answer shows while `version` (whatever the count depends on: the project's revision, the
@@ -96,20 +93,21 @@ fn editor(
     let id = ui.make_persistent_id("sqlbox_text");
     // Taken before the box sees it, so it applies rather than breaking the line.
     let ctrl_enter = ui.memory(|m| m.has_focus(id)) && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter));
-    let edit = egui::TextEdit::multiline(&mut d.text)
-        .id(id)
-        .hint_text(tl!("e.g. pop_max > 1000000"))
-        .desired_rows(3)
-        // No longer than a clause can be, so a paste isn't read again each frame only to be refused.
-        .char_limit(rustgis_engine::data::query::MAX_LEN)
-        .desired_width(f32::INFINITY)
-        .font(egui::TextStyle::Monospace);
-    let r = ui.add(edit);
+    // Suggestions as it's typed: the fields, functions, variables and keywords (#1240).
+    let r = crate::exprcomplete::expr_edit_lines(ui, id, &mut d.text, Some(ds), |text| {
+        egui::TextEdit::multiline(text)
+            .hint_text(tl!("e.g. pop_max > 1000000"))
+            .desired_rows(3)
+            // No longer than a clause can be, so a paste isn't read again each frame only to be refused.
+            .char_limit(rustgis_engine::data::query::MAX_LEN)
+            .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Monospace)
+    });
     // A new box takes the keyboard, so the clause can be typed at once.
     if std::mem::take(&mut d.focus) {
         r.request_focus();
     }
-    chips(ui, &mut d.text, ds);
+    crate::dialogs::field_chips(ui, &ds.fields, &mut d.text);
     let text = d.text.trim().to_string();
     // Live syntax and field checks must not scan geometry or invalidate a retained clause.
     // Check and the command handling Apply perform the full data validation.
@@ -149,7 +147,11 @@ fn editor(
     if apply == Some(Apply::Clear) {
         d.open = false;
     }
+    // Not said while a word is still being chosen from the list (`pop_`, with `pop_est` offered),
+    // nor what Check found for the same text: Check and Apply still look at it.
+    let offering = crate::exprcomplete::offering(ui, id);
     match (&reads, &d.check) {
+        (Err(_), _) if offering => {}
         (Err(e), _) => {
             let said = if stored == Some(text.as_str()) {
                 crate::i18n::fmt("This clause no longer reads, so no feature is labelled: {error}", &[("error", e)])
@@ -162,7 +164,7 @@ fn editor(
             let said = crate::i18n::fmt("Valid: {n} of {of} features match", &[("n", &n.to_string()), ("of", &of.to_string())]);
             ui.label(RichText::new(said).small().color(t.green));
         }
-        (Ok(()), Some((checked, at, Err(e)))) if *checked == text && *at == version => {
+        (Ok(()), Some((checked, at, Err(e)))) if *checked == text && *at == version && !offering => {
             ui.label(RichText::new(crate::i18n::fmt("Invalid: {error}", &[("error", e)])).small().color(t.red));
         }
         _ => {}
@@ -171,25 +173,4 @@ fn editor(
         ui.label(RichText::new(tl!("Not applied yet.")).small().color(t.text_dim));
     }
     apply
-}
-
-/// The layer's fields, the common operators and the language's functions and variables, each
-/// added to the clause where it ends.
-fn chips(ui: &mut Ui, text: &mut String, ds: &Dataset) {
-    ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(tl!("Fields:")).small().weak());
-        for f in ds.fields.iter().take(MAX_CHIPS) {
-            if ui.small_button(&f.name).clicked() {
-                crate::dialogs::add_word(text, &crate::exprcomplete::field_ref(&f.name));
-            }
-        }
-    });
-    ui.horizontal_wrapped(|ui| {
-        for op in ["=", "<>", ">", "<", ">=", "<=", "LIKE", "IN", "IS NULL", "AND", "OR", "NOT"] {
-            if ui.small_button(op).clicked() {
-                crate::dialogs::add_word(text, op);
-            }
-        }
-        crate::dialogs::expr_menus(ui, text);
-    });
 }

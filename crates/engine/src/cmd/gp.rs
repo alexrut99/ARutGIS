@@ -2,6 +2,8 @@
 
 use rustgis_analysis::{Inputs, Output, OutputLayer, RasterInput};
 use rustgis_data::Dataset;
+use rustgis_data::loss::{LossCode, LossMessage};
+use rustgis_data::raster::Crs;
 use serde_json::{Value, json};
 
 use super::{need_layers, ps};
@@ -22,7 +24,7 @@ pub fn commands() -> Vec<C> {
         C::new("gp.spatialJoin", "Spatial Join", "Analyze › Overlay", spatial_join).roles(&[]).effects(crate::policy::Effects::NONE)
             .when(need_layers)
             .params(
-                r#"{"target": layer, "join": layer, "match"?: "Intersects" (default) | "Contains" | "Within", "operation"?: "Join one to one" (default) | "Join one to many", "keepAll"?: "Keep all" (default) | "Keep only matching", "prefix"?: "join_", "output"?: text}"#,
+                r#"{"target": layer, "join": layer, "match"?: "Intersects" (default) | "Contains" | "Within" | "Have their center in" | "Largest overlap" | "Closest" | "Within a distance", "distance"?: number (Closest: how far to look; Within a distance: required), "units"?: "Kilometers" (default) | "Meters" | "Miles" | "Feet", "distanceField"?: text (a field for the distance, Closest and Within a distance), "operation"?: "Join one to one" (default) | "Join one to many", "keepAll"?: "Keep all" (default) | "Keep only matching", "merge"?: [{"field", "rule": "first" | "last" | "sum" | "mean" | "min" | "max" | "count" | "join", "delimiter"?}] (one to one), "prefix"?: "join_", "output"?: text}"#,
             ),
         C::new("gp.zonalStats", "Zonal Statistics", "Analyze › Raster", zonal_stats).roles(&[]).effects(crate::policy::Effects::NONE)
             .when(need_layers)
@@ -46,8 +48,24 @@ pub fn commands() -> Vec<C> {
         C::new("gp.geolibre", "GeoLibre Tools", "Analyze › Geoprocessing", |_, _| {
             let mut status = geolibre_status();
             status["passedOver"] = json!(geolibre_passed_over());
+            status["languages"] = geolibre_languages();
             Ok(status)
         }).roles(&[]).effects(crate::policy::Effects::NONE).view(),
+        C::new("gp.installGeolibreLanguage", "Download GeoLibre Tool Translations", "Analyze › Geoprocessing", install_geolibre_language_cmd)
+            .roles(&[])
+            .effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Reserved))
+            .view()
+            .params(r#"{"locale": "the language's code, such as \"pt\" (one GeoLibre publishes a pack for)"}"#),
+        C::new("gp.importGeolibreLanguage", "Import GeoLibre Tool Translations", "Analyze › Geoprocessing", import_geolibre_language)
+            .roles(&[])
+            .effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Reserved).with(crate::policy::Effect::Files))
+            .view()
+            .params(r#"{"path": "a GeoLibre language pack (.json)"}"#),
+        C::new("gp.uninstallGeolibreLanguage", "Remove GeoLibre Tool Translations", "Analyze › Geoprocessing", uninstall_geolibre_language)
+            .roles(&[])
+            .effects(crate::policy::Effects::NONE.with(crate::policy::Effect::Reserved))
+            .view()
+            .params(r#"{"locale": "the language's code"}"#),
         C::new("gp.installGeolibre", "Install GeoLibre Tools", "Analyze › Geoprocessing", |_, _| {
             let path = install_geolibre(&|_, _| {})?;
             #[cfg(all(feature = "geolibre", not(target_arch = "wasm32")))]
@@ -133,6 +151,144 @@ pub fn geolibre_passed_over() -> Option<String> {
     }
     #[cfg(not(all(feature = "geolibre", not(target_arch = "wasm32"))))]
     None
+}
+
+/// The GeoLibre tool translations (#2224): the languages GeoLibre publishes a pack for, the ones
+/// kept in the data folder, and the one in use.
+fn geolibre_languages() -> Value {
+    #[cfg(all(feature = "geolibre", not(target_arch = "wasm32")))]
+    {
+        rustgis_geolibre::langpack::check_kept();
+        let errors: serde_json::Map<String, Value> =
+            rustgis_geolibre::langpack::load_errors().into_iter().map(|(locale, e)| (locale, Value::String(e))).collect();
+        json!({"available": rustgis_geolibre::langpack::LOCALES, "installed": rustgis_geolibre::langpack::kept(),
+            "active": rustgis_geolibre::langpack::active_locale(), "errors": errors})
+    }
+    #[cfg(not(all(feature = "geolibre", not(target_arch = "wasm32"))))]
+    {
+        json!({"available": [], "installed": [], "active": null, "errors": {}})
+    }
+}
+
+/// Whether GeoLibre publishes tool translations for `locale`, and this build can download them.
+pub fn geolibre_language_available(locale: &str) -> bool {
+    #[cfg(all(feature = "geolibre", not(target_arch = "wasm32")))]
+    {
+        rustgis_geolibre::langpack::url(locale).is_some()
+    }
+    #[cfg(not(all(feature = "geolibre", not(target_arch = "wasm32"))))]
+    {
+        let _ = locale;
+        false
+    }
+}
+
+/// Whether tool translations for `locale` are in use (kept in the data folder, read the first
+/// time this is asked, then from memory).
+pub fn geolibre_language_in_use(locale: &str) -> bool {
+    #[cfg(feature = "geolibre")]
+    {
+        rustgis_geolibre::langpack::in_use(locale)
+    }
+    #[cfg(not(feature = "geolibre"))]
+    {
+        let _ = locale;
+        false
+    }
+}
+
+/// `english`, a GeoLibre tool's text (its name, summary, a parameter's label or help, a toolbox
+/// name), in `locale`, from the translations kept for it; the interface's catalogue falls back to
+/// it as to a plugin's `i18n`. `None` without them.
+pub fn geolibre_translate(locale: &str, english: &str) -> Option<String> {
+    #[cfg(feature = "geolibre")]
+    {
+        rustgis_geolibre::langpack::translate(locale, english)
+    }
+    #[cfg(not(feature = "geolibre"))]
+    {
+        let _ = (locale, english);
+        None
+    }
+}
+
+/// Why the tool translations kept for `locale` can't be used (a damaged file, another format
+/// version), once they were tried: the Tools pane shows it beside **Translate tools**.
+pub fn geolibre_language_error(locale: &str) -> Option<String> {
+    #[cfg(feature = "geolibre")]
+    {
+        rustgis_geolibre::langpack::load_error(locale)
+    }
+    #[cfg(not(feature = "geolibre"))]
+    {
+        let _ = locale;
+        None
+    }
+}
+
+/// Changes whenever [`geolibre_translate`] may answer differently (translations installed or
+/// removed, the tools reloaded), so a cache of its answers starts over.
+pub fn geolibre_language_revision() -> u64 {
+    #[cfg(feature = "geolibre")]
+    {
+        rustgis_geolibre::langpack::revision()
+    }
+    #[cfg(not(feature = "geolibre"))]
+    0
+}
+
+/// Downloads GeoLibre's tool translations for `locale` (about 2 MB), keeps them and puts them in
+/// use; returns how many of the listed tools they name. Blocks on one request: the app calls it from a
+/// background thread. Native only.
+pub fn install_geolibre_language(locale: &str) -> Result<usize, String> {
+    #[cfg(all(feature = "geolibre", not(target_arch = "wasm32")))]
+    {
+        rustgis_geolibre::langpack::download(locale)
+    }
+    #[cfg(not(all(feature = "geolibre", not(target_arch = "wasm32"))))]
+    {
+        let _ = locale;
+        Err("this build can't download GeoLibre tool translations".into())
+    }
+}
+
+/// `gp.installGeolibreLanguage`. It runs where it is called, without Cancel, because its work
+/// doesn't grow with anything the user has: one request for one file, read up to 5 MB and given
+/// up after 60 s, then one parse, the same for every project. The Tools pane's button, the way
+/// the app downloads a pack, runs it on a thread of its own; called from a script, the command line
+/// or Python, it waits for that one request like `gp.installGeolibre` waits for the runner's.
+fn install_geolibre_language_cmd(_s: &mut Session, p: &Value) -> CmdResult {
+    let locale = ps(p, "locale").map(str::trim).filter(|l| !l.is_empty()).ok_or("give the language's \"locale\", such as \"pt\"")?;
+    let tools = install_geolibre_language(locale)?;
+    Ok(json!({"locale": locale, "tools": tools}))
+}
+
+fn import_geolibre_language(_s: &mut Session, p: &Value) -> CmdResult {
+    #[cfg(all(feature = "geolibre", not(target_arch = "wasm32")))]
+    {
+        let path = ps(p, "path").map(str::trim).filter(|p| !p.is_empty()).ok_or("give the pack's \"path\"")?;
+        let (locale, tools) = rustgis_geolibre::langpack::import(std::path::Path::new(path))?;
+        Ok(json!({"locale": locale, "tools": tools}))
+    }
+    #[cfg(not(all(feature = "geolibre", not(target_arch = "wasm32"))))]
+    {
+        let _ = p;
+        Err("this build can't import GeoLibre tool translations".into())
+    }
+}
+
+fn uninstall_geolibre_language(_s: &mut Session, p: &Value) -> CmdResult {
+    #[cfg(all(feature = "geolibre", not(target_arch = "wasm32")))]
+    {
+        let locale = ps(p, "locale").map(str::trim).filter(|l| !l.is_empty()).ok_or("give the language's \"locale\"")?;
+        rustgis_geolibre::langpack::remove(locale)?;
+        Ok(geolibre_languages())
+    }
+    #[cfg(not(all(feature = "geolibre", not(target_arch = "wasm32"))))]
+    {
+        let _ = p;
+        Err("this build keeps no GeoLibre tool translations".into())
+    }
 }
 
 /// Downloads and installs the pinned GeoLibre runner release for this platform; returns the
@@ -231,7 +387,7 @@ pub type ExternalOutput = Result<(Vec<(String, Vec<u8>)>, Vec<String>), String>;
 pub fn external_start(s: &mut Session, tool: &str, params: &Value) -> Result<ExternalRun, String> {
     #[cfg(feature = "geolibre")]
     {
-        let op = s.authorize_tool(tool, params)?;
+        let op = admitted_saying(s, tool, params)?;
         let continuation = s.tool_continuation(&op)?;
         let crate::policy::ToolOp { pin, params } = op.op();
         let spec = pin.spec();
@@ -284,6 +440,7 @@ pub fn external_complete(s: &mut Session, id: u64, ran: ExternalOutput) -> Resul
         });
         let tool_id = format!("{}{}", rustgis_geolibre::PREFIX, job.tool);
         s.pending.push(crate::PendingRun {
+            inputs: Vec::new(),
             id,
             continuation,
             tool: job.name.clone(),
@@ -352,7 +509,8 @@ pub(crate) struct StartedRun {
 type FullIds = std::collections::HashMap<String, Vec<u64>>;
 
 fn full_ids(full: &std::collections::HashMap<String, Dataset>) -> FullIds {
-    full.iter().map(|(k, d)| (k.clone(), d.features.iter().map(|f| f.id).collect())).collect()
+    // (Not the standalone tables converted for a run, [`table_key`]: no layer is updated from them.)
+    full.iter().filter(|(k, _)| !k.starts_with('\0')).map(|(k, d)| (k.clone(), d.features.iter().map(|f| f.id).collect())).collect()
 }
 
 /// Checks and carries the admitted owner through every synchronous input/preparation request.
@@ -370,7 +528,7 @@ fn preparing<T>(continuation: &crate::policy::Continuation, f: impl FnOnce() -> 
 /// Prepares a run of a plugin tool on the active map, as `gp.run` would run it: its parameters
 /// checked and its layers read now, so that the map can change while it runs.
 pub fn plugin_start(s: &mut Session, tool: &str, params: &Value) -> Result<PluginRun, String> {
-    let op = s.authorize_tool(tool, params)?;
+    let op = admitted_saying(s, tool, params)?;
     let continuation = s.tool_continuation(&op)?;
     let crate::policy::ToolOp { pin, params: resolved } = op.op();
     let spec = pin.spec();
@@ -485,6 +643,7 @@ fn complete(
     }
     fit_to_windows(s, &mut result, &full_ids);
     s.pending.push(crate::PendingRun {
+        inputs: Vec::new(),
         id,
         continuation: run.continuation,
         tool: run.name,
@@ -512,11 +671,13 @@ pub struct ToolRun {
     pub tool: &'static str,
     snap: Snapshot<'static>,
     params: Value,
+    capture_inputs: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 /// What a [`ToolRun`] made, for [`tool_complete`].
 pub struct ToolDone {
+    inputs: Vec<rustgis_data::provenance::Fingerprint>,
     result: Result<rustgis_analysis::ToolResult, String>,
     full_ids: FullIds,
 }
@@ -526,32 +687,54 @@ impl ToolRun {
     /// Reads the tool's inputs and runs it, blocking until it ends; `control` stops it and counts
     /// its progress (see [`rustgis_analysis::control`]).
     pub fn run(self, control: &std::sync::Arc<rustgis_analysis::control::Control>) -> ToolDone {
+        let captured = self.capture_inputs.then(rustgis_data::provenance::Capture::start);
         let ToolRun { pin, continuation, snap, params, .. } = self;
         let spec = pin.spec();
         let name = spec.name;
         if let Err(e) = continuation.check() {
-            return ToolDone { result: Err(e), full_ids: FullIds::new() };
+            return ToolDone { inputs: Vec::new(), result: Err(e), full_ids: FullIds::new() };
         }
         if control.is_cancelled() {
-            return ToolDone { result: Err(format!("{name} was cancelled before it started")), full_ids: FullIds::new() };
+            return ToolDone {
+                inputs: Vec::new(),
+                result: Err(format!("{name} was cancelled before it started")),
+                full_ids: FullIds::new(),
+            };
         }
+        // Reading and converting the inputs stops on Cancel too, as the tool does: the
+        // conversions look at the run's control (`rustgis_data::progress`), and a conversion's
+        // refusal isn't taken for a place that can't be held when it is a Cancel.
+        let _probe = rustgis_analysis::control::install_progress(Some(control.clone()));
         let current = continuation.clone();
         let still = std::sync::Arc::new(move || current.check().is_ok()) as crate::render::rustgis_tiles::cache::Still;
         // A bug in reading the inputs, like one in a tool, must not take the app down.
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             crate::render::rustgis_tiles::cache::with_still(still, || {
                 let inputs = match inputs_of(snap, Some(spec), &params) {
                     Ok(inputs) => inputs,
-                    Err(e) => return ToolDone { result: Err(e), full_ids: FullIds::new() },
+                    // A Cancel while the inputs are read names the tool, as one while it runs does.
+                    Err(_) if control.is_cancelled() => {
+                        let result = Err(format!("{name} was cancelled while it read its inputs"));
+                        return ToolDone { inputs: Vec::new(), result, full_ids: FullIds::new() };
+                    }
+                    Err(e) => return ToolDone { inputs: Vec::new(), result: Err(e), full_ids: FullIds::new() },
                 };
                 let mut result = pin.run(&inputs, &params, control, &|| continuation.check());
                 if let Ok(r) = &mut result {
+                    inputs.hold_results(r);
                     r.messages.extend(inputs.messages.iter().cloned());
+                    r.losses.extend(inputs.losses.iter().cloned());
                 }
-                ToolDone { result, full_ids: full_ids(&inputs.loaded) }
+                ToolDone { inputs: Vec::new(), result, full_ids: full_ids(&inputs.loaded) }
             })
         }))
-        .unwrap_or_else(|_| ToolDone { result: Err(format!("{name} failed unexpectedly")), full_ids: FullIds::new() })
+        .unwrap_or_else(|_| ToolDone {
+            inputs: Vec::new(),
+            result: Err(format!("{name} failed unexpectedly")),
+            full_ids: FullIds::new(),
+        });
+        done.inputs = captured.as_ref().map_or_else(Vec::new, rustgis_data::provenance::Capture::inputs);
+        done
     }
 }
 
@@ -563,7 +746,7 @@ impl ToolRun {
 /// layer edited meanwhile is handled as for a plugin tool. Plugin tools start with
 /// [`plugin_start`].
 pub fn tool_start(s: &mut Session, tool: &str, params: &Value) -> Result<ToolRun, String> {
-    let op = s.authorize_tool(tool, params)?;
+    let op = admitted_saying(s, tool, params)?;
     let continuation = s.tool_continuation(&op)?;
     let crate::policy::ToolOp { pin, params: resolved } = op.op();
     let pin = pin.clone();
@@ -592,7 +775,7 @@ pub fn tool_start(s: &mut Session, tool: &str, params: &Value) -> Result<ToolRun
     if s.plugin_runs.len() > MAX_ASYNC_RUNS {
         s.plugin_runs.remove(0);
     }
-    Ok(ToolRun { id, tool: spec.id, snap: Snapshot::owned(s), params: resolved, pin, continuation })
+    Ok(ToolRun { id, tool: spec.id, snap: Snapshot::owned(s), params: resolved, pin, continuation, capture_inputs: s.log.on() })
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -612,7 +795,11 @@ pub fn tool_abandon(s: &mut Session, id: u64) {
 /// Finishes a run from [`tool_start`] with what [`ToolRun::run`] made: `gp.finish {"id"}` then
 /// applies it like `gp.run` would, with undo and history.
 pub fn tool_complete(s: &mut Session, id: u64, done: ToolDone) -> Result<(), String> {
-    complete(s, id, done.result, Some(done.full_ids))
+    complete(s, id, done.result, Some(done.full_ids))?;
+    if let Some(run) = s.pending.iter_mut().find(|run| run.id == id) {
+        run.inputs = done.inputs;
+    }
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -628,6 +815,8 @@ pub(crate) struct ToolAhead {
     result: Result<rustgis_analysis::ToolResult, String>,
     full_ids: FullIds,
     millis: u64,
+    /// Runtime identities of successfully installed outputs on the worker, in return order.
+    grid_outputs: Vec<rustgis_map::Layer>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -636,6 +825,44 @@ pub(crate) struct ToolAhead {
 pub(crate) enum RanAhead {
     Tool(Box<ToolAhead>),
     Table(Box<super::edit::ScriptTableEdit>),
+    Read(ScriptRead),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+/// A read-only command's prepared result, replayed by its ordinary admitted handler.
+pub(crate) struct ScriptRead {
+    command: &'static str,
+    params: Value,
+    value: Box<dyn std::any::Any + Send>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+/// Keeps a typed worker result in prefix order for the live command's authorized replay.
+pub(crate) fn record_read<T: Send + 'static>(s: &mut Session, command: &'static str, params: &Value, value: T) {
+    if let Some(Ahead::Recording(ran)) = &mut s.tools_ahead {
+        ran.push(RanAhead::Read(ScriptRead { command, params: params.clone(), value: Box::new(value) }));
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+/// A replayed read must consume its recorded result, never recompute after a mismatch.
+/// Past the recorded prefix, return no result so the caller's normal execution guard applies.
+pub(crate) fn take_read<T: 'static>(s: &mut Session, command: &str, params: &Value) -> Result<Option<T>, String> {
+    let Some(Ahead::Taking(ran, _)) = &mut s.tools_ahead else { return Ok(None) };
+    let mismatch = || "the script's prepared read changed: run the script again".to_string();
+    let Some(next) = ran.pop_front() else { return Ok(None) };
+    let RanAhead::Read(next) = next else { return Err(mismatch()) };
+    if next.command != command || next.params != *params {
+        return Err(mismatch());
+    }
+    next.value.downcast::<T>().map(|value| Some(*value)).map_err(|_| mismatch())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+/// Whether this typed replay created the worker's layer identity. Callers must still compare
+/// map, row storage and metadata with the live output; this never authorizes an existing layer.
+pub(super) fn replay_created_layer(s: &Session, map: u64, layer: u32, instance: u64) -> bool {
+    matches!(&s.tools_ahead, Some(Ahead::Taking(_, created)) if created.contains(&(map, layer, instance)))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -643,7 +870,7 @@ pub(crate) enum RanAhead {
 /// here.
 pub(crate) enum Ahead {
     Recording(Vec<RanAhead>),
-    Taking(std::collections::VecDeque<RanAhead>),
+    Taking(std::collections::VecDeque<RanAhead>, std::collections::HashSet<(u64, u32, u64)>),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -687,8 +914,16 @@ pub(crate) enum FilesAhead {
 /// its batches read, in order.
 pub(crate) struct RanAheads {
     tools: Vec<RanAhead>,
+    /// Worker-created (map, layer id, instance) identities; live replay creates fresh Layers
+    /// over their verified recorded rows. Existing layers never receive this exception.
+    created_layers: std::collections::HashSet<(u64, u32, u64)>,
     files: Vec<FileAhead>,
     zones: Vec<super::imagery::ZoneMeans>,
+    // The copy's initial project can outlive history while queued or waiting to replay.
+    pub(crate) retained: Option<crate::undo_memory::ReadRows>,
+    /// Selection effects and inner reads keep the parent admission through live replay.
+    pub(crate) selection_admission: Option<(u64, std::sync::Arc<std::sync::atomic::AtomicU64>)>,
+    grids: Vec<crate::image_grid::Prepared>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -697,13 +932,21 @@ pub(crate) struct RanAheads {
 /// files read ahead the same way. Restored on every path, a panic included (raised again), so no
 /// later run takes them.
 pub(crate) fn taking<T>(s: &mut Session, ran: RanAheads, run: impl FnOnce(&mut Session) -> T) -> T {
-    s.tools_ahead = Some(Ahead::Taking(ran.tools.into()));
+    let _retained = ran.retained;
+    let previous_admission = s.selection_admission.clone();
+    if ran.selection_admission.is_some() {
+        s.selection_admission = ran.selection_admission;
+    }
+    s.tools_ahead = Some(Ahead::Taking(ran.tools.into(), ran.created_layers));
     s.files_ahead = Some(FilesAhead::Taking(ran.files.into()));
+    s.grids_ahead = Some(crate::image_grid::Ahead::taking(ran.grids));
     s.zones_ahead = Some(super::imagery::ZonesAhead::Taking(ran.zones.into()));
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(s)));
     s.tools_ahead = None;
     s.files_ahead = None;
     s.zones_ahead = None;
+    s.selection_admission = previous_admission;
+    s.grids_ahead = None;
     r.unwrap_or_else(|p| std::panic::resume_unwind(p))
 }
 
@@ -714,6 +957,13 @@ pub(crate) fn ran_ahead(s: &mut Session) -> RanAheads {
         Some(Ahead::Recording(ran)) => ran,
         _ => Vec::new(),
     };
+    // Outputs were captured when installed, before a following step could remove them.
+    // Their worker identities must survive until live replay reaches those steps too.
+    let created_layers = tools
+        .iter()
+        .filter_map(|ran| if let RanAhead::Tool(tool) = ran { Some(tool) } else { None })
+        .flat_map(|tool| tool.grid_outputs.iter().map(|layer| (tool.read.map.instance_id(), layer.id, layer.instance_id())))
+        .collect();
     let files = match s.files_ahead.take() {
         Some(FilesAhead::Recording(read)) => read,
         _ => Vec::new(),
@@ -722,7 +972,11 @@ pub(crate) fn ran_ahead(s: &mut Session) -> RanAheads {
         Some(super::imagery::ZonesAhead::Recording(read)) => read,
         _ => Vec::new(),
     };
-    RanAheads { tools, files, zones }
+    let grids = match s.grids_ahead.take() {
+        Some(crate::image_grid::Ahead::Recording(read)) => read,
+        _ => Vec::new(),
+    };
+    RanAheads { tools, created_layers, files, zones, grids, retained: None, selection_admission: s.selection_admission.clone() }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -749,15 +1003,19 @@ fn read_batch_file(s: &mut Session, path: &std::path::Path) -> Result<(Dataset, 
 #[cfg(not(target_arch = "wasm32"))]
 /// The next tool run ahead, if it is this one on the same inputs: its result, the streamed rows
 /// it read whole and how long it took. Any other drops the rest, which came after it.
-fn take_ahead(
-    s: &mut Session,
-    pin: &crate::policy::ToolPin,
-    params: &Value,
-) -> Option<(Result<rustgis_analysis::ToolResult, String>, FullIds, u64)> {
-    let Some(Ahead::Taking(ran)) = &mut s.tools_ahead else { return None };
-    let next = ran.pop_front()?;
+fn take_ahead(s: &mut Session, pin: &crate::policy::ToolPin, params: &Value) -> Option<Box<ToolAhead>> {
+    let Some(Ahead::Taking(ran, _)) = &mut s.tools_ahead else {
+        crate::image_grid::invalidate_script_grids(s);
+        return None;
+    };
+    let Some(next) = ran.pop_front() else {
+        s.tools_ahead = None;
+        crate::image_grid::invalidate_script_grids(s);
+        return None;
+    };
     let RanAhead::Tool(next) = next else {
         s.tools_ahead = None;
+        crate::image_grid::invalidate_script_grids(s);
         return None;
     };
     let now = Snapshot::of(s);
@@ -767,9 +1025,10 @@ fn take_ahead(
         {
             s.tools_taken += 1;
         }
-        return Some((next.result, next.full_ids, next.millis));
+        return Some(next);
     }
     s.tools_ahead = None;
+    crate::image_grid::invalidate_script_grids(s);
     None
 }
 
@@ -992,6 +1251,7 @@ fn finish(s: &mut Session, p: &Value) -> CmdResult {
     let i = s.pending.iter().position(|r| r.id == id).ok_or("no finished run with that id")?;
     s.check_gp_finish(&s.pending[i].continuation, landing(&s.pending[i].result))?;
     let r = s.pending.remove(i);
+    rustgis_data::provenance::record(r.inputs.clone());
     let c = r.continuation.clone();
     s.resume_gp(&c, landing(&r.result), |s| {
         apply(s, Ran { name: r.tool, id: r.tool_id, command: None, started: r.started }, r.params, r.result, r.millis)
@@ -1037,10 +1297,18 @@ struct MapInputs<'a> {
     /// The rows of each layer (by lowercase name) the tool runs on: the selection or the
     /// environment's extent.
     rows: std::collections::HashMap<String, Vec<usize>>,
-    /// Streamed layers the tool reads, loaded whole (by lowercase name).
+    /// Streamed layers the tool reads, loaded whole, and copies of layers in another system than
+    /// the one it works in, converted ([`work_inputs`]), by lowercase name.
     loaded: std::collections::HashMap<String, Dataset>,
+    /// The system the tool works in ([`work_system`]): the one its inputs are given in and its
+    /// outputs are made in.
+    work: Crs,
+    /// The layers (by lowercase name) it reads only the attributes of, read as they are
+    /// ([`attributes_only`]); none when it works in longitude/latitude.
+    unread: std::collections::HashSet<String>,
     /// Import warnings from local file inputs, kept in the tool result and history.
     messages: Vec<String>,
+    losses: Vec<LossMessage>,
     /// The flat map's projection (its name, the projection and its unit in metres), built the
     /// first time a tool asks for it (Tissot's indicatrix does), once for the run; `None` on the
     /// globe.
@@ -1051,6 +1319,32 @@ struct MapInputs<'a> {
 }
 
 impl MapInputs<'_> {
+    /// Marks the layers a tool made as held in the system it worked in ([`MapInputs::work`]),
+    /// where their coordinates are, so they aren't taken for longitude/latitude: a layer it made
+    /// from scratch starts in longitude/latitude ([`Dataset::held_in`]). Nothing for a tool that
+    /// worked in longitude/latitude, or for a table.
+    fn hold_results(&self, result: &mut rustgis_analysis::ToolResult) {
+        if self.work == Crs::LonLat {
+            return;
+        }
+        let hold = |ds: &mut Dataset| {
+            if ds.geometry_type != rustgis_data::GeometryType::None {
+                ds.held_in = self.work;
+            }
+        };
+        match &mut result.output {
+            Output::Layer(ds) | Output::Update { dataset: ds, .. } => hold(ds),
+            Output::Layers(outputs) => {
+                for o in outputs {
+                    if let rustgis_analysis::OutputLayer::Vector(ds) = o {
+                        hold(ds);
+                    }
+                }
+            }
+            Output::Selection { .. } | Output::Table(_) | Output::File { .. } => {}
+        }
+    }
+
     /// The flat map's projection, built on first use.
     fn flat(&self) -> Option<&(String, rustgis_map::projection::Flat, f64)> {
         let map = &self.snap.map;
@@ -1078,8 +1372,9 @@ fn map_inputs<'a>(s: &'a Session, spec: Option<&rustgis_analysis::ToolSpec>, par
 /// thread.
 fn inputs_of<'a>(snap: Snapshot<'a>, spec: Option<&rustgis_analysis::ToolSpec>, params: &Value) -> Result<MapInputs<'a>, String> {
     let (full, mut messages) = streamed_inputs(&snap.map, spec, params)?;
+    let losses = Vec::new();
     #[cfg(not(target_arch = "wasm32"))]
-    let mut full = full;
+    let (mut full, mut losses) = (full, losses);
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(spec) = spec.filter(|t| rustgis_analysis::TOOLS.iter().any(|builtin| std::ptr::eq(builtin, *t))) {
         for parameter in spec.params.iter().filter(|p| p.kind == rustgis_analysis::ParamKind::VectorLayers) {
@@ -1087,34 +1382,31 @@ fn inputs_of<'a>(snap: Snapshot<'a>, spec: Option<&rustgis_analysis::ToolSpec>, 
                 if vector_file_input(spec, &snap.map, name) && !full.contains_key(name) {
                     let (dataset, report) = rustgis_data::io::read_path(std::path::Path::new(name)).map_err(|e| format!("{name}: {e}"))?;
                     messages.extend(report.messages.into_iter().map(|message| format!("{name}: {message}")));
+                    losses.extend(
+                        report.losses.into_iter().map(|loss| LossMessage { code: loss.code, text: format!("{name}: {}", loss.text) }),
+                    );
                     full.insert(name.to_string(), dataset);
                 }
             }
         }
     }
+    #[cfg(target_arch = "wasm32")]
+    let mut full = full;
+    let work = work_inputs(&snap.map, &snap.tables, spec, params, &mut full, &mut messages)?;
     let mut rows = env_inputs(&snap.map, &full, &snap.env, params)?;
-    for (name, dataset) in &full {
-        let Some(layer) = snap.map.layer_by_name(name).filter(|l| !l.selection.is_empty()) else { continue };
-        let missing = || format!("{}: a selected feature is no longer in the source", layer.name);
-        let mut by_id = layer
-            .selection
-            .iter()
-            .map(|row| layer.dataset.features.get(*row).map(|f| (f.id, None)).ok_or_else(missing))
-            .collect::<Result<std::collections::HashMap<u64, Option<usize>>, _>>()?;
-        for (row, feature) in dataset.features.iter().enumerate() {
-            if let Some(selected_row) = by_id.get_mut(&feature.id) {
-                *selected_row = Some(row);
-            }
-        }
-        let selected = layer
-            .selection
-            .iter()
-            .map(|row| layer.dataset.features.get(*row).and_then(|f| by_id.get(&f.id)).copied().flatten().ok_or_else(missing))
-            .collect::<Result<Vec<_>, _>>()?;
-        rows.insert(name.clone(), selected);
-    }
     narrow_to_queries(&snap.map, spec, params, &full, &mut rows, &mut messages)?;
-    Ok(MapInputs { snap, rows, loaded: full, messages, flat: std::cell::OnceCell::new(), view: std::cell::OnceCell::new() })
+    let unread = if work == Crs::LonLat { std::collections::HashSet::new() } else { attributes_only(spec, params) };
+    Ok(MapInputs {
+        snap,
+        rows,
+        loaded: full,
+        work,
+        unread,
+        messages,
+        losses,
+        flat: std::cell::OnceCell::new(),
+        view: std::cell::OnceCell::new(),
+    })
 }
 
 /// Narrows the rows a tool reads of each layer to the features its definition query keeps, as the
@@ -1150,6 +1442,7 @@ fn narrow_to_queries(
         }
     }
     let mut seen = std::collections::HashSet::new();
+    let mut query_errors = Vec::new();
     for name in named {
         let Some(layer) = map.layer_by_name(name) else { continue };
         let key = layer.name.to_ascii_lowercase();
@@ -1157,19 +1450,22 @@ fn narrow_to_queries(
             continue;
         }
         let dataset = full.get(&key).unwrap_or(&layer.dataset);
-        let Some(keep) = layer.query_rows(dataset) else { continue };
-        let kept = |row: &usize| keep.get(*row).is_none_or(|k| *k);
-        let current = rows.get(&key).cloned().or_else(|| (!layer.selection.is_empty()).then(|| layer.selection.clone()));
-        let narrowed: Vec<usize> = match &current {
-            Some(rs) => rs.iter().copied().filter(kept).collect(),
-            None => (0..keep.len()).filter(kept).collect(),
-        };
-        if narrowed.is_empty() && !keep.is_empty() {
-            return Err(format!("{}: its definition query hides every feature the tool would read", layer.name));
+        let resolved = layer.resolve_rows(dataset, rustgis_map::rows::Policy::SelectionAndQuery, rows.get(&key).map(Vec::as_slice))?;
+        if let Some(error) = resolved.query_error {
+            query_errors.push(format!("{}: {error}", layer.name));
         }
-        if narrowed.len() < current.as_ref().map_or(keep.len(), Vec::len) {
+        if let rustgis_map::rows::Rows::Subset(narrowed) = resolved.rows {
+            if narrowed.is_empty() && !dataset.features.is_empty() {
+                return Err(format!("{}: its definition query hides every feature the tool would read", layer.name));
+            }
             rows.insert(key, narrowed);
         }
+    }
+    if !query_errors.is_empty() {
+        let count = query_errors.len();
+        let (layers, queries) = if count == 1 { ("layer", "that query") } else { ("layers", "those queries") };
+        messages
+            .push(format!("{count} {layers} with an unreadable definition query; reading without {queries}: {}", query_errors.join("; ")));
     }
     let name = spec.map_or("", |t| t.name);
     let mut told = std::collections::HashSet::new();
@@ -1225,6 +1521,305 @@ fn streamed_inputs(
     Ok((full, said))
 }
 
+/// Whether a tool that works in its first input's own system ([`ToolSpec::works_in_own_system`])
+/// works in `crs`: a projected system, whose coordinates are a plane's. Longitude/latitude, Web
+/// Mercator and the other world projections (whose plane has the antimeridian as a seam and the
+/// poles as lines, [`Crs::is_world_projection`]), and other geographic or geocentric systems, keep
+/// the longitude/latitude path, whose plane and geodesics their coordinates need. So does a system
+/// whose conversion can't be made or gives no parameters, whose unit and axes
+/// ([`Crs::unit_and_axes`]) aren't known.
+///
+/// [`ToolSpec::works_in_own_system`]: rustgis_analysis::ToolSpec::works_in_own_system
+fn works_in(crs: Crs) -> bool {
+    crs != Crs::LonLat
+        && !crs.is_world_projection()
+        && !crs.is_geographic()
+        && !crs.is_geocentric()
+        && crs.transformer().is_ok_and(|t| t.params().is_some())
+}
+
+/// The system a run works in: its first input's own ([`Dataset::coord_crs`]) when the tool works
+/// in it and it is one tools work in ([`works_in`]), else longitude/latitude.
+fn work_system(
+    map: &rustgis_map::Map,
+    spec: Option<&rustgis_analysis::ToolSpec>,
+    params: &Value,
+    full: &std::collections::HashMap<String, Dataset>,
+) -> Crs {
+    use rustgis_analysis::ParamKind as K;
+    let Some(spec) = spec.filter(|t| t.works_in_own_system()) else { return Crs::LonLat };
+    // The tool's first layer parameter, under its name or one of the names it also accepts
+    // (Join Field's `input`), taken as the tool takes it: the first that isn't blank. A table
+    // given by its number (read unconverted, [`Inputs::table`]) or by name leaves the run in
+    // longitude/latitude, as before: only a map layer decides the system.
+    let Some(kind) =
+        spec.params.iter().find(|p| matches!(p.kind, K::Layer | K::PolygonLayer | K::PointLayer | K::VectorLayer | K::VectorLayers))
+    else {
+        return Crs::LonLat;
+    };
+    let aliases = rustgis_analysis::param_aliases(spec, kind.name);
+    let keys: &[&str] = if aliases.is_empty() { std::slice::from_ref(&kind.name) } else { aliases };
+    let blank = |v: &&Value| v.is_null() || v.as_str().is_some_and(|s| s.trim().is_empty());
+    let value = keys.iter().filter_map(|k| params.get(*k)).find(|v| !blank(v)).unwrap_or(&Value::Null);
+    let first = if kind.kind == K::VectorLayers {
+        rustgis_analysis::layer_list(value).ok().and_then(|v| v.first().copied())
+    } else {
+        value.as_str()
+    };
+    let Some(first) = first else { return Crs::LonLat };
+    // Files read whole are kept by the name they were given, streamed layers by lowercase name.
+    full.get(first)
+        .or_else(|| full.get(&first.to_ascii_lowercase()))
+        .or_else(|| map.layer_by_name(first).filter(|l| !l.is_raster()).map(|l| &l.dataset))
+        .map(Dataset::coord_crs)
+        .filter(|c| works_in(*c))
+        .unwrap_or(Crs::LonLat)
+}
+
+/// The layers (by lowercase name) whose attributes alone a tool reads, given under a parameter
+/// whose geometry it doesn't read ([`ToolSpec::reads_geometry_of`]) or one of the names it also
+/// accepts for it: they are read as they are, in whatever system, so a place of theirs the system
+/// it works in can't hold doesn't send it to longitude/latitude.
+///
+/// [`ToolSpec::reads_geometry_of`]: rustgis_analysis::ToolSpec::reads_geometry_of
+fn attributes_only(spec: Option<&rustgis_analysis::ToolSpec>, params: &Value) -> std::collections::HashSet<String> {
+    let Some(spec) = spec else { return std::collections::HashSet::new() };
+    spec.params
+        .iter()
+        .filter(|p| !spec.reads_geometry_of(p.name))
+        .flat_map(|p| {
+            let aliases = rustgis_analysis::param_aliases(spec, p.name);
+            if aliases.is_empty() { vec![p.name] } else { aliases.to_vec() }
+        })
+        .filter_map(|k| params.get(k))
+        // A standalone table given by its number, by the key it would be converted under.
+        .filter_map(|v| v.as_str().map(str::to_ascii_lowercase).or_else(|| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(table_key)))
+        .collect()
+}
+
+/// The layers a tool reads, in the system it works in ([`work_system`], [`Inputs::dataset`]):
+/// its first input's own for a tool that works in it, every other input converted into it; else
+/// longitude/latitude. An input with a place that system can't hold has the run work in
+/// longitude/latitude instead, and a message says so (the conversions made for the first attempt
+/// are dropped then, and the inputs read again in longitude/latitude). Returns the system.
+fn work_inputs(
+    map: &rustgis_map::Map,
+    tables: &[crate::project::Table],
+    spec: Option<&rustgis_analysis::ToolSpec>,
+    params: &Value,
+    full: &mut std::collections::HashMap<String, Dataset>,
+    messages: &mut Vec<String>,
+) -> Result<Crs, String> {
+    let work = work_system(map, spec, params, full);
+    if work != Crs::LonLat {
+        match inputs_in(map, tables, spec, params, full, work) {
+            Ok((converted, said)) => {
+                full.extend(converted);
+                messages.extend(said);
+                return Ok(work);
+            }
+            Err(e) => {
+                // A Cancel isn't a place that can't be held.
+                rustgis_data::progress::check().map_err(|e| e.to_string())?;
+                let name = spec.map_or("The tool", |t| t.name);
+                messages.push(format!("{name} worked in longitude/latitude, not {}: {e}", work.label()));
+            }
+        }
+    }
+    let (converted, _) = inputs_in(map, tables, spec, params, full, Crs::LonLat)?;
+    full.extend(converted);
+    Ok(Crs::LonLat)
+}
+
+/// Copies of the layers a tool reads converted into `work`, by lowercase name: those read whole
+/// (streamed layers, files) and each other layer or standalone table with geometry it names whose
+/// coordinates are in another system. Nothing is copied for a layer already in `work`.
+fn inputs_in(
+    map: &rustgis_map::Map,
+    tables: &[crate::project::Table],
+    spec: Option<&rustgis_analysis::ToolSpec>,
+    params: &Value,
+    full: &std::collections::HashMap<String, Dataset>,
+    work: Crs,
+) -> Result<(std::collections::HashMap<String, Dataset>, Vec<String>), String> {
+    let mut converted = std::collections::HashMap::new();
+    // The converted inputs with edges that bend ([`bent_edges`]): name, how many, how far.
+    let mut bent: Vec<(String, usize, f64)> = Vec::new();
+    let reads_edges = work != Crs::LonLat && spec.is_some_and(rustgis_analysis::ToolSpec::reads_edges);
+    let mut say = |original: &Dataset, c: &Dataset| -> Result<(), String> {
+        if reads_edges {
+            let (n, far) = bent_edges(original, c, work)?;
+            if n > 0 {
+                bent.push((original.name.clone(), n, far));
+            }
+        }
+        Ok(())
+    };
+    // Read only for its attributes in a run in its first input's system: as it is. (The first
+    // input, if it is named there too, is in that system already.)
+    let unread = if work == Crs::LonLat { std::collections::HashSet::new() } else { attributes_only(spec, params) };
+    for (key, ds) in full {
+        if unread.contains(&key.to_ascii_lowercase()) {
+            continue;
+        }
+        if let std::borrow::Cow::Owned(c) = ds.in_crs(work)? {
+            say(ds, &c)?;
+            converted.insert(key.clone(), c);
+        }
+    }
+    // Every text the parameters hold that names a layer, not only layer parameters: a tool may
+    // name one elsewhere, and a layer it reads must be in the system it works in. Not the name
+    // its output is given, which it doesn't read.
+    fn texts<'v>(v: &'v Value, out: &mut Vec<&'v str>) {
+        match v {
+            Value::String(s) => out.push(s),
+            Value::Array(a) => a.iter().for_each(|x| texts(x, out)),
+            Value::Object(o) => o.values().for_each(|x| texts(x, out)),
+            _ => {}
+        }
+    }
+    let mut names = layer_names(spec, params);
+    match params {
+        Value::Object(o) => o.iter().filter(|(k, _)| k.as_str() != "output").for_each(|(_, v)| texts(v, &mut names)),
+        other => texts(other, &mut names),
+    }
+    for n in names {
+        let key = n.to_ascii_lowercase();
+        if full.contains_key(&key) || converted.contains_key(&key) || unread.contains(&key) {
+            continue;
+        }
+        // A layer, or a standalone table with geometry; one without reads alike in any system.
+        if let Some(ds) = project_input(map, tables, n, false)
+            .filter(|i| !matches!(i, ProjectInput::Layer(l) if l.is_raster()))
+            .map(|i| i.dataset())
+            .filter(|d| d.geometry_type != rustgis_data::GeometryType::None)
+            && let std::borrow::Cow::Owned(c) = ds.in_crs(work)?
+        {
+            say(ds, &c)?;
+            converted.insert(key, c);
+        }
+    }
+    // A standalone table given by its number ([`Inputs::table`]), as one given by name: under a
+    // layer parameter (or a name it also accepts), the only place a number is a table's; not one
+    // the tool reads only the attributes of, in a run in its first input's system.
+    let mut ids = Vec::new();
+    if let Some(spec) = spec {
+        use rustgis_analysis::ParamKind as K;
+        let layers = spec.params.iter().filter(|p| {
+            matches!(p.kind, K::Layer | K::PolygonLayer | K::PointLayer | K::VectorLayer | K::VectorLayers)
+                && (work == Crs::LonLat || spec.reads_geometry_of(p.name))
+        });
+        for p in layers {
+            let aliases = rustgis_analysis::param_aliases(spec, p.name);
+            let keys: &[&str] = if aliases.is_empty() { std::slice::from_ref(&p.name) } else { aliases };
+            for v in keys.iter().filter_map(|k| params.get(*k)) {
+                let one = std::slice::from_ref(v);
+                ids.extend(v.as_array().map_or(one, Vec::as_slice).iter().filter_map(Value::as_u64));
+            }
+        }
+    }
+    for t in tables.iter().filter(|t| ids.contains(&u64::from(t.id))) {
+        if t.dataset.geometry_type == rustgis_data::GeometryType::None {
+            continue;
+        }
+        if let std::borrow::Cow::Owned(c) = t.dataset.in_crs(work)? {
+            say(&t.dataset, &c)?;
+            converted.insert(table_key(t.id), c);
+        }
+    }
+    // One notice for them all, naming each layer.
+    let mut said = Vec::new();
+    if !bent.is_empty() {
+        let name = spec.map_or("The tool", |t| t.name);
+        let n: usize = bent.iter().map(|(_, n, _)| n).sum();
+        let far = bent.iter().map(|(.., far)| *far).fold(0.0, f64::max);
+        let layers = bent.iter().map(|(layer, n, _)| format!("'{layer}' ({n})")).collect::<Vec<_>>().join(", ");
+        said.push(format!(
+            "{name}: {n} edge(s) of {layers}, converted into {}, are taken straight there, up to {far:.0} m from where a run in longitude/latitude takes them (straight on a Web Mercator map); their vertices are where they were",
+            work.label()
+        ));
+    }
+    Ok((converted, said))
+}
+
+/// The key a standalone table given by its number is converted under among a run's inputs
+/// ([`inputs_in`]): one no layer's name can be.
+fn table_key(id: u32) -> String {
+    format!("\u{0}table {id}")
+}
+
+/// How far, on the ground, an edge converted into another system may move from where a run in
+/// longitude/latitude takes it before a run says so: a metre.
+const BENT_M: f64 = 1.0;
+
+/// The edges of `original` that `converted`, its geometry converted vertex by vertex into `work`,
+/// takes more than [`BENT_M`] from where a run in longitude/latitude takes them: straight in the
+/// analysis plane there (Web Mercator, along a parallel for an edge running east), straight in
+/// `work` here. A polygon ring's closing edge counts too, when the ring doesn't repeat its first
+/// vertex. Their count, and how far the farthest moved, in metres: measured across the chord at a
+/// quarter, half and three quarters of the edge (an edge across a transverse Mercator's central
+/// meridian bends both ways, its middle staying on the chord), in ground metres whatever `work`'s
+/// units. An edge under a kilometre in the analysis plane is skipped: its two readings part by
+/// under a metre short of 88.9° from the equator (about L² tan φ / 8R).
+pub(crate) fn bent_edges(original: &Dataset, converted: &Dataset, work: Crs) -> Result<(usize, f64), String> {
+    use rustgis_geom::{Coord, lonlat_to_plane, plane_to_lonlat};
+    /// Its parts' vertices, each with whether it is a polygon's ring, whose closing edge counts.
+    fn parts(g: &rustgis_data::Geometry) -> Vec<(&[Coord], bool)> {
+        match g {
+            rustgis_data::Geometry::Line(parts) => parts.iter().map(|p| (p.as_slice(), false)).collect(),
+            rustgis_data::Geometry::Polygon(polys) => polys.iter().flatten().map(|r| (r.as_slice(), true)).collect(),
+            rustgis_data::Geometry::Point(_) | rustgis_data::Geometry::MultiPoint(_) => Vec::new(),
+        }
+    }
+    /// The edges of a part: each pair of neighbours, and a ring's closing pair when it isn't
+    /// closed already.
+    fn edges(part: &[Coord], ring: bool) -> impl Iterator<Item = (Coord, Coord)> + '_ {
+        let closing = ring.then(|| part.first().zip(part.last())).flatten().filter(|(a, b)| a != b).map(|(a, b)| (*b, *a));
+        part.windows(2).filter_map(|w| Some((*w.first()?, *w.get(1)?))).chain(closing)
+    }
+    let (to_lonlat, into, back) = (original.lonlat_conversion()?, Crs::LonLat.to(work)?, work.to(Crs::LonLat)?);
+    let (mut n, mut far) = (0usize, 0.0f64);
+    for (i, (f, c)) in original.features.rows().zip(converted.features.rows()).enumerate() {
+        if i.is_multiple_of(256) {
+            rustgis_data::progress::check().map_err(|e| e.to_string())?;
+        }
+        let (Some(g), Some(h)) = (f.geometry(), c.geometry()) else { continue };
+        for ((part, ring), (held, _)) in parts(g).into_iter().zip(parts(h)) {
+            for ((a, b), (c0, c1)) in edges(part, ring).zip(edges(held, ring)) {
+                let (Some(a), Some(b)) = (to_lonlat.point(a), to_lonlat.point(b)) else { continue };
+                let (pa, pb) = (lonlat_to_plane(a), lonlat_to_plane(b));
+                // (Also skipped: a length that is no number, a coordinate being missing.)
+                let length = (pb.x - pa.x).hypot(pb.y - pa.y);
+                if length.is_nan() || length < 1000.0 {
+                    continue;
+                }
+                let (dx, dy) = (c1.x - c0.x, c1.y - c0.y);
+                let chord = dx.hypot(dy);
+                // In metres: the chord's ground length over its length in `work`'s units.
+                let (Some(e0), Some(e1)) = (back.point(c0), back.point(c1)) else { continue };
+                let per_unit = rustgis_geom::wgs84_inverse(e0, e1).0 / chord;
+                // (Ends that meet in `work` give no chord to measure across.)
+                if !per_unit.is_finite() {
+                    continue;
+                }
+                // How far the edge as a run in longitude/latitude takes it lies across the chord
+                // (not along it: where a point is along an edge differs between the planes, a
+                // meridian's middle by some 280 m over a degree).
+                let across = |t: f64| {
+                    let on = plane_to_lonlat(Coord::new(pa.x + t * (pb.x - pa.x), pa.y + t * (pb.y - pa.y)));
+                    into.point(on).map(|m| ((m.x - c0.x) * dy - (m.y - c0.y) * dx).abs() / chord * per_unit)
+                };
+                let d = [0.25, 0.5, 0.75].into_iter().filter_map(across).fold(0.0, f64::max);
+                if d > BENT_M {
+                    n += 1;
+                    far = far.max(d);
+                }
+            }
+        }
+    }
+    Ok((n, far))
+}
+
 /// The executor's source-read choice, shared with pure permission planning.
 /// Selected in-memory windows need no whole read, except for the PMTiles exporter.
 pub(crate) fn reads_full_source(layer: &rustgis_map::Layer, spec: Option<&rustgis_analysis::ToolSpec>) -> bool {
@@ -1271,7 +1866,7 @@ fn env_inputs(
     env: &crate::project::GpEnvironment,
     params: &Value,
 ) -> Result<std::collections::HashMap<String, Vec<usize>>, String> {
-    let rows = env_rows(map, full, env, params);
+    let rows = env_rows(map, full, env, params)?;
     if let Some((name, v)) = rows.iter().next()
         && v.is_empty()
     {
@@ -1287,10 +1882,10 @@ fn env_rows(
     full: &std::collections::HashMap<String, Dataset>,
     env: &crate::project::GpEnvironment,
     params: &Value,
-) -> std::collections::HashMap<String, Vec<usize>> {
-    let Some(e) = env.extent else { return std::collections::HashMap::new() };
+) -> Result<std::collections::HashMap<String, Vec<usize>>, String> {
+    let Some(e) = env.extent else { return Ok(std::collections::HashMap::new()) };
     let Some(input) = params.get("target").or_else(|| params.get("input")).and_then(Value::as_str) else {
-        return std::collections::HashMap::new();
+        return Ok(std::collections::HashMap::new());
     };
     // The layer the name finds (the first of that name), as the tool will.
     map.layer_by_name(input)
@@ -1298,14 +1893,32 @@ fn env_rows(
         .filter(|l| !l.is_raster() && l.selection.is_empty())
         .map(|l| {
             let ds = full.get(&l.name.to_ascii_lowercase()).unwrap_or(&l.dataset);
-            let rows: Vec<usize> = ds
-                .features
-                .iter()
-                .enumerate()
-                .filter(|(_, f)| f.geometry.as_ref().is_some_and(|g| g.extent().intersects(&e)))
-                .map(|(i, _)| i)
-                .collect();
-            (l.name.to_ascii_lowercase(), rows)
+            // A feature is admitted when its box in longitude/latitude meets the extent, as in a
+            // run in longitude/latitude (which reads the whole layer converted too): no box in the
+            // layer's own system tests that, a box there around the extent missing a feature whose
+            // box in longitude/latitude meets it. One with a place that can't be read in
+            // longitude/latitude is admitted by its own box meeting the extent's there, as before;
+            // a layer that can't be read in longitude/latitude at all admits none, as before (and
+            // the run says none is inside).
+            let own = std::cell::OnceCell::new();
+            let by_own = |g: &rustgis_data::Geometry| g.extent().intersects(own.get_or_init(|| ds.extent_from_lonlat(&e)));
+            let to_lonlat = ds.lonlat_conversion().ok();
+            let meets = |g: &rustgis_data::Geometry| match &to_lonlat {
+                Some(to) if to.is_identity() => g.extent().intersects(&e),
+                Some(to) => Dataset::geometry_to_lonlat_by(to, g).map_or_else(|_| by_own(g), |g| g.extent().intersects(&e)),
+                None => false,
+            };
+            // (Each feature converted: a Cancel is looked for every 256 of them.)
+            let mut rows = Vec::new();
+            for (i, r) in ds.features.rows().enumerate() {
+                if i.is_multiple_of(256) {
+                    rustgis_data::progress::check().map_err(|e| format!("{}: {e}", l.name))?;
+                }
+                if r.geometry().is_some_and(meets) {
+                    rows.push(i);
+                }
+            }
+            Ok((l.name.to_ascii_lowercase(), rows))
         })
         .collect()
 }
@@ -1330,13 +1943,42 @@ impl Inputs for MapInputs<'_> {
         crate::render::raster_export::export(raster, min_zoom, max_zoom, opacity)
     }
     fn dataset(&self, layer: &str) -> Option<&Dataset> {
+        // (A standalone table converted for the run is had by its number, [`table_key`].)
+        if layer.starts_with('\0') {
+            return None;
+        }
         self.loaded
             .get(layer)
             .or_else(|| self.loaded.get(&layer.to_ascii_lowercase()))
-            .or_else(|| project_input(&self.snap.map, &self.snap.tables, layer, false).map(|i| i.dataset()))
+            // A layer read as it is only in the system the tool works in: one in another system is
+            // converted before the run ([`work_inputs`]) when the tool names it, and isn't read
+            // in its own coordinates otherwise.
+            .or_else(|| {
+                project_input(&self.snap.map, &self.snap.tables, layer, false)
+                    .map(|i| i.dataset())
+                    // A table without geometry reads alike in any system, and so does a layer
+                    // the tool reads only the attributes of.
+                    .filter(|d| {
+                        d.geometry_type == rustgis_data::GeometryType::None
+                            || self.unread.contains(&layer.to_ascii_lowercase())
+                            || d.coord_crs().to(self.work).is_ok_and(|to| to.is_identity())
+                    })
+            })
     }
     fn table(&self, id: u32) -> Option<&Dataset> {
-        self.snap.tables.iter().find(|t| t.id == id).map(|t| &t.dataset)
+        // Converted before the run when the tool's parameters give its number ([`inputs_in`]);
+        // else read as it is only in the system the tool works in, as a layer is, or when the
+        // tool reads only its attributes (Join Field's join table).
+        self.loaded.get(&table_key(id)).or_else(|| {
+            self.snap.tables.iter().find(|t| t.id == id).map(|t| &t.dataset).filter(|d| {
+                d.geometry_type == rustgis_data::GeometryType::None
+                    || self.unread.contains(&table_key(id))
+                    || d.coord_crs().to(self.work).is_ok_and(|to| to.is_identity())
+            })
+        })
+    }
+    fn work_crs(&self) -> Crs {
+        self.work
     }
     fn selection(&self, layer: &str) -> &[usize] {
         let Some(l) = self.snap.map.layer_by_name(layer) else { return &[] };
@@ -1367,7 +2009,7 @@ impl Inputs for MapInputs<'_> {
 fn run(s: &mut Session, p: &Value) -> CmdResult {
     let tool = ps(p, "tool").ok_or("tool is required")?.to_string();
     let params = p.get("params").cloned().unwrap_or(json!({}));
-    run_tool(s, &tool, &params)
+    run_tool_saying(s, &tool, &params)
 }
 
 /// Whether `inputs` is the wildcard `"*"` (either as a string or a single-element array `["*"]`).
@@ -1513,7 +2155,7 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
         .as_object()
         .into_iter()
         .flat_map(|map| map.keys().map(String::as_str))
-        .filter(|key| !rustgis_analysis::is_accepted_param(spec, key) && *key != batch_param)
+        .filter(|key| !rustgis_analysis::is_expected_key(spec, &base_params, key) && *key != batch_param)
         .collect();
     if !unknown.is_empty() {
         unknown.sort();
@@ -1710,7 +2352,7 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
     // Each item keeps its output as a layer: a hostile list or folder can't make the batch unbounded.
     if targets.len() > MAX_BATCH_ITEMS {
         return Err(format!(
-            "{} inputs is more than a batch runs (at most {MAX_BATCH_ITEMS}); split it into smaller batches",
+            "{} inputs are more than a batch runs (at most {MAX_BATCH_ITEMS}); split it into smaller batches",
             targets.len()
         ));
     }
@@ -1725,9 +2367,9 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
     let mut collisions = 0;
     let mut first_collision = None;
     #[cfg_attr(target_arch = "wasm32", expect(unused_mut, reason = "batch inputs are read from files on the desktop only"))]
-    let mut reader_warnings: Vec<(String, String)> = Vec::new();
+    let mut reader_warnings: Vec<(String, String, Option<LossCode>)> = Vec::new();
     let mut items_reporting_messages = 0;
-    let mut distinct_tool_messages: Vec<(String, usize)> = Vec::new();
+    let mut distinct_tool_messages: Vec<(String, Option<LossCode>, usize)> = Vec::new();
     let mut cancelled_after = None;
     let mut next_suffix: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     #[cfg(not(target_arch = "wasm32"))]
@@ -1761,20 +2403,19 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
                 }
                 match read_batch_file(s, path) {
                     Ok((dataset, report)) => {
-                        for msg in report.messages {
+                        let messages = report.messages.into_iter().map(|text| (text, None));
+                        let losses = report.losses.into_iter().map(|loss| (loss.text, Some(loss.code)));
+                        for (msg, code) in messages.chain(losses) {
                             item_reader_warnings.push(format!("{target}: {msg}"));
-                            reader_warnings.push((target.clone(), msg));
+                            reader_warnings.push((target.clone(), msg, code));
                         }
                         Some(super::layer::add_dataset(s, dataset))
                     }
                     Err(e) => {
                         let err_str = e.to_string();
+                        let rec_params = batch_item_params(spec, &base_params, batch_param, target);
                         let spec = rustgis_analysis::tool(tool_id);
                         let name = spec.map(|t| t.name).unwrap_or("Tool").to_string();
-                        let mut rec_params = base_params.clone();
-                        if let Value::Object(ref mut map) = rec_params {
-                            map.insert(batch_param.to_string(), json!(target));
-                        }
                         let mut record_json = json!({
                             "tool": tool_id,
                             "inputs": [target],
@@ -1852,29 +2493,15 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
             }
         }
 
-        let mut item_params = base_params.clone();
-        if let Value::Object(ref mut map) = item_params {
-            // A tool reading the input under another name (Join Field's `input` for `target`) mustn't
-            // take a static value given under it in place of each batch input.
-            for alias in rustgis_analysis::param_aliases(spec, batch_param).iter().filter(|a| **a != batch_param) {
-                map.remove(*alias);
-            }
-            map.insert(batch_param.to_string(), json!(target_layer_name));
-            if tool_has_output {
+        let item = |input: &str| {
+            let mut p = batch_item_params(spec, &base_params, batch_param, input);
+            if tool_has_output && let Value::Object(ref mut map) = p {
                 map.insert("output".to_string(), json!(final_out_name));
             }
-        }
-
-        let mut record_params = base_params.clone();
-        if let Value::Object(ref mut map) = record_params {
-            for alias in rustgis_analysis::param_aliases(spec, batch_param).iter().filter(|a| **a != batch_param) {
-                map.remove(*alias);
-            }
-            map.insert(batch_param.to_string(), json!(target));
-            if tool_has_output {
-                map.insert("output".to_string(), json!(final_out_name));
-            }
-        }
+            p
+        };
+        let item_params = item(&target_layer_name);
+        let record_params = item(target);
 
         let cmd_record = if is_file_input {
             let mut record_json = json!({
@@ -1898,12 +2525,12 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
             Ok((res, messages)) => {
                 succeeded.push(target.clone());
                 if !messages.is_empty() {
-                    items_reporting_messages += 1;
-                    for msg in &messages {
-                        if let Some(entry) = distinct_tool_messages.iter_mut().find(|(m, _)| m == msg) {
-                            entry.1 += 1;
+                    items_reporting_messages += usize::from(messages.iter().any(|(_, code)| code.is_none()));
+                    for (text, code) in &messages {
+                        if let Some(entry) = distinct_tool_messages.iter_mut().find(|(m, c, _)| m == text && c == code) {
+                            entry.2 += 1;
                         } else {
-                            distinct_tool_messages.push((msg.clone(), 1));
+                            distinct_tool_messages.push((text.clone(), *code, 1));
                         }
                     }
                 }
@@ -2009,7 +2636,7 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
                     }
                 } else {
                     succeeded.pop();
-                    let err = messages.last().cloned().unwrap_or_else(|| "tool produced no output".into());
+                    let err = messages.last().map(|(text, _)| text.clone()).unwrap_or_else(|| "tool produced no output".into());
                     if let Some(last) = s.project.gp_history.last_mut() {
                         let matches_item = last.id == tool_id
                             && (last.params.get(batch_param).and_then(Value::as_str) == Some(target)
@@ -2030,7 +2657,7 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
                     failed.push(json!({"input": target, "error": err.clone()}));
                     let mut err_obj = json!({"input": target, "error": err});
                     if messages.len() > 1 {
-                        err_obj["messages"] = json!(messages);
+                        err_obj["messages"] = json!(messages.iter().map(|(text, _)| text).collect::<Vec<_>>());
                     }
                     errors.push(err_obj);
                     #[cfg(not(target_arch = "wasm32"))]
@@ -2131,18 +2758,17 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
     // Every distinct message is named (a loss reported by the fourth kind must not be hidden),
     // up to a bound a hostile run can't flood; all of them are in the result's `messages`.
     const NAMED: usize = 50;
+    let mut losses = BatchLosses::default();
+    for (text, code, count) in &distinct_tool_messages {
+        if let Some(code) = code {
+            losses.add(*code, text, *count);
+        }
+    }
     if items_reporting_messages > 0 {
-        let sample = distinct_tool_messages
-            .iter()
-            .take(NAMED)
-            .map(|(m, c)| if *c > 1 { format!("{m} (×{c})") } else { m.clone() })
-            .collect::<Vec<_>>()
-            .join("; ");
-        let more = if distinct_tool_messages.len() > NAMED {
-            format!(" and {} more, in the result", distinct_tool_messages.len() - NAMED)
-        } else {
-            String::new()
-        };
+        let plain = || distinct_tool_messages.iter().filter(|(_, code, _)| code.is_none());
+        let sample = plain().take(NAMED).map(|(text, _, count)| batch_message(text, *count)).collect::<Vec<_>>().join("; ");
+        let total = plain().count();
+        let more = if total > NAMED { format!(" and {} more, in the result", total - NAMED) } else { String::new() };
         s.notify(format!("gp.batch: {items_reporting_messages} item(s) reported messages ({sample}{more})"), false);
     }
 
@@ -2163,23 +2789,29 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
 
     #[cfg(not(target_arch = "wasm32"))]
     if !reader_warnings.is_empty() {
-        let mut aggregated: Vec<(&str, Vec<&str>)> = Vec::new();
-        for (target, msg) in &reader_warnings {
-            if let Some((_, inputs)) = aggregated.iter_mut().find(|(m, _)| *m == msg.as_str()) {
+        let mut aggregated: Vec<(&str, Option<LossCode>, Vec<&str>)> = Vec::new();
+        for (target, msg, code) in &reader_warnings {
+            if let Some((_, _, inputs)) = aggregated.iter_mut().find(|(m, c, _)| *m == msg.as_str() && c == code) {
                 if !inputs.contains(&target.as_str()) {
                     inputs.push(target.as_str());
                 }
             } else {
-                aggregated.push((msg.as_str(), vec![target.as_str()]));
+                aggregated.push((msg.as_str(), *code, vec![target.as_str()]));
             }
         }
-        for (msg, inputs) in aggregated {
+        for (msg, code, inputs) in aggregated {
             let count = inputs.len();
             let inputs_list = inputs.join(", ");
             let label = if count == 1 { "input" } else { "inputs" };
-            s.notify(format!("gp.batch: {count} {label} ({inputs_list}): {msg}"), false);
+            let text = format!("gp.batch: {count} {label} ({inputs_list}): {msg}");
+            if let Some(code) = code {
+                losses.add(code, &text, count);
+            } else {
+                s.notify(text, false);
+            }
         }
     }
+    losses.say(s);
 
     if !failed.is_empty() {
         let sample = failed.iter().take(3).filter_map(|v| v.get("input").and_then(Value::as_str)).collect::<Vec<_>>().join(", ");
@@ -2205,7 +2837,7 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
     };
     s.notify(summary_msg, num_err > 0 || is_cancelled);
 
-    let warnings: Vec<Value> = reader_warnings.iter().map(|(input, msg)| json!({"input": input, "warning": msg})).collect();
+    let warnings: Vec<Value> = reader_warnings.iter().map(|(input, msg, _)| json!({"input": input, "warning": msg})).collect();
 
     let mut ret = json!({
         "tool": tool_id,
@@ -2216,7 +2848,7 @@ pub fn run_batch_with(s: &mut Session, p: &Value, control: &std::sync::Arc<rustg
         "outputs": output_names,
         "errors": errors,
         "warnings": warnings,
-        "messages": distinct_tool_messages.iter().map(|(m, c)| json!({"message": m, "items": c})).collect::<Vec<_>>(),
+        "messages": distinct_tool_messages.iter().map(|(m, _, c)| json!({"message": m, "items": c})).collect::<Vec<_>>(),
     });
     if is_cancelled {
         ret["cancelled"] = json!(true);
@@ -2312,12 +2944,103 @@ fn zonal_stats(s: &mut Session, p: &Value) -> CmdResult {
     run_tool(s, "zonalStats", p)
 }
 
-/// Runs a (built-in) tool and applies its result, as `gp.run` does. Where a person at a terminal
-/// can stop it with Ctrl-C ([`Session::stoppable`](crate::Session::stoppable)), it takes no work
-/// cap ([`rustgis_analysis::control::Control::stoppable`]).
-pub fn run_tool(s: &mut Session, tool: &str, params: &Value) -> CmdResult {
+/// A `gp.batch` item's parameters: `base` with `batch_param` set to `input`. A tool reading the
+/// input under another name (Join Field's `input` for `target`) mustn't take a static value given
+/// under it in place of each batch input, nor keep the tool dialog's name of the table it replaced
+/// (`input_name`, `target_name`), so those go. An alias the tool declares itself goes too (Join
+/// Field's `target` beside a `target_layer` batch): `gp.batch` says which names it replaced.
+fn batch_item_params(spec: &rustgis_analysis::ToolSpec, base: &Value, batch_param: &str, input: &str) -> Value {
+    let mut p = base.clone();
+    if let Value::Object(ref mut map) = p {
+        for name in rustgis_analysis::param_aliases(spec, batch_param).iter().copied().chain([batch_param]) {
+            for key in [name.to_string(), format!("{name}_name")] {
+                if key != batch_param && (key == name || !rustgis_analysis::is_accepted_param(spec, &key)) {
+                    map.remove(&key);
+                }
+            }
+        }
+        map.insert(batch_param.to_string(), json!(input));
+    }
+    p
+}
+
+/// What a tool says of the keys in `params` it doesn't read (#2307), as `Session::run` says it of a
+/// command's (#194) and `gp.batch` of its items': "Buffer ignores 'unit' (it reads input,
+/// distance, units, dissolve, output)". `None` when it reads them all. A misspelled parameter
+/// would otherwise leave the tool at its default without a word: `"unit": "Miles"` buffers in
+/// kilometers.
+pub(crate) fn ignored_params(spec: &rustgis_analysis::ToolSpec, params: &Value) -> Option<String> {
+    let unknown: Vec<&str> =
+        params.as_object()?.keys().map(String::as_str).filter(|k| !rustgis_analysis::is_expected_key(spec, params, k)).collect();
+    if unknown.is_empty() {
+        return None;
+    }
+    let reads: Vec<&str> = spec.params.iter().map(|p| p.name).collect();
+    crate::ignored_keys(spec.name, unknown, &reads)
+}
+
+/// The run of `tool` admitted, as [`Session::authorize_tool`] admits it, warning which of
+/// `params` it ignores ([`ignored_params`]). A refused run's error says them itself when a
+/// required parameter is missing, the likely reason (a failed command takes its warnings back).
+/// For the runs started from what a caller wrote (`gp.run`, the app's runs). A command that runs a
+/// tool with its own parameters (`gp.spatialJoin`, `gp.zonalStats`) declares the tool's keys as
+/// its own, so `Session::run` has said any it ignores, as a command.
+pub(crate) fn admitted_saying(
+    s: &mut Session,
+    tool: &str,
+    params: &Value,
+) -> Result<crate::policy::Authorized<crate::policy::ToolOp>, String> {
+    let op = s.authorize_tool(tool, params)?;
+    if let Some(said) = ignored_params(op.op().pin.spec(), params) {
+        s.warn(said);
+    }
+    Ok(op)
+}
+
+/// [`run_tool`] for parameters a caller wrote (`gp.run`, a model's step), saying first which of
+/// them the tool ignores ([`admitted_saying`]). A failed run takes that warning back, so its
+/// error says the keys too when the run fails over its parameters or inside the tool (a run the
+/// policy refuses is refused for who asked, not for what it was given).
+pub(crate) fn run_tool_saying(s: &mut Session, tool: &str, params: &Value) -> CmdResult {
+    let control = run_control(s);
+    let op = admitted_saying(s, tool, params)?;
+    let spec = op.op().pin.spec();
+    s.invoke_tool(op, &control).map_err(|e| saying_unread(spec, params, e))
+}
+
+/// [`run_tool_saying`] without the warning about ignored parameters: a model's run says them once
+/// for all its steps ([`crate::model::run`]), beside its result or its error, so a run that fails
+/// later keeps them. The error still says the keys it doesn't read.
+pub(crate) fn run_step(s: &mut Session, tool: &str, params: &Value) -> CmdResult {
+    let control = run_control(s);
+    let op = s.authorize_tool(tool, params)?;
+    let spec = op.op().pin.spec();
+    s.invoke_tool(op, &control).map_err(|e| saying_unread(spec, params, e))
+}
+
+/// `error` with the keys of `params` that `spec` doesn't read after it — " (given 'unit', which
+/// Buffer doesn't read)" — unless it says them already (a refused parameter's does).
+fn saying_unread(spec: &rustgis_analysis::ToolSpec, params: &Value, error: String) -> String {
+    // The same text the tool adds to a refused parameter's error, made once: an error that ends
+    // in it says it already.
+    let unread = rustgis_analysis::unread(spec, params);
+    if unread.is_empty() || error.ends_with(&unread) {
+        return error;
+    }
+    format!("{error}{unread}")
+}
+
+/// The control a tool run in the session takes: where a person at a terminal can stop it with
+/// Ctrl-C ([`Session::stoppable`](crate::Session::stoppable)), no work cap
+/// ([`rustgis_analysis::control::Control::stoppable`]).
+fn run_control(s: &Session) -> std::sync::Arc<rustgis_analysis::control::Control> {
     use rustgis_analysis::control::Control;
-    let control = if s.stoppable { Control::stoppable() } else { Control::new() };
+    if s.stoppable { Control::stoppable() } else { Control::new() }
+}
+
+/// Runs a (built-in) tool and applies its result, as `gp.run` does, under [`run_control`].
+pub fn run_tool(s: &mut Session, tool: &str, params: &Value) -> CmdResult {
+    let control = run_control(s);
     run_tool_with(s, tool, params, &control)
 }
 
@@ -2340,7 +3063,7 @@ pub(crate) fn execute(
     op: crate::policy::Authorized<crate::policy::ToolOp>,
     control: &std::sync::Arc<rustgis_analysis::control::Control>,
     opts: &RunOpts,
-) -> Result<(Value, Vec<String>), String> {
+) -> Result<(Value, ToolMessages), String> {
     let crate::policy::ToolOp { pin, params } = op.op();
     pin.current()?;
     let spec = pin.spec();
@@ -2353,13 +3076,28 @@ pub(crate) fn execute(
     #[cfg(not(target_arch = "wasm32"))]
     let control = current.as_ref().unwrap_or(control);
     let t0 = now_ms();
-    if control.is_cancelled() {
+    // A look at Cancel as the work's own are (counted for a test's control): a model's or script's
+    // tool on the copy stops here when cancelled between steps.
+    if rustgis_data::progress::Probe::cancelled(control.as_ref()) {
         let e = format!("{} was cancelled before it started", spec.name);
         return apply_with(s, run_of(t0), kept(), Err(e), 0, opts);
     }
     let continuation = s.tool_continuation(&op)?;
     #[cfg(not(target_arch = "wasm32"))]
-    let ran = take_ahead(s, pin, params);
+    let output_slot = match &s.tools_ahead {
+        Some(Ahead::Recording(recorded)) => Some(recorded.len()),
+        _ => None,
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut ran = take_ahead(s, pin, params);
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::image_grid::script_grids_invalidated(s) {
+        return Err("the script inputs changed; run the script again".into());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let replayed_outputs = ran.as_mut().map(|tool| std::mem::take(&mut tool.grid_outputs));
+    #[cfg(not(target_arch = "wasm32"))]
+    let ran = ran.map(|tool| (tool.result, tool.full_ids, tool.millis));
     #[cfg(target_arch = "wasm32")]
     let ran = None;
     let (mut res, ids, millis) = match ran {
@@ -2387,7 +3125,9 @@ pub(crate) fn execute(
                 pin.run(&inputs, params, control, &|| continuation.check())
             };
             if let Ok(result) = &mut res {
+                inputs.hold_results(result);
                 result.messages.extend(inputs.messages.iter().cloned());
+                result.losses.extend(inputs.losses.iter().cloned());
             }
             let ids = full_ids(&inputs.loaded);
             #[cfg(not(target_arch = "wasm32"))]
@@ -2409,6 +3149,7 @@ pub(crate) fn execute(
                     result: res.clone(),
                     full_ids: ids.clone(),
                     millis,
+                    grid_outputs: Vec::new(),
                 })));
             }
             (res, ids, millis)
@@ -2417,8 +3158,71 @@ pub(crate) fn execute(
     pin.current()?;
     continuation.check()?;
     fit_to_windows(s, &mut res, &ids);
-    apply_with(s, run_of(t0), kept(), res, millis, opts)
+    let applied = apply_with(s, run_of(t0), kept(), res, millis, opts);
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Ok((out, _)) = &applied
+        && (recording || replayed_outputs.is_some())
+    {
+        let outputs = output_layers(s, out);
+        if let Some(recorded) = replayed_outputs {
+            crate::image_grid::replay_tool_outputs(s, &recorded, &outputs)?;
+        } else if let Some(index) = output_slot
+            && let Some(Ahead::Recording(recorded)) = &mut s.tools_ahead
+            && let Some(RanAhead::Tool(tool)) = recorded.get_mut(index)
+        {
+            tool.grid_outputs = outputs;
+        }
+    }
+    applied
 }
+
+/// The exact layers just installed by a tool, rather than similarly named layers in the map.
+#[cfg(not(target_arch = "wasm32"))]
+fn output_layers(s: &Session, out: &Value) -> Vec<rustgis_map::Layer> {
+    let ids = out.get("layer").into_iter().chain(out.get("layers").and_then(Value::as_array).into_iter().flatten());
+    ids.filter_map(Value::as_u64).filter_map(|id| u32::try_from(id).ok()).filter_map(|id| s.map().layer(id).cloned()).collect()
+}
+
+/// Counts classified reports across a batch and keeps a bounded sample for each code.
+#[derive(Default)]
+struct BatchLosses(std::collections::BTreeMap<&'static str, BatchLoss>);
+
+struct BatchLoss {
+    code: LossCode,
+    reports: usize,
+    examples: Vec<String>,
+    omitted: usize,
+}
+
+impl BatchLosses {
+    /// Counts every report, even when its text is beyond the sample.
+    fn add(&mut self, code: LossCode, text: &str, count: usize) {
+        let entry = self.0.entry(code.spec().id).or_insert_with(|| BatchLoss { code, reports: 0, examples: Vec::new(), omitted: 0 });
+        entry.reports = entry.reports.saturating_add(count);
+        if entry.examples.len() < 3 {
+            entry.examples.push(batch_message(text, count));
+        } else {
+            entry.omitted += 1;
+        }
+    }
+
+    /// Publishes one warning per code. Full messages are in the batch result.
+    fn say(self, s: &mut Session) {
+        for loss in self.0.into_values() {
+            let sample = loss.examples.join("; ");
+            let more = if loss.omitted == 0 { String::new() } else { format!(" and {} more, in the result", loss.omitted) };
+            s.notify_loss(loss.code, format!("gp.batch: {} loss report(s) ({sample}{more})", loss.reports).into());
+        }
+    }
+}
+
+/// The text of a distinct batch notice, with its repetition count when it appeared more than once.
+fn batch_message(text: &str, count: usize) -> String {
+    if count > 1 { format!("{text} (×{count})") } else { text.to_string() }
+}
+
+/// Text and optional loss code from a tool that has run.
+pub(crate) type ToolMessages = Vec<(String, Option<LossCode>)>;
 
 /// How [`execute`] applies a run: by default as `gp.run` does. A batch item keeps the
 /// parameters and command it is replayed with, leaves its messages to the batch's one notice
@@ -2440,7 +3244,7 @@ pub(crate) fn run_tool_quiet(
     record_params: Option<&Value>,
     command: Option<(String, Value)>,
     control: &std::sync::Arc<rustgis_analysis::control::Control>,
-) -> Result<(Value, Vec<String>), String> {
+) -> Result<(Value, ToolMessages), String> {
     let op = s.authorize_tool(tool, params)?;
     let opts = RunOpts { record: record_params.cloned(), command, quiet: true, keep_tables: true };
     s.invoke_tool_with(op, control, &opts)
@@ -2463,10 +3267,11 @@ pub(crate) struct PendingFile {
     pub(crate) file_name: String,
     pub(crate) bytes: Option<Vec<u8>>,
     record: GpRecord,
+    losses: Vec<LossMessage>,
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
-fn queue_file(s: &mut Session, file_name: String, bytes: Vec<u8>, record: GpRecord) -> CmdResult {
+fn queue_file(s: &mut Session, file_name: String, bytes: Vec<u8>, record: GpRecord, losses: Vec<LossMessage>) -> CmdResult {
     let file_name =
         record.params.get("output").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()).unwrap_or(&file_name).to_string();
     if file_name.is_empty() || file_name.contains(['/', '\\']) {
@@ -2479,7 +3284,14 @@ fn queue_file(s: &mut Session, file_name: String, bytes: Vec<u8>, record: GpReco
     }
     s.next_pending = s.next_pending.wrapping_add(1);
     let id = s.next_pending;
-    s.file_outputs.push(PendingFile { id, file_name: file_name.clone(), bytes: Some(bytes), record, continuation: s.continuation()? });
+    s.file_outputs.push(PendingFile {
+        id,
+        file_name: file_name.clone(),
+        bytes: Some(bytes),
+        record,
+        losses,
+        continuation: s.continuation()?,
+    });
     s.request_only = true;
     Ok(json!({"pending": true, "download": id, "file": file_name}))
 }
@@ -2503,10 +3315,18 @@ fn file_delivered(s: &mut Session, p: &Value) -> CmdResult {
     }
     for message in &file.record.messages {
         if file.record.ok {
-            s.notify_written(message.clone(), false);
+            s.notify_written(message.clone());
         } else {
             s.notify(message.clone(), true);
         }
+    }
+    for loss in file.losses {
+        if file.record.ok {
+            publish_tool_loss(s, loss.code, &loss.text, true);
+        } else {
+            s.notify(loss.text.clone(), true);
+        }
+        file.record.messages.push(loss.text);
     }
     let out = json!({"file": file.file_name, "delivered": file.record.ok, "messages": file.record.messages});
     s.push_gp_record(file.record);
@@ -2631,7 +3451,7 @@ fn apply_with(
     res: Result<rustgis_analysis::ToolResult, String>,
     millis: u64,
     opts: &RunOpts,
-) -> Result<(Value, Vec<String>), String> {
+) -> Result<(Value, ToolMessages), String> {
     let continuation = s.continuation()?;
     s.check_continuation(&continuation)?;
     let Ran { name, id, command, started } = ran;
@@ -2660,12 +3480,13 @@ fn apply_with(
         Output::File { file_name, bytes } => {
             #[cfg(test)]
             if s.queue_gp_files {
-                let msgs = result.messages.clone();
+                let msgs = result.messages.iter().cloned().map(|m| (m, None)).collect();
                 return queue_file(
                     s,
                     file_name,
                     bytes,
                     GpRecord { tool: name, id, params, command, at, ok: false, messages: result.messages, millis, outputs: Vec::new() },
+                    result.losses,
                 )
                 .map(|v| (v, msgs));
             }
@@ -2674,6 +3495,7 @@ fn apply_with(
                 let path = params.get("output").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()).unwrap_or(&file_name);
                 if let Err(error) = write_file_output(s, std::path::Path::new(path), &bytes) {
                     let error = format!("{path}: {error}");
+                    result.messages.extend(result.losses.into_iter().map(|loss| loss.text));
                     result.messages.push(error.clone());
                     s.push_gp_record(GpRecord {
                         tool: name,
@@ -2692,12 +3514,13 @@ fn apply_with(
             }
             #[cfg(target_arch = "wasm32")]
             {
-                let msgs = result.messages.clone();
+                let msgs = result.messages.iter().cloned().map(|m| (m, None)).collect();
                 return queue_file(
                     s,
                     file_name,
                     bytes,
                     GpRecord { tool: name, id, params, command, at, ok: false, messages: result.messages, millis, outputs: Vec::new() },
+                    result.losses,
                 )
                 .map(|v| (v, msgs));
             }
@@ -2714,7 +3537,15 @@ fn apply_with(
         }
         Output::Update { layer, dataset } => {
             let l = s.map_mut().layers.iter_mut().find(|l| l.name.eq_ignore_ascii_case(&layer)).ok_or("the input layer disappeared")?;
-            l.dataset = dataset;
+            // Made in the system the tool worked in ([`MapInputs::hold_results`]): taken as made
+            // when that is the layer's own, else written back in its own coordinates from
+            // longitude/latitude.
+            l.dataset = if dataset.coord_crs() == l.dataset.coord_crs() {
+                dataset
+            } else {
+                let lonlat = if dataset.coord_crs() == Crs::LonLat { dataset } else { dataset.in_lonlat()?.into_owned() };
+                l.dataset.results_from_lonlat(lonlat)?
+            };
             // Under the layer's name now: a background run's layer may have been renamed meanwhile.
             l.dataset.name.clone_from(&l.name);
             // A streamed layer updated by a tool holds the whole result in memory from now on.
@@ -2765,16 +3596,25 @@ fn apply_with(
             ret
         }
     };
-    let messages = result.messages.clone();
+    let messages: ToolMessages = result
+        .messages
+        .iter()
+        .cloned()
+        .map(|m| (m, None))
+        .chain(result.losses.iter().map(|loss| (loss.text.clone(), Some(loss.code))))
+        .collect();
     if !opts.quiet {
-        for m in &messages {
-            if wrote_file {
-                s.notify_written(m.clone(), false);
+        for (message, code) in &messages {
+            if let Some(code) = code {
+                publish_tool_loss(s, *code, message, wrote_file);
+            } else if wrote_file {
+                s.notify_written(message.clone());
             } else {
-                s.notify(m.clone(), false);
+                s.notify(message.clone(), false);
             }
         }
     }
+    result.messages.extend(result.losses.into_iter().map(|loss| loss.text));
     let ids: Vec<u32> = match (out.get("layer"), out.get("layers")) {
         (Some(id), _) => id.as_u64().into_iter().filter_map(|v| u32::try_from(v).ok()).collect(),
         (None, Some(Value::Array(v))) => v.iter().filter_map(Value::as_u64).filter_map(|v| u32::try_from(v).ok()).collect(),
@@ -2786,6 +3626,15 @@ fn apply_with(
         s.project.gp_history.remove(0);
     }
     Ok((out, messages))
+}
+
+/// Publishes a typed loss, retaining it through rollback when a file has already been delivered.
+fn publish_tool_loss(s: &mut Session, code: LossCode, text: &str, written: bool) {
+    let mark = s.notice_mark();
+    s.notify_loss(code, text.to_string().into());
+    if written {
+        s.retain_written_notices(mark);
+    }
 }
 
 #[cfg(test)]
@@ -2844,7 +3693,7 @@ mod file_tests {
             s.registry.commands.push(C::new("test.queueFile", "File export", "Test", |s, p| {
                 let record = serde_json::from_value(p["record"].clone()).unwrap();
                 let bytes = serde_json::from_value(p["bytes"].clone()).unwrap();
-                super::queue_file(s, p["name"].as_str().unwrap().into(), bytes, record)
+                super::queue_file(s, p["name"].as_str().unwrap().into(), bytes, record, Vec::new())
             }));
         }
         s.run("test.queueFile", &json!({"name":name,"bytes":bytes,"record":record}))
@@ -3618,6 +4467,7 @@ mod file_tests {
                 Ran { name: "File export".into(), id: "vectorToPmtiles".into(), command: None, started: 1000 },
                 p.clone(),
                 Ok(rustgis_analysis::ToolResult {
+                    losses: Vec::new(),
                     output: Output::File { file_name: "cities.pmtiles".into(), bytes: b"archive".to_vec() },
                     messages: vec!["Exported data".into()],
                 }),
@@ -3967,7 +4817,7 @@ mod batch_tests {
         std::fs::write(&txt, "skip me").unwrap();
 
         let mut s = Session::new(crate::Project::default());
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -3980,7 +4830,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["total"], 3);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(notices.iter().any(|n| n.text.contains("1 unsupported files skipped")));
 
         let _ = std::fs::remove_dir_all(root);
@@ -4062,7 +4912,8 @@ mod batch_tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    #[cfg(all(unix, not(target_os = "macos")))]
+    // Apple's APFS refuses a file name that isn't UTF-8 ("Illegal byte sequence").
+    #[cfg(all(unix, not(target_vendor = "apple")))]
     #[test]
     fn batch_run_folder_skips_non_utf8_filename() {
         use std::os::unix::ffi::OsStrExt;
@@ -4339,6 +5190,7 @@ mod batch_tests {
                     vec![rustgis_data::Field::new("col", rustgis_data::FieldType::Integer)],
                 );
                 Ok(rustgis_analysis::ToolResult {
+                    losses: Vec::new(),
                     output: rustgis_analysis::Output::Layers(vec![rustgis_analysis::OutputLayer::Table(table)]),
                     messages: Vec::new(),
                 })
@@ -4423,6 +5275,19 @@ mod batch_tests {
         );
         assert!(res.is_err());
         assert!(res.unwrap_err().contains("tool 'buffer' has no parameter 'imput'"));
+        // The tool dialog's `input_name` isn't warned of, but nor is it a parameter to run over.
+        let res = s.run(
+            "gp.batch",
+            &json!({"tool": "buffer", "inputs": ["Cities"], "param": "input_name", "params": {"input": "Cities", "distance": 10}}),
+        );
+        assert!(res.is_err_and(|e| e.contains("tool 'buffer' has no parameter 'input_name'")));
+        // Each item drops the dialog's name of the table it replaces, so its history doesn't name
+        // the wrong one.
+        let n = s.project.gp_history.len();
+        s.run("gp.batch", &json!({"tool": "buffer", "inputs": ["Cities"], "params": {"input": 7, "input_name": "Old", "distance": 10}}))
+            .unwrap();
+        let recorded = &s.project.gp_history[n..];
+        assert!(!recorded.is_empty() && recorded.iter().all(|h| h.params.get("input_name").is_none()), "{recorded:?}");
     }
 
     #[test]
@@ -4446,7 +5311,7 @@ mod batch_tests {
     #[test]
     fn batch_run_lossy_inputs_notified() {
         let mut s = test_session();
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         // Lossy input: empty string and non-string in array, plus non-object params
         let res = s
             .run(
@@ -4461,13 +5326,13 @@ mod batch_tests {
 
         assert_eq!(res["total"], 1);
         assert_eq!(res["succeeded"], 1);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(notices.iter().any(|n| n.text.contains("3 invalid input(s) skipped")));
         assert!(notices.iter().any(|n| n.text.contains("'params' must be an object")));
 
         // Clean input says nothing
         let mut s2 = test_session();
-        let mark2 = s2.notices.len();
+        let mark2 = s2.notice_mark();
         let _ = s2
             .run(
                 "gp.batch",
@@ -4478,7 +5343,7 @@ mod batch_tests {
                 }),
             )
             .unwrap();
-        let notices2 = &s2.notices[mark2..];
+        let notices2 = s2.notices_since(mark2);
         assert!(
             !notices2.iter().any(|n| n.text.contains("skipped") || n.text.contains("invalid") || n.text.contains("params")),
             "clean input must give no skip notices: {notices2:?}"
@@ -4694,6 +5559,7 @@ mod batch_tests {
         _params: &serde_json::Value,
     ) -> Result<rustgis_analysis::ToolResult, String> {
         Ok(rustgis_analysis::ToolResult {
+            losses: Vec::new(),
             output: rustgis_analysis::Output::Layers(Vec::new()),
             messages: vec!["custom message from empty tool".to_string()],
         })
@@ -4727,7 +5593,7 @@ mod batch_tests {
         let ds = Dataset::new("L1", rustgis_data::GeometryType::Point, Vec::new());
         s.map_mut().add_layer(rustgis_map::Layer::new(0, ds));
 
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s.run(
             "gp.batch",
             &json!({
@@ -4738,7 +5604,7 @@ mod batch_tests {
         let err = res.unwrap_err();
         assert!(err.contains("Batch 'test:empty_output' failed"));
         assert!(err.contains("custom message from empty tool"));
-        assert!(s.notices[mark..].iter().any(|n| n.text.contains("1 failed (L1)")));
+        assert!(s.notices_since(mark).iter().any(|n| n.text.contains("1 failed (L1)")));
     }
 
     fn empty_output_multi_message_runner(
@@ -4747,6 +5613,7 @@ mod batch_tests {
         _params: &serde_json::Value,
     ) -> Result<rustgis_analysis::ToolResult, String> {
         Ok(rustgis_analysis::ToolResult {
+            losses: Vec::new(),
             output: rustgis_analysis::Output::Layers(Vec::new()),
             messages: vec!["Processed 10 features".to_string(), "0 features matched criteria".to_string()],
         })
@@ -4901,7 +5768,7 @@ mod batch_tests {
         std::fs::write(&f1, sample_geojson).unwrap();
 
         let mut s = Session::new(crate::Project::default());
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -4914,7 +5781,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["succeeded"], 1);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(!notices.iter().any(|n| n.text.contains("both 'inputs' and 'folder'")));
 
         let _ = std::fs::remove_dir_all(root);
@@ -4928,7 +5795,7 @@ mod batch_tests {
         s.map_mut().add_layer(rustgis_map::Layer::new(10, pre1));
         s.map_mut().add_layer(rustgis_map::Layer::new(11, pre2));
 
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -4941,7 +5808,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["succeeded"], 1);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(notices.iter().any(|n| n.text.contains("1 output name(s) collided and were renamed")));
     }
 
@@ -5075,7 +5942,7 @@ mod batch_tests {
         ds.push_next(Some(rustgis_data::Geometry::Point(rustgis_geom::Coord::new(10.0, 20.0))), vec![rustgis_data::Value::Int(100)]);
         s.map_mut().add_layer(rustgis_map::Layer::new(0, ds));
 
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5088,7 +5955,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["succeeded"], 1);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(
             !notices.iter().any(|n| n.text.contains("params.output is ignored")),
             "tool without output param must not emit 'params.output is ignored' notice: {notices:?}"
@@ -5133,7 +6000,7 @@ mod batch_tests {
     #[test]
     fn batch_run_aggregates_tool_messages() {
         let mut s = test_session();
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5146,7 +6013,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["succeeded"], 2);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(notices.iter().any(|n| n.text.contains("2 item(s) reported messages (Buffer: 1 features at 10 Kilometers (×2))")));
     }
 
@@ -5162,7 +6029,7 @@ mod batch_tests {
         l2.push_next(Some(rustgis_data::Geometry::Point(rustgis_geom::Coord::new(16.0, 26.0))), Vec::new());
         s.map_mut().add_layer(rustgis_map::Layer::new(1, l2));
 
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5175,7 +6042,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["succeeded"], 2);
-        let recent: Vec<_> = s.notices[mark..].iter().filter(|n| n.text.contains("reported messages")).collect();
+        let recent: Vec<_> = s.notices_since(mark).iter().filter(|n| n.text.contains("reported messages")).collect();
         assert_eq!(recent.len(), 1, "must emit exactly one tool messages notice: {recent:?}");
         assert_eq!(
             recent[0].text,
@@ -5195,7 +6062,7 @@ mod batch_tests {
         l2.push_next(Some(rustgis_data::Geometry::Point(rustgis_geom::Coord::new(16.0, 26.0))), Vec::new());
         s.map_mut().add_layer(rustgis_map::Layer::new(1, l2));
 
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5208,7 +6075,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["succeeded"], 2);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         let msg_notice = notices.iter().find(|n| n.text.contains("reported messages")).unwrap();
         assert!(msg_notice.text.contains("Buffer: 1 features at 10 Kilometers"));
         assert!(msg_notice.text.contains("Buffer: 2 features at 10 Kilometers"));
@@ -5217,7 +6084,7 @@ mod batch_tests {
     #[test]
     fn batch_run_null_options_emit_no_spurious_notices() {
         let mut s = test_session();
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5233,7 +6100,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["succeeded"], 1);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(
             !notices.iter().any(|n| n.text.contains("must be an object")
                 || n.text.contains("both 'inputs' and 'folder'")
@@ -5242,7 +6109,7 @@ mod batch_tests {
             "null options must not emit spurious notices: {notices:?}"
         );
 
-        let mark2 = s.notices.len();
+        let mark2 = s.notice_mark();
         let res2 = s
             .run(
                 "gp.batch",
@@ -5259,7 +6126,7 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res2["succeeded"], 1);
-        let notices2 = &s.notices[mark2..];
+        let notices2 = s.notices_since(mark2);
         assert!(
             !notices2.iter().any(|n| n.text.contains("output is ignored") || n.text.contains("is replaced by the batch inputs")),
             "null param fields must not emit spurious notices: {notices2:?}"
@@ -5323,7 +6190,7 @@ mod batch_tests {
     #[test]
     fn batch_run_unrecognised_option_emits_notice() {
         let mut s = test_session();
-        let mark = s.notices.len() as u64;
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5341,7 +6208,7 @@ mod batch_tests {
 
         // Clean call emits no unrecognised option notice
         let mut s_clean = test_session();
-        let mark_clean = s_clean.notices.len() as u64;
+        let mark_clean = s_clean.notice_mark();
         let res_clean = s_clean
             .run(
                 "gp.batch",
@@ -5364,7 +6231,7 @@ mod batch_tests {
     #[test]
     fn batch_run_unrecognised_param_in_params_emits_notice() {
         let mut s = test_session();
-        let mark = s.notices.len() as u64;
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5384,7 +6251,7 @@ mod batch_tests {
 
         // Clean call emits no unrecognised notice
         let mut s_clean = test_session();
-        let mark_clean = s_clean.notices.len() as u64;
+        let mark_clean = s_clean.notice_mark();
         let res_clean = s_clean
             .run(
                 "gp.batch",
@@ -5403,10 +6270,159 @@ mod batch_tests {
         );
     }
 
+    /// `gp.run`, a run started in the background and a model's step say which parameters a tool
+    /// ignores (#2307), as `gp.batch` does: a misspelled `unit` would otherwise leave Buffer at its
+    /// default, kilometers, without a word. The run itself is as before; a clean run says nothing;
+    /// a batch says it once, its own way; `model.validate` lists it as a warning, which doesn't
+    /// keep the model from running.
+    #[test]
+    fn a_tool_says_which_parameters_it_ignores() {
+        let said = |s: &Session, mark: u64| -> Vec<String> {
+            s.notices_since(mark).iter().map(|n| n.text.clone()).filter(|t| t.contains(" ignores ")).collect()
+        };
+        let buffer = "Buffer ignores 'unit' (it reads input, distance, units, dissolve, output)";
+        let mut s = test_session();
+        let mark = s.notice_mark();
+        s.run("gp.run", &json!({"tool": "buffer", "params": {"input": "Cities", "distance": 100, "unit": "Miles"}})).unwrap();
+        assert_eq!(said(&s, mark), [buffer]);
+        // The run is as before: the default units, which its own message names.
+        assert!(s.notices_since(mark).iter().any(|n| n.text.contains("at 100 Kilometers")));
+        let mark = s.notice_mark();
+        s.run("gp.run", &json!({"tool": "buffer", "params": {"input": "Cities", "distance": 100, "units": "Miles"}})).unwrap();
+        assert!(said(&s, mark).is_empty(), "{:?}", said(&s, mark));
+        // The name the tool dialog puts beside a table's id (`input_name`) isn't taken for a stray;
+        // `_name` beside a parameter that isn't a layer is.
+        let buffer_spec = resolve_tool("buffer").unwrap();
+        assert_eq!(ignored_params(buffer_spec, &json!({"input": 7, "distance": 1, "input_name": "Cities"})), None);
+        // Beside a layer's name (a built-in tool reads digit text as one), or with no table id at
+        // all, it's a stray: no tool reads it.
+        for params in [
+            json!({"input": "Cities", "distance": 1, "input_name": "Rivers"}),
+            json!({"input": "7", "distance": 1, "input_name": "Rivers"}),
+            json!({"distance": 1, "input_name": "Rivers"}),
+        ] {
+            let said = ignored_params(buffer_spec, &params).unwrap();
+            assert!(said.starts_with("Buffer ignores 'input_name'"), "{said}");
+        }
+        let stray = ignored_params(buffer_spec, &json!({"input": "Cities", "distance": 1, "distance_name": "x"})).unwrap();
+        assert!(stray.starts_with("Buffer ignores 'distance_name'"), "{stray}");
+        // Many keys: the first five, sorted, each cut to 40 characters, then how many more.
+        let mark = s.notice_mark();
+        let long = "x".repeat(60);
+        let mut params = json!({"input": "Cities", "distance": 1, "a": 1, "b": 1, "c": 1, "d": 1, "e": 1, "f": 1});
+        params[&long] = json!(1);
+        s.run("gp.run", &json!({"tool": "buffer", "params": params})).unwrap();
+        let got = said(&s, mark);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got[0].starts_with("Buffer ignores 'a', 'b', 'c', 'd', 'e', 2 more"), "{got:?}");
+        let mark = s.notice_mark();
+        s.run("gp.run", &json!({"tool": "buffer", "params": {"input": "Cities", "distance": 1, &long: 1}})).unwrap();
+        assert!(said(&s, mark)[0].contains(&format!("'{}…'", "x".repeat(40))), "{:?}", said(&s, mark));
+        // A control character in a key reaches no terminal as it is.
+        let mark = s.notice_mark();
+        s.run("gp.run", &json!({"tool": "buffer", "params": {"input": "Cities", "distance": 1, "a\n\u{1b}[31mb": 1}})).unwrap();
+        assert!(said(&s, mark)[0].starts_with("Buffer ignores 'a??[31mb'"), "{:?}", said(&s, mark));
+        // A run refused for want of a parameter that was misspelled says which key it didn't read,
+        // in its error: a failed command takes its warnings back.
+        let e = s.run("gp.run", &json!({"tool": "clip", "params": {"input": "Cities", "clips": "Parks"}})).unwrap_err();
+        assert!(e.ends_with("'Clip Features' is required (given 'clips', which Clip doesn't read)"), "{e}");
+        // Any failed run says them, not only one missing a required parameter.
+        let e = s
+            .run("gp.run", &json!({"tool": "buffer", "params": {"input": "Cities", "distance": 1, "dissolve": "maybe", "unit": "Miles"}}))
+            .unwrap_err();
+        assert!(e.ends_with(" (given 'unit', which Buffer doesn't read)"), "{e}");
+        assert_eq!(e.matches("doesn't read").count(), 1, "{e}");
+        let e =
+            s.run("gp.run", &json!({"tool": "buffer", "params": {"input": "No Such Layer", "distance": 1, "unit": "Miles"}})).unwrap_err();
+        assert!(e.ends_with(" (given 'unit', which Buffer doesn't read)"), "{e}");
+        // So does a model's step that fails for it.
+        s.run("model.new", &json!({"name": "Clips", "steps": [{"tool": "clip", "params": {"input": "Cities", "clips": "Parks"}}]}))
+            .unwrap();
+        let e = s.run("model.run", &json!({"name": "Clips"})).unwrap_err();
+        assert!(e.contains("(given 'clips', which Clip doesn't read)"), "{e}");
+        assert_eq!(e.matches("'clips'").count(), 1, "said once: {e}");
+        // A command that runs a tool for its own parameters says a stray key once, as a command.
+        let mark = s.notice_mark();
+        s.run("gp.spatialJoin", &json!({"target": "Cities", "join": "Parks", "prefx": "j_"})).unwrap();
+        let got = said(&s, mark);
+        assert!(got.len() == 1 && got[0].starts_with("gp.spatialJoin ignores 'prefx'"), "{got:?}");
+        // It declares every key its tool reads, so those aren't taken for strays.
+        let mark = s.notice_mark();
+        let join = json!({"target": "Cities", "join": "Parks", "match": "Within a distance", "distance": 5000, "units": "Miles", "distanceField": "d"});
+        s.run("gp.spatialJoin", &join).unwrap();
+        assert!(said(&s, mark).is_empty(), "{:?}", said(&s, mark));
+        for (cmd, tool) in [("gp.spatialJoin", "spatialJoin"), ("gp.zonalStats", "zonalStats")] {
+            let command = s.registry.get(cmd).and_then(|c| c.param_keys()).unwrap();
+            let tool = resolve_tool(tool).unwrap();
+            let missing: Vec<&str> = tool.params.iter().map(|p| p.name).filter(|k| !command.contains(k)).collect();
+            assert!(missing.is_empty(), "{cmd} doesn't declare {missing:?}");
+        }
+        // Zonal Statistics reads its raster only as `raster`: a run given the old `layer` is
+        // refused, and the error names the key it was given.
+        let e = s.run("gp.run", &json!({"tool": "zonalStats", "params": {"layer": "Cities", "polygons": "Parks"}})).unwrap_err();
+        assert!(e.ends_with("'Input Raster' is required (given 'layer', which Zonal Statistics doesn't read)"), "{e}");
+        // A run started in the background says it too, before its work.
+        let mark = s.notice_mark();
+        let _run = tool_start(&mut s, "buffer", &json!({"input": "Cities", "distance": 100, "unit": "Miles"})).unwrap();
+        assert_eq!(said(&s, mark), [buffer]);
+        // A batch says it once, its own way, not once per item as well.
+        let mark = s.notice_mark();
+        s.run("gp.batch", &json!({"tool": "buffer", "inputs": ["Cities"], "params": {"distance": 10, "unit": "Miles"}})).unwrap();
+        assert!(said(&s, mark).is_empty(), "{:?}", said(&s, mark));
+        assert!(s.notices_since(mark).iter().any(|n| n.text.contains("unrecognised parameter(s) ignored in 'params' (unit)")));
+        // A model: validate warns without refusing it, and its step says it as it runs.
+        let step = |p: Value| json!({"name": "Typo", "steps": [{"tool": "buffer", "params": p}]});
+        s.run("model.new", &step(json!({"input": "Cities", "distance": 100, "unit": "Miles"}))).unwrap();
+        let v = s.run("model.validate", &json!({"name": "Typo"})).unwrap();
+        assert_eq!(v["ok"], true, "{v}");
+        let warnings = v["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 1, "{v}");
+        assert_eq!((warnings[0]["code"].as_str(), warnings[0]["message"].as_str()), (Some("unknown-param"), Some(buffer)), "{v}");
+        let mark = s.notice_mark();
+        s.run("model.run", &json!({"name": "Typo"})).unwrap();
+        assert_eq!(said(&s, mark), [buffer]);
+        s.run("model.new", &json!({"name": "Clean", "steps": [{"tool": "buffer", "params": {"input": "Cities", "distance": 100}}]}))
+            .unwrap();
+        let v = s.run("model.validate", &json!({"name": "Clean"})).unwrap();
+        assert_eq!(v["warnings"], json!([]), "{v}");
+    }
+
+    /// A model saved as steps says each kind of ignored parameter once for its run, with the
+    /// steps that give it, and a failed run carries it in its error instead of a notice that
+    /// would go back with the run's changes.
+    #[test]
+    fn a_model_of_steps_says_ignored_parameters_once() {
+        let said = |s: &Session, mark: u64| -> Vec<String> {
+            s.notices_since(mark).iter().filter(|n| !n.error).map(|n| n.text.clone()).filter(|t| t.contains(" ignores ")).collect()
+        };
+        let buffer = "Buffer ignores 'unit' (it reads input, distance, units, dissolve, output)";
+        let mut s = test_session();
+        let twice = json!([
+            {"tool": "buffer", "params": {"input": "Cities", "distance": 100, "unit": "Miles"}},
+            {"tool": "buffer", "params": {"input": "%1", "distance": 10, "unit": "Miles"}}
+        ]);
+        s.run("model.new", &json!({"name": "Twice", "steps": twice})).unwrap();
+        let mark = s.notice_mark();
+        s.run("model.run", &json!({"name": "Twice"})).unwrap();
+        assert_eq!(said(&s, mark), [format!("{buffer} (in 2 steps)")]);
+        // A failing step after an ignoring one: the error carries the warning, and no warning
+        // is left behind for the run that failed (its error is posted as one, as any is).
+        let stops = json!([
+            {"tool": "buffer", "params": {"input": "Cities", "distance": 100, "unit": "Miles"}},
+            {"tool": "buffer", "params": {"distance": 10}}
+        ]);
+        s.run("model.new", &json!({"name": "Stops", "steps": stops})).unwrap();
+        let mark = s.notice_mark();
+        let e = s.run("model.run", &json!({"name": "Stops"})).unwrap_err();
+        assert!(e.starts_with("step 2 (buffer)"), "{e}");
+        assert!(e.ends_with(&format!("; {buffer}")), "{e}");
+        assert!(said(&s, mark).is_empty(), "{:?}", said(&s, mark));
+    }
+
     #[test]
     fn batch_run_params_batch_param_overwritten_notified() {
         let mut s = test_session();
-        let mark = s.notices.len() as u64;
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5426,7 +6442,7 @@ mod batch_tests {
 
         // Clean call without batch_param in params gives no replacement notice
         let mut s_clean = test_session();
-        let mark_clean = s_clean.notices.len() as u64;
+        let mark_clean = s_clean.notice_mark();
         let res_clean = s_clean
             .run(
                 "gp.batch",
@@ -5450,7 +6466,7 @@ mod batch_tests {
         let mut s = test_session();
 
         // Both param and batch_param
-        let mark1 = s.notices.len() as u64;
+        let mark1 = s.notice_mark();
         let res1 = s
             .run(
                 "gp.batch",
@@ -5472,7 +6488,7 @@ mod batch_tests {
 
         // Clean call with only param
         let mut s_clean1 = test_session();
-        let mark_clean1 = s_clean1.notices.len() as u64;
+        let mark_clean1 = s_clean1.notice_mark();
         let res_clean1 = s_clean1
             .run(
                 "gp.batch",
@@ -5493,7 +6509,7 @@ mod batch_tests {
 
         // Both outputPattern and output_pattern
         let mut s2 = test_session();
-        let mark2 = s2.notices.len() as u64;
+        let mark2 = s2.notice_mark();
         let res2 = s2
             .run(
                 "gp.batch",
@@ -5515,7 +6531,7 @@ mod batch_tests {
 
         // Clean call with only outputPattern
         let mut s_clean2 = test_session();
-        let mark_clean2 = s_clean2.notices.len() as u64;
+        let mark_clean2 = s_clean2.notice_mark();
         let res_clean2 = s_clean2
             .run(
                 "gp.batch",
@@ -5554,7 +6570,7 @@ mod batch_tests {
         ds_join.push_next(None, vec![rustgis_data::Value::Text("01".into())]);
         s.project.add_table(ds_join);
 
-        let mark = s.notices.len() as u64;
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5605,15 +6621,16 @@ mod batch_tests {
                     "tool": "joinField",
                     "inputs": ["Tracts", "Blocks"],
                     "param": "target_layer",
-                    // `input` names Join Field's target too: it must not stand in for each batch input.
-                    "params": {"input": "Other", "targetField": "GEOID", "joinTable": "Census", "joinField": "FIPS"}
+                    // `input` names Join Field's target too: it must not stand in for each batch input,
+                    // nor its dialog-given name (`input_name`) stay beside each.
+                    "params": {"input": "Other", "input_name": "Other", "targetField": "GEOID", "joinTable": "Census", "joinField": "FIPS"}
                 }),
             )
             .unwrap();
         assert_eq!(res["succeeded"], 2, "{res}");
         let targets: Vec<_> = s.project.gp_history[before..].iter().map(|r| r.params["target_layer"].clone()).collect();
         assert_eq!(targets, [json!("Tracts"), json!("Blocks")]);
-        assert!(s.project.gp_history[before..].iter().all(|r| r.params.get("input").is_none()));
+        assert!(s.project.gp_history[before..].iter().all(|r| r.params.get("input").is_none() && r.params.get("input_name").is_none()));
         let other = s.map().layer_by_name("Other").unwrap();
         assert!(!other.dataset.fields.iter().any(|f| f.name == "FIPS"), "the static alias's layer was joined");
     }
@@ -5623,11 +6640,14 @@ mod batch_tests {
         let mut s = test_session();
         let before = s.project.gp_history.len();
         // A name that is neither a layer, a table nor a file: the tool's input can't be mapped.
-        let res = s.run("gp.batch", &json!({"tool": "buffer", "inputs": ["Cities", "Nowhere"], "params": {"distance": 1}})).unwrap();
+        let params = json!({"input": 7, "input_name": "Old", "distance": 1});
+        let res = s.run("gp.batch", &json!({"tool": "buffer", "inputs": ["Cities", "Nowhere"], "params": params})).unwrap();
         assert_eq!(res["failed"], 1, "{res}");
         let failed: Vec<_> = s.project.gp_history[before..].iter().filter(|r| !r.ok).collect();
         assert_eq!(failed.len(), 1);
         assert_eq!(failed[0].params["input"], "Nowhere");
+        // It doesn't keep the tool dialog's name of the table it replaced either.
+        assert!(failed[0].params.get("input_name").is_none(), "{:?}", failed[0].params);
     }
 
     #[test]
@@ -5723,7 +6743,7 @@ mod batch_tests {
     #[test]
     fn blank_folder_beside_inputs_is_not_reported() {
         let mut s = test_session();
-        let mark = s.notices.len() as u64;
+        let mark = s.notice_mark();
         s.run("gp.batch", &json!({"tool": "buffer", "inputs": ["Cities"], "folder": "  ", "params": {"distance": 1}})).unwrap();
         assert!(!s.notices_since(mark).iter().any(|n| n.text.contains("both 'inputs' and 'folder'")));
     }
@@ -5747,7 +6767,7 @@ mod batch_tests {
         std::fs::write(&f2, r#"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1.0,2.0]},"properties":{}}]}"#).unwrap();
 
         let mut s = Session::new(crate::Project::default());
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5764,7 +6784,7 @@ mod batch_tests {
         let outputs = res["outputs"].as_array().unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].as_str().unwrap(), "sample_buffer");
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(!notices.iter().any(|n| n.text.contains("collided and were renamed")));
 
         let _ = std::fs::remove_dir_all(root);
@@ -5781,7 +6801,7 @@ mod batch_tests {
         write_test_shapefile(&root.join("test.shp"));
 
         let mut s = Session::new(crate::Project::default());
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5793,7 +6813,7 @@ mod batch_tests {
             )
             .unwrap();
         assert_eq!(res["total"], 1);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(
             !notices.iter().any(|n| n.text.contains("unsupported files skipped")),
             "shapefile companion files must not be reported as unsupported: {notices:?}"
@@ -5801,7 +6821,7 @@ mod batch_tests {
 
         std::fs::write(root.join("notes.txt"), b"some notes").unwrap();
         let mut s2 = Session::new(crate::Project::default());
-        let mark2 = s2.notices.len();
+        let mark2 = s2.notice_mark();
         let res2 = s2
             .run(
                 "gp.batch",
@@ -5813,7 +6833,7 @@ mod batch_tests {
             )
             .unwrap();
         assert_eq!(res2["total"], 1);
-        let notices2 = &s2.notices[mark2..];
+        let notices2 = s2.notices_since(mark2);
         assert!(
             notices2.iter().any(|n| n.text.contains("1 unsupported files skipped")),
             "exactly 1 unsupported file (notes.txt) should be reported: {notices2:?}"
@@ -5864,7 +6884,7 @@ mod batch_tests {
         let mut s = test_session();
         s.map_mut().add_raster("Elevation", rustgis_map::RasterLayer::from_path(raster, "test.tif"));
 
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -5877,11 +6897,11 @@ mod batch_tests {
             .unwrap();
 
         assert_eq!(res["succeeded"], 2);
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(notices.iter().any(|n| n.text.contains("1 raster layer(s) left out of '*' (it runs vector layers)")));
 
         let mut s2 = test_session();
-        let mark2 = s2.notices.len();
+        let mark2 = s2.notice_mark();
         let _ = s2
             .run(
                 "gp.batch",
@@ -5892,7 +6912,7 @@ mod batch_tests {
                 }),
             )
             .unwrap();
-        let notices2 = &s2.notices[mark2..];
+        let notices2 = s2.notices_since(mark2);
         assert!(!notices2.iter().any(|n| n.text.contains("raster layer(s)")));
     }
 
@@ -6048,7 +7068,7 @@ mod batch_tests {
 
         let mut s = Session::new(crate::Project::default());
         let padded = format!("  {}  ", f1.display());
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -6063,7 +7083,7 @@ mod batch_tests {
         assert_eq!(res["succeeded"], 1);
         let outputs = res["outputs"].as_array().unwrap();
         assert_eq!(outputs[0], "cities_buffer");
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(notices.iter().any(|n| n.text.contains("1 file path(s) trimmed of surrounding whitespace")));
 
         let _ = std::fs::remove_dir_all(root);
@@ -6200,7 +7220,7 @@ mod batch_tests {
             .collect();
 
         let mut s = Session::new(crate::Project::default());
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -6224,7 +7244,7 @@ mod batch_tests {
         }
 
         // Notices aggregated into a single notice per warning kind without truncating later files
-        let notice = s.notices[mark..].iter().find(|n| n.text.contains("Z or M")).unwrap();
+        let notice = s.notices_since(mark).iter().find(|n| n.text.contains("Z or M")).unwrap();
         assert!(notice.text.starts_with("gp.batch: 4 inputs ("));
         assert!(notice.text.contains("file_1.geojson"));
         assert!(notice.text.contains("file_2.geojson"));
@@ -6406,7 +7426,7 @@ mod batch_tests {
         notes_layer.graphics = true;
         s.map_mut().add_layer(notes_layer);
 
-        let mark = s.notices.len();
+        let mark = s.notice_mark();
         let res = s
             .run(
                 "gp.batch",
@@ -6422,7 +7442,7 @@ mod batch_tests {
         let outputs = res["outputs"].as_array().unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0], "Rivers_buffer");
-        let notices = &s.notices[mark..];
+        let notices = s.notices_since(mark);
         assert!(notices.iter().any(|n| n.text.contains("1 graphics layer(s) left out of '*'")));
 
         let mut s_empty = Session::new(crate::Project::default());
@@ -6470,4 +7490,70 @@ pub(crate) fn project_input<'a>(
 /// Builtin VectorLayers reads absent map names as files before MapInputs' table fallback.
 pub(crate) fn vector_file_input(spec: &rustgis_analysis::ToolSpec, map: &rustgis_map::Map, name: &str) -> bool {
     rustgis_analysis::TOOLS.iter().any(|t| std::ptr::eq(t, spec)) && map.layer_by_name(name).is_none()
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod replay_rollback_tests {
+    use super::*;
+    use rustgis_data::{Field, FieldType, Geometry, GeometryType, Value as Cell};
+    fn prepare(s: &Session, params: &Value) -> Result<RanAheads, String> {
+        let mut worker = Session::new(s.project.clone());
+        worker.active_layer = s.active_layer;
+        worker.opened = s.opened;
+        worker.view_size = s.view_size;
+        worker.set_extensions(s.extensions().clone());
+        worker.tools_ahead = Some(Ahead::Recording(Vec::new()));
+        worker.grids_ahead = Some(crate::image_grid::Ahead::Recording(Vec::new()));
+        worker.run("script.run", params)?;
+        Ok(ran_ahead(&mut worker))
+    }
+    #[test]
+    fn annotation_grid_post_apply_replay_error_rolls_back_outputs_history_and_undo() {
+        let mut s = Session::new(crate::Project::default());
+        let mut samples = Dataset::new("Samples", GeometryType::Point, vec![Field::new("v", FieldType::Double)]);
+        for (x, y, v) in [(0., 0., 1.), (2., 0., 2.), (0., 2., 3.), (2., 2., 4.)] {
+            samples.push(Some(Geometry::Point(rustgis_geom::Coord::new(x, y))), vec![Cell::Float(v)]);
+        }
+        // Another layer first, so a rollback that forgets the chosen one would pick it instead.
+        s.map_mut().add_dataset(Dataset::new("Other", GeometryType::Point, vec![]));
+        let chosen = s.map_mut().add_dataset(samples);
+        s.active_layer = Some(chosen);
+        s.run("project.rename", &json!({"name":"Before"})).unwrap();
+        s.run("project.rename", &json!({"name":"Future"})).unwrap();
+        s.run("edit.undo", &json!({})).unwrap();
+        s.mark_saved();
+        let params = json!({"script":format!("gp.run {}\nraster.imageGrid {}", json!({"tool":"idwInterpolation","params":{"input":"Samples","field":"v","extent":"0,0,2,2","pixelSize":0.5,"output":"Surface"}}), json!({"layer":"Surface"}))});
+        let before = serde_json::to_value(&s.project).unwrap();
+        let history = (s.undo_depth(), s.undo_label(), s.redo_label(), s.dirty());
+        let mut ran = prepare(&s, &params).unwrap();
+        // Corrupt only the recorded output identity: the tool's input snapshot and actual
+        // output still match, so replay accepts and applies it before binding fails.
+        let Some(RanAhead::Tool(tool)) = ran.tools.first_mut() else { panic!("expected prepared tool") };
+        tool.grid_outputs[0].name = "Injected output identity mismatch".into();
+        s.statistics_need_read_ahead(true);
+        let error = super::super::reads::taking(&mut s, "script.run", ran, |s| s.run("script.run", &params)).unwrap_err();
+        assert!(error.contains("tool outputs changed"), "{error}");
+        assert_eq!(s.tools_taken, 1, "the error must occur after the prepared tool was taken and applied");
+        assert_eq!(serde_json::to_value(&s.project).unwrap(), before, "outputs and successful GP history must roll back");
+        assert_eq!(s.active_layer, Some(chosen), "the layer chosen before the script must stay chosen");
+        assert_eq!((s.undo_depth(), s.undo_label(), s.redo_label(), s.dirty()), history);
+        assert!(s.map().layer_by_name("Surface").is_none());
+        assert!(s.grids_ahead.is_none() && s.tools_ahead.is_none());
+        s.run("edit.redo", &json!({})).unwrap();
+        assert_eq!(s.project.name, "Future", "a failed replay must preserve the prior Redo entry");
+        s.run("edit.undo", &json!({})).unwrap();
+        let ran = prepare(&s, &params).unwrap();
+        let answer = super::super::reads::taking(&mut s, "script.run", ran, |s| s.run("script.run", &params)).unwrap();
+        assert_eq!(answer["ran"][1]["result"]["width"], 4);
+        assert_eq!(s.map().layers.iter().filter(|layer| layer.name == "Surface").count(), 1);
+        assert!(s.map().layer_by_name("Surface (2)").is_none());
+        assert_eq!(s.undo_depth(), history.0 + 1);
+        s.run("edit.undo", &json!({})).unwrap();
+        // Undo deliberately bumps geometry revisions to invalidate rendering caches.
+        assert!(s.map().layer_by_name("Surface").is_none());
+        assert_eq!(s.map().layers.len(), 2);
+        assert_eq!(serde_json::to_value(&s.map().layers[0].dataset).unwrap(), before["maps"][0]["layers"][0]["dataset"]);
+        assert!(s.project.gp_history.is_empty());
+        assert_eq!(s.undo_depth(), history.0);
+    }
 }

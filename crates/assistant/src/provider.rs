@@ -7,6 +7,7 @@
 //! thread and the browser sends with its `fetch`.
 
 use crate::Error;
+use crate::attach::Picture;
 use rustgis_engine::data::secrets::{Secret, SecretError, SecretStore};
 use serde_json::{Map, Value, json};
 
@@ -580,12 +581,65 @@ pub struct ToolResult {
     pub name: String,
     pub content: String,
     pub error: bool,
+    /// Pictures the call gave back (`view_map`), sent after its text.
+    pub images: Vec<ToolImage>,
+}
+
+/// A PNG a tool gave back, with its size in pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ToolImage {
+    pub png: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl ToolImage {
+    /// What stands in its place once it's no longer sent.
+    pub fn caption(&self) -> String {
+        format!("map image, {} × {}, no longer attached", self.width, self.height)
+    }
+
+    pub(crate) fn base64(&self) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(&self.png)
+    }
+
+    fn data_url(&self) -> String {
+        format!("data:image/png;base64,{}", self.base64())
+    }
+}
+
+/// The images of `rs`, as one user message's content: a line naming each call, then its image.
+/// Chat Completions and Responses take images only from the user.
+fn images_message(rs: &[ToolResult], text: &str, image: impl Fn(&ToolImage) -> Value) -> Option<Value> {
+    let parts: Vec<Value> = rs
+        .iter()
+        .flat_map(|r| r.images.iter().map(move |i| (r, i)))
+        .flat_map(|(r, i)| [json!({"type": text, "text": format!("Image from {} (call {}):", r.name, r.id)}), image(i)])
+        .collect();
+    (!parts.is_empty()).then(|| json!({"role": "user", "content": parts}))
+}
+
+/// A user turn's content in a provider's parts: each picture after a line naming it, then the
+/// text (left out when empty and there are pictures: providers refuse an empty text part).
+fn user_parts(text: &str, pictures: &[Picture], text_part: impl Fn(&str) -> Value, image_part: impl Fn(&Picture) -> Value) -> Vec<Value> {
+    let mut parts = Vec::new();
+    for (i, p) in pictures.iter().enumerate() {
+        let name = crate::compact::escape_user(&p.name);
+        parts.push(text_part(&format!("Picture {} the user attached: {name} ({} × {})", i + 1, p.width, p.height)));
+        parts.push(image_part(p));
+    }
+    if !text.is_empty() || parts.is_empty() {
+        parts.push(text_part(text));
+    }
+    parts
 }
 
 /// One turn of the conversation, in no provider's format.
 #[derive(Clone, Debug)]
 pub enum Turn {
-    User(String),
+    /// The user's message, and the pictures they attached to it ([`crate::attach`]).
+    User(String, Vec<Picture>),
     Assistant {
         text: String,
         calls: Vec<ToolCall>,
@@ -636,6 +690,24 @@ pub const NOTE_TEMPLATES: &[&str] = &[
     "The provider returned HTTP {status}; trying again in {seconds} s.",
     "The connection failed; trying again in {seconds} s.",
     "The model sent an empty reply; ask again, or try another model.",
+    "The model doesn't read images: the map's pictures go to it as their captions, and view_map is off for it.",
+    "This model doesn't read images: the pictures go to it as their names only. Pick a model that reads images to show them.",
+    "A message takes at most {most} pictures: {names} left out.",
+    "Attached {name}, sent at {size} (from {from}).",
+    "Attached {name} ({size}).",
+    "{name}: a picture can be at most {limit} MiB",
+    "{name}: a picture must be a PNG, JPEG or WebP file",
+    "{name}: a picture can be at most {limit} pixels a side",
+    "{name}: the picture can't be read ({why})",
+    "{name}: the picture's pixels don't match its size",
+    "{name}: the picture is empty",
+    "{name}: the picture can't be read: its decoder failed",
+    "{name}: the picture wasn't read: the system refused a thread to read it on; attach it again",
+    "{name}: the picture needs more than {limit} MiB to read",
+    "Pictures you attached don't go to a subagent: it gets the task's text only.",
+    "Pictures you attached don't go to {agent}: it gets the task's text only.",
+    "{name}: the picture can't be encoded ({why})",
+    "{name}: the picture is too heavy to send, even drawn small",
     "Stopped after {steps} steps; say \"continue\" to go on.",
     "Stopped.",
 ];
@@ -1035,7 +1107,13 @@ fn openai_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDef])
     let mut messages = vec![json!({"role": "system", "content": system})];
     for t in turns {
         match t {
-            Turn::User(text) => messages.push(json!({"role": "user", "content": text})),
+            Turn::User(text, pictures) if pictures.is_empty() => messages.push(json!({"role": "user", "content": text})),
+            Turn::User(text, pictures) => messages.push(json!({"role": "user", "content": user_parts(
+                text,
+                pictures,
+                |t| json!({"type": "text", "text": t}),
+                |p| json!({"type": "image_url", "image_url": {"url": p.data_url()}}),
+            )})),
             Turn::Assistant { native: Some((Api::OpenAi, m)), .. } => messages.push(m.clone()),
             Turn::Assistant { text, calls, .. } => {
                 let mut m = json!({"role": "assistant", "content": if text.is_empty() { Value::Null } else { json!(text) }});
@@ -1051,6 +1129,7 @@ fn openai_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDef])
                 for r in rs {
                     messages.push(json!({"role": "tool", "tool_call_id": r.id, "content": r.content}));
                 }
+                messages.extend(images_message(rs, "text", |i| json!({"type": "image_url", "image_url": {"url": i.data_url()}})));
             }
         }
     }
@@ -1079,6 +1158,39 @@ fn openai_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDef])
 /// `reasoning_effort` unset, so a 400 about it can only be about the model's default.
 pub fn refuses_reasoning_with_tools(e: &Error) -> bool {
     e.status == Some(400) && (e.param.as_deref() == Some("reasoning_effort") || e.detail.to_lowercase().contains("reasoning_effort"))
+}
+
+/// Whether the provider refused a request for the images in it (a model or server that doesn't
+/// read them). Asked only of a request that carried images. The error names images as a word
+/// (not "vision" in "revision") and says they aren't taken: not supported, or no image input
+/// (Ollama's "missing data required for image input", vLLM's "not a multimodal model" and, for a
+/// server started with `--limit-mm-per-prompt` at 0 images, "At most 0 image(s) may be provided in
+/// one prompt", OpenAI's "image_url is only supported by certain models", "Images are not
+/// supported by this model").
+/// An error about one image, its format, decoding, size or fetching, or one that asks to retry
+/// ("Error processing image_url; please retry", "image decoder does not support WebP") is not
+/// a refusal: the model reads images, and the picture is what failed.
+pub fn refuses_images(e: &Error) -> bool {
+    let detail = e.detail.to_lowercase();
+    let words: Vec<&str> = detail.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-')).collect();
+    let names_images = words.iter().any(|w| matches!(*w, "image" | "images" | "image_url" | "vision" | "multimodal" | "multi-modal"));
+    let refused = [
+        "not supported",
+        "does not support",
+        "doesn't support",
+        "is only supported by",
+        "unknown variant",
+        "image input",
+        "not a multimodal",
+        "not multimodal",
+        "at most 0 image",
+    ]
+    .iter()
+    .any(|p| detail.contains(p));
+    let about_one_image = ["format", "decod", "corrupt", "invalid image", "too large", "size", "dimension", "retry", "download", "fetch"]
+        .iter()
+        .any(|p| detail.contains(p));
+    matches!(e.status, Some(400 | 404 | 415 | 422 | 500)) && names_images && refused && !about_one_image
 }
 
 fn openai_reply(v: &Value) -> Result<Reply, String> {
@@ -1135,7 +1247,12 @@ fn responses_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDe
     let mut input = Vec::new();
     for t in turns {
         match t {
-            Turn::User(text) => input.push(json!({"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]})),
+            Turn::User(text, pictures) => input.push(json!({"type": "message", "role": "user", "content": user_parts(
+                text,
+                pictures,
+                |t| json!({"type": "input_text", "text": t}),
+                |p| json!({"type": "input_image", "image_url": p.data_url()}),
+            )})),
             Turn::Assistant { native: Some((Api::Responses, items)), .. } => {
                 input.extend(items.as_array().cloned().unwrap_or_default());
             }
@@ -1150,6 +1267,10 @@ fn responses_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDe
             Turn::Results(rs) => {
                 for r in rs {
                     input.push(json!({"type": "function_call_output", "call_id": r.id, "output": r.content}));
+                }
+                if let Some(mut m) = images_message(rs, "input_text", |i| json!({"type": "input_image", "image_url": i.data_url()})) {
+                    m["type"] = json!("message");
+                    input.push(m);
                 }
             }
         }
@@ -1359,7 +1480,15 @@ fn anthropic_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDe
     };
     for t in turns {
         match t {
-            Turn::User(text) => push("user", vec![json!({"type": "text", "text": text})]),
+            Turn::User(text, pictures) => push(
+                "user",
+                user_parts(
+                    text,
+                    pictures,
+                    |t| json!({"type": "text", "text": t}),
+                    |p| json!({"type": "image", "source": {"type": "base64", "media_type": p.mime, "data": p.base64()}}),
+                ),
+            ),
             Turn::Assistant { native: Some((Api::Anthropic, content)), .. } => {
                 push("assistant", content.as_array().cloned().unwrap_or_default());
             }
@@ -1375,7 +1504,19 @@ fn anthropic_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDe
             }
             Turn::Results(rs) => push(
                 "user",
-                rs.iter().map(|r| json!({"type": "tool_result", "tool_use_id": r.id, "content": r.content, "is_error": r.error})).collect(),
+                rs.iter()
+                    .map(|r| {
+                        let content = if r.images.is_empty() {
+                            json!(r.content)
+                        } else {
+                            let images = r.images.iter().map(
+                                |i| json!({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": i.base64()}}),
+                            );
+                            std::iter::once(json!({"type": "text", "text": r.content})).chain(images).collect()
+                        };
+                        json!({"type": "tool_result", "tool_use_id": r.id, "content": content, "is_error": r.error})
+                    })
+                    .collect(),
             ),
         }
     }
@@ -1481,7 +1622,12 @@ fn gemini_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDef])
     let mut contents = Vec::new();
     for t in turns {
         match t {
-            Turn::User(text) => contents.push(json!({"role": "user", "parts": [{"text": text}]})),
+            Turn::User(text, pictures) => contents.push(json!({"role": "user", "parts": user_parts(
+                text,
+                pictures,
+                |t| json!({"text": t}),
+                |p| json!({"inlineData": {"mimeType": p.mime, "data": p.base64()}}),
+            )})),
             Turn::Assistant { native: Some((Api::Gemini, c)), .. } => contents.push(c.clone()),
             Turn::Assistant { text, calls, .. } => {
                 let mut parts = Vec::new();
@@ -1508,6 +1654,10 @@ fn gemini_request(cfg: &Config, system: &str, turns: &[Turn], tools: &[ToolDef])
                         json!({"functionResponse": f})
                     })
                     .collect();
+                // Pictures follow the responses, in the same content.
+                let images =
+                    rs.iter().flat_map(|r| &r.images).map(|i| json!({"inlineData": {"mimeType": "image/png", "data": i.base64()}}));
+                let parts: Vec<Value> = parts.into_iter().chain(images).collect();
                 contents.push(json!({"role": "user", "parts": parts}));
             }
         }

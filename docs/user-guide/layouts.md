@@ -17,14 +17,16 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
 
 - **Publication layouts**: Home › New Layout › **Publication Layout** builds a finished sheet or
   figure of the map view in one step, with `layout.publication` behind it:
-  - **Sheets** (A4, A3 or A2, portrait or landscape): a frame and margin, the title and subtitle,
+  - **Sheets** (on every page size New Layout lists: Letter, Legal, Tabloid and A5 to A0,
+    portrait or landscape; the menu lists the sizes, each with its styles under Portrait and
+    under Landscape): a frame and margin, the title and subtitle,
     the map, and a footer of two boxed columns (sources, and the cartographic reference; one
     with nothing in it is left out, the other taking the width) with a note and the authorship
     under them. When the legend sits at the right of the map (its right edge in the frame's
     right tenth), starting between 45 % and 70 % of the frame's width, the right column starts
     where the legend does, unless its texts would then need a taller box. Text sizes follow the
-    sheet: an A3's are 1.41 times an A4's. Given its size alone (`"a4"`, the default, `"a3"`
-    or `"a2"`), a sheet is turned to
+    sheet's short side: an A3's are 1.41 times an A4's, an A0's four times. Given its size alone
+    (`"a4"`, the default, or any other: `"letter"`, `"a0"`…), a sheet is turned to
     portrait or landscape, whichever the map comes out larger on: the area's extent east to west
     against north to south, on the map's projection, with the room the style leaves the map. The
     result names the profile chosen (`"profile": "a4-landscape"`); give it with its orientation
@@ -77,6 +79,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     filled legend and no colorbar; a colour table over more values than a legend lists (over 256, or
     not whole) has neither, and a warning says so. A raster on a ramp on top that is still reading
     gets no colorbar either, rather than the one of a raster under it, and a warning says so too.
+    The colorbar's title is the raster's name: the legend's box widens for it, up to its cap (45% of
+    the frame's width, or the side column's), and a longer name wraps there, the box taller by its lines.
     `"colorbar": "none"` leaves it out, and the legend's box is sized for the legend alone: hiding
     the colorbar afterwards would leave its room empty in the box. The legend takes the fewest columns, up to three,
     that fit the largest rectangle the map leaves free; when none fits, a long one is laid in more
@@ -116,6 +120,15 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     latitude), the layout has no north arrow: the graticule gives north there, and one arrow can't
     point north across the whole frame. A warning says so; `"northArrow": "always"` draws one, and
     `"none"` leaves it out at any span.
+  - **On the globe**: with the map on the Globe projection and no `extent`, the sheet shows the
+    globe whole. The globe nearly fills the frame, centred where the view looks, and the
+    surrounds go in the room around it. It has no scale bar, since a globe's scale holds only at
+    its centre. A sheet has no locator by default either, since it would only show the same globe
+    again, smaller; `"locator": "globe"` or `"inset"` still adds one. Warnings say both. Near a
+    pole the frame can't draw the globe that small at the view's latitude, so the globe is
+    centred as near it as fits, and a warning says where. With an `extent`, a sheet on the globe
+    is laid out as on a flat map. In any frame on the globe, the light space around the globe is
+    room for the surrounds, as the blank page is.
   - **Legend box**: over the map, the legend's box is left clear where the map shows nothing under
     it but its light plain paper or water: no layer, label, context layer, basemap shape or graticule
     line, no web tiles, and no veil. Dark basemaps keep a white backing so the dark legend text
@@ -138,7 +151,12 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     layers held in the project. Streamed layers, rasters, points, lines and labels are left out.
     What simplifying changes or leaves alone there (a vertex past a pole taken to the pole, a
     polygon left as it was for a missing coordinate, or too intricate to simplify whole) is said
-    in the layout's warnings; one kept as it was because its ring would collapse is not.
+    in the layout's warnings; one kept as it was because its ring would collapse is not. The
+    globe is whole in its circle: near a pole, where it can't be drawn that small at the area's
+    latitude, it is centred as near the area as fits, the area still outlined on it, and the
+    warnings say so. A locator too small for the whole globe anywhere (a figure's, under about
+    20 mm), or one that would have to move so far that the area went behind the globe's rim,
+    stays centred on the area, its circle clipping the globe, which the warnings also say.
     It uses the map's basemap, not its web tiles, in a round frame, the globe
     nearly filling it and the area outlined in red; `"inset"` shows the surrounding region (about
     four times the area across) on the map itself, outlined the same way; `"none"` (a figure's
@@ -184,11 +202,24 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   takes the view's bearing and pitch, and **Bearing** and **Pitch** in its properties (or
   `layout.update` with `bearing` and `pitch`) set them. Its north arrows turn with it. **Grid** draws a labelled graticule over a frame; **Extent Indicator** outlines another frame's
   extent (an overview map).
+- **Frame borders**: the **Border** section of a frame's properties sets the line drawn round it,
+  along its shape for a round or polygon frame: its **Color** and **Line width** (dark grey and
+  0.8 pt to begin with, up to 20 pt). The line is centred on the frame's edge, as a rectangle's
+  outline is, so a wide border reaches half its width past the frame. A width of 0 draws no
+  border, so a frame on a coloured page (a blank
+  basemap with a paper colour) blends into it; **Default Border** brings the dark grey line back.
+  Scripts set the same with `layout.update` and `"border": {"color": "#C8B89A", "width": 0}`
+  (the keys not given keep theirs; `null` gives the default back).
 - **Extent indicators**: the **Extent Indicator** section of an overview frame's properties sets
   the outline's **Color** and **Line width** (red and 2 pt to begin with), so it can sit quietly on a
   muted page, and **Remove Extent Indicator** takes it away. Scripts set the same with `color`
   and `width` on `layout.addElement` (`kind` `extentIndicator`), or `layout.update` with
-  `"extentIndicator": {"color": "#555555", "width": 1}` (`false` removes it).
+  `"extentIndicator": {"color": "#555555", "width": 1}` (`false` removes it). The outline breaks
+  where the other frame's edge leaves the Earth (off a globe's disc, or past the edge of its
+  projection's world) and runs up to it there, and where the overview's own projection can't show
+  the place. An outline across the overview map's edge (on a world projection, the meridian
+  opposite its central one) is cut there, each piece on its side of the map, and so is a frame on
+  the globe around a pole outlined on Web Mercator, at ±180°.
 - **The layers a frame draws**: the **Layers** section of a frame's properties has a checkbox
   for each layer and web layer of the frame's map: untick one and this frame draws the map
   without it. A locator map keeps the country's outline and leaves out the parcels, contours and
@@ -209,18 +240,25 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   `layout.update` (`null` for a layer as the map draws it, `{}` for every layer). A project
   with a frame that chooses labels requires `frame-labels`, and its layout file is written as
   format 4, which ARutGIS before 0.7.6 refuses rather than draw the map's labels and save the
-  layout without the choice.
+  layout without the choice. A layout file holding what ARutGIS 0.8 took in from RustGIS 0.8 (an
+  element's background or colour, a text that wraps, a chart's grouping, look, classes or stack,
+  a map frame's border, a legend's, scale bar's or grid's text size) is format 5, which ARutGIS
+  0.7.6 refuses rather than save the layout without them.
 - **Grids**: the **Grid** section of a frame's properties turns the grid on and sets its
   **Interval** in degrees (**Auto** picks one from the frame's extent), its **Style** (full lines
   across the frame, ticks along its neatline only, or both, with the **Tick length**), its colour
   and **Line width**, and its labels: decimal degrees (`112.5°W`, as many decimals as the
   interval needs) or degrees, minutes and seconds (`112°30′W`), with a hemisphere letter or a
   sign (`-112.5°`), on any of the four edges (longitudes along the top and bottom, latitudes along
-  the left and right; the bottom and left to start with), and the side labels horizontal or
-  running along the edge. From a command:
+  the left and right; the bottom and left to start with), the side labels horizontal or
+  running along the edge, and their **Label size** (`"labelSize"`, 4 to 100 points, 8 by default;
+  their room from the frame's edge and a measured grid's MGRS square names follow in proportion,
+  labels that would then touch are left out, and `null` gives the default back). From a command:
   `layout.addElement={"kind":"grid","step":0.5,"style":"ticks","format":"dms","edges":["top","bottom","left","right"],"labelOrientation":"vertical"}`
   (given again, it changes only the options it names), or `layout.update` with
-  `"grid": {…}` (`false` removes the grid).
+  `"grid": {…}` (`false` removes the grid). On a map on the globe the lines are drawn on the
+  globe, and stop at its horizon. A frame that shows the whole globe has nothing beyond its rim,
+  and so no labels along its edges.
 - **Measured grids**: a grid's **Type** is a **Graticule** (latitudes and longitudes, as above)
   or a **Measured grid**, as ArcGIS Pro has them: eastings and northings in a projected coordinate
   system, for maps read with UTM or national grid coordinates (a hiking map at 1:25,000 with a
@@ -295,6 +333,11 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   light parts, such as the alternating bar's light divisions; `"altColor"`, as ARutGIS 0.5 named
   it, is read too) and the **Number type** (size, colour, bold, italic, font) finish it
   (`"style":"doubleAlternating","units":"km","division":1,"unitLabel":"thai","numbers":"below"`).
+  A scale bar's labels take a **Text size** too (`"textSize"`, 4 to 100 points, 8 by default;
+  `null` gives the default back), and a box too small for its labels and bar (too short, which
+  draws the bar below it, or too narrow for its last label), or a label that runs off the page,
+  is said when its size, text size, units or divisions change or its frame is drawn at another
+  scale, and an export reports it as cut off, as it does a text.
   A legend's parts:
   - **What a legend lists**: what its frame draws: only layers with a feature at the frame's
     scale (through their definition query, display filters and scale range) and, for Unique
@@ -332,9 +375,23 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     staying with the row under it. The box keeps its size, so widen it for the columns: in a box
     too narrow they close up and long labels run into the next or past the box, and a box too
     short fills each column in turn and leaves out the last rows. The legend's type, patch width
-    and row spacing (below) count in each column's size. Giving `"columns"`, or changing the box,
-    the legend's look or what a legend in columns lists, says when its box loses rows or closes
-    the columns up. A legend in one column is told so only when given `"columns"`.
+    and row spacing (below) count in each column's size.
+    A legend says when its box loses rows or closes its columns up when it is given `"columns"`,
+    `"textSize"` (`null` included), `"showNoData"` or `"labels"`, and, in columns or at a text
+    size of its own, when its box or what it lists changes. A legend in one column at the default
+    size is told so only when given one of those.
+  - **Text size** (`"textSize"`, 4 to 100 points, 9 by default; a size outside that range is
+    refused): the size of its layers' names and classes' labels. Its title, rows, indents and the
+    gap between columns follow in proportion, and so do a web layer's legend pictures and the length
+    and height of line and polygon swatches, whose lines keep the width the map draws them at (a
+    swatch's line or outline that reaches past its row is cut at the row's top and bottom, so it
+    doesn't cover the rows beside it, and at its sides where its text starts, the column before it
+    or the legend's edge begins, so it doesn't cover its label, another column or what lies past
+    the legend). A
+    point symbol keeps the size the map draws it at, its row growing only when the symbol needs it,
+    so a legend of proportional symbols still matches the map. `"textSize": null` gives the default
+    back. A size its box no longer holds says what the legend loses, and so does a box made too
+    small for a legend with a size of its own (see Columns for when a legend says so).
   - **Point symbols**: a point layer's symbol is drawn as the map draws it: its marker or the
     stacked marks of its class or layer, its size and outline, the transparency of the layer and
     its groups, and its reference scale at the frame's scale, unturned. A row has one symbol, so
@@ -343,13 +400,24 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     symbols grow to hold a large one, up to 2048 points, past which the symbol is cut. A legend
     already on the page keeps its size, so with a larger symbol its last rows may be cut and its
     labels run past its right edge: make it larger to fit.
+  - **Line and polygon symbols**: a line's swatch is drawn with the stacked strokes of its class or
+    layer (casings, offsets, dashes, markers and images along it, by symbol level when the layer
+    draws by levels), and a polygon's with its stacked fills (hatches, dots, gradients,
+    shapeburst), as the map draws them, with the transparency of the layer and its groups and its
+    reference scale at the frame's scale. A stroke wider than the row, or shifted off it, is cut at
+    the row; the row keeps its height. A diagram's categories keep their own colour. A layer with
+    no stacked strokes or fills keeps its plain swatch, see-through with the layer.
   - **Web layers**: a visible WMS or WMTS layer with a legend is listed by its name over its
     service's legend picture, the one for the frame's scale (as the Layers pane shows it), a
     pixel a point and narrowed to fit the legend's width, in the order the map draws its layers
     (as the Layers pane lists them); one whose picture can't be loaded (or is wider or taller
-    than 2048 pixels) is left out. Exporting waits up to half a minute for the pictures, as it
-    waits for the map's tiles; in the browser the page is drawn with those that have arrived,
-    and again as the others arrive.
+    than 2048 pixels) is left out. The Layout view does not wait for pictures on either desktop
+    or browser: it draws what has arrived, then redraws once the pending legend pictures finish,
+    not on every unrelated download. Desktop exports wait up to half a minute in all for each
+    page's legend pictures (each page of a map series has its own wait), as they wait for the map's
+    tiles. A page drawn while a legend picture is still on its way stops the export, even if the
+    picture lands afterwards, rather than leave the file silently incomplete. The browser cannot wait:
+    export again once the pictures have arrived.
   - **Its Layers section**: a checkbox for each layer of the frame's map (and each WMS or WMTS
     layer with a legend): untick one to leave it out of the legend while the map still draws it
     (a mask, a highlight, a basemap-like layer). Scripts give the same with
@@ -400,7 +468,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   tables. Its properties pick the **Layer** (unless one is picked, the top visible raster with a
   colour scale, not drawn by classes: a legend lists a land cover's classes, and a colorbar
   added over a map with only such rasters draws an empty placeholder and says so), the
-  **Title** (the units, such as `Elevation (m)`; the layer's name to start with), the
+  **Title** (the units, such as `Elevation (m)`; the layer's name to start with; one wider than the colorbar
+  wraps at spaces onto more lines, the bar under them), the
   **Orientation**, which side the **Labels** go on, how many **Ticks** a gradient labels (2 to
   21, the ends included) and **Reverse** (high values first). An RGB raster or a hillshade
   without a tint has no colour scale and shows a placeholder, as does a picked layer that was
@@ -438,7 +507,15 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   legend title runs off the page, or a text element has more lines than its height allows.
   The notice counts and names the affected elements with their IDs. A line may extend beyond
   its element's width while remaining on the page; that alone is not clipped. Reduce the size,
-  add line breaks, or resize or move the element to keep all its text.
+  add line breaks, turn on **Wrap to the box**, or resize or move the element to keep all its text;
+  when every text it names is already wrapped, the notice suggests only the size and the box, and
+  a legend's title, which has no wrap, is told to add line breaks. Lines left out below a text's
+  box are said as soon as they are: `layout.addElement` and `layout.update` warn how many lines
+  don't fit when they set a text, its size, font or fallback font, bold, italic, alignment,
+  spacing, wrap or box, or show it, and the Format pane shows the count under **Wrap to the
+  box** (a text wrapped past the 200 lines a text draws counts them as "or more"). A text draws
+  200 lines at most, whatever its box: lines past them are said apart, with the advice to split
+  the text into more than one, since a taller box doesn't draw them.
 - **Text** and **Dynamic Text**: `{date}`, `{time}`, `{scale}`, `{map}`, `{crs}`, `{page}`,
   `{pages}`, `{pageName}` and `{layout}` fill in when the page is drawn; the Format pane's
   **Insert Dynamic Text** menu, under the text, lists each with what it shows. The text, its
@@ -483,6 +560,24 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   within it (450 is 90). RustGIS 0.7 turns only texts, clockwise, by a rotation kept on the text
   itself: a layout it saved opens with its texts turned as it drew them, and that turn adds to
   the element's own.
+  frame's bearing turns: 90 reads top to bottom and -90 bottom to top, for a source line up the
+  margin, a vertical coordinate or a name along a river. The 0°, 90° and -90° buttons beside it set
+  those. The element keeps its unturned box (X, Y, Width, Height), so moving and aligning work as
+  before; its selection and handles follow the turned box. Every export draws it turned (PNG, PDF,
+  GeoPDF, SVG). Scripts set `"rotation": 90` on `layout.addElement` and `layout.update`; an angle
+  outside -180 to 180 is kept as the same turn within it (450 is 90).
+  **Wrap to the box** breaks a text into lines at spaces to fit the width of its box, for a note,
+  a source line or a caption: the lines follow the box when it is resized and the text when it is
+  edited or its size changes, so there are no line breaks to put in by hand. It is off by default,
+  so a text breaks lines only where it has a line break, as before. Dynamic text wraps once filled
+  in, the text's own line breaks are kept, a word wider than the box (a long address) is broken
+  across lines, a no-break space keeps its words on one line, and a turned text wraps to the
+  width of its unturned box. The layout view and every export (PNG, PDF, SVG) break the same
+  lines. Spaces running together in a wrapped text are drawn as one, and no ordinary space is
+  kept at a line's start or end. Lines that don't fit the box's height are left out, and the
+  commands, the Format pane and the export notice above say so. Scripts set `"wrap": true` on
+  `layout.addElement` and `layout.update`. A project with a wrapped text needs this release or a
+  later one to open.
   Scripts give the family's name: `"font": "Garamond"`, with `"fallback": "serif"` if wanted;
   `labels.fonts` lists the installed families. The project keeps the name, never a file. A PDF
   sets its text in the letters' own outlines, so it shows the family wherever it is opened, and
@@ -531,6 +626,90 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   series still turns its pages. **Duplicate** makes an unlocked copy, and a map frame isn't
   deleted while one of its surrounds is locked. Scripts lock and unlock with `layout.update`
   `{"locked": true}` or `{"locked": false}`.
+- **Background**: every element but a map frame can have a box drawn behind it, which moves,
+  resizes, hides and turns with it, in the app and in PDF, PNG and SVG exports: a light box under
+  a legend or a scale bar over a busy map, or under a text on a dark page. Turn on **Background**
+  in the Format pane, then pick its **Fill** and **Outline** colours, the **Outline width** (0 for
+  none), the **Corner radius** and the **Padding**, how far the box reaches past the element on
+  every side; the element itself is drawn as before. It starts white with no outline, and a
+  duplicate keeps it. From a command:
+  `layout.update={"element":4,"background":{"fill":"#FFFFFFCC","radius":1,"padding":1.5}}`; the keys
+  not given keep theirs, and `"background":null` removes it. `layout.addElement` takes it too. A
+  map frame draws its own map and paper, so a background on one is refused.
+- **Ink**: a legend, a colorbar, a table and a chart draw their text and lines in dark grey; turn
+  on **Ink** in the Format pane and pick its colour to read them on a dark page or over imagery.
+  It starts white over a dark background and dark grey otherwise, and turned off it is the dark
+  grey again. A legend's title, layer names and
+  class labels, a colorbar's title, outline, ticks and labels, a table's text and a chart's title
+  and labels take it; a chart's bars and a colorbar's colours keep theirs. A table with an ink
+  draws no white cells of its own, only its header and every other row in a light tint of the ink,
+  so it reads on whatever is behind it: give it a **Background** for a box. From a command:
+  `layout.update={"element":5,"color":"#FFFFFF"}`, and `"color":null` for the default;
+  `layout.addElement` takes it too.
+- **Chart frame**: a bar chart of a layer of the frame's map. Its properties pick the **Layer**
+  and the numeric **Field**, and by default draw a bar per feature, the largest first, each
+  labelled by the **Label** field. **Group by** a field draws a bar per value of that field
+  instead, its **Statistic** of the field over that value's features: sum, count (features,
+  numbers or not, so a count can chart a text field), mean, minimum or maximum. Values are
+  grouped as they are stored, capitals and spaces included: "North" and "north " are two bars.
+  Features with no value, or one that is only spaces, are one "(blank)" bar. A text field
+  charted that way gives way to the layer's first numeric field when the chart stops grouping
+  or counting, and the chart says so. **Order** puts the largest first, the smallest first, the
+  labels A to Z or the bars in the layer's order. **Bars** sets how many are drawn (1 to 100,
+  20 by default); **Past the limit** leaves the rest out, which the chart says, or gathers them
+  in a last **Other bar**, its statistic over their features (their sum when not grouped), last
+  whatever the order. A negative value is drawn the other way from a line at zero. Features
+  with no number in the field are left out, and the chart says how many; a count counts them,
+  since it reads no number. From a command:
+  `layout.update={"element":6,"group":"region","statistic":"mean","order":"category","bars":8,"other":true}`,
+  and `"group":""` for a bar per feature again; `layout.addElement` takes them too.
+- **Chart look**: **Orientation** draws bars running across (the default) or **Vertical**
+  columns standing on the bottom, each label centred under its column and cut to its width.
+  **Title** is the one the chart is given (its field, or the statistic of its field by the
+  group), **None**, which leaves its room to the bars, or **Own**, typed in **Title text**.
+  **Values** writes each bar's value past its end, its thousands apart with commas (points
+  with a layout's decimal comma), with up to two **Decimals** by default, the zeros they end
+  in dropped, or a fixed 0 to 6; on narrow columns, or beside bars they would leave less than
+  half the chart, they are written smaller to fit. **Bar color** sets the bars' colour.
+  **Color by class** draws each bar in the colour its features have on the map, by the layer's
+  symbology: a bar per feature in its feature's, a grouped bar in the colour its features share,
+  so grouping by the field the layer's Unique Values class by gives each bar its class's colour.
+  The colour is a symbol's fill (an outline's where the fill is clear, a line's stroke), by
+  each feature's own geometry, as the chart's map frame draws it (at its scale, and on its
+  series page), not its patterns or stacked strokes, nor the layer's transparency: the bars
+  are drawn whole. Features of a hidden class, or points drawn as an image, show none and
+  leave the bar to the others. A bar whose features have several colours or show none,
+  and an Other bar, keep the bar colour, and the chart says how many bars do, and why, when it
+  is added or changed. The bars follow the symbology when it changes; those counts are not said
+  again then. The bars take the layer's colours whether the frame draws the layer or not: a
+  layer turned off, or outside its visible scale range, still colours them.
+  **Labels** puts the labels of bars running across at the left of their column, or **By the
+  bars**, against them. Keep a title out of the chart to style it as you like with a text
+  element. From a command:
+  `layout.update={"element":6,"orientation":"vertical","values":true,"decimals":0,"title":"","barColor":"#C2185B","labelAlign":"right"}`,
+  `"title":null` for the title it is given again and `"barColor":null` for the default blue;
+  `"classes":true` colours the bars by class;
+  `layout.addElement` takes them too.
+- **Stacked bars**: a chart that groups and sums or counts can **Stack by** another field. Each
+  bar is then split by that field's values, a stretch per value, and a key under the title names
+  them: the population of each continent split by income group, for example. The stretches add
+  up to the bar, so the row is shown only for a sum or a count. The key lists the values the
+  bars drawn show, by their total over them, the largest first (A to Z when the bars go by
+  label); past 8 values, it keeps the 7 with the largest totals and gathers the rest in a grey
+  **Other**, and the chart says how many it gathers. The stretches take the colours diagrams
+  take, or, with **Color by class**, the colour each value's features share on the map, so
+  stacking by the field the layer's Unique Values class by gives each stretch its class's
+  colour; a value whose features have several colours, or show none, keeps its palette colour,
+  and the chart says how many do. Stretches below zero run the other way from the zero line, and
+  **Values** writes the bar's total. An Other bar is stacked too, from the bars it gathers. A
+  box too short to leave the bars room under the title and key shows the chart's placeholder,
+  and the chart says so when it is added, resized, retitled or turned (not when the layer's data
+  changes): make it taller. A stack field deleted from the layer leaves the bars whole, and the
+  chart's next change lets the stack go, saying so. Turning grouping off, taking a mean, minimum
+  or maximum, or moving the chart to a layer without the field lets the stack go, and the chart
+  says so. From a command:
+  `layout.update={"element":6,"group":"continent","stack":"income_grp"}`, and `"stack":""` for
+  whole bars again; `layout.addElement` takes it too.
 - **Rulers and guides**: rulers start on along the top and left and show millimetres from the page's corner.
   Drag out of a ruler to add a guide, drag a guide to move it, and drag it back onto a ruler to
   remove it. Guides are saved with the layout but never printed or exported. **Clear Guides**
@@ -539,6 +718,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   the other elements' edges and centres, and the line it snapped to is highlighted. Hold Alt to
   place an element freely, or turn **Snap** off in the Page group.
 - **Export** writes PDF (every map series page by default, up to 500), or PNG or SVG of the current page.
+  On desktop, **Cancel** also stops an export while it waits for legend pictures or map tiles;
+  a cancelled export does not replace the destination file.
   A PDF keeps the page as vectors: text, shapes, surrounds and map frames (their features, labels
   and grids, turned with the frame) stay sharp at any zoom or print size, and linear and radial
   gradient fills are PDF gradients. Its text can be copied and searched, Thai with its vowels and
@@ -587,7 +768,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   PDF (their labels as the letters' shapes, each run labelled with its text), so the page can be
   finished in a vector editor. What a PDF keeps as pictures is a picture in the SVG too, at the
   export's `dpi`, and a frame whose vectors would pass the budget is drawn as a picture, with a
-  notice. A text element uses the viewer's
+  notice. A picture marker's image is written once and placed with `<use>` wherever drawn, so a
+  vector editor shows each place as a clone of it. A text element uses the viewer's
   font (a named family where the viewer has it, else its serif or sans-serif), so its alignment
   and line widths can differ from PNG/PDF and can
   change when edited. A picture standing for a whole element is clipped to its box;
@@ -656,6 +838,23 @@ The locator outlines the main frame's changing extent as the series turns its pa
 more, with a warning. Split longer books' index data into layers of at most 500 features.
 `layout.export` with `"allPages":false` writes only the current PDF page; PNG and SVG always
 write the current page.
+
+### Mark the page's own feature
+
+Set [Symbols by Expression](cartography.md#symbols-by-expression) on the index layer. Use
+`$id = @page_feature_id` to give the current feature a heavier outline and draw the rest in gray.
+For an index layer called **Tracts**, the command is:
+
+```text
+layer.symbolBy={"layer":"Tracts","strokeWidth":"if($id = @page_feature_id, 3, 0.6)","stroke":"if($id = @page_feature_id, '#174a7e', '#9ca3af')","fill":"if($id = @page_feature_id, '#8bbce8', '#e5e7eb')"}
+```
+
+Use a style rather than a definition query: a definition query such as `$id = @page_feature_id`
+leaves the layer empty in the map view, where the variables are null. Step through the pages to see the
+style follow the index feature. The expression also works in a
+locator frame that shows the index layer. Feature IDs are local to each layer, so use the ID
+comparison on the index layer. Outside a series page the comparison never matches, and every
+feature gets the gray style.
 
 ## Reports
 

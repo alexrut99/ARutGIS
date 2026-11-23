@@ -46,8 +46,10 @@ adb exec-out screencap -p > shot.png
 ```
 
 The APK is signed with a debug key made in `target/android`. There is no Gradle project: `aapt2`
-links the manifest, `javac` and `d8` compile the one Java class, and the Rust library is the rest
-of the app.
+links the manifest and the launcher icon, `javac` and `d8` compile the one Java class, and the Rust
+library is the rest of the app. The icon is an adaptive icon drawn by `build.rs` from the same code
+as the desktop's window icon: the logo on white, with a monochrome layer that themed icons (Android
+13 and later, and launchers that tint icons) draw in their own colour.
 
 Both apps carry RustGIS's `LICENSE` and this folder's `THIRD-PARTY-LICENSES.txt`, the notices of
 the crates the phone builds compile in (in the APK's `assets/`, at the top of `RustGIS.app`).
@@ -85,8 +87,9 @@ Rust calls Java and never the other way: each frame the app collects what happen
 A phone starts in the touch interface: the map, a bar of four large buttons under it (Layers, Add
 Data, Capture, More) and sheets that rise over the map. The Layers sheet shows and hides layers,
 zooms to one and makes one the active layer; the More sheet has Full Extent, the project, undo
-and redo, and **Use the Desktop Interface**, which brings back the ribbon and panes until the app
-is started again.
+and redo, and **Use the Desktop Interface**, which brings back the ribbon and panes; **Touch
+Interface**, on the View tab (or Use the Touch Interface in Command Search), returns to the phone's
+interface.
 
 **Capture** adds a feature to one of the map's point, line or polygon layers. A cross marks the
 middle of the map: the map is moved under it, and the sheet's fields are filled in (one for each
@@ -227,7 +230,8 @@ own was used outside the area) is said, as a later package from the same phone r
 | HTTPS trust | The bundled Mozilla roots, not the device's certificates; the session says so once (`rustgis_data::http`) |
 | Folders | Settings, app data and the cache are in the app's internal storage, set once at start-up (`rustgis_data::dirs::set_root`) |
 | GeoLibre tools, GDAL formats, DuckDB | Not available: a phone can't run their programs. `rustgis_data::RUNS_PROGRAMS` is false on Android and iOS, so no program is looked for, and each place they would appear says so: a file read through GDAL or a DuckDB database is refused with the reason (convert it on a computer), the SQL pane says why it can't query, and the Geoprocessing pane shows a card in place of the GeoLibre tools. Add Data's Database… stays: its PostGIS, MySQL and SQL Server connections need no program. The app is built without the engine's `geolibre` feature |
-| Preferences, the keychain, autosave | Not wired up yet |
+| Recovery copies | The first foreground edit submits a recovery copy in app-private storage immediately. Edits within two seconds of a submission are grouped into a copy due at the end of that interval. When the exit hook runs, it submits the latest edit immediately and gives the writer up to two seconds to finish. Suspending or destroying the Android activity can skip this hook, so edits still waiting to be submitted can be lost. The next launch offers the last complete copy, if one exists. |
+| Preferences, the keychain | Not wired up yet |
 | Soft keyboard | It opens for a text field, and the touch interface keeps the field above it. `NativeActivity`'s text input is still poor (no suggestions, no composing): a real app moves to `GameActivity` |
 
 ## What phase 0 found
@@ -243,7 +247,7 @@ On the Android 15 emulator (x86_64, software GPU), from this crate as it is:
 | HTTPS basemap tiles | Yes, with the bundled roots |
 | Rotation | Yes, without a restart |
 | Suspend and resume | Yes: the surface is dropped and made again, the session is kept |
-| The activity destroyed by the system | The session is lost. winit's event loop can't be made twice in a process, so the app ends its process and the next launch starts afresh; without that, the next launch showed nothing |
+| The activity destroyed by the system | The session is lost. winit's event loop can't be made twice in a process, so the app ends its process if the loop returns; destroying the activity alone doesn't make it return, so the process may survive, and a launch in that same process may not start. Once the system ends the process, the next launch starts a new one, and the recovery copies written while editing let it offer a complete copy |
 | Typing | Key events reach text fields. The soft keyboard itself needs a phone to judge |
 | Size | 78 MB for arm64 without symbols, 89 MB in the APK for x86_64 |
 
@@ -283,7 +287,8 @@ Development or Distribution identity in the keychain) and `IOS_PROFILE` (a provi
 `org.rustgis.mobile`) it signs the app and packs `target/ios/RustGIS.ipa`, for a device or for
 TestFlight. There is no Xcode project: cargo builds the executable and the script makes the bundle
 around it, with `ios/Info.plist`, the app icon (the logo, drawn by `build.rs` from the same code as
-the desktop's window icon and compiled with `actool`), and the build keys Xcode's own builds
+the desktop's window icon and compiled with `actool`, with the dark and tinted variants iOS 18 and
+later show), and the build keys Xcode's own builds
 record. The build number is the commit count, or `IOS_BUILD` (a device build from a shallow
 clone, which can't count them, is refused without it).
 

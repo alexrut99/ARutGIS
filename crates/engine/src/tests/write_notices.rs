@@ -5,10 +5,11 @@ use serde_json::{Value, json};
 
 use crate::{Project, Session};
 
-struct Files(std::path::PathBuf);
+/// A fresh folder for a test's files, removed when the test ends, failed or not.
+pub(super) struct Files(std::path::PathBuf);
 
 impl Files {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
@@ -17,7 +18,7 @@ impl Files {
         Self(path)
     }
 
-    fn path(&self) -> &std::path::Path {
+    pub(super) fn path(&self) -> &std::path::Path {
         &self.0
     }
 }
@@ -36,6 +37,112 @@ fn places() -> Session {
     s.map_mut().add_dataset(ds);
     s.map_mut().editing.settings.enabled = true;
     s
+}
+
+/// The command and its background worker apply the query before writing, even when the layer
+/// reads in place. Whole-data and chunk writers report omissions and unreadable saved queries.
+#[test]
+fn export_features_respects_the_definition_query() {
+    use crate::cmd::exports::{export_land, export_start};
+
+    let dir = Files::new();
+    let mut s = places();
+    let id = s.map().layer_by_name("Places").unwrap().id;
+    s.map_mut()
+        .layer_mut(id)
+        .unwrap()
+        .dataset
+        .push(Some(Geometry::Point(rustgis_data::Coord::new(3.0, 4.0))), vec![Cell::Text("hidden".into())]);
+    let seed = dir.path().join("source.gpkg");
+    s.run("share.exportLayer", &json!({"layer": id, "path": seed})).unwrap();
+    s.run("layer.addData", &json!({"name": "Streamed", "path": seed, "layer": "Places", "stream": true})).unwrap();
+    assert!(s.map().layer_by_name("Streamed").unwrap().is_streamed());
+
+    for (layer, ext, background) in [("Places", "gpkg", false), ("Streamed", "shp", false), ("Streamed", "gpkg", true)] {
+        for (case, query, expected) in [("valid", "long_attribute_name = 'kept'", 1), ("absent", "", 2), ("unreadable", "missing = 1", 2)] {
+            if case == "unreadable" {
+                // A project can retain a query that refers to a field its source no longer has.
+                let id = s.map().layer_by_name(layer).unwrap().id;
+                s.map_mut().layer_mut(id).unwrap().definition_query = Some(query.into());
+            } else {
+                s.run("layer.definitionQuery", &json!({"layer": layer, "where": query})).unwrap();
+            }
+            let path = dir.path().join(format!("{layer}-{case}.{ext}"));
+            let params = json!({"layer": layer, "path": path});
+            let mark = s.notice_mark();
+            let result = if background {
+                let work = export_start(&mut s, "share.exportLayer", &params).unwrap();
+                let started = work.started();
+                let done = std::thread::spawn(move || work.run(&rustgis_analysis::control::Control::new())).join().unwrap();
+                export_land(&mut s, started, done)
+            } else {
+                s.run("share.exportLayer", &params)
+            }
+            .unwrap();
+            assert_eq!(result["features"], expected);
+            assert_eq!(result["leftOut"], 0);
+            let (written, _) = rustgis_data::io::read_path(&path).unwrap();
+            assert_eq!(written.features.len(), expected);
+            assert_eq!(written.value(0, 0), &Cell::Text("kept".into()));
+            let notices: Vec<_> = s.notices_since(mark).iter().filter(|n| n.text.contains("definition query")).collect();
+            if case == "absent" {
+                assert!(notices.is_empty(), "{layer}: {notices:?}");
+            } else if case == "unreadable" {
+                assert_eq!(notices.len(), 1);
+                assert!(notices[0].text.contains("could not be read") && notices[0].text.contains("missing"), "{notices:?}");
+            } else {
+                assert_eq!(notices.len(), 1);
+                assert_eq!(
+                    notices[0].text,
+                    format!("{}: the definition query on {layer} left out 1 of the source features", path.display())
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn data_interop_respects_the_definition_query() {
+    let dir = Files::new();
+    let mut s = places();
+    let id = s.map().layer_by_name("Places").unwrap().id;
+    s.map_mut()
+        .layer_mut(id)
+        .unwrap()
+        .dataset
+        .push(Some(Geometry::Point(rustgis_data::Coord::new(3.0, 4.0))), vec![Cell::Text("hidden".into())]);
+    let seed = dir.path().join("source.gpkg");
+    s.run("share.exportLayer", &json!({"layer": id, "path": seed})).unwrap();
+    s.run("layer.addData", &json!({"name": "Streamed", "path": seed, "layer": "Places", "stream": true})).unwrap();
+    assert!(s.map().layer_by_name("Streamed").unwrap().is_streamed());
+
+    // Text uses the browser/script path. Streamed GeoJSON uses chunks, while WKT reads the whole source.
+    for (layer, format, to_file) in [("Places", "geojson", false), ("Streamed", "geojson", true), ("Streamed", "wkt", true)] {
+        for (query, expected) in [("", 2), ("long_attribute_name = 'kept'", 1)] {
+            s.run("layer.definitionQuery", &json!({"layer": layer, "where": query})).unwrap();
+            let path = dir.path().join(format!("{layer}-{format}-{expected}.out"));
+            let mut params = json!({"layer": layer, "format": format});
+            if to_file {
+                params["path"] = json!(path);
+            }
+            let mark = s.notice_mark();
+            let answer = s.run("data.convert", &params).unwrap();
+            let text = if to_file { std::fs::read_to_string(&path).unwrap() } else { answer["text"].as_str().unwrap().into() };
+            let rows = if format == "geojson" {
+                rustgis_data::io::read_geojson(&text, "converted").unwrap().0.features.len()
+            } else {
+                text.lines().count() - 1
+            };
+            assert_eq!(rows, expected, "{layer}, {format}");
+            assert!(text.contains("kept"));
+            assert_eq!(text.contains("hidden"), expected == 2);
+            let notices: Vec<_> = s.notices_since(mark).iter().filter(|n| n.text.contains("definition query")).collect();
+            assert_eq!(notices.len(), usize::from(expected == 1));
+            if let Some(notice) = notices.first() {
+                assert!(notice.text.contains(&format!("the definition query on {layer} left out 1 of the source features")));
+            }
+        }
+    }
 }
 
 #[test]
@@ -244,7 +351,7 @@ fn write_notices_keep_the_ordinary_queue_bounded_and_marks_consistent() {
             s.notify("rolled-back edit", false);
             s.guarded("Inner", true, |s| {
                 for i in 0..250 {
-                    s.notify_written(format!("committed {i}"), false);
+                    s.notify_written(format!("committed {i}"));
                 }
                 Err("inner failed".into())
             })?;
@@ -342,25 +449,63 @@ fn write_notices_withdraw_rolled_back_geopackage_layer_refreshes() {
     }
 }
 
+/// A later script failure rolls the session back, but the committed CSV and its translated
+/// omission notice must still describe the rows written to disk.
+#[test]
+fn write_notices_keep_table_limit_after_a_failed_script() {
+    let dir = Files::new();
+    let path = dir.path().join("top.csv");
+    let mut s = Session::new(Project::default());
+    s.run("layer.addDataText", &json!({"fileName":"ranks.csv","text":"number\n1\n2\n"})).unwrap();
+    let export = json!({"table":"ranks","path":path,"limit":1});
+    let script = format!("share.exportTable {export}\nlayer.remove {{\"layer\":\"missing\"}}");
+    let mark = s.notice_mark();
+    assert!(s.run("script.run", &json!({"script":script})).is_err());
+    let csv = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(csv.lines().collect::<Vec<_>>(), ["number", "1"]);
+    let notices = s.notices_since(mark);
+    assert_eq!(notices.iter().filter(|n| n.text.contains("1 row(s) left out by the requested limit")).count(), 1, "{notices:?}");
+    let loss = notices.iter().find(|n| n.text.contains("left out by the requested limit")).unwrap();
+    assert!(loss.text.contains(&path.display().to_string()));
+    assert!(loss.translated(|key, _| format!("translated:{key}")).unwrap().starts_with("translated:"));
+    assert_eq!(s.project.tables.iter().find(|t| t.dataset.name == "ranks").unwrap().dataset.features.len(), 2);
+}
+
 #[test]
 fn write_notices_keep_table_and_null_losses_in_refused_receipts() {
     use crate::{
         cmd::exports,
         policy::{AgentAccess, Effects, Revocation, Scope},
     };
-    use std::sync::Arc;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
     struct Live;
     impl Revocation for Live {
         fn allows(&self, _: Effects) -> bool {
             true
         }
     }
-    for mode in ["table", "layer", "convert"] {
+    for mode in ["table", "layer", "convert", "limitedTable"] {
         for refused in [false, true] {
             let dir = Files::new();
             let mut s = places();
-            let path = dir.path().join(if mode == "table" { "places.gpkg" } else { "places.geojson" });
-            let (command, params, loss) = if mode == "table" {
+            let path = dir.path().join(if matches!(mode, "table" | "limitedTable") { "places.gpkg" } else { "places.geojson" });
+            let (command, params, loss) = if mode == "limitedTable" {
+                s.run("layer.addDataText", &json!({"fileName":"ranks.csv","text":"number\n1\n2\n"})).unwrap();
+                let table = s.project.tables.iter_mut().find(|t| t.dataset.name == "ranks").unwrap();
+                table.dataset.fields[0].ty = FieldType::Double;
+                table.dataset.features[0].attrs[0] = Cell::Float(f64::NAN);
+                s.run("share.exportTable", &json!({"table":"ranks","path":path})).unwrap();
+                let db = rusqlite::Connection::open(&path).unwrap();
+                db.execute("CREATE INDEX old_index ON ranks(number)", []).unwrap();
+                (
+                    "share.exportTable",
+                    json!({"table":"ranks","path":path,"mode":"replaceTable","tableName":"ranks","limit":1}),
+                    "replaced its table ranks, dropping",
+                )
+            } else if mode == "table" {
                 s.run("share.exportLayer", &json!({"layer":"Places","path":path})).unwrap();
                 let db = rusqlite::Connection::open(&path).unwrap();
                 db.execute("CREATE INDEX old_index ON Places(long_attribute_name)", []).unwrap();
@@ -382,7 +527,17 @@ fn write_notices_keep_table_and_null_losses_in_refused_receipts() {
             let scope = Scope::agent(AgentAccess::Allow, false, "write-notices-receipt", None, Arc::new(Live));
             let run = s.with_scope(scope, |s| exports::export_start(s, command, &params)).unwrap().unwrap();
             let started = run.started();
-            let wrote = run.run(&crate::analysis::control::Control::stoppable()).unwrap();
+            let mut wrote = run.run(&crate::analysis::control::Control::stoppable()).unwrap();
+            let finalized = Arc::new(AtomicBool::new(false));
+            let called = finalized.clone();
+            let then = wrote.then.take();
+            wrote.then = Some(Box::new(move |s, out| {
+                called.store(true, Ordering::Relaxed);
+                if let Some(then) = then {
+                    then(s, out)?;
+                }
+                Ok(())
+            }));
             if refused {
                 s.run("project.new", &json!({})).unwrap();
             }
@@ -391,10 +546,22 @@ fn write_notices_keep_table_and_null_losses_in_refused_receipts() {
             assert_eq!(result.is_err(), refused, "{mode}: {result:?}");
             let notices = s.notices_since(mark);
             assert_eq!(notices.iter().filter(|n| n.text.contains(loss)).count(), 1, "{mode}/{refused}: {notices:?}");
+            assert_eq!(finalized.load(Ordering::Relaxed), !refused, "{mode}: finalizer after refusal");
+            if mode == "limitedTable" {
+                for extra in ["1 row(s) left out by the requested limit", "1 attribute value(s) that aren't finite numbers"] {
+                    assert_eq!(notices.iter().filter(|n| n.text.contains(extra)).count(), 1, "{refused}: {notices:?}");
+                    if refused {
+                        assert!(result.as_ref().unwrap_err().contains(extra));
+                    }
+                }
+                let db = rusqlite::Connection::open(&path).unwrap();
+                let count: i64 = db.query_row("SELECT count(*) FROM ranks WHERE number IS NULL", [], |r| r.get(0)).unwrap();
+                assert_eq!(count, 1);
+            }
             if refused {
                 assert!(result.unwrap_err().contains(loss));
             }
-            if mode == "table" {
+            if matches!(mode, "table" | "limitedTable") {
                 let db = rusqlite::Connection::open(&path).unwrap();
                 let indexes: i64 = db.query_row("SELECT count(*) FROM sqlite_master WHERE name='old_index'", [], |r| r.get(0)).unwrap();
                 assert_eq!(indexes, 0);

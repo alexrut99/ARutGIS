@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, Weak};
 use rustgis_data::raster::Raster;
 use rustgis_data::{Feature, Geometry};
 use rustgis_geom::{Coord, Extent, MERCATOR_R, lonlat_to_merc};
-use rustgis_map::Map;
 use rustgis_map::view::TerrainEncoding;
+use rustgis_map::{Camera, Map};
 use rustgis_tiles::cache;
 
 use super::{Ground, Heights};
@@ -59,7 +59,9 @@ pub(crate) struct Water {
     /// Polygons left on the ground: no height read along their shore and no level given.
     pub(super) unlevelled: usize,
     /// Polygons whose shore was read at wider steps than half a cell of the ground, to keep
-    /// within [`MAX_SHORE_SAMPLES`]: their lowest shore may lie between two steps.
+    /// within [`MAX_SHORE_SAMPLES`]: their lowest shore may lie between two steps. Read by the
+    /// tests: the app counts them from the shapes alone ([`coarse_shores`]).
+    #[cfg_attr(not(test), expect(dead_code, reason = "the tests check the budget's count"))]
     pub(super) coarse: usize,
     /// When to read it again: over elevation tiles, soon while a tile along the shores is on its
     /// way, after the tile cache's wait when one failed; never otherwise.
@@ -72,6 +74,8 @@ struct Lake {
     /// Metres, before exaggeration.
     level: f64,
     edges: Slabs,
+    /// Its outline and its holes' (islands'), for the shore band.
+    rings: Vec<Vec<Coord>>,
 }
 
 /// A polygon's edges, by horizontal strip of its box: whether a point is inside (even-odd, holes
@@ -284,7 +288,7 @@ impl Water {
                 continue;
             };
             extent = extent.union(&e);
-            lakes.push(Lake { edges: Slabs::new(&rings, &e), extent: e, level });
+            lakes.push(Lake { edges: Slabs::new(&rings, &e), extent: e, level, rings });
         }
         let side = ((lakes.len() as f64).sqrt().ceil() as usize * 2).clamp(1, MAX_GRID);
         let (w, h) = (extent.width().max(f64::MIN_POSITIVE), extent.height().max(f64::MIN_POSITIVE));
@@ -434,6 +438,8 @@ fn ring_length(r: &[Coord]) -> f64 {
 #[derive(Clone)]
 struct Key {
     rows: Weak<Vec<Feature>>,
+    /// The rows the layer draws ([`drawn_rows`]): `None` for all of them.
+    drawn: Option<Vec<bool>>,
     layer: String,
     level: Option<String>,
     heights: HeightsKey,
@@ -448,6 +454,7 @@ enum HeightsKey {
 impl Key {
     fn same(&self, o: &Key) -> bool {
         self.rows.ptr_eq(&o.rows)
+            && self.drawn == o.drawn
             && self.layer == o.layer
             && self.level == o.level
             && match (&self.heights, &o.heights) {
@@ -460,7 +467,8 @@ impl Key {
     }
 }
 
-/// The waters read last, kept while their layer, field and heights stay the same: a view drawn as
+/// The waters read last, kept while their layer, the rows it draws, field and heights stay the
+/// same: a view drawn as
 /// the map moves reads no shore again. One read over elevation tiles with a shore tile missing is
 /// read again after its `retry` ([`RETRY_MISSING`] or the tile cache's wait).
 static LAST: Mutex<Vec<(Key, Arc<Water>, web_time::Instant)>> = Mutex::new(Vec::new());
@@ -474,12 +482,25 @@ fn still_good(water: &Water, read_at: web_time::Instant) -> bool {
 }
 
 /// A water layer's polygons in Web Mercator, each part of a multipolygon on its own, with the
-/// level its row gives in the `level` field, when it does.
-fn polygons(layer: &rustgis_map::Layer, level: Option<&str>) -> Vec<(Vec<Vec<Coord>>, Option<f64>)> {
+/// level its row gives in the `level` field, when it does: those of the rows `drawn` keeps (all
+/// without it).
+fn polygons(layer: &rustgis_map::Layer, level: Option<&str>, drawn: Option<&[bool]>) -> Vec<(Vec<Vec<Coord>>, Option<f64>)> {
     let field = level.and_then(|f| layer.dataset.field_index(f));
     let mut polygons = Vec::new();
-    for ft in layer.dataset.features.iter() {
-        let Some(Geometry::Polygon(parts)) = &ft.geometry else { continue };
+    // Its conversion to longitude/latitude, made once for its polygons (none: a system that can't
+    // be converted, of which the map draws nothing either).
+    let to = layer.dataset.shown_conversion().ok();
+    for (row, ft) in layer.dataset.features.iter().enumerate() {
+        if drawn.is_some_and(|d| !d.get(row).copied().unwrap_or(false)) {
+            continue;
+        }
+        // In longitude/latitude, whatever system the layer holds its coordinates in; a polygon
+        // that can't be given there holds no water, as the map draws none of it.
+        let Some(lonlat) = ft.geometry.as_ref().zip(to.as_ref()).and_then(|(g, to)| rustgis_data::Dataset::converted_to_lonlat(to, g))
+        else {
+            continue;
+        };
+        let Geometry::Polygon(parts) = &*lonlat else { continue };
         let given = field.and_then(|i| ft.attrs.get(i)).and_then(rustgis_data::Value::as_f64).filter(|v| v.is_finite());
         for rings in parts {
             let rings: Vec<Vec<Coord>> = rings.iter().map(|r| r.iter().map(|c| lonlat_to_merc(*c)).collect()).collect();
@@ -489,18 +510,92 @@ fn polygons(layer: &rustgis_map::Layer, level: Option<&str>) -> Vec<(Vec<Vec<Coo
     polygons
 }
 
-/// The water layer named by `map`'s terrain, when it is a polygon layer there.
+/// The water layer named by `map`'s terrain, when it is a polygon layer there holding all its
+/// polygons: not one read a view at a time, whose rows are the view's (#2305; `map.terrain`
+/// refuses it, and a project naming it drops the water as it opens).
 fn water_layer(map: &Map) -> Option<(&rustgis_map::Layer, Option<&str>)> {
     let w = map.view.terrain.as_ref()?.water.as_ref()?;
-    let layer = map.layer_by_name(&w.layer).filter(|l| l.geometry_type() == rustgis_data::GeometryType::Polygon)?;
+    let layer = map.layer_by_name(&w.layer).filter(|l| l.geometry_type() == rustgis_data::GeometryType::Polygon && !l.is_streamed())?;
     Some((layer, w.level.as_deref()))
 }
 
-/// How many polygons of `map`'s water layer [`Water::build`] reads at wider steps than half
-/// `ground`'s cell, worked out from their shapes alone: no height is read (nor a tile asked for).
-pub(super) fn coarse_shores(map: &Map, ground: &Ground) -> usize {
+/// The rows of the water `layer` a view of `camera` on `map` draws (#2305): those its definition
+/// query, the time slider's window and the display filters at the view's scale keep, within the
+/// map's view distance, as the layer's fill keeps them. A lake the layer doesn't draw is neither
+/// flat, lit flat nor banded. `None` when it draws every row.
+///
+/// The layer's own visibility and scale range don't count: its lakes stay on the ground with the
+/// layer hidden, as the terrain's Shaded Relief draws the water whether the layer is shown or not.
+/// A tilted view has one water for all its bands, read at the view's scale and from its centre,
+/// where each band's fill reads at its own scale and from its own centre: a display filter whose
+/// scale limit falls between them, or the view distance, can keep a lake in a band that the water
+/// left out, or the reverse.
+fn drawn_rows(map: &Map, layer: &rustgis_map::Layer, camera: &Camera) -> Option<Vec<bool>> {
+    let query = layer.definition_query.as_deref().filter(|q| !q.trim().is_empty());
+    let time = layer.time.as_ref().and_then(|t| Some((t.field.clone(), t.window?)));
+    if query.is_none() && time.is_none() && layer.display_filters.is_empty() && map.view.clip_distance.is_none() {
+        return None;
+    }
+    let scale = map.ground_res_at(camera) / rustgis_geom::PIXEL_M;
+    let key = KeptKey {
+        rows: layer.dataset.features.allocation_key(),
+        fields: layer.dataset.fields.clone(),
+        query: query.map(str::to_string),
+        time,
+        filters: layer.display_filters.iter().filter(|f| f.applies(scale)).map(|f| f.where_.clone()).collect(),
+    };
+    let cached = KEPT_ROWS.lock().ok().and_then(|k| k.iter().find(|(k, _)| k.same(&key)).map(|(_, rows)| rows.clone()));
+    let kept = cached.unwrap_or_else(|| {
+        let rows = Arc::new(layer.drawn_rows(scale));
+        if let Ok(mut k) = KEPT_ROWS.lock() {
+            k.retain(|(k, _)| k.rows.strong_count() > 0 && !k.same(&key));
+            if k.len() >= KEPT {
+                k.remove(0);
+            }
+            k.push((key, rows.clone()));
+        }
+        rows
+    });
+    let mut rows = Vec::clone(&kept);
+    if let Some(d) = map.view.clip_distance {
+        crate::within_view_distance(&mut rows, &layer.dataset, camera.center_lonlat(), d);
+    }
+    rows.contains(&false).then_some(rows)
+}
+
+/// What a water layer's query, time window and display filters were read for in [`drawn_rows`]:
+/// `Ground::of` runs a few times a frame, and each reads them over every row, so they are read
+/// again only when one of these changes.
+struct KeptKey {
+    rows: Weak<Vec<Feature>>,
+    fields: Vec<rustgis_data::Field>,
+    query: Option<String>,
+    /// The time binding's field and window.
+    time: Option<(String, (f64, f64))>,
+    /// The `where` of each display filter that applies at the view's scale.
+    filters: Vec<String>,
+}
+
+impl KeptKey {
+    fn same(&self, o: &KeptKey) -> bool {
+        self.rows.ptr_eq(&o.rows)
+            && self.rows.strong_count() > 0
+            && self.fields == o.fields
+            && self.query == o.query
+            && self.time == o.time
+            && self.filters == o.filters
+    }
+}
+
+/// The rows the last few [`KeptKey`]s kept (before the view distance), as many as [`LAST`] keeps.
+static KEPT_ROWS: Mutex<Vec<(KeptKey, Arc<Vec<bool>>)>> = Mutex::new(Vec::new());
+
+/// How many polygons of `map`'s water layer, as a view of `camera` draws it, [`Water::build`]
+/// reads at wider steps than half `ground`'s cell, worked out from their shapes alone: no height
+/// is read (nor a tile asked for).
+pub(super) fn coarse_shores(map: &Map, camera: &Camera, ground: &Ground) -> usize {
     let Some((layer, level)) = water_layer(map) else { return 0 };
-    let polygons = polygons(layer, level);
+    let polygons = polygons(layer, level, drawn_rows(map, layer, camera).as_deref());
     let (perimeter, unread) = shores(&polygons);
     let (_, wider) = shore_step(cell_size(ground).map(|c| c / 2.0), perimeter / MAX_SHORE_SAMPLES as f64);
     if wider { unread } else { 0 }
@@ -513,12 +608,14 @@ fn shores(polygons: &[(Vec<Vec<Coord>>, Option<f64>)]) -> (f64, usize) {
     (unread.clone().flat_map(|(rings, _)| rings).map(|r| ring_length(r)).sum(), unread.count())
 }
 
-/// The water of `map`'s terrain over `ground` (its heights, before the water is set), when it
-/// names a polygon layer there.
-pub(super) fn of(map: &Map, ground: &Ground) -> Option<Arc<Water>> {
+/// The water of `map`'s terrain over `ground` (its heights, before the water is set) in a view
+/// of `camera`, when it names a polygon layer there: the polygons that view draws.
+pub(super) fn of(map: &Map, camera: &Camera, ground: &Ground) -> Option<Arc<Water>> {
     let (layer, level) = water_layer(map)?;
+    crate::note_held_read(layer);
     let key = Key {
         rows: layer.dataset.features.allocation_key(),
+        drawn: drawn_rows(map, layer, camera),
         layer: layer.name.clone(),
         level: level.map(str::to_string),
         heights: match &ground.heights {
@@ -531,7 +628,7 @@ pub(super) fn of(map: &Map, ground: &Ground) -> Option<Arc<Water>> {
     {
         return Some(water.clone());
     }
-    let water = Arc::new(Water::build(polygons(layer, level), ground, MAX_SHORE_SAMPLES));
+    let water = Arc::new(Water::build(polygons(layer, level, key.drawn.as_deref()), ground, MAX_SHORE_SAMPLES));
     if let Ok(mut last) = LAST.lock() {
         last.retain(|(k, _, _)| k.rows.strong_count() > 0 && !k.same(&key));
         if last.len() >= KEPT {
@@ -542,9 +639,218 @@ pub(super) fn of(map: &Map, ground: &Ground) -> Option<Arc<Water>> {
     Some(water)
 }
 
+/// How fast a tilted view's glint on the water fades away from the sun's reflection: the power of
+/// the cosine between the water's normal and the direction half-way between the sun and the eye
+/// (Blinn-Phong). Low, so the glint is broad: it is at half its peak with that half-way direction
+/// 14° off the normal.
+const GLINT_SHININESS: i32 = 24;
+
+/// The sun the water glints in when no Shaded Relief layer is drawn: the hillshade's usual one,
+/// azimuth 315° (north-west) and altitude 45°.
+const GLINT_SUN: (f64, f64) = (315.0, 45.0);
+
+/// The least glint (a share of the way to white) worth drawing: under one level of 8-bit colour.
+const GLINT_LEAST: f64 = 0.5 / 255.0;
+
+/// A tilted view's sun glint on the terrain's water (#1915): where the flat water would reflect
+/// the sun toward the eye, its colour goes toward white, broad and faint, so the water shines a
+/// little on the sun's side. The sun is the first Shaded Relief layer drawn at the view's centre's,
+/// or [`GLINT_SUN`].
+pub(crate) struct Glint {
+    water: Arc<Water>,
+    /// The tilted view's camera, and its eye in the frame of [`Camera::ground_px`] (logical px).
+    camera: Camera,
+    eye: [f64; 3],
+    /// Toward the sun, a unit vector in the same frame.
+    sun: [f64; 3],
+    /// The terrain's water's glint, 0 to 1: the share of the way to white at the brightest point.
+    strength: f64,
+    exaggeration: f64,
+    body: f64,
+}
+
+impl Glint {
+    /// The glint on `map`'s terrain water in the tilted `view`, over the `ground` the view lies
+    /// on; `None` in a flat view, without water, or with a glint of 0.
+    pub(crate) fn of(map: &Map, view: &crate::View, ground: &Ground) -> Option<Glint> {
+        let strength = map.view.terrain.as_ref()?.water.as_ref()?.glint;
+        let tilted = view.camera.pitch.is_finite() && view.camera.pitch > 0.0;
+        if !tilted || strength.is_nan() || strength <= 0.0 {
+            return None;
+        }
+        let water = ground.water.clone()?;
+        // A Shaded Relief layer drawn at the view's centre (shown, its groups too, within their
+        // scale ranges), as `relief_water` takes it.
+        let scale = map.ground_res_at(&view.camera) / rustgis_geom::PIXEL_M;
+        let (azimuth, altitude) = map
+            .layers
+            .iter()
+            .filter(|l| map.draws_at(l, scale))
+            .find_map(|l| match l.raster.as_ref()?.style.renderer {
+                rustgis_map::RasterRenderer::ShadedRelief { azimuth, altitude, .. } => Some((azimuth, altitude)),
+                _ => None,
+            })
+            .unwrap_or(GLINT_SUN);
+        let (a, e) = (azimuth.to_radians(), altitude.clamp(0.0, 90.0).to_radians());
+        // East and south (the map's x right and y down), turned to the view's bearing as
+        // `Camera::ground_px` turns the map.
+        let (ux, uy) = (a.sin() * e.cos(), -a.cos() * e.cos());
+        let b = view.camera.bearing;
+        let (c, s) = if b == 0.0 || !b.is_finite() { (1.0, 0.0) } else { (b.to_radians().cos(), b.to_radians().sin()) };
+        let (ex, ey, ez) = view.camera.eye(view.height);
+        Some(Glint {
+            water,
+            camera: view.camera,
+            eye: [ex, ey, ez],
+            sun: [ux * c + uy * s, uy * c - ux * s, e.sin()],
+            strength: strength.min(1.0),
+            exaggeration: ground.exaggeration,
+            body: ground.body,
+        })
+    }
+
+    /// Adds the glint to `pm`, a north-up frame drawn for `frame` (a band of the tilted view),
+    /// over what it holds at the water: each pixel inside a lake goes toward white by the glint
+    /// there, its alpha kept.
+    pub(crate) fn paint(&self, pm: &mut tiny_skia::Pixmap, frame: &crate::View) {
+        if !frame.camera.extent(frame.width, frame.height).intersects(&self.water.extent) {
+            return;
+        }
+        let (w, ppp) = (pm.width() as usize, frame.pixels_per_point.max(1e-9));
+        let res = self.camera.res.max(1e-9);
+        let unit = |v: [f64; 3]| {
+            let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            (n > 0.0).then(|| v.map(|c| c / n))
+        };
+        for (i, p) in pm.pixels_mut().iter_mut().enumerate() {
+            if p.alpha() == 0 {
+                continue;
+            }
+            let (x, y) = ((i % w) as f64 + 0.5, (i / w) as f64 + 0.5);
+            let m = frame.camera.to_map(x / ppp, y / ppp, frame.width, frame.height);
+            let Some(level) = self.water.level(m) else { continue };
+            // The water's surface, raised to its level as the ground is (`Ground::up_px`).
+            let (u, v) = self.camera.ground_px(m);
+            let up = (level * self.exaggeration / super::per_unit(m, self.body) / res).clamp(-1e7, 1e7);
+            let Some(to_eye) = unit([self.eye[0] - u, self.eye[1] - v, self.eye[2] - up]) else { continue };
+            let Some(half) = unit([self.sun[0] + to_eye[0], self.sun[1] + to_eye[1], self.sun[2] + to_eye[2]]) else { continue };
+            let t = self.strength * half[2].max(0.0).powi(GLINT_SHININESS);
+            if t < GLINT_LEAST {
+                continue;
+            }
+            // Toward white, premultiplied: white at this alpha is the alpha itself.
+            let a = p.alpha();
+            let toward = |c: u8| (f64::from(c) + (f64::from(a) - f64::from(c)) * t).round().clamp(0.0, f64::from(a)) as u8;
+            if let Some(c) = tiny_skia::PremultipliedColorU8::from_rgba(toward(p.red()), toward(p.green()), toward(p.blue()), a) {
+                *p = c;
+            }
+        }
+    }
+}
+
+/// How far inside the water's outline its shore band reaches, in logical pixels (#1915): a few,
+/// as relief artists draw it.
+pub(crate) const SHORE_PX: f32 = 4.0;
+
+/// The strokes the shore band is drawn with, each narrower than the one before, so it fades from
+/// the outline inward in as many steps.
+const SHORE_STEPS: u16 = 4;
+
+impl Water {
+    /// The outlines of the lakes reaching into `frame` (a north-up frame), their islands' too,
+    /// as one path in its pixels; `None` when none does. Each lake's outline turns one way and
+    /// its islands' the other, so the path filled non-zero is every lake's water, islands out,
+    /// where lakes overlap too.
+    fn outlines(&self, frame: &crate::View) -> Option<tiny_skia::Path> {
+        let seen = frame.camera.extent(frame.width, frame.height);
+        let ppp = frame.pixels_per_point;
+        let mut path = tiny_skia::PathBuilder::new();
+        // A lake with a vertex that isn't a number is left out whole: one such vertex would
+        // leave the path without bounds (no band at all), and a hole drawn without its outer ring
+        // would be painted.
+        for lake in self.lakes.iter().filter(|l| l.extent.intersects(&seen) && l.rings.iter().flatten().all(|c| c.is_finite())) {
+            for (k, ring) in lake.rings.iter().enumerate() {
+                // Twice the ring's signed area: positive turning counter-clockwise.
+                let turn: f64 = ring.iter().zip(ring.iter().cycle().skip(1)).map(|(a, b)| a.x * b.y - b.x * a.y).sum();
+                let along = (turn >= 0.0) == (k == 0);
+                let points = ring.iter().map(|c| frame.camera.to_screen(*c, frame.width, frame.height));
+                let mut first = true;
+                let mut put = |(x, y): (f64, f64)| {
+                    let (x, y) = ((x * ppp) as f32, (y * ppp) as f32);
+                    if std::mem::take(&mut first) { path.move_to(x, y) } else { path.line_to(x, y) }
+                };
+                if along {
+                    points.for_each(&mut put)
+                } else {
+                    points.rev().for_each(&mut put)
+                }
+                path.close();
+            }
+        }
+        path.finish()
+    }
+}
+
+/// Darkens the terrain's water along its shores (#1915) on `pm`, a north-up frame drawn for
+/// `frame`: a band [`SHORE_PX`] wide inside each lake's outline and around its islands, toward
+/// black by `darkness` (0 to 1) at the outline and fading to nothing at its inner edge. Strokes
+/// of the outlines cut to the water, so a recording canvas keeps them as vectors.
+pub(crate) fn paint_shore(pm: &mut crate::Canvas, water: &Water, frame: &crate::View, darkness: f64) {
+    if darkness.is_nan() || darkness <= 0.0 {
+        return;
+    }
+    let Some(outlines) = water.outlines(frame) else { return };
+    let Some(mut band) = pm.sub(pm.width(), pm.height()) else { return };
+    // The darkness a point reaches under `m` of the strokes, the widest `m` lying over it:
+    // `darkness` with all of them, at the outline, falling in equal steps inward. Each stroke
+    // takes the point from one step to the next, so full darkness still fades rather than
+    // painting every stroke opaque.
+    let steps = f64::from(SHORE_STEPS);
+    let reached = |m: f64| darkness.min(1.0) * m / steps;
+    let mut paint = tiny_skia::Paint::default();
+    // Centred on the outline, each stroke reaches half its width inside.
+    let reach = 2.0 * SHORE_PX * frame.pixels_per_point.max(0.0) as f32;
+    for k in 1..=SHORE_STEPS {
+        // Stroke `k` is the `m`th widest, so its opacity is the one that takes `reached(m - 1)`
+        // to `reached(m)`.
+        let m = f64::from(SHORE_STEPS - k + 1);
+        let step = 1.0 - (1.0 - reached(m)) / (1.0 - reached(m - 1.0));
+        paint.set_color(tiny_skia::Color::from_rgba(0.0, 0.0, 0.0, step as f32).unwrap_or(tiny_skia::Color::BLACK));
+        let width = reach * f32::from(k) / f32::from(SHORE_STEPS);
+        let stroke = tiny_skia::Stroke { width, line_join: tiny_skia::LineJoin::Round, ..Default::default() };
+        band.stroke_path(&outlines, &paint, &stroke, tiny_skia::Transform::identity(), None);
+    }
+    let clip = crate::vector::Clip { path: outlines, rule: tiny_skia::FillRule::Winding, transform: tiny_skia::Transform::identity() };
+    pm.place(band, tiny_skia::Transform::identity(), 1.0, rustgis_map::effects::Blend::Normal, Some(clip));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A water layer held in another system holds its water where the same layer held in
+    /// longitude/latitude does (#2032 C2).
+    #[test]
+    fn a_held_water_layer_gives_the_same_polygons() {
+        use rustgis_data::{Dataset, GeometryType};
+        let ring = |x: f64, y: f64| {
+            vec![Coord::new(x, y), Coord::new(x + 0.01, y), Coord::new(x + 0.01, y + 0.01), Coord::new(x, y + 0.01), Coord::new(x, y)]
+        };
+        let mut d = Dataset::new("lake", GeometryType::Polygon, vec![]);
+        d.push(Some(Geometry::Polygon(vec![vec![ring(11.5, 48.7)], vec![ring(11.52, 48.71)]])), vec![]);
+        let plain = rustgis_map::Layer::new(1, d.clone());
+        d.hold_in(rustgis_data::raster::Crs::Epsg(32632)).unwrap();
+        let held = rustgis_map::Layer::new(2, d);
+        let (a, b) = (polygons(&plain, None, None), polygons(&held, None, None));
+        assert_eq!(a.len(), 2);
+        assert_eq!(a.len(), b.len());
+        for ((ra, _), (rb, _)) in a.iter().zip(&b) {
+            assert_eq!(ra.len(), rb.len());
+            for (x, y) in ra.iter().flatten().zip(rb.iter().flatten()) {
+                assert!((x.x - y.x).abs() < 1e-3 && (x.y - y.y).abs() < 1e-3, "{x:?} vs {y:?}");
+            }
+        }
+    }
 
     fn square(x0: f64, y0: f64, side: f64) -> Vec<Coord> {
         vec![Coord::new(x0, y0), Coord::new(x0 + side, y0), Coord::new(x0 + side, y0 + side), Coord::new(x0, y0 + side)]
@@ -566,7 +872,14 @@ mod tests {
             source: rustgis_map::view::TerrainSource::Layer("dem".into()),
             exaggeration: 2.0,
             block: None,
-            water: Some(rustgis_map::view::TerrainWater { layer: "lagos".into(), level: level.map(str::to_string) }),
+            // No glint or shore band unless a test asks for one: they would change the water's
+            // colours.
+            water: Some(rustgis_map::view::TerrainWater {
+                layer: "lagos".into(),
+                level: level.map(str::to_string),
+                glint: 0.0,
+                shore: 0.0,
+            }),
         });
         let camera = rustgis_map::Camera { center: lonlat_to_merc(Coord::new(0.0, -0.6)), res: 600.0, bearing: 0.0, pitch: 65.0 };
         (m, camera)
@@ -608,6 +921,8 @@ mod tests {
                 depth: Some(300.0),
                 walls: rustgis_map::view::BLOCK_WALLS,
                 walls_layer: None,
+                water: None,
+                shape: rustgis_map::view::BlockShape::Box,
             }),
             water: None,
         });
@@ -652,6 +967,44 @@ mod tests {
         // No water layer of that name: the ground as before.
         m.view.terrain.as_mut().unwrap().water.as_mut().unwrap().layer = "none".into();
         assert_eq!(Ground::of(&m, &camera).unwrap().water_unlevelled(), 0);
+    }
+
+    #[test]
+    fn a_lake_its_layer_doesnt_draw_leaves_the_ground_as_it_is() {
+        // #2305: the water is the rows its layer draws, as the layer's fill is: a lake its
+        // definition query, a display filter or the view distance leaves out is neither flat
+        // (nor lit flat, nor banded: they go by this water).
+        let at = |lon, lat| lonlat_to_merc(Coord::new(lon, lat));
+        let (mut m, camera) = hill_with_water(Some("nivel"));
+        let (lake, reservoir) = (at(0.25, 0.0), at(-0.4, -0.4));
+        let flat = |m: &Map| {
+            let g = Ground::of(m, &camera).unwrap();
+            let on_dem = g.height(lake) == g.raw_height(lake).map(|h| h * 2.0);
+            (!on_dem, g.height(reservoir) == Some(2468.0), g.water_unlevelled())
+        };
+        assert_eq!(flat(&m), (true, true, 1), "every row: the pond off the DEM is counted");
+        fn lagos(m: &mut Map) -> &mut rustgis_map::Layer {
+            m.layers.iter_mut().find(|l| l.name == "lagos").unwrap()
+        }
+        lagos(&mut m).definition_query = Some("nivel > 0".into());
+        assert_eq!(flat(&m), (false, true, 0), "the query keeps the reservoir only");
+        // The rows the query kept are kept for the next view, not for edited features.
+        lagos(&mut m).dataset.features[0].attrs[0] = rustgis_data::Value::Float(3000.0);
+        assert_eq!(flat(&m), (true, true, 0), "the pond given a level: the query keeps it");
+        lagos(&mut m).dataset.features[0].attrs[0] = rustgis_data::Value::Null;
+        assert_eq!(flat(&m), (false, true, 0));
+        lagos(&mut m).definition_query = None;
+        assert_eq!(flat(&m), (true, true, 1), "the query taken off: the water read again");
+        let filter =
+            |min_scale| rustgis_map::effects::DisplayFilter { name: "f".into(), min_scale, max_scale: None, where_: "nivel > 0".into() };
+        lagos(&mut m).display_filters = vec![filter(None)];
+        assert_eq!(flat(&m), (false, true, 0), "a display filter keeps the reservoir only");
+        lagos(&mut m).display_filters = vec![filter(Some(1000.0))];
+        assert_eq!(flat(&m), (true, true, 1), "a filter for closer in doesn't apply at this scale");
+        lagos(&mut m).display_filters.clear();
+        // The reservoir's nearest corner is about 35 km from the view's centre, the lake's 50 km.
+        m.view.clip_distance = Some(40_000.0);
+        assert_eq!(flat(&m), (false, true, 0), "the view distance leaves the lake out");
     }
 
     /// Every overlapping lake used to occupy every one of the 256² grid cells: 16,384 simple
@@ -741,7 +1094,7 @@ mod tests {
             .map(|(i, rings)| {
                 let mut extent = Extent::EMPTY;
                 rings.iter().flatten().for_each(|p| extent.expand(*p));
-                Lake { extent, level: i as f64, edges: Slabs::new(rings, &extent) }
+                Lake { extent, level: i as f64, edges: Slabs::new(rings, &extent), rings: rings.clone() }
             })
             .collect();
         for budget in [3, 32, 512] {
@@ -861,7 +1214,7 @@ mod tests {
             body: 1.0,
             water: None,
         };
-        let water = of(&m, &ground).unwrap();
+        let water = of(&m, &m.camera, &ground).unwrap();
         assert!(!ground.pending());
         assert_eq!(water.retry, Some(cache::RETRY), "a failed tile: asked again after the cache's wait");
         // Frames drawn within that wait take this read (no shore is read again); one after it
@@ -874,7 +1227,7 @@ mod tests {
         }
         // A tile still on its way: read again soon.
         *ground_pending(&ground).unwrap().borrow_mut() = true;
-        let soon = Water::build(polygons(water_layer(&m).unwrap().0, None), &ground, MAX_SHORE_SAMPLES);
+        let soon = Water::build(polygons(water_layer(&m).unwrap().0, None, None), &ground, MAX_SHORE_SAMPLES);
         assert_eq!(soon.retry, Some(RETRY_MISSING));
         assert!(soon.waits_for_tiles() && !water.waits_for_tiles());
     }
@@ -929,15 +1282,15 @@ mod tests {
 
     #[test]
     fn a_water_read_while_tiles_came_keeps_the_next_frame_waiting() {
-        let (m, _) = hill_with_water(None);
+        let (m, camera) = hill_with_water(None);
         // Read while shore tiles were on their way: kept for a second.
         let mut first = zoom_one(true);
-        first.attach_water(&m);
+        first.attach_water(&m, &camera);
         assert!(first.water.as_ref().unwrap().waits_for_tiles());
         // The next frame takes it from the cache and reads no tile inside its lakes: its heights
         // are still pending, so a frame or an export goes on waiting for the levels.
         let mut next = zoom_one(false);
-        next.attach_water(&m);
+        next.attach_water(&m, &camera);
         assert!(next.pending(), "a cached water waiting for tiles leaves the frame pending");
         // A read with nothing on its way leaves the frame as it is.
         let (dem, camera) = hill_with_water(None);
@@ -977,6 +1330,7 @@ mod tests {
     fn tiles_of_another_encoding_are_other_heights() {
         let key = |encoding| Key {
             rows: Weak::new(),
+            drawn: None,
             layer: "lagos".into(),
             level: None,
             heights: HeightsKey::Tiles { url: "https://e.com/{z}/{x}/{y}.png".into(), encoding, zoom: 9 },
@@ -1035,6 +1389,8 @@ mod tests {
                 sky: 0.0,
                 fill: 0.0,
                 rock: None,
+                ambient: None,
+                balanced: false,
             };
         };
         let camera = rustgis_map::Camera { center: lonlat_to_merc(Coord::new(0.35, -0.05)), res: 300.0, bearing: 0.0, pitch: 0.0 };
@@ -1088,6 +1444,8 @@ mod tests {
             sky: 0.0,
             fill: 0.0,
             rock: None,
+            ambient: None,
+            balanced: false,
         };
         camera.center = lonlat_to_merc(Coord::new(0.35, -0.3));
         let view = crate::View { width: 300.0, height: 200.0, pixels_per_point: 1.0, camera, sky: false };
@@ -1137,6 +1495,8 @@ mod tests {
             sky: 0.0,
             fill: 0.0,
             rock: None,
+            ambient: None,
+            balanced: false,
         };
         let camera = rustgis_map::Camera { center: lonlat_to_merc(Coord::new(0.25, -0.1)), res: 300.0, bearing: 0.0, pitch: 0.0 };
         let view = crate::View { width: 200.0, height: 200.0, pixels_per_point: 1.0, camera, sky: false };
@@ -1169,6 +1529,8 @@ mod tests {
             sky: 0.0,
             fill: 0.0,
             rock: None,
+            ambient: None,
+            balanced: false,
         };
         let camera = rustgis_map::Camera { center: lonlat_to_merc(Coord::new(0.35, -0.05)), res: 300.0, bearing: 0.0, pitch: 0.0 };
         let view = crate::View { width: 200.0, height: 200.0, pixels_per_point: 1.0, camera, sky: false };
@@ -1184,5 +1546,304 @@ mod tests {
         // Without a Shaded Relief drawn, nothing is read.
         m.layer_mut(dem).unwrap().visible = false;
         assert!(crate::relief_water(&m, &view, &crate::Labels::Own, scale).is_none());
+    }
+
+    /// The test hill's water seen tilted from the south, with a Shaded Relief whose sun is at
+    /// `azimuth`, 20° high, and the water's glint at `glint`; the water drawn in mid-blue.
+    fn glinting(azimuth: f64, glint: f64) -> (Map, crate::View) {
+        let (mut m, mut camera) = hill_with_water(None);
+        let lagos = m.layers.iter().find(|l| l.name == "lagos").map(|l| l.id).unwrap();
+        let fill = rustgis_map::Rgba::rgb(0x30, 0x60, 0xA0);
+        m.layer_mut(lagos).unwrap().renderer = rustgis_map::Renderer::Single(rustgis_map::Symbol {
+            fill,
+            stroke: fill,
+            stroke_width: 0.0,
+            size: 0.0,
+            marker: rustgis_map::Marker::Circle,
+        });
+        let dem = m.layers.iter().find(|l| l.raster.is_some()).map(|l| l.id).unwrap();
+        let l = m.layer_mut(dem).unwrap();
+        l.visible = true;
+        l.raster.as_mut().unwrap().style.renderer = rustgis_map::RasterRenderer::ShadedRelief {
+            band: 0,
+            ramp: None,
+            azimuth,
+            altitude: 20.0,
+            z_factor: 1.0,
+            shadow: 0.0,
+            sky: 0.0,
+            fill: 0.0,
+            rock: None,
+            ambient: None,
+            balanced: false,
+        };
+        m.view.terrain.as_mut().unwrap().water.as_mut().unwrap().glint = glint;
+        camera.center = lonlat_to_merc(Coord::new(0.35, -0.3));
+        (m, crate::View { width: 300.0, height: 200.0, pixels_per_point: 1.0, camera, sky: false })
+    }
+
+    /// The colour of each of `points` (longitude, latitude) in the first of a tilted view's drape
+    /// bands that holds it.
+    fn in_bands(m: &mut Map, view: &crate::View, points: &[(f64, f64)]) -> Vec<[u8; 3]> {
+        let patches = crate::render_tilt_drape(m, view, 0.0, 512);
+        points
+            .iter()
+            .filter_map(|(lon, lat)| {
+                patches.iter().find_map(|p| {
+                    let (x, y) = p.band.camera.to_screen(lonlat_to_merc(Coord::new(*lon, *lat)), p.band.width, p.band.height);
+                    let (sx, sy) = (p.pixmap.width() as f64 / p.band.width, p.pixmap.height() as f64 / p.band.height);
+                    p.pixmap.pixel((x * sx) as u32, (y * sy) as u32).filter(|c| c.alpha() > 0).map(|c| [c.red(), c.green(), c.blue()])
+                })
+            })
+            .collect()
+    }
+
+    /// A tilted view's water shines toward white where it reflects the sun toward the eye (#1915
+    /// part 3): brighter with the sun ahead, beyond the lake, than behind the eye; not at all
+    /// with a glint of 0; the land and the island never.
+    #[test]
+    fn a_tilted_views_water_glints_toward_the_sun() {
+        let lake = [(0.25, 0.05), (0.45, -0.15), (0.3, -0.1), (0.47, 0.07)];
+        let land = [(0.35, 0.0), (0.1, 0.0), (0.6, -0.3)];
+        let sum = |c: &[[u8; 3]]| c.iter().flatten().map(|v| u32::from(*v)).sum::<u32>();
+        for azimuth in [0.0, 180.0] {
+            let (mut m, view) = glinting(azimuth, 0.0);
+            let (dull, dull_land) = (in_bands(&mut m, &view, &lake), in_bands(&mut m, &view, &land));
+            assert_eq!(dull.len(), lake.len(), "every lake point is in a band");
+            let (mut m, view) = glinting(azimuth, 1.0);
+            let (shiny, shiny_land) = (in_bands(&mut m, &view, &lake), in_bands(&mut m, &view, &land));
+            assert_eq!(shiny_land, dull_land, "land doesn't glint (sun at {azimuth}°)");
+            for (s, d) in shiny.iter().zip(&dull) {
+                assert!(s.iter().zip(d).all(|(s, d)| s >= d), "toward white: {s:?} from {d:?} (sun at {azimuth}°)");
+            }
+        }
+        let (mut m, view) = glinting(0.0, 1.0);
+        let ahead = in_bands(&mut m, &view, &lake);
+        let (mut m, view) = glinting(180.0, 1.0);
+        let behind = in_bands(&mut m, &view, &lake);
+        let (mut m, view) = glinting(180.0, 0.0);
+        let dull = in_bands(&mut m, &view, &lake);
+        // Ahead the glint whitens the lake by far more than behind the eye.
+        assert!(sum(&ahead) > sum(&behind) + 200, "{ahead:?} against {behind:?} (dull {dull:?})");
+    }
+
+    /// A tilted view drawn whole (as exported, and on screen: terrain keeps it on the CPU) glints
+    /// too: only toward white, and nothing changes in a flat view.
+    #[test]
+    fn a_tilted_export_glints_and_a_flat_one_doesnt() {
+        let drawn = |glint: f64, pitch: f64| {
+            let (mut m, mut view) = glinting(0.0, glint);
+            view.camera.pitch = pitch;
+            // Terrain keeps the view off the GPU scene, which has no glint: the CPU draws it.
+            assert!(!crate::gpu_may_turn(&m, &view));
+            crate::render_complete(&mut m, &view).unwrap().pixmap
+        };
+        let (dull, shiny) = (drawn(0.0, 65.0), drawn(1.0, 65.0));
+        let mut brighter = 0;
+        for (s, d) in shiny.pixels().iter().zip(dull.pixels()) {
+            if s != d {
+                assert!(s.red() >= d.red() && s.green() >= d.green() && s.blue() >= d.blue() && s.alpha() == d.alpha(), "{s:?} {d:?}");
+                brighter += 1;
+            }
+        }
+        assert!(brighter > 100, "{brighter} pixels glint");
+        assert_eq!(drawn(1.0, 0.0).data(), drawn(0.0, 0.0).data(), "a flat view has no glint");
+    }
+
+    /// The glint's sun is a Shaded Relief layer's only when that layer is drawn at the view's
+    /// scale: out of its scale range, or in a hidden group, the north-west sun stands in.
+    #[test]
+    fn the_glints_sun_is_a_drawn_relief_layers() {
+        let (mut m, view) = glinting(90.0, 0.5);
+        let sun = |m: &Map| {
+            let ground = Ground::of(m, &view.camera).unwrap();
+            Glint::of(m, &view, &ground).unwrap().sun
+        };
+        let east = sun(&m);
+        assert!(east[0] > 0.9, "the relief's sun in the east: {east:?}");
+        let dem = m.layers.iter().find(|l| l.raster.is_some()).map(|l| l.id).unwrap();
+        m.layer_mut(dem).unwrap().max_scale = Some(1e12);
+        let north_west = sun(&m);
+        let (a, e) = (GLINT_SUN.0.to_radians(), GLINT_SUN.1.to_radians());
+        let want = [a.sin() * e.cos(), -a.cos() * e.cos(), e.sin()];
+        assert!(north_west.iter().zip(want).all(|(s, w)| (s - w).abs() < 1e-9), "{north_west:?} against {want:?}");
+    }
+
+    /// The test hill's lake drawn in mid-blue over a Shaded Relief, seen from straight above
+    /// (`pitch` 0) or tilted, its shore band at `shore`.
+    fn shored(shore: f64, pitch: f64) -> (Map, crate::View) {
+        let (mut m, mut view) = glinting(315.0, 0.0);
+        m.view.terrain.as_mut().unwrap().water.as_mut().unwrap().shore = shore;
+        view.camera.center = lonlat_to_merc(Coord::new(0.35, if pitch > 0.0 { -0.3 } else { -0.05 }));
+        view.camera.pitch = pitch;
+        (m, view)
+    }
+
+    /// The water is darker along its shore (#1915 part 4), from straight above: just inside the
+    /// lake's outline it goes toward black, a few pixels in it is untouched, and so is the land
+    /// just outside.
+    #[test]
+    fn a_lake_is_darker_along_its_shore() {
+        let drawn = |shore: f64| {
+            let (mut m, view) = shored(shore, 0.0);
+            let pm = crate::render_complete(&mut m, &view).unwrap().pixmap;
+            // The lake's western shore, halfway between its south shore and the island.
+            let (x, y) = view.camera.to_screen(lonlat_to_merc(Coord::new(0.2, -0.1)), view.width, view.height);
+            let at = |dx: f64| {
+                let c = pm.pixel((x + dx) as u32, y as u32).unwrap();
+                [c.red(), c.green(), c.blue(), c.alpha()]
+            };
+            (at(1.5), at(12.0), at(-3.0), pm)
+        };
+        let (edge, inside, land, off) = drawn(0.0);
+        let (dark_edge, dark_inside, dark_land, on) = drawn(1.0);
+        assert!(dark_edge[..3].iter().zip(&edge[..3]).all(|(d, e)| d < e), "darker at the shore: {dark_edge:?} from {edge:?}");
+        assert_eq!(dark_edge[3], edge[3], "alpha kept");
+        assert_eq!(dark_inside, inside, "a few pixels in, untouched");
+        assert_eq!(dark_land, land, "the land outside untouched");
+        // Only darker anywhere, never lighter.
+        for (d, e) in on.pixels().iter().zip(off.pixels()) {
+            assert!(d.red() <= e.red() && d.green() <= e.green() && d.blue() <= e.blue(), "{d:?} from {e:?}");
+        }
+    }
+
+    /// At its darkest (`shore` 1) the band still fades inward: black at the outline, lighter a few
+    /// pixels in.
+    #[test]
+    fn a_black_shore_still_fades_inward() {
+        let (mut m, view) = shored(1.0, 0.0);
+        let pm = crate::render_complete(&mut m, &view).unwrap().pixmap;
+        let (x, y) = view.camera.to_screen(lonlat_to_merc(Coord::new(0.2, -0.1)), view.width, view.height);
+        let at =
+            |dx: f64| pm.pixel((x + dx) as u32, y as u32).map(|c| u32::from(c.red()) + u32::from(c.green()) + u32::from(c.blue())).unwrap();
+        let (edge, inner) = (at(1.5), at(3.5));
+        assert!(edge < inner, "lighter a few pixels in: {inner} after {edge} at the outline");
+    }
+
+    /// A lake with a vertex that isn't a number (a bad row) takes no band, and leaves the others
+    /// theirs.
+    #[test]
+    fn a_lake_with_a_bad_vertex_leaves_the_others_their_band() {
+        let banded = |bad: bool| {
+            let (mut m, view) = shored(1.0, 0.0);
+            if bad {
+                let l = m.layers.iter_mut().find(|l| l.name == "lagos").unwrap();
+                let mut ring = square(0.6, -0.2, 0.05);
+                ring[1] = Coord::new(f64::NAN, -0.2);
+                l.dataset.push(Some(Geometry::Polygon(vec![vec![ring]])), vec![rustgis_data::Value::Float(1234.0)]);
+            }
+            western_shore(&mut m, &view).0
+        };
+        let (_, view) = shored(0.0, 0.0);
+        let (mut m, _) = shored(0.0, 0.0);
+        let plain = western_shore(&mut m, &view).0;
+        assert_ne!(banded(false), plain, "the band is drawn");
+        assert_eq!(banded(true), banded(false), "and still is beside a lake with a bad vertex");
+    }
+
+    /// A tilted view's water is darker along its shore too, in the drape's bands and drawn whole,
+    /// and the land never is.
+    #[test]
+    fn a_tilted_views_lake_is_darker_along_its_shore() {
+        let near_shore = [(0.203, -0.1), (0.497, -0.15), (0.3, -0.197)];
+        let land = [(0.1, 0.0), (0.6, -0.3)];
+        let (mut m, view) = shored(0.0, 65.0);
+        let (edge, dry) = (in_bands(&mut m, &view, &near_shore), in_bands(&mut m, &view, &land));
+        assert_eq!(edge.len(), near_shore.len(), "every point is in a band");
+        let (mut m, view) = shored(1.0, 65.0);
+        let (dark_edge, dark_dry) = (in_bands(&mut m, &view, &near_shore), in_bands(&mut m, &view, &land));
+        assert_eq!(dark_dry, dry, "the land isn't darkened");
+        for (d, e) in dark_edge.iter().zip(&edge) {
+            assert!(d.iter().zip(e).all(|(d, e)| d < e), "darker at the shore: {d:?} from {e:?}");
+        }
+        let whole = |shore: f64| {
+            let (mut m, view) = shored(shore, 65.0);
+            crate::render_complete(&mut m, &view).unwrap().pixmap
+        };
+        let (off, on) = (whole(0.0), whole(1.0));
+        let mut darker = 0;
+        for (d, e) in on.pixels().iter().zip(off.pixels()) {
+            if d != e {
+                assert!(d.red() <= e.red() && d.green() <= e.green() && d.blue() <= e.blue() && d.alpha() == e.alpha(), "{d:?} {e:?}");
+                darker += 1;
+            }
+        }
+        assert!(darker > 50, "{darker} pixels along the shore");
+    }
+
+    /// At full darkness the band still fades inward: just inside the outline it darkens the
+    /// water without painting it solid black, as every stroke at full opacity would.
+    #[test]
+    fn a_full_dark_shore_band_is_not_solid_black() {
+        let (mut m, view) = shored(1.0, 0.0);
+        let (edge, _) = western_shore(&mut m, &view);
+        assert!(edge.iter().any(|&c| c > 0), "lit a little just inside the outline: {edge:?}");
+    }
+
+    /// The lake's western shore just inside, and a few pixels in, in a flat view's picture.
+    fn western_shore(m: &mut Map, view: &crate::View) -> ([u8; 3], [u8; 3]) {
+        let pm = crate::render_complete(m, view).unwrap().pixmap;
+        let (x, y) = view.camera.to_screen(lonlat_to_merc(Coord::new(0.2, -0.1)), view.width, view.height);
+        let at = |dx: f64| pm.pixel((x + dx) as u32, y as u32).map(|c| [c.red(), c.green(), c.blue()]).unwrap();
+        (at(1.5), at(12.0))
+    }
+
+    /// The band needs no Shaded Relief, and goes with the water layer: none while that layer
+    /// isn't drawn (hidden or out of its scale range). Two lakes on one another still get it.
+    #[test]
+    fn the_shore_band_goes_with_the_water_layer_not_the_relief() {
+        let flat = |shore: f64, setup: &dyn Fn(&mut Map)| {
+            let (mut m, view) = shored(shore, 0.0);
+            setup(&mut m);
+            western_shore(&mut m, &view)
+        };
+        let id = |m: &Map, name: &str| m.layers.iter().find(|l| l.name == name).map(|l| l.id).unwrap();
+        let no_relief = |m: &mut Map| {
+            let dem = m.layers.iter().find(|l| l.raster.is_some()).map(|l| l.id).unwrap();
+            m.layer_mut(dem).unwrap().visible = false;
+        };
+        let (edge, inside) = flat(0.0, &no_relief);
+        let (dark, dark_inside) = flat(1.0, &no_relief);
+        assert!(dark.iter().zip(&edge).all(|(d, e)| d < e), "darker without a relief: {dark:?} from {edge:?}");
+        assert_eq!(dark_inside, inside);
+        // The same lake twice: the band is drawn, not cancelled by the overlap.
+        let twice = |m: &mut Map| {
+            use rustgis_data::Value;
+            let lagos = id(m, "lagos");
+            let lake = vec![square(0.2, -0.2, 0.3), square(0.33, -0.02, 0.04)];
+            m.layer_mut(lagos).unwrap().dataset.push(Some(Geometry::Polygon(vec![lake])), vec![Value::Null]);
+        };
+        let (edge, _) = flat(0.0, &twice);
+        let (dark, _) = flat(1.0, &twice);
+        assert!(dark.iter().zip(&edge).all(|(d, e)| d < e), "darker with two lakes in one: {dark:?} from {edge:?}");
+        // The water layer hidden, or out of its scale range: no band.
+        let hidden = |m: &mut Map| {
+            let lagos = id(m, "lagos");
+            m.layer_mut(lagos).unwrap().visible = false;
+        };
+        assert_eq!(flat(1.0, &hidden), flat(0.0, &hidden), "no band while the water layer is hidden");
+        let out_of_range = |m: &mut Map| {
+            let lagos = id(m, "lagos");
+            m.layer_mut(lagos).unwrap().max_scale = Some(1e12);
+        };
+        assert_eq!(flat(1.0, &out_of_range), flat(0.0, &out_of_range), "no band out of the water layer's scale range");
+    }
+
+    /// Over elevation tiles still on their way, a frame with the band waits for them, without a
+    /// Shaded Relief too; with the band off, its water isn't read for it.
+    #[test]
+    fn a_shore_band_over_tiles_on_their_way_leaves_the_frame_pending() {
+        let pending = |shore: f64| {
+            let (mut m, view) = shored(shore, 0.0);
+            let dem = m.layers.iter().find(|l| l.raster.is_some()).map(|l| l.id).unwrap();
+            m.layer_mut(dem).unwrap().visible = false;
+            m.view.terrain.as_mut().unwrap().source = rustgis_map::view::TerrainSource::Tiles {
+                url: "https://shore-band.invalid/{z}/{x}/{y}.png".into(),
+                encoding: TerrainEncoding::Terrarium,
+            };
+            crate::render(&mut m, &view).unwrap().tiles_pending
+        };
+        assert!(pending(0.35), "the band's shore tiles are waited for");
+        assert!(!pending(0.0), "nothing read without the band");
     }
 }

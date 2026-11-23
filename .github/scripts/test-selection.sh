@@ -11,7 +11,8 @@
 #
 # From the event: EVENT (github.event_name), BASE_REF (github.base_ref, a pull request's base
 # branch), LABELS (the pull request's labels, as JSON) and PLATFORMS (a manual run's choice). A
-# manual run on Linux alone (a fork checking a branch) compares with main.
+# manual run on Linux alone (a fork checking a branch) and the merge queue (`merge_group`, whose
+# commit is main with the queued pull requests on top) compare with main.
 set -euo pipefail
 
 # Chooses the whole workspace, for the reason in $1.
@@ -50,6 +51,11 @@ fi
 selected="$(cargo xtask changed --list "$base")" || everything "cargo xtask changed --list failed"
 case "$selected" in
   all) everything "a changed file is outside every package and nothing includes it" ;;
+  none)
+    echo "packages=none"
+    report "No Rust package affected by these changes; skipping Rust tests."
+    exit 0
+    ;;
   "") everything "no changed file found against $base" ;;
 esac
 echo "packages=$(sed 's/^/-p /' <<<"$selected" | paste -sd' ' -)"

@@ -179,16 +179,15 @@ pub fn commands() -> Vec<C> {
             crate::model::check_file(&v)?;
             let name = v["name"].as_str().unwrap_or("Tool").chars().take(200).collect::<String>();
             // A model file (`*.model.json`) holds a graph; a web tool its steps.
-            let mark = s.notice_mark();
             let imported = if let Some(graph) = v.get("graph") {
                 s.run("model.new", &json!({"name": name, "graph": graph, "imported": true}))?
             } else {
-                let steps = v.get("steps").cloned().ok_or("not a RustGIS model or web tool (no graph or steps)")?;
+                let steps = v.get("steps").cloned().ok_or(crate::model::NOT_A_MODEL)?;
                 s.run("model.new", &json!({"name": name, "steps": steps, "imported": true}))?
             };
             // A name `model.new` cut to tell it apart is said once, by it (#1923), unless this cut
             // it first: `model.new` saw only the first 200 characters, so that cut is said here.
-            let said = s.notices_since(mark).iter().any(|n| n.text.starts_with("ModelBuilder: a model has that name already"));
+            let said = imported.get("cut").and_then(Value::as_bool).unwrap_or(false);
             let cut_here = v["name"].as_str().is_some_and(|n| n.chars().count() > 200);
             if (cut_here || !said) && v.get("name").map_or(Some("Tool"), Value::as_str) != imported.get("model").and_then(Value::as_str) {
                 // A cut to the 200 says how much it cut.
@@ -236,6 +235,7 @@ pub(crate) fn share_output(s: &mut Session, kind: &str, p: &Value) -> Result<(St
     Ok((name, bytes, source, notes))
 }
 
+/// Build the saved payload for each share kind; web tools carry capabilities of their steps.
 fn share_bytes_inner(s: &mut Session, kind: &str, p: &Value) -> Result<(String, Vec<u8>, String), String> {
     match kind {
         "webMap" => {
@@ -273,19 +273,7 @@ fn share_bytes_inner(s: &mut Session, kind: &str, p: &Value) -> Result<(String, 
             let m = s.project.models.get_mut(i).ok_or("make a model first (ModelBuilder)")?;
             let name = m.name.clone();
             let (bytes, report) = crate::durable::output(m, None, |m| {
-                let params: Vec<Value> = m
-                    .steps
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(i, st)| {
-                        st.params
-                            .as_object()
-                            .into_iter()
-                            .flatten()
-                            .map(move |(k, v)| json!({"step": i + 1, "tool": st.tool, "name": k, "default": v}))
-                    })
-                    .collect();
-                let tool = json!({"format": "RustGIS web tool", "version": crate::model::WEB_TOOL_VERSION, "name": m.name, "steps": m.steps, "parameters": params});
+                let tool = crate::model::to_web_tool_file(&m.name, &m.steps);
                 serde_json::to_vec_pretty(&tool).map_err(|e| e.to_string())
             })?;
             crate::durable::notify(s, &report);
@@ -405,7 +393,7 @@ fn share(s: &mut Session, p: &Value, kind: &str) -> CmdResult {
         }
     };
     let written = s.notice_mark();
-    s.notify_written(format!("Shared {name} to {path}"), false);
+    s.notify_written(format!("Shared {name} to {path}"));
     // After it, so the status bar, which shows the last notice, keeps saying it.
     note_label_classes(s, kind, p);
     note_export(s, kind, p, &path);
@@ -470,7 +458,7 @@ fn upload(s: &mut Session, p: &Value) -> CmdResult {
     // create_new is the real guard (the check above only gives a clearer message): the file is
     // created new, never through an existing file or link. A copy that fails part way is removed,
     // so a retry can write it.
-    let from = std::fs::File::open(src).map_err(|e| format!("{src}: {e}"))?;
+    let from = rustgis_data::provenance::open(src).map_err(|e| format!("{src}: {e}"))?;
     if !from.metadata().is_ok_and(|m| m.len() <= MAX_UPLOAD) {
         return Err(format!("{src}: uploads are at most {} MB", MAX_UPLOAD >> 20));
     }
@@ -517,33 +505,37 @@ fn css(c: Rgba) -> String {
     format!("rgba({},{},{},{:.3})", c.r(), c.g(), c.b(), f64::from(c.a()) / 255.0)
 }
 
-/// A layer's visible features as GeoJSON, each with its drawn style.
-fn styled_features(l: &Layer, budget: &mut usize) -> Vec<Value> {
+/// A layer's visible features as GeoJSON, each with its drawn style: in longitude/latitude,
+/// whatever system the layer holds its coordinates in; refused, naming the feature, when one of
+/// its places can't be given there.
+fn styled_features(l: &Layer, budget: &mut usize) -> Result<Vec<Value>, String> {
     let rows = l.visible_rows();
     let opacity = 1.0 - f64::from(l.transparency.clamp(0.0, 100.0)) / 100.0;
     let mut out = Vec::new();
     // Its symbol by expression (no map scale: the page zooms on its own).
     let styler = l.styler(None);
-    for (row, ft) in l.dataset.features.iter().enumerate() {
+    let to = l.dataset.lonlat_conversion().map_err(|e| format!("{}: {e}", l.name))?;
+    for (row, ft) in l.dataset.features.rows().enumerate() {
         if *budget == 0 {
             break;
         }
         if rows.get(row) != Some(&true) {
             continue;
         }
-        let Some(g) = &ft.geometry else { continue };
+        let Some(g) = ft.geometry() else { continue };
+        let g = rustgis_data::Dataset::geometry_to_lonlat_by(&to, g).map_err(|e| format!("{}: feature {}: {e}", l.name, ft.id()))?;
         let sym = styler.symbol(row);
         let props: serde_json::Map<String, Value> =
             l.dataset.fields.iter().enumerate().map(|(i, f)| (f.name.clone(), json!(l.dataset.value(row, i).to_string()))).collect();
         out.push(json!({
             "type": "Feature",
-            "geometry": rustgis_data::io::geometry_to_geojson(g),
+            "geometry": rustgis_data::io::geometry_to_geojson(&g),
             "properties": props,
             "style": {"fill": css(sym.fill), "stroke": css(sym.stroke), "width": sym.stroke_width, "size": sym.size, "opacity": opacity},
         }));
         *budget -= 1;
     }
-    out
+    Ok(out)
 }
 
 /// A self-contained web map page: the map's layers (rasters as images) drawn on a canvas in Web
@@ -582,7 +574,7 @@ fn web_map_html(m: &Map, title: &str) -> Result<String, String> {
                 json!({"name": l.name, "image": base64::engine::general_purpose::STANDARD.encode(png), "bounds": [a.x, a.y, b.x, b.y]}),
             );
         } else {
-            layers.push(json!({"name": l.name, "features": styled_features(l, &mut budget)}));
+            layers.push(json!({"name": l.name, "features": styled_features(l, &mut budget)?}));
         }
     }
     let c = m.center_lonlat();
@@ -674,6 +666,14 @@ pub(crate) fn note_label_classes(s: &mut Session, kind: &str, p: &Value) {
         format!("{}'s style draws every feature with one symbol ({which}): its classes by expression aren't in it.", l.name)
     });
     if let Some(text) = classes {
+        s.notify(text, false);
+    }
+    // A size mapping has no MapLibre equivalent written for it: its points keep their classes' sizes.
+    let sized = s.layer_id(p).ok().and_then(|id| s.map().layer(id)).and_then(|l| {
+        let by = l.size_by.as_ref().filter(|_| rustgis_map::symbol_by::SizeBy::applies_to(l))?;
+        Some(format!("{}'s style draws its points at their classes' sizes: their sizes by {} aren't in it.", l.name, by.field))
+    });
+    if let Some(text) = sized {
         s.notify(text, false);
     }
     let Some(l) = s.layer_id(p).ok().and_then(|id| s.map().layer(id)).filter(|l| l.labels.enabled) else { return };
@@ -857,7 +857,7 @@ fn ogc_zip(title: &str, layers: &[&Dataset], extra: &[(String, Vec<u8>)]) -> Res
             id = format!("{base}_{}", *n + 1);
         }
         taken.insert(id.clone());
-        let e = ds.extent();
+        let e = ds.lonlat_extent();
         let mut col = json!({
             "id": id, "title": ds.name, "itemType": "feature",
             "links": [{"href": format!("collections/{id}/items.json"), "rel": "items", "type": "application/geo+json"}],
@@ -867,7 +867,8 @@ fn ogc_zip(title: &str, layers: &[&Dataset], extra: &[(String, Vec<u8>)]) -> Res
                 json!({"spatial": {"bbox": [[e.min_x, e.min_y, e.max_x, e.max_y]], "crs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84"}});
         }
         entries.push((format!("collections/{id}.json"), serde_json::to_vec_pretty(&col).map_err(|e| e.to_string())?));
-        let mut fc = rustgis_data::io::to_geojson(ds);
+        // GeoJSON is longitude/latitude, whatever system the layer holds its coordinates in.
+        let mut fc = rustgis_data::io::to_geojson(&*ds.in_lonlat()?);
         fc["numberReturned"] = json!(ds.features.len());
         entries.push((format!("collections/{id}/items.json"), serde_json::to_vec(&fc).map_err(|e| e.to_string())?));
         cols.push(col);
@@ -885,7 +886,7 @@ fn ogc_zip(title: &str, layers: &[&Dataset], extra: &[(String, Vec<u8>)]) -> Res
 /// A web layer: the layer as an OGC API Features collection, its style, and a viewer page.
 fn web_layer_zip(s: &Session, l: &Layer) -> Result<Vec<u8>, String> {
     let style = serde_json::to_vec_pretty(&web_style(l)).map_err(|e| e.to_string())?;
-    let geojson = serde_json::to_vec(&rustgis_data::io::to_geojson(&l.dataset)).map_err(|e| e.to_string())?;
+    let geojson = serde_json::to_vec(&rustgis_data::io::to_geojson(&*l.dataset.in_lonlat()?)).map_err(|e| e.to_string())?;
     let mut m = s.map().clone();
     m.layers = vec![l.clone()];
     let e = l.extent();
@@ -926,6 +927,7 @@ fn locator(l: &Layer, fields: Option<&[String]>) -> Result<Locator, String> {
     if fis.is_empty() {
         return Err("pick the fields to search (the layer has no text fields)".into());
     }
+    let lonlat = ds.lonlat_conversion()?;
     let mut entries = Vec::new();
     for (row, ft) in ds.features.iter().enumerate().take(MAX_FEATURES) {
         let Some(g) = &ft.geometry else { continue };
@@ -937,6 +939,10 @@ fn locator(l: &Layer, fields: Option<&[String]>) -> Result<Locator, String> {
             Geometry::Point(p) => *p,
             _ => e.center(),
         };
+        // In longitude/latitude, the entries' system. The identity keeps the place as it is, as
+        // before; a place another system can't convert is left out (unreachable while every
+        // dataset is in longitude/latitude), as a NaN entry would make the locator unreadable.
+        let Some(c) = (if lonlat.is_identity() { Some(c) } else { lonlat.point(c) }) else { continue };
         for &fi in &fis {
             let t = match ds.value(row, fi) {
                 rustgis_data::Value::Null => continue,
@@ -1001,6 +1007,8 @@ struct SceneBytes {
     skipped_outer: usize,
     holes_dropped: usize,
     single_vertex_lines: usize,
+    /// Features left out because a place of theirs can't be given in longitude/latitude.
+    unplaced: usize,
     /// Per layer, in scene order: its name and how many features had their base or height held
     /// to [`SCENE_TOP`].
     held: Vec<(String, usize)>,
@@ -1018,6 +1026,9 @@ impl SceneBytes {
         }
         if self.limited > 0 {
             notes.push(format!("{} feature(s) left out of the scene: the {MAX_FEATURES} feature limit was reached", self.limited));
+        }
+        if self.unplaced > 0 {
+            notes.push(format!("{} feature(s) left out of the scene: a place can't be given in longitude/latitude", self.unplaced));
         }
         if self.skipped_outer > 0 {
             notes.push(format!("Skipped {} polygon(s) whose outer ring has fewer than 3 vertices", self.skipped_outer));
@@ -1073,6 +1084,9 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<SceneBytes, String> {
         };
         let (mut built, mut last): (usize, Option<([u8; 4], usize)>) = (0, None);
         let mut held = 0usize;
+        // The layer's conversion to longitude/latitude, made once (none: a system that can't be
+        // converted, whose features are all left out, and said).
+        let to_lonlat = l.dataset.lonlat_conversion().ok();
         for (row, ft) in l.dataset.features.iter().enumerate() {
             if let Some((k, before)) = last.take() {
                 built += size(&tri, &lines, &k).saturating_sub(before);
@@ -1085,6 +1099,13 @@ fn gltf(m: &Map, view: (f64, f64)) -> Result<SceneBytes, String> {
                 scene.limited += 1;
                 continue;
             }
+            // Placed from longitude/latitude, whatever system the layer holds its coordinates in; a
+            // feature with a place that can't be given there is left out, and said, as one too far.
+            let Some(lonlat) = to_lonlat.as_ref().and_then(|to| rustgis_data::Dataset::converted_to_lonlat(to, g)) else {
+                scene.unplaced += 1;
+                continue;
+            };
+            let g = &*lonlat;
             // A position too far for 32 bits would make the scene invalid: the feature is left out,
             // and said. Only what would be drawn counts (not a degenerate ring or a one-vertex line).
             let far = |c: &Coord| {
@@ -1401,13 +1422,17 @@ fn link_chart(s: &Session, rel: Option<&str>) -> Result<(String, Option<String>)
         }
         // The features a key relates to are counted once, however many features share it.
         let mut counted: HashSet<String> = HashSet::new();
+        // Where a key's destinations already in the chart sit among its destinations, found when
+        // the chart has no room for another one and kept while it stays that size: a full chart
+        // then looks at these only, not at every destination of every feature.
+        let mut in_chart: HashMap<String, (usize, Vec<usize>)> = HashMap::new();
         for orow in 0..o.dataset.features.len() {
             let Some(key) = key_of(&o.dataset, orow, ok) else { continue };
             let Some(drows) = by_key.get(&key) else { continue };
             related.insert((om, o.id, orow));
             // Counted in 64 bits: relations can pass `usize` in the browser (32 bits).
             relations += drows.len() as u64;
-            if counted.insert(key) {
+            if counted.insert(key.clone()) {
                 related.extend(drows.iter().map(|&drow| (dm, d.id, drow)));
             }
             if links.len() >= MAX_LINKS {
@@ -1418,29 +1443,49 @@ fn link_chart(s: &Session, rel: Option<&str>) -> Result<(String, Option<String>)
             // out; one already in the chart may still be linked.
             // Up to 200 links drawn from it: destinations the chart has no room for don't count
             // toward them, so a later one it can draw still is.
-            let origin = (om, o.id, orow);
-            let mut a = index.get(&origin).copied();
+            let mut a = index.get(&(om, o.id, orow)).copied();
+            // A feature the chart has no room for can't be drawn, so none of its links can be.
             if a.is_none() && nodes.len() >= MAX_NODES {
                 continue;
             }
             let mut drawn_here = 0;
-            for &drow in drows {
+            let mut i = 0;
+            while i < drows.len() {
                 if drawn_here >= MAX_FEATURE_LINKS || links.len() >= MAX_LINKS {
                     break;
                 }
-                let destination = (dm, d.id, drow);
-                let new = usize::from(a.is_none()) + usize::from(destination != origin && !index.contains_key(&destination));
+                let drow = drows[i];
+                // A feature related to itself is one end, not two.
+                let origin_new = a.is_none();
+                let dest_new = !index.contains_key(&(dm, d.id, drow)) && !(origin_new && (om, o.id, orow) == (dm, d.id, drow));
+                let new = usize::from(origin_new) + usize::from(dest_new);
                 if nodes.len() + new > MAX_NODES {
+                    // No room for a destination the chart doesn't hold: on to the next one it
+                    // does, or to the feature itself.
+                    let (at, rows) = in_chart.entry(key.clone()).or_insert((usize::MAX, Vec::new()));
+                    if *at != nodes.len() {
+                        *rows = (0..drows.len()).filter(|&j| index.contains_key(&(dm, d.id, drows[j]))).collect();
+                        *at = nodes.len();
+                    }
+                    let next_held = rows.get(rows.partition_point(|&j| j <= i)).copied();
+                    let next_self =
+                        if origin_new && (om, o.id) == (dm, d.id) { drows.binary_search(&orow).ok().filter(|&j| j > i) } else { None };
+                    match next_held.into_iter().chain(next_self).min() {
+                        Some(j) => i = j,
+                        None => break,
+                    }
                     continue;
                 }
                 let (Some(from), Some(to)) =
                     (a.or_else(|| node(&mut index, &mut nodes, om, o, orow, gi)), node(&mut index, &mut nodes, dm, d, drow, gi))
                 else {
+                    i += 1;
                     continue;
                 };
                 a = Some(from);
                 links.push(json!({"source": from, "target": to, "relationship": r.name}));
                 drawn_here += 1;
+                i += 1;
             }
         }
     }

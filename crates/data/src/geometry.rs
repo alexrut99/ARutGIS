@@ -9,10 +9,10 @@ const LABEL_GRID_STEPS: usize = 64;
 const _: () = assert!(LABEL_GRID_STEPS > 0 && LABEL_GRID_STEPS < (u128::BITS - 1) as usize);
 
 /// A counted explanation when these features contain rings with no single enclosed area.
-pub fn ambiguous_area_message<'a>(geometries: impl Iterator<Item = &'a Geometry>) -> Option<String> {
+pub fn ambiguous_area_message<G: std::borrow::Borrow<Geometry>>(geometries: impl Iterator<Item = G>) -> Option<String> {
     let (mut features, mut rings) = (0usize, 0usize);
     for geometry in geometries {
-        let count = geometry.ambiguous_area_rings();
+        let count = geometry.borrow().ambiguous_area_rings();
         if count > 0 {
             features += 1;
             rings += count;
@@ -187,7 +187,9 @@ impl Geometry {
     }
 
     /// Rings, holes included, that loop around a pole without being cut at ±180°
-    /// ([`rustgis_geom::ring_pole_turns`]).
+    /// ([`rustgis_geom::ring_pole_turns`]), their coordinates read as longitude and latitude: a
+    /// ring that was never in degrees can count too, if its short-way steps wind (which takes an
+    /// edge more than 180 long in x).
     pub fn pole_loop_rings(&self) -> usize {
         match self {
             Geometry::Polygon(polys) => polys.iter().flatten().filter(|r| rustgis_geom::ring_pole_turns(r) != 0).count(),

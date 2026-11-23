@@ -7,7 +7,7 @@
 //! with byte shuffle), zlib, gzip, zstd and LZ4. Every count, size and length in a store is
 //! hostile input and bounded.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
@@ -42,6 +42,15 @@ pub const MAX_READ: u64 = 4 << 30;
 
 fn bad(m: impl Into<String>) -> DataError {
     DataError::Format(m.into())
+}
+
+/// Adds the store or array path to decoding failures without turning Cancel into a format error.
+fn read_error(path: &str, error: DataError) -> DataError {
+    match error {
+        DataError::Cancelled => DataError::Cancelled,
+        DataError::Format(message) => bad(format!("{path}: {message}")),
+        error => bad(format!("{path}: {error}")),
+    }
 }
 
 /// How a value is stored.
@@ -317,11 +326,8 @@ impl Array {
     /// value `i` is at `i * size`.
     pub fn decode_bytes(&self, bytes: &[u8]) -> Result<(Vec<u8>, DType)> {
         self.chunk_values()?;
-        let (data, little) = decode_chunk(&self.codecs, bytes, &self.chunks, self.dtype, self.fill).map_err(|e| match e {
-            e if self.path.is_empty() => e,
-            DataError::Format(m) => bad(format!("{}: {m}", self.path)),
-            e => bad(format!("{}: {e}", self.path)),
-        })?;
+        let (data, little) = decode_chunk(&self.codecs, bytes, &self.chunks, self.dtype, self.fill)
+            .map_err(|e| if self.path.is_empty() { e } else { read_error(&self.path, e) })?;
         Ok((data, DType { little, ..self.dtype }))
     }
 }
@@ -337,18 +343,34 @@ fn unsupported(codecs: &[Codec]) -> Option<String> {
 
 /// Undoes `codecs` on a chunk of `shape` values of type `dtype`: its values' bytes (as many as
 /// the shape holds, never more) and their byte order. `fill` stands for a shard's missing chunks.
+/// Size-preserving steps and CRC32C's four bytes give the exact limit before the first variable-size
+/// encoder. Other intermediate stages use the existing chunk-file limit, since encoded data can
+/// be larger than the final values. Limits apply to each decompressor, not just Zstandard.
+/// Zlib, gzip, LZ4 and Blosc's non-Zstandard decoding have no internal Cancel checks: a whole
+/// stage can finish before its caller observes cancellation. Zstandard checks between reads
+/// of at most 64 KiB.
 fn decode_chunk(codecs: &[Codec], bytes: &[u8], shape: &[u64], dtype: DType, fill: Option<f64>) -> Result<(Vec<u8>, bool)> {
     let n = shape.iter().try_fold(1u64, |a, &c| a.checked_mul(c)).ok_or_else(|| bad("a chunk too large"))?;
     let want = usize::try_from(n).ok().and_then(|n| n.checked_mul(dtype.size)).ok_or_else(|| bad("a chunk too large"))?;
+    // In encoding order, the fixed-size prefix gives the first variable codec's output size
+    // when decoded. Each checksum is part of that output until its own decoder removes it.
+    let first_variable = codecs.iter().position(|c| !matches!(c, Codec::Bytes { .. } | Codec::Shuffle(_) | Codec::Crc32c));
+    let known_limit = codecs.iter().take(first_variable.unwrap_or(codecs.len())).try_fold(want, |limit, c| {
+        if matches!(c, Codec::Crc32c) { limit.checked_add(4).ok_or_else(|| bad("a chunk's encoded stage is too large")) } else { Ok(limit) }
+    })?;
+    if known_limit as u64 > MAX_CHUNK_FILE {
+        return Err(bad("a chunk's encoded stage is too large"));
+    }
     let mut data = bytes.to_vec();
     let mut little = dtype.little;
-    for c in codecs.iter().rev() {
+    for (i, c) in codecs.iter().enumerate().rev() {
+        let limit = if Some(i) == first_variable { known_limit } else { MAX_CHUNK_FILE as usize };
         data = match c {
-            Codec::Blosc => blosc(&data, want)?,
-            Codec::Zlib => inflate(&data, true, want)?,
-            Codec::Gzip => gunzip(&data, want)?,
-            Codec::Zstd => unzstd(&data, want)?,
-            Codec::Lz4 => numcodecs_lz4(&data, want)?,
+            Codec::Blosc => blosc(&data, limit)?,
+            Codec::Zlib => inflate(&data, true, limit)?,
+            Codec::Gzip => gunzip(&data, limit)?,
+            Codec::Zstd => unzstd(&data, limit)?,
+            Codec::Lz4 => numcodecs_lz4(&data, limit)?,
             Codec::Shuffle(e) => unshuffle(&data, *e),
             Codec::Crc32c => data.get(..data.len().saturating_sub(4)).unwrap_or_default().to_vec(),
             Codec::Bytes { little: l } => {
@@ -487,6 +509,116 @@ pub fn parse_store(docs: &[(String, Vec<u8>)]) -> Result<Store> {
         inherit_georeferencing(a, &groups, &mut parts);
     }
     Ok(Store { arrays })
+}
+
+/// `docs` parsed as JSON, those over [`MAX_METADATA`] left out (as [`parse_store`] refuses them),
+/// by key from the store's root.
+fn small_json(docs: &[(String, Vec<u8>)]) -> Vec<(&str, Value)> {
+    docs.iter()
+        .filter(|(_, b)| b.len() <= MAX_METADATA)
+        .filter_map(|(k, b)| serde_json::from_slice::<Value>(b).ok().map(|v| (k.trim_start_matches('/'), v)))
+        .collect()
+}
+
+/// Whether `docs` (a store's root files, [`METADATA_KEYS`]) are a group's that lists no arrays:
+/// a Zarr 3 root group whose `consolidated_metadata` isn't an object, or a Zarr 2 `.zgroup` with
+/// no `.zmetadata`. Its arrays are then found by name ([`member_keys`]).
+pub fn lists_no_arrays(docs: &[(String, Vec<u8>)]) -> bool {
+    let json = small_json(docs);
+    let doc = |k: &str| json.iter().find(|(d, _)| *d == k).map(|(_, v)| v);
+    match doc("zarr.json") {
+        Some(z) => {
+            z.get("node_type").and_then(Value::as_str) == Some("group") && !z.get("consolidated_metadata").is_some_and(Value::is_object)
+        }
+        None => doc(".zgroup").is_some() && doc(".zarray").is_none() && !doc(".zmetadata").is_some_and(|m| m.get("metadata").is_some()),
+    }
+}
+
+/// Most names one round of [`member_keys`] asks for: room for the variable's groups (up to
+/// [`MAX_GROUP_DEPTH`]), the variable, the root's `spatial:dimensions`, and the variable's own
+/// dimensions and grid mapping in its group and at the root (each at most [`MAX_DIMS`]), which
+/// come first.
+const MAX_PROBES: usize = MAX_GROUP_DEPTH + 3 + 3 * MAX_DIMS;
+
+/// The metadata files to fetch next from a store whose root lists no arrays ([`lists_no_arrays`]),
+/// given the files fetched so far (`docs`), in this order: the groups above `variable` (its path in
+/// the store, at most [`MAX_GROUP_DEPTH`] of them), the variable, the root group's
+/// `spatial:dimensions`, the variable's dimensions and grid mapping (CF `grid_mapping`), then those
+/// the other arrays fetched so far name. Each is asked for in its array's group and at the root,
+/// where [`Store`] looks for coordinates and grid mappings. Zarr 3 asks for `<name>/zarr.json`, Zarr 2 for `<name>/.zarray` and
+/// `<name>/.zattrs` (a group's `.zgroup` and `.zattrs`).
+///
+/// Files already in `docs`, documents over [`MAX_METADATA`], names that would lead out of the store
+/// and names with `?`, `#` or `%` (which an address would read as something else) are left out.
+/// At most [`MAX_PROBES`] names are asked for, with room for everything a read of the variable
+/// uses: only the other arrays' dimensions (coordinates of coordinates, which no read looks up) can
+/// be left past it. Empty when the root lists its arrays.
+pub fn member_keys(docs: &[(String, Vec<u8>)], variable: &str) -> Vec<String> {
+    if !lists_no_arrays(docs) {
+        return Vec::new();
+    }
+    let v3 = docs.iter().any(|(k, _)| k == "zarr.json");
+    let json = small_json(docs);
+    let strings = |v: Option<&Value>| -> Vec<String> {
+        v.and_then(Value::as_array)
+            .map(|a| a.iter().take(MAX_DIMS).filter_map(Value::as_str).map(str::to_string).collect())
+            .unwrap_or_default()
+    };
+    // Each array's dimension names and its grid mapping's (CF `grid_mapping`, which `crs_of`
+    // looks up), by its path; the variable's first.
+    let mut arrays: Vec<(&str, Vec<String>)> = json
+        .iter()
+        .filter_map(|(k, v)| {
+            let (p, dims, attrs) = if v3 {
+                let p = k.strip_suffix("zarr.json")?;
+                if v.get("node_type").and_then(Value::as_str) != Some("array") {
+                    return None;
+                }
+                (p, strings(v.get("dimension_names")), v.get("attributes"))
+            } else {
+                (k.strip_suffix(".zattrs")?, strings(v.get("_ARRAY_DIMENSIONS")), Some(v))
+            };
+            let mapping = attrs.and_then(|a| a.get("grid_mapping")).and_then(Value::as_str).map(str::to_string);
+            Some((p.trim_end_matches('/'), dims.into_iter().chain(mapping).collect()))
+        })
+        .collect();
+    let variable = variable.trim().trim_matches('/');
+    arrays.sort_by_key(|(p, _)| (*p != variable, *p));
+    let mut groups = Vec::new();
+    let mut names = Vec::new();
+    if !variable.is_empty() {
+        let parts: Vec<&str> = variable.split('/').collect();
+        groups.extend((1..parts.len()).map(|depth| parts[..depth].join("/")).take(MAX_GROUP_DEPTH));
+        names.push(variable.to_string());
+    }
+    let root = json.iter().find(|(k, _)| *k == if v3 { "zarr.json" } else { ".zattrs" }).map(|(_, v)| v);
+    let root_attrs = if v3 { root.and_then(|r| r.get("attributes")) } else { root };
+    names.extend(strings(root_attrs.and_then(|a| a.get("spatial:dimensions"))));
+    for (path, dims) in arrays {
+        let group = path.rsplit_once('/').map(|(g, _)| g);
+        for d in dims {
+            if let Some(g) = group {
+                names.push(format!("{g}/{d}"));
+            }
+            names.push(d);
+        }
+    }
+    let have: HashSet<&str> = docs.iter().map(|(k, _)| k.trim_start_matches('/')).collect();
+    let fine = |n: &str| !n.is_empty() && safe_path(n) && !n.contains(['?', '#', '%']);
+    let (group_files, array_files): (&[&str], &[&str]) =
+        if v3 { (&["zarr.json"], &["zarr.json"]) } else { (&[".zgroup", ".zattrs"], &[".zarray", ".zattrs"]) };
+    // Each name once, those with every file fetched already left out, before the cap.
+    let mut seen = HashSet::new();
+    let wanted = groups
+        .iter()
+        .map(|g| (g.as_str(), group_files))
+        .chain(names.iter().map(|n| (n.as_str(), array_files)))
+        .filter(|(n, files)| fine(n) && seen.insert(*n) && files.iter().any(|f| !have.contains(format!("{n}/{f}").as_str())));
+    let mut out = Vec::new();
+    for (n, files) in wanted.take(MAX_PROBES) {
+        out.extend(files.iter().map(|f| format!("{n}/{f}")).filter(|k| !have.contains(k.as_str())));
+    }
+    out
 }
 
 /// The `spatial:` keys that place a grid, which come together from one place: the array, or the
@@ -792,11 +924,46 @@ fn gunzip(d: &[u8], want: usize) -> Result<Vec<u8>> {
     inflate(d.get(at..).ok_or_else(|| bad("a cut gzip header"))?, false, want)
 }
 
+/// Decodes within the chunk's existing byte limit without reserving its claimed length. The
+/// caller still checks for a short decoded chunk against the array metadata.
 fn unzstd(d: &[u8], want: usize) -> Result<Vec<u8>> {
-    use std::io::Read;
     let dec = ruzstd::decoding::StreamingDecoder::new(d).map_err(|e| bad(format!("a zstd chunk: {e}")))?;
-    let mut out = Vec::with_capacity(want.min(64 << 20));
-    dec.take(want as u64 + 1).read_to_end(&mut out).map_err(|e| bad(format!("a zstd chunk: {e}")))?;
+    super::decoded::read(dec, want, "a zstd chunk")
+}
+
+/// A short valid frame with a large expected chunk length must not reserve that length before
+/// the caller can report the mismatch. The coarse capacity bound catches the old 64 MiB reserve.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[test]
+fn a_short_zstd_frame_does_not_reserve_its_claimed_chunk_length() {
+    let raw = [0u8; 8];
+    let frame = zstd::encode_all(raw.as_slice(), 1).unwrap();
+    let bytes = unzstd(&frame, 64 << 20).unwrap();
+    assert_eq!(bytes, raw);
+    assert!(bytes.capacity() < 1 << 20, "reserved {} bytes for eight decoded bytes", bytes.capacity());
+    assert_eq!(unzstd(&frame, raw.len()).unwrap(), raw);
+    assert!(unzstd(&frame, raw.len() - 1).is_err());
+}
+
+/// The most bytes an LZ4 block can make from each byte of itself: a match's length grows by up to
+/// 255 for every byte that extends it, so no sequence expands more. A header claiming more than
+/// that is wrong, whatever the chunk's size.
+/// See the length extensions in the LZ4 block format:
+/// <https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md>.
+const LZ4_MAX_RATIO: usize = 255;
+
+/// The `len` bytes LZ4 block `src` decompresses to (`what` names it in errors). `len` is a
+/// header's claim, so it is held to what `src` can make before any room is made for it: a few
+/// bytes of input never ask for a gigabyte.
+fn lz4_block(src: &[u8], len: usize, what: &str) -> Result<Vec<u8>> {
+    if len > src.len().saturating_mul(LZ4_MAX_RATIO) {
+        return Err(bad(format!("{what} claims more bytes than its data can hold")));
+    }
+    let mut out = vec![0u8; len];
+    let got = lz4_flex::block::decompress_into(src, &mut out).map_err(|e| bad(format!("{what}: {e}")))?;
+    if got != len {
+        return Err(bad(format!("{what} holds {got} bytes, not the {len} it says")));
+    }
     Ok(out)
 }
 
@@ -805,10 +972,7 @@ fn numcodecs_lz4(d: &[u8], want: usize) -> Result<Vec<u8>> {
     if n > want.max(1) {
         return Err(bad("an LZ4 chunk larger than its array's chunks"));
     }
-    let mut out = vec![0u8; n];
-    let got = lz4_flex::block::decompress_into(d.get(4..).unwrap_or_default(), &mut out).map_err(|e| bad(format!("an LZ4 chunk: {e}")))?;
-    out.truncate(got);
-    Ok(out)
+    lz4_block(d.get(4..).unwrap_or_default(), n, "an LZ4 chunk")
 }
 
 /// Byte unshuffle: element `j`'s byte `i` was stored at `i * n + j`.
@@ -839,10 +1003,19 @@ pub fn blosc_decode(d: &[u8], want: usize) -> Result<Vec<u8>> {
     blosc(d, want)
 }
 
+/// `d[at..at + len]`, if `d` holds it. The end is added with a check: offsets and lengths come
+/// from a chunk's own headers, and `at + len` wraps a 32-bit `usize` (the browser's).
+fn span(d: &[u8], at: usize, len: usize) -> Option<&[u8]> {
+    d.get(at..at.checked_add(len)?)
+}
+
 /// A blosc (version 1) frame: a 16-byte header, then blocks compressed with LZ4, zlib or zstd,
-/// each byte-shuffled and possibly split into a stream per byte of the type.
+/// each byte-shuffled and possibly split into a stream per byte of the type. The header's sizes
+/// are claims: the table of block starts and every stream are found in the frame before room is
+/// made for what they describe, and a frame that decodes to less than it says is an error.
 fn blosc(d: &[u8], want: usize) -> Result<Vec<u8>> {
-    let h = d.get(..16).ok_or_else(|| bad("a cut blosc chunk"))?;
+    let cut = || bad("a cut blosc chunk");
+    let h = d.get(..16).ok_or_else(cut)?;
     let flags = h[2];
     let typesize = usize::from(h[3]).max(1);
     let le = |o: usize| u32::from_le_bytes([h[o], h[o + 1], h[o + 2], h[o + 3]]) as usize;
@@ -852,19 +1025,25 @@ fn blosc(d: &[u8], want: usize) -> Result<Vec<u8>> {
     }
     // Stored as it is.
     if flags & 0x2 != 0 {
-        return Ok(d.get(16..16 + nbytes).ok_or_else(|| bad("a cut blosc chunk"))?.to_vec());
+        return Ok(span(d, 16, nbytes).ok_or_else(cut)?.to_vec());
     }
-    if blocksize == 0 || nbytes == 0 {
+    if nbytes == 0 {
         return Ok(Vec::new());
+    }
+    if blocksize == 0 {
+        return Err(bad("a blosc chunk with blocks of no size"));
     }
     let codec = flags >> 5;
     let nblocks = nbytes.div_ceil(blocksize);
-    let mut out = Vec::with_capacity(nbytes);
-    for b in 0..nblocks {
-        let start = d
-            .get(16 + 4 * b..20 + 4 * b)
-            .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]) as usize)
-            .ok_or_else(|| bad("a cut blosc chunk"))?;
+    let table = nblocks.checked_mul(4).and_then(|n| span(d, 16, n)).ok_or_else(cut)?;
+    // Reserve from the bytes present, not the decoded length claimed by the header; grow only
+    // as blocks actually decode.
+    let mut out = Vec::with_capacity(nbytes.min(d.len()));
+    for (b, start) in table.as_chunks::<4>().0.iter().enumerate() {
+        let start = u32::from_le_bytes(*start) as usize;
+        if start < 16 + table.len() {
+            return Err(bad("a blosc block starts inside its header or block table"));
+        }
         let bsize = if b + 1 == nblocks { nbytes - b * blocksize } else { blocksize };
         // A stream per byte of the type, unless the block wasn't split; the last, shorter block
         // never is.
@@ -872,40 +1051,48 @@ fn blosc(d: &[u8], want: usize) -> Result<Vec<u8>> {
         let split = !leftover && flags & 0x10 == 0 && typesize <= 16 && blocksize / typesize >= 128;
         let streams = if split { typesize } else { 1 };
         let ssize = bsize / streams;
-        let mut block = Vec::with_capacity(bsize);
+        let mut block = Vec::new();
         let mut at = start;
         for s in 0..streams {
             let this = if s + 1 == streams { bsize - ssize * (streams - 1) } else { ssize };
-            let cbytes = d.get(at..at + 4).map(|s| i32::from_le_bytes([s[0], s[1], s[2], s[3]])).ok_or_else(|| bad("a cut blosc chunk"))?;
+            let cbytes = span(d, at, 4).map(|s| i32::from_le_bytes([s[0], s[1], s[2], s[3]])).ok_or_else(cut)?;
             at += 4;
             let cb = usize::try_from(cbytes).map_err(|_| bad("a blosc stream of special values isn't read"))?;
-            let src = d.get(at..at + cb).ok_or_else(|| bad("a cut blosc chunk"))?;
+            let src = span(d, at, cb).ok_or_else(cut)?;
             at += cb;
             if cb == this {
                 block.extend_from_slice(src);
                 continue;
             }
             let part = match codec {
-                1 => {
-                    let mut o = vec![0u8; this];
-                    let n = lz4_flex::block::decompress_into(src, &mut o).map_err(|e| bad(format!("a blosc LZ4 block: {e}")))?;
-                    o.truncate(n);
-                    o
-                }
+                1 => lz4_block(src, this, "a blosc LZ4 block")?,
                 3 => inflate(src, true, this)?,
                 4 => unzstd(src, this)?,
                 0 => return Err(bad("blosc's own codec (blosclz) isn't read: use LZ4, zlib or zstd")),
                 2 => return Err(bad("snappy blosc chunks aren't read")),
                 c => return Err(bad(format!("blosc codec {c} isn't read"))),
             };
-            block.extend_from_slice(part.get(..this.min(part.len())).unwrap_or_default());
+            if part.len() != this {
+                return Err(bad(format!("a blosc stream holds {} bytes, not the {this} it says", part.len())));
+            }
+            block.extend_from_slice(&part);
         }
         if flags & 0x4 != 0 {
             block = bitunshuffle(&block, typesize, h[0]);
         } else if flags & 0x1 != 0 && typesize > 1 {
             block = unshuffle(&block, typesize);
         }
+        // Grown as Vec would (doubling), but never past the `nbytes` the blocks add up to, so a
+        // valid chunk holds no more than it did when `nbytes` was reserved at once.
+        if out.capacity() - out.len() < block.len() {
+            let rest = nbytes.saturating_sub(out.len()).max(block.len());
+            out.try_reserve_exact(rest.min(out.len().max(block.len())))
+                .map_err(|_| bad(format!("not enough memory for a blosc chunk of {nbytes} bytes")))?;
+        }
         out.extend_from_slice(&block);
+    }
+    if out.len() != nbytes {
+        return Err(bad(format!("a blosc chunk holds {} bytes, not the {nbytes} it says", out.len())));
     }
     Ok(out)
 }
@@ -1148,6 +1335,49 @@ fn inner_id(shard: &str, c: usize) -> String {
     format!("{shard}#{c}")
 }
 
+/// The shard holding chunk `idx` (counted in a shard's chunks, `per` of them along each
+/// dimension): its key, and the chunk's place in the shard's row-major order.
+fn shard_of(a: &Array, idx: &[u64], per: &[u64]) -> (String, usize) {
+    let shard: Vec<u64> = idx.iter().zip(per).map(|(u, p)| u / p.max(&1)).collect();
+    let c = idx.iter().zip(per).fold(0u64, |c, (u, p)| c * p + u % p.max(&1));
+    (a.chunk_key(&shard), c as usize)
+}
+
+/// How many chunks a shard holds (`per` along each dimension): an error, not an overflow, when
+/// its index alone would be past what one chunk may hold.
+fn shard_count(a: &Array, per: &[u64]) -> Result<usize> {
+    per.iter()
+        .try_fold(1u64, |n, &p| n.checked_mul(p))
+        .filter(|&n| n.saturating_mul(16) <= MAX_CHUNK_BYTES)
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or_else(|| bad(format!("{}: its shards hold too many chunks to read", a.path)))
+}
+
+/// Adds chunk `idx` (see [`shard_of`]) to the shards read in part; the first chunk of a shard
+/// also adds the [`Part`] reading its index.
+fn read_in_shard(
+    a: &Array,
+    idx: &[u64],
+    per: &[u64],
+    shard_at: &mut HashMap<String, usize>,
+    shards: &mut Vec<ShardRead>,
+    parts: &mut Vec<Part>,
+) -> Result<()> {
+    let Some(Codec::Sharding { index, index_at_end, .. }) = a.codecs.first() else { return Ok(()) };
+    let count = shard_count(a, per)?;
+    let (key, c) = shard_of(a, idx, per);
+    if let Some(s) = shard_at.get(&key).and_then(|&i| shards.get_mut(i)) {
+        s.chunks.push(c);
+        return Ok(());
+    }
+    shard_at.insert(key.clone(), shards.len());
+    let len = index_len(count, index).ok_or_else(|| bad("a shard too large"))? as u64;
+    let span = if *index_at_end { Span::Tail(len) } else { Span::Bytes(0, len - 1) };
+    parts.push(Part { key: key.clone(), span, id: format!("{key}#index") });
+    shards.push(ShardRead { key, count, chunks: vec![c] });
+    Ok(())
+}
+
 /// Whether a 1D array's chunks are its values as they are (no compression), so a window reads
 /// only its own values' bytes of them.
 fn plain(c: &Array) -> bool {
@@ -1383,29 +1613,11 @@ pub fn plan(store: &Store, sel: &Selection) -> Result<Plan> {
                     d => fixed.get(d).copied().unwrap_or(0) / size(d),
                 })
                 .collect();
-            let Some((_, index)) = sharding else {
+            if sharding.is_none() {
                 keys.push(a.chunk_key(&idx));
                 continue;
-            };
-            // The shard holding this chunk, and the chunk's place in the shard's row-major order.
-            let shard: Vec<u64> = idx.iter().zip(&per).map(|(u, p)| u / p.max(&1)).collect();
-            let c = idx.iter().zip(&per).fold(0u64, |c, (u, p)| c * p + u % p.max(&1));
-            let key = a.chunk_key(&shard);
-            match shard_at.get(&key).and_then(|&i| shards.get_mut(i)) {
-                Some(s) => s.chunks.push(c as usize),
-                None => {
-                    shard_at.insert(key.clone(), shards.len());
-                    let count = per.iter().product::<u64>() as usize;
-                    let len = index_len(count, index).ok_or_else(|| bad("a shard too large"))? as u64;
-                    let span = if matches!(a.codecs.first(), Some(Codec::Sharding { index_at_end: false, .. })) {
-                        Span::Bytes(0, len - 1)
-                    } else {
-                        Span::Tail(len)
-                    };
-                    parts.push(Part { key: key.clone(), span, id: format!("{key}#index") });
-                    shards.push(ShardRead { key, count, chunks: vec![c as usize] });
-                }
             }
+            read_in_shard(a, &idx, &per, &mut shard_at, &mut shards, &mut parts)?;
         }
     }
     // A grid placed by its spatial:transform reads no coordinates.
@@ -1451,12 +1663,26 @@ pub fn plan(store: &Store, sel: &Selection) -> Result<Plan> {
 /// index says it doesn't hold, are left out: [`assemble`] leaves the first empty, as a chunk never
 /// written, and gives the second the fill value, as a shard read whole does.
 pub fn inner_parts(store: &Store, plan: &Plan, got: &HashMap<String, Vec<u8>>) -> Result<Vec<Part>> {
-    let Some(a) = store.array(&plan.var) else { return Ok(Vec::new()) };
+    shard_chunk_parts(store, &plan.var, &plan.shards, got, "take a smaller window")
+}
+
+/// [`inner_parts`] for a point's series ([`plan_series`] of a sharded variable): the chunk
+/// holding the cell in each shard.
+pub fn series_inner_parts(store: &Store, plan: &SeriesPlan, got: &HashMap<String, Vec<u8>>) -> Result<Vec<Part>> {
+    shard_chunk_parts(store, &plan.var, &plan.shards, got, "take a shorter period")
+}
+
+/// The bytes of `shards`' chunks of variable `var`, from their indexes in `got`; `smaller` says
+/// how to read less when they are too many. The indexes already read count toward the same
+/// [`MAX_READ`], so both reads together stay under it.
+fn shard_chunk_parts(store: &Store, var: &str, shards: &[ShardRead], got: &HashMap<String, Vec<u8>>, smaller: &str) -> Result<Vec<Part>> {
+    let Some(a) = store.array(var) else { return Ok(Vec::new()) };
     let Some(Codec::Sharding { index, .. }) = a.codecs.first() else { return Ok(Vec::new()) };
-    let (mut parts, mut total) = (Vec::new(), 0u64);
-    for s in &plan.shards {
+    let read: u64 = shards.iter().filter_map(|s| got.get(&format!("{}#index", s.key))).map(|r| r.len() as u64).sum();
+    let (mut parts, mut total) = (Vec::new(), read);
+    for s in shards {
         let Some(raw) = got.get(&format!("{}#index", s.key)) else { continue };
-        let idx = shard_index(raw, s.count, index).map_err(|e| bad(format!("{}: {e}", s.key)))?;
+        let idx = shard_index(raw, s.count, index).map_err(|e| read_error(&s.key, e))?;
         for &c in &s.chunks {
             let Some(&(off, len)) = idx.get(c) else { continue };
             if off == u64::MAX && len == u64::MAX {
@@ -1468,7 +1694,7 @@ pub fn inner_parts(store: &Store, plan: &Plan, got: &HashMap<String, Vec<u8>>) -
                 .ok_or_else(|| bad(format!("{}: a chunk's place in it is wrong", s.key)))?;
             total = total.saturating_add(len);
             if total > MAX_READ {
-                return Err(bad(format!("{}: the window's chunks are more than {} GB: take a smaller window", a.path, MAX_READ >> 30)));
+                return Err(bad(format!("{}: the chunks to read are more than {} GB: {smaller}", a.path, MAX_READ >> 30)));
             }
             parts.push(Part { key: s.key.clone(), span: Span::Bytes(off, last - 1), id: inner_id(&s.key, c) });
         }
@@ -1556,7 +1782,16 @@ fn crs_code(v: &Value) -> Option<Crs> {
 /// A coordinate system given as text (WKT, a code, PROJ), and what reading its WKT said.
 fn crs_text(t: &str) -> Option<(Crs, Option<String>)> {
     let t = t.trim();
-    if t.contains('[') { super::wkt::read_wkt(t).ok() } else { Crs::parse(t).ok().map(|c| (c, None)) }
+    if t.contains('[') {
+        super::wkt::read_wkt(t).ok()
+    } else {
+        Crs::parse(t).ok().map(|c| {
+            let note = super::wkt::typed_crs_note(t, c)
+                .or_else(|| super::planetary::note_of(c))
+                .or_else(|| c.lacks_datum_shift().then(|| NO_DATUM_SHIFT.to_string()));
+            (c, note)
+        })
+    }
 }
 
 /// What `a`'s `proj:` keys (its own, else its groups') give that isn't a coordinate system that is
@@ -1570,7 +1805,7 @@ fn unread_proj(a: &Array) -> Option<String> {
         .flat_map(|m| {
             PROJ_KEYS.iter().filter_map(move |k| {
                 let v = m.get(*k)?;
-                let read = if *k == "proj:epsg" { crs_code(v).is_some() } else { v.as_str().and_then(crs_text).is_some() };
+                let read = if *k == "proj:epsg" { crs_code(v).is_some() } else { v.as_str().is_some_and(|t| Crs::parse(t).is_ok()) };
                 (!read).then(|| {
                     let text = v.to_string();
                     let n = text.chars().count();
@@ -1617,6 +1852,11 @@ fn crs_of(store: &Store, a: &Array) -> Option<(Crs, Option<String>)> {
     })
 }
 
+/// What a coordinate system given as a PROJ definition says when it names an ellipsoid and no shift
+/// to WGS 84 ([`Crs::lacks_datum_shift`]), as a WKT's datum without one does.
+const NO_DATUM_SHIFT: &str =
+    "its datum has no conversion to WGS 84 in the definition, so positions may be off by up to a few hundred metres";
+
 /// One axis from its coordinates: the first cell's outer edge and the cell size, if the
 /// coordinates are evenly spaced (to within a fifth of a cell).
 fn axis(v: &[f64]) -> Option<(f64, f64)> {
@@ -1633,7 +1873,8 @@ fn axis(v: &[f64]) -> Option<(f64, f64)> {
 }
 
 /// Decodes the chunks a [`plan`] named (missing ones are the fill value) into a raster.
-/// `crs` is used when the store doesn't say its coordinate system.
+/// `crs` is used when the store doesn't say its coordinate system. A store whose coordinate
+/// arrays are in degrees is in the geographic system it gives (ED50, another body's), else WGS 84.
 pub fn assemble(store: &Store, plan: &Plan, chunks: &HashMap<String, Vec<u8>>, name: &str, crs: Option<Crs>) -> Result<Raster> {
     let a = store.array(&plan.var).ok_or_else(|| bad("the variable is gone"))?;
     let win = plan.window;
@@ -1680,16 +1921,14 @@ pub fn assemble(store: &Store, plan: &Plan, chunks: &HashMap<String, Vec<u8>>, n
             // The chunk's id, and (in a shard) the shard's key and the chunk's place in it.
             let (id, shard) = match inner {
                 Some(_) => {
-                    let shard: Vec<u64> = idx.iter().zip(&per).map(|(u, p)| u / p.max(&1)).collect();
-                    let key = a.chunk_key(&shard);
-                    let c = idx.iter().zip(&per).fold(0u64, |c, (u, p)| c * p + u % p.max(&1)) as usize;
+                    let (key, c) = shard_of(a, &idx, &per);
                     (inner_id(&key, c), Some((key, c)))
                 }
                 None => (a.chunk_key(&idx), None),
             };
             let (vals, dt) = match (chunks.get(&id), inner) {
                 (Some(bytes), Some((i, codecs, _))) => {
-                    let (d, little) = decode_chunk(codecs, bytes, i, a.dtype, a.fill).map_err(|e| bad(format!("{}: {e}", a.path)))?;
+                    let (d, little) = decode_chunk(codecs, bytes, i, a.dtype, a.fill).map_err(|e| read_error(&a.path, e))?;
                     (d, DType { little, ..a.dtype })
                 }
                 (Some(bytes), None) => a.decode_bytes(bytes)?,
@@ -1702,7 +1941,7 @@ pub fn assemble(store: &Store, plan: &Plan, chunks: &HashMap<String, Vec<u8>>, n
                     let Some(raw) = chunks.get(&format!("{key}#index")) else { continue };
                     if !indexes.contains_key(key) {
                         let count = per.iter().product::<u64>() as usize;
-                        indexes.insert(key.clone(), shard_index(raw, count, index).map_err(|e| bad(format!("{key}: {e}")))?);
+                        indexes.insert(key.clone(), shard_index(raw, count, index).map_err(|e| read_error(key, e))?);
                     }
                     if indexes.get(key).and_then(|x| x.get(*c)).is_some_and(|&e| e != (u64::MAX, u64::MAX)) {
                         return Err(bad(format!("{}: a chunk of shard {key} wasn't read", a.path)));
@@ -1828,16 +2067,20 @@ pub fn assemble(store: &Store, plan: &Plan, chunks: &HashMap<String, Vec<u8>>, n
         x0 += dx * w as f64;
         dx = -dx;
     }
-    // A proj: value that isn't read is said whatever system is used: the store's ([`crs_of`]
-    // says it), the axes' longitude/latitude, or the one given.
+    // Unread proj: values stay visible beside the system used, or in the error below.
     let found = crs_of(store, a);
     let unread = if found.is_none() { unread_proj(a) } else { None };
-    let (crs, crs_note) = if lonlat {
-        // The axes are read as longitude/latitude, whatever the WKT says; a shift it gives that
-        // isn't applied is still said.
-        (Some(Crs::LonLat), found.and_then(|(_, note)| note).or(unread.clone()))
+    let mut crs_assumed = false;
+    let (crs, crs_notes): (Option<Crs>, Vec<String>) = if lonlat {
+        let assumed = lonlat_assumption(found.as_ref().map(|(c, _)| *c), crs);
+        crs_assumed = assumed.is_some();
+        let (actual, note) = found.unwrap_or((Crs::LonLat, None));
+        (Some(if actual.is_geographic() { actual } else { Crs::LonLat }), note.into_iter().chain(assumed).collect())
     } else {
-        found.map_or((crs, unread.clone()), |(crs, note)| (Some(crs), note))
+        match found {
+            Some((crs, note)) => (Some(crs), note.into_iter().collect()),
+            None => (crs, crs.and_then(super::planetary::note_of).into_iter().collect()),
+        }
     };
     let Some(crs) = crs else {
         let said = unread.map(|u| format!(" that is read ({u})")).unwrap_or_default();
@@ -1845,7 +2088,7 @@ pub fn assemble(store: &Store, plan: &Plan, chunks: &HashMap<String, Vec<u8>>, n
     };
     // Longitudes of 0–360: a global grid is turned to start at -180; one wholly east of 180 is
     // moved by 360.
-    if crs == Crs::LonLat && x0 + dx * w as f64 > 180.5 {
+    if crs.is_geographic() && x0 + dx * w as f64 > 180.5 {
         if x0 >= 180.0 {
             x0 -= 360.0;
         } else if dx * w as f64 >= 359.0 && x0 > -1.0 - dx {
@@ -1864,9 +2107,11 @@ pub fn assemble(store: &Store, plan: &Plan, chunks: &HashMap<String, Vec<u8>>, n
         (Kind::Float, _) => "Float32",
         (Kind::Int, 1) => "Int8",
         (Kind::Int, 2) => "Int16",
+        (Kind::Int, 8) => "Int64",
         (Kind::Int, _) => "Int32",
         (Kind::UInt, 1) | (Kind::Bool, _) => "UInt8",
         (Kind::UInt, 2) => "UInt16",
+        (Kind::UInt, 8) => "UInt64",
         (Kind::UInt, _) => "UInt32",
     };
     let data_type = if scale != 1.0 || offset != 0.0 { "Float32" } else { data_type };
@@ -1874,7 +2119,9 @@ pub fn assemble(store: &Store, plan: &Plan, chunks: &HashMap<String, Vec<u8>>, n
     if rounded > 0 {
         r.rounded = vec![rounded];
     }
-    r.lost.extend(crs_note);
+    r.crs_assumed = crs_assumed;
+    r.lost.extend(crs_notes);
+    r.lost.extend(unread);
     // A transform the coordinates stood in for is said, not dropped without a word.
     if has_transform(a) && spatial_grid(a).is_none() {
         r.lost.push(format!("{}: {TRANSFORM_UNREAD}: its coordinates place it", a.path));
@@ -1888,6 +2135,27 @@ pub fn assemble(store: &Store, plan: &Plan, chunks: &HashMap<String, Vec<u8>>, n
         ));
     }
     Ok(r)
+}
+
+/// The assumption a degree-axis slice or point series makes. A caller's WGS 84 is explicit,
+/// not assumed; another caller system is not used when the axes say longitude/latitude.
+pub fn lonlat_assumption(given: Option<Crs>, typed: Option<Crs>) -> Option<String> {
+    match given {
+        Some(c) if c.is_geographic() => None,
+        Some(_) => Some(super::assumed_wgs84_note("its coordinate system isn't geographic")),
+        None => match typed {
+            Some(Crs::LonLat) => None,
+            Some(c) => Some(super::assumed_wgs84_note(&format!("the coordinate system you gave ({}) isn't used", c.label()))),
+            None => Some(super::assumed_wgs84_note("the store doesn't say its coordinate system")),
+        },
+    }
+}
+
+/// Encodes a slice kept in a project (a web store's slice, directory window or summary). The
+/// GeoTIFF writer refuses systems its keys cannot preserve; explain the project limitation before
+/// handing any bytes to a layer, retaining the writer's reason.
+pub fn write_project_slice(raster: &Raster) -> Result<Vec<u8>> {
+    super::geotiff::write(raster, 0).map_err(|e| bad(format!("the slice can't be kept in a project as a GeoTIFF: {e}; no layer was added")))
 }
 
 // --- What a store holds --------------------------------------------------------------------------
@@ -1938,7 +2206,10 @@ pub fn coordinate_keys(store: &Store, variable: &str) -> Vec<String> {
 /// coordinate has CF time units (`days since 2001-01-01`), with its steps as milliseconds since
 /// 1970 (UTC). A `noleap` date is the same real date; a 360- or 366-day year is laid over its real
 /// year in proportion (360_day's 30 February falls about 1 March), so its dates stay distinct and
-/// in order. `None` when no dimension has such a coordinate, or one of its steps isn't a date.
+/// in order. A coordinate of whole years with no CF units ([`year_axis`]: named `time` or `year`,
+/// or marked `axis: "T"` or `standard_name: "time"`) is a time dimension too, each year's step on
+/// its 1 January. `None` when no dimension has such a coordinate, or one of its steps
+/// isn't a date.
 pub fn time_axis(store: &Store, variable: &str, chunks: &HashMap<String, Vec<u8>>) -> Option<(String, Vec<f64>)> {
     let v = store.array(variable)?;
     let (y, x) = map_dims(v);
@@ -1949,11 +2220,12 @@ pub fn time_axis(store: &Store, variable: &str, chunks: &HashMap<String, Vec<u8>
         // A coordinate of the dimension's own length (one found at the root, of another group,
         // may not be), so date `i` is step `i`.
         let Some(c) = store.coordinate(v, name).filter(|c| c.shape.first() == v.shape.get(d)) else { continue };
-        if !attr_str(c, "units").is_some_and(|u| u.contains(" since ")) {
+        let cf = attr_str(c, "units").is_some_and(|u| u.contains(" since "));
+        if !cf && !year_axis(c) {
             continue;
         }
         let Ok(vals) = values_1d(c, chunks) else { continue };
-        let ms: Option<Vec<f64>> = vals.iter().map(|t| time_ms(c, *t)).collect();
+        let ms: Option<Vec<f64>> = vals.iter().map(|t| if cf { time_ms(c, *t) } else { year_ms(*t) }).collect();
         if let Some(ms) = ms.filter(|m| !m.is_empty()) {
             return Some((name.clone(), ms));
         }
@@ -1979,7 +2251,7 @@ pub fn map_coordinate_keys(store: &Store, variable: &str) -> Vec<String> {
 /// coordinate system [`grid_crs`] gives (or the one a caller is told).
 pub fn is_lonlat_grid(store: &Store, variable: &str) -> bool {
     let Some(a) = store.array(variable) else { return false };
-    lonlat_by_coordinates(store, a) || (spatial_grid(a).is_some() && crs_of(store, a).is_some_and(|(c, _)| c == Crs::LonLat))
+    lonlat_by_coordinates(store, a) || (spatial_grid(a).is_some() && crs_of(store, a).is_some_and(|(c, _)| c.is_geographic()))
 }
 
 /// Whether `a`'s map coordinates are longitude and latitude, by their names, units or standard
@@ -2035,7 +2307,7 @@ fn grid_axes(store: &Store, a: &Array, chunks: &HashMap<String, Vec<u8>>) -> Res
     let (yd, xd) = map_dims(a);
     let len = |d: usize| a.shape.get(d).copied().unwrap_or(0);
     if let Some(g) = spatial_grid(a) {
-        let geo = lonlat_by_coordinates(store, a) || crs_of(store, a).is_some_and(|(c, _)| c == Crs::LonLat);
+        let geo = lonlat_by_coordinates(store, a) || crs_of(store, a).is_some_and(|(c, _)| c.is_geographic());
         return Ok(((g.y0, g.dy, len(yd)), (g.x0, g.dx, len(xd)), geo));
     }
     let names = a.dim_names();
@@ -2047,12 +2319,16 @@ fn grid_axes(store: &Store, a: &Array, chunks: &HashMap<String, Vec<u8>>) -> Res
     let (Some((y0, dy)), Some((x0, dx))) = (axis(&ys), axis(&xs)) else {
         return Err(bad(format!("{}: its coordinates aren't evenly spaced", a.path)));
     };
-    Ok(((y0, dy, ys.len() as u64), (x0, dx, xs.len() as u64), geographic(xc)))
+    // Longitude by the coordinate's name or units, or by the geographic system the store gives
+    // (`assemble` wraps such a grid by it too, whatever its axes are called).
+    let geo = geographic(xc) || crs_of(store, a).is_some_and(|(c, _)| c.is_geographic());
+    Ok(((y0, dy, ys.len() as u64), (x0, dx, xs.len() as u64), geo))
 }
 
 /// The chunk keys of `variable`'s map coordinates, for [`window_of`]: each is read whole (its
 /// first [`MAX_CHUNKS`] chunks, as any coordinate), so longer ones than [`MAX_COORDS`] can't place
-/// a box (a window is given in cells instead). None for a grid its `spatial:transform` places.
+/// a box (a window is given in cells instead). Empty for a grid its `spatial:transform` places
+/// (a box is placed by arithmetic).
 pub fn window_keys(store: &Store, variable: &str) -> Result<Vec<String>> {
     let a = store.array(variable).ok_or_else(|| bad(format!("no variable named {variable}")))?;
     // A grid placed by its spatial:transform places a box by arithmetic, however long its axes.
@@ -2139,6 +2415,10 @@ pub fn window_of(store: &Store, variable: &str, chunks: &HashMap<String, Vec<u8>
 #[derive(Clone, Debug)]
 pub struct SeriesPlan {
     pub keys: Vec<String>,
+    /// A sharded variable's shard indexes, read first; then [`series_inner_parts`] gives the
+    /// bytes of the chunk holding the cell in each shard, so a shard is never read whole.
+    pub parts: Vec<Part>,
+    shards: Vec<ShardRead>,
     var: String,
     /// The time dimension, and every dimension's step (the cell's, and the others' fixed ones).
     t: usize,
@@ -2187,8 +2467,10 @@ pub fn plan_series(store: &Store, sel: &Selection, dim: &str, from: u64, count: 
     if let Some(v) = at.get_mut(x) {
         *v = col;
     }
-    let ct = a.chunks.get(t).copied().unwrap_or(1).max(1);
-    let (first, last) = (from / ct, (from + count - 1) / ct);
+    // A sharded variable is read by the shards' chunks (see `SeriesPlan::parts`).
+    let unit = series_unit(a);
+    let size = |d: usize| unit.get(d).copied().unwrap_or(1).max(1);
+    let (first, last) = (from / size(t), (from + count - 1) / size(t));
     if last - first + 1 > MAX_CHUNKS as u64 {
         return Err(bad(format!(
             "{count} steps of {} need {} chunks, more than {MAX_CHUNKS}: take a shorter period",
@@ -2196,15 +2478,61 @@ pub fn plan_series(store: &Store, sel: &Selection, dim: &str, from: u64, count: 
             last - first + 1
         )));
     }
-    let keys = (first..=last)
-        .map(|g| {
-            let idx: Vec<u64> = (0..a.shape.len())
-                .map(|d| if d == t { g } else { at.get(d).copied().unwrap_or(0) / a.chunks.get(d).copied().unwrap_or(1).max(1) })
-                .collect();
-            a.chunk_key(&idx)
-        })
-        .collect();
-    Ok(SeriesPlan { keys, var: a.path.clone(), t, at, from, count })
+    let per = shard_per(a);
+    let (mut keys, mut parts, mut shards, mut shard_at) = (Vec::new(), Vec::new(), Vec::new(), HashMap::new());
+    for g in first..=last {
+        let idx: Vec<u64> = (0..a.shape.len()).map(|d| if d == t { g } else { at.get(d).copied().unwrap_or(0) / size(d) }).collect();
+        if per.is_empty() {
+            keys.push(a.chunk_key(&idx));
+        } else {
+            read_in_shard(a, &idx, &per, &mut shard_at, &mut shards, &mut parts)?;
+        }
+    }
+    Ok(SeriesPlan { keys, parts, shards, var: a.path.clone(), t, at, from, count })
+}
+
+/// The chunk shape a point's series finds its cell in: a shard's chunks for a sharded variable,
+/// else its chunks.
+fn series_unit(a: &Array) -> &[u64] {
+    match a.codecs.first() {
+        Some(Codec::Sharding { inner, .. }) => inner,
+        _ => &a.chunks,
+    }
+}
+
+/// A sharded variable's chunks along each dimension of a shard; empty when it isn't sharded.
+fn shard_per(a: &Array) -> Vec<u64> {
+    match a.codecs.first() {
+        Some(Codec::Sharding { inner, .. }) => a.chunks.iter().zip(inner).map(|(s, i)| s / i.max(&1)).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Chunk `idx` of a sharded variable's series ([`shard_of`]), decoded from what was read: its
+/// bytes, else the fill value when its shard's index says the shard doesn't hold it (as a shard
+/// read whole gives), else `None` when the shard isn't stored. A chunk the index places but that
+/// wasn't read is an error, not values made up.
+fn shard_chunk(a: &Array, idx: &[u64], per: &[u64], chunks: &HashMap<String, Vec<u8>>) -> Result<Option<(Vec<u8>, DType)>> {
+    let Some(Codec::Sharding { inner, codecs, index, .. }) = a.codecs.first() else { return Ok(None) };
+    // A shard's chunk is held to what a chunk read whole may hold, before it's decoded or filled.
+    let n = inner
+        .iter()
+        .try_fold(1u64, |n, &c| n.checked_mul(c))
+        .filter(|&n| n.saturating_mul(a.dtype.size as u64) <= MAX_CHUNK_BYTES)
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or_else(|| bad(format!("{}: its shards' chunks are too large to read", a.path)))?;
+    let count = shard_count(a, per)?;
+    let (key, c) = shard_of(a, idx, per);
+    if let Some(bytes) = chunks.get(&inner_id(&key, c)) {
+        let (d, little) = decode_chunk(codecs, bytes, inner, a.dtype, a.fill).map_err(|e| read_error(&a.path, e))?;
+        return Ok(Some((d, DType { little, ..a.dtype })));
+    }
+    let Some(raw) = chunks.get(&format!("{key}#index")) else { return Ok(None) };
+    let placed = shard_index(raw, count, index).map_err(|e| read_error(&key, e))?;
+    if placed.get(c).is_some_and(|&e| e != (u64::MAX, u64::MAX)) {
+        return Err(bad(format!("{}: a chunk of shard {key} wasn't read", a.path)));
+    }
+    Ok(Some((a.dtype.encode(a.fill.unwrap_or(0.0), a.dtype.little).repeat(n), a.dtype)))
 }
 
 /// The values of a [`plan_series`], one a step (`NaN` for no data, or a chunk that wasn't
@@ -2217,7 +2545,9 @@ pub fn assemble_series(store: &Store, plan: &SeriesPlan, chunks: &HashMap<String
     missing.dedup();
     let scale = attr_f64(a, "scale_factor").unwrap_or(1.0);
     let offset = attr_f64(a, "add_offset").unwrap_or(0.0);
-    let chunk = |d: usize| a.chunks.get(d).copied().unwrap_or(1).max(1);
+    let unit = if plan.shards.is_empty() { &a.chunks } else { series_unit(a) };
+    let chunk = |d: usize| unit.get(d).copied().unwrap_or(1).max(1);
+    let per = if plan.shards.is_empty() { Vec::new() } else { shard_per(a) };
     // A cell's place in a chunk, by dimension: saturating, so chunk shapes from a hostile store
     // can't overflow (the value read is then just missing).
     let strides: Vec<u64> = {
@@ -2240,9 +2570,10 @@ pub fn assemble_series(store: &Store, plan: &SeriesPlan, chunks: &HashMap<String
         let g = step / chunk(plan.t);
         if decoded.as_ref().is_none_or(|(k, _)| *k != g) {
             let idx: Vec<u64> = (0..nd).map(|d| step_at(d, step) / chunk(d)).collect();
-            let got = match chunks.get(&a.chunk_key(&idx)) {
-                Some(b) => Some(a.decode_bytes(b)?),
-                None => None,
+            let got = if per.is_empty() {
+                chunks.get(&a.chunk_key(&idx)).map(|b| a.decode_bytes(b)).transpose()?
+            } else {
+                shard_chunk(a, &idx, &per, chunks)?
             };
             decoded = Some((g, got));
         }
@@ -2258,6 +2589,24 @@ pub fn assemble_series(store: &Store, plan: &SeriesPlan, chunks: &HashMap<String
         out.push(if v.is_nan() || missing.contains(&v) { f64::NAN } else { v * scale + offset });
     }
     Ok(out)
+}
+
+/// Whether `c` is a coordinate of whole years with no CF time units, as `aef-mosaic`'s `time`
+/// (`2017…2025`): integers, named `time` or `year` (or marked `axis: "T"` or `standard_name:
+/// "time"`), with no units or units of `year`/`years`. Its values must also be years from 1000 to
+/// 9999 ([`year_ms`]), or the axis isn't read as one.
+fn year_axis(c: &Array) -> bool {
+    let units = attr_str(c, "units").map(|u| u.trim().to_ascii_lowercase());
+    let timely = matches!(c.name().to_ascii_lowercase().as_str(), "time" | "year" | "years")
+        || attr_str(c, "axis").is_some_and(|a| a.eq_ignore_ascii_case("T"))
+        || attr_str(c, "standard_name").is_some_and(|s| s.eq_ignore_ascii_case("time"));
+    matches!(c.dtype.kind, Kind::Int | Kind::UInt) && timely && units.as_deref().is_none_or(|u| matches!(u, "" | "year" | "years"))
+}
+
+/// A year of a [`year_axis`] as milliseconds since 1970 (UTC) at its 1 January; `None` for a
+/// value that isn't a whole year from 1000 to 9999 (a step number, say).
+fn year_ms(v: f64) -> Option<f64> {
+    (v.fract() == 0.0 && (1000.0..=9999.0).contains(&v)).then(|| days_from_civil(v as i64, 1, 1) as f64 * 86_400_000.0)
 }
 
 /// A CF time coordinate's value as milliseconds since 1970 (see [`time_axis`]).
@@ -2476,7 +2825,7 @@ pub fn read_metadata(dir: &std::path::Path) -> Result<Store> {
         if p.metadata().map(|m| m.len()).unwrap_or(0) as usize > MAX_METADATA {
             return Err(bad(format!("{} is too large", p.display())));
         }
-        if let Ok(b) = std::fs::read(&p) {
+        if let Ok(b) = crate::provenance::read(&p) {
             docs.push((rel, b));
         }
         Ok(())
@@ -2524,6 +2873,37 @@ pub fn read_metadata(dir: &std::path::Path) -> Result<Store> {
     parse_store(&docs)
 }
 
+/// Reads `parts` of a store's files in folder `dir` into `chunks`, each by its id; a file that
+/// isn't there is left out (never written). `total` counts the bytes read, within [`MAX_READ`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn read_parts(dir: &std::path::Path, parts: &[Part], chunks: &mut HashMap<String, Vec<u8>>, total: &mut u64) -> Result<()> {
+    use std::io::{Read, Seek, SeekFrom};
+    for part in parts {
+        let mut f = match crate::provenance::open(dir.join(&part.key)) {
+            Ok(f) => f,
+            // Never written: only a file that isn't there. Any other failure is said.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(bad(format!("{}: {}: {e}", dir.display(), part.key))),
+        };
+        // A failure names the store and the shard, as the check below does.
+        let failed = |e: std::io::Error| bad(format!("{}: {}: {e}", dir.display(), part.key));
+        let len = f.metadata().map_err(failed)?.len();
+        let (first, n) = match part.span {
+            Span::Bytes(a, b) => (a, b - a + 1),
+            Span::Tail(n) => (len.saturating_sub(n), n.min(len)),
+        };
+        *total = total.saturating_add(n);
+        if first.saturating_add(n) > len || n > MAX_CHUNK_FILE || *total > MAX_READ {
+            return Err(bad(format!("{}: {} is cut, or the chunks to read are too large", dir.display(), part.key)));
+        }
+        f.seek(SeekFrom::Start(first)).map_err(failed)?;
+        let mut buf = Vec::new();
+        f.take(n).read_to_end(&mut buf).map_err(failed)?;
+        chunks.insert(part.id.clone(), buf);
+    }
+    Ok(())
+}
+
 /// Reads a slice of a store in a folder (`selection` as [`Selection::label`] writes it).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn read_dir(dir: &std::path::Path, selection: &str, crs: Option<&str>) -> Result<Raster> {
@@ -2557,37 +2937,12 @@ pub fn read_dir_in(store: &Store, dir: &std::path::Path, selection: &str, crs: O
         if !meta.is_file() || meta.len() > MAX_CHUNK_FILE || total > MAX_READ {
             return Err(bad(format!("{}: the slice's chunks are too large to read", dir.display())));
         }
-        chunks.insert(k.clone(), std::fs::read(&path)?);
+        chunks.insert(k.clone(), crate::provenance::read(&path)?);
     }
     // A window's bytes of files: shards' indexes and coordinates, then the shards' chunks.
-    let mut read = |parts: &[Part], chunks: &mut HashMap<String, Vec<u8>>| -> Result<()> {
-        use std::io::{Read, Seek, SeekFrom};
-        for part in parts {
-            let mut f = match std::fs::File::open(dir.join(&part.key)) {
-                Ok(f) => f,
-                // Never written: only a file that isn't there. Any other failure is said.
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(e) => return Err(e.into()),
-            };
-            let len = f.metadata()?.len();
-            let (first, n) = match part.span {
-                Span::Bytes(a, b) => (a, b - a + 1),
-                Span::Tail(n) => (len.saturating_sub(n), n.min(len)),
-            };
-            total = total.saturating_add(n);
-            if first.saturating_add(n) > len || n > MAX_CHUNK_FILE || total > MAX_READ {
-                return Err(bad(format!("{}: {} is cut, or the window's chunks are too large to read", dir.display(), part.key)));
-            }
-            f.seek(SeekFrom::Start(first))?;
-            let mut buf = Vec::new();
-            f.take(n).read_to_end(&mut buf)?;
-            chunks.insert(part.id.clone(), buf);
-        }
-        Ok(())
-    };
-    read(&p.parts, &mut chunks)?;
+    read_parts(dir, &p.parts, &mut chunks, &mut total)?;
     let inner = inner_parts(store, &p, &chunks)?;
-    read(&inner, &mut chunks)?;
+    read_parts(dir, &inner, &mut chunks, &mut total)?;
     let crs = crs.map(Crs::parse).transpose().map_err(DataError::Format)?;
     let stem = dir.file_stem().and_then(|s| s.to_str()).unwrap_or("zarr");
     let mut r = assemble(store, &p, &chunks, &format!("{stem} {}", sel.label()), crs)?;
@@ -2598,6 +2953,23 @@ pub fn read_dir_in(store: &Store, dir: &std::path::Path, selection: &str, crs: O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A slice the GeoTIFF writer refuses (here one that isn't north-up) is refused before it
+    /// becomes a layer, with the writer's reason; one it writes is kept.
+    #[test]
+    fn a_slice_the_geotiff_writer_refuses_is_not_kept() {
+        use crate::raster::{ColorHint, GeoTransform};
+        let slice = |pixel_height: f64| {
+            let gt = GeoTransform { origin_x: 0.0, origin_y: 3.0, pixel_width: 1.0, pixel_height };
+            Raster::new("s", 3, 1, vec![vec![1.0, 2.0, 3.0]], gt, Crs::LonLat, None, ColorHint::Gray, "Float32").unwrap()
+        };
+        let e = write_project_slice(&slice(1.0)).unwrap_err().to_string();
+        assert!(
+            e.contains("the slice can't be kept in a project as a GeoTIFF") && e.contains("north-up") && e.contains("no layer was added"),
+            "{e}"
+        );
+        assert!(write_project_slice(&slice(-1.0)).is_ok());
+    }
 
     /// A CF date's parts, a year before 1 CE included (its sign isn't a separator).
     #[test]
@@ -2706,7 +3078,10 @@ mod tests {
         // Two full blocks split in four streams, then a shorter one that isn't split.
         let raw: Vec<u8> = (0..2700u32).flat_map(|v| ((v % 97) as f32 * 1.5).to_le_bytes()).collect();
         let f = blosc_blocks(&raw, 4, 4096);
-        assert_eq!(blosc(&f, raw.len()).unwrap(), raw);
+        let got = blosc(&f, raw.len()).unwrap();
+        assert_eq!(got, raw);
+        // Grown block by block from the frame's size, never holding more than the chunk.
+        assert!(f.len() < raw.len() && got.capacity() <= raw.len(), "capacity {} for {} bytes", got.capacity(), raw.len());
     }
 
     fn f32s(v: &[f32]) -> Vec<u8> {
@@ -2986,7 +3361,6 @@ mod tests {
         use crate::raster::wkt::tests::{BOUND_BY_A_GRID, NAD27_UTM17};
         let said = "the file's NTv2 transformation to WGS 84 (conus) isn't applied, so positions may be off by as much as that shift";
         // The system alone says its datum has no shift, as from a `.prj`; WGS 84's says nothing.
-        let datum = "the datum North American Datum 1927 has no conversion to WGS 84 in the file, so positions may be off by up to a few hundred metres";
         let utm17 = crate::raster::wkt::to_wkt(Crs::Epsg(32617)).unwrap();
         let coords = |dim: &str, n: usize| serde_json::json!({"zarr_format": 3, "node_type": "array", "shape": [n], "data_type": "float64", "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [n]}}, "codecs": [{"name": "bytes", "configuration": {"endian": "little"}}], "fill_value": 0, "dimension_names": [dim]});
         let bytes = |v: &[f64]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
@@ -2998,7 +3372,8 @@ mod tests {
         for (attrs, crs, lost) in [
             (serde_json::json!({"crs_wkt": BOUND_BY_A_GRID}), Crs::parse(NAD27_UTM17).unwrap(), vec![said]),
             (serde_json::json!({"spatial_ref": BOUND_BY_A_GRID}), Crs::parse(NAD27_UTM17).unwrap(), vec![said]),
-            (serde_json::json!({"crs_wkt": NAD27_UTM17}), Crs::parse(NAD27_UTM17).unwrap(), vec![datum]),
+            // NAD 27 alone is transformed as PROJ 9.8.1 transforms it: nothing to say.
+            (serde_json::json!({"crs_wkt": NAD27_UTM17}), Crs::parse(NAD27_UTM17).unwrap(), vec![]),
             (serde_json::json!({"crs_wkt": utm17}), Crs::Epsg(32617), vec![]),
             (serde_json::json!({"epsg_code": 32617}), Crs::Epsg(32617), vec![]),
         ] {
@@ -3015,10 +3390,18 @@ mod tests {
             let store = parse_store(&[("zarr.json".into(), root.to_string().into_bytes())]).unwrap();
             let p = plan(&store, &Selection { variable: "elev".into(), index: vec![], window: None }).unwrap();
             let r = assemble(&store, &p, &chunks, "elev", None).unwrap();
-            assert_eq!(r.crs, crs, "{attrs}");
+            // The system, or one that places points as it does (a WKT read keeps its own text).
+            let alike = |a: Crs| {
+                let at = rustgis_geom::Coord::new(-79.0, 43.0);
+                let (p, q) = (a.transformer().unwrap().from_lonlat(at).unwrap(), crs.transformer().unwrap().from_lonlat(at).unwrap());
+                a == crs || (matches!(a, Crs::Custom(_)) && (p.x - q.x).hypot(p.y - q.y) < 1e-9)
+            };
+            assert!(alike(r.crs), "{attrs}: {:?}", r.crs);
             assert_eq!(r.lost, lost, "{attrs}");
             // The point series reads the same system, and the same note.
-            assert_eq!(grid_crs(&store, "elev"), Some((crs, lost.first().map(|n| n.to_string()))), "{attrs}");
+            let (series, note) = grid_crs(&store, "elev").unwrap();
+            assert!(alike(series), "{attrs}: {series:?}");
+            assert_eq!(note, lost.first().map(|n| n.to_string()), "{attrs}");
         }
     }
 
@@ -3027,7 +3410,6 @@ mod tests {
     #[test]
     fn a_lonlat_stores_wkt_says_a_grid_it_doesnt_apply() {
         use crate::raster::wkt::tests::BOUND_BY_A_GRID;
-        let said = "the file's NTv2 transformation to WGS 84 (conus) isn't applied, so positions may be off by as much as that shift";
         let coords = |dim: &str, n: usize| serde_json::json!({"zarr_format": 3, "node_type": "array", "shape": [n], "data_type": "float64", "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [n]}}, "codecs": [{"name": "bytes", "configuration": {"endian": "little"}}], "fill_value": 0, "dimension_names": [dim]});
         let bytes = |v: &[f64]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
         let chunks = HashMap::from([
@@ -3035,8 +3417,8 @@ mod tests {
             ("lat/c/0".to_string(), bytes(&[43.1, 43.0])),
             ("lon/c/0".to_string(), bytes(&[-79.1, -79.0])),
         ]);
-        for (attrs, lost) in
-            [(serde_json::json!({"crs_wkt": BOUND_BY_A_GRID}), vec![said]), (serde_json::json!({"crs_wkt": "EPSG:4326"}), vec![])]
+        for (attrs, warned) in
+            [(serde_json::json!({"crs_wkt": BOUND_BY_A_GRID}), true), (serde_json::json!({"crs_wkt": "EPSG:4326"}), false)]
         {
             let elev = serde_json::json!({
                 "zarr_format": 3, "node_type": "array", "shape": [2, 2], "data_type": "int16",
@@ -3052,7 +3434,226 @@ mod tests {
             let p = plan(&store, &Selection { variable: "elev".into(), index: vec![], window: None }).unwrap();
             let r = assemble(&store, &p, &chunks, "elev", None).unwrap();
             assert_eq!(r.crs, Crs::LonLat, "{attrs}");
-            assert_eq!(r.lost, lost, "{attrs}");
+            assert_eq!(r.lost.len(), if warned { 2 } else { 0 }, "{attrs}: {:?}", r.lost);
+            assert_eq!(r.lost.iter().filter(|n| n.contains("(conus) isn't applied")).count(), usize::from(warned), "{:?}", r.lost);
+            assert_eq!(
+                r.lost.iter().filter(|n| n.contains("isn't geographic") && n.contains("WGS 84")).count(),
+                usize::from(warned),
+                "{:?}",
+                r.lost
+            );
+        }
+    }
+
+    /// Inherited geographic systems place wrapped spatial-transform grids too; reading their
+    /// definitions must retain datum/body notices without inventing one for a known Earth datum.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn inherited_geographic_spatial_grids_keep_their_system_and_wrap() {
+        let files = window_store(false);
+        for (def, notice) in [
+            ("EPSG:4230", None),
+            ("+proj=longlat +ellps=intl +no_defs", Some("has no conversion to WGS 84")),
+            ("+proj=longlat +a=3396190 +b=3396190 +no_defs", Some("another body")),
+        ] {
+            let mut root: Value = serde_json::from_slice(&files[0].1).unwrap();
+            let meta = root.pointer_mut("/consolidated_metadata/metadata").and_then(Value::as_object_mut).unwrap();
+            meta.remove("x");
+            meta.remove("y");
+            meta["v"]["attributes"] = serde_json::json!({});
+            root["attributes"] = serde_json::json!({
+                "proj:code": def, "spatial:dimensions": ["y", "x"], "spatial:shape": [8, 12],
+                "spatial:transform": [0.5, 0.0, 190.0, 0.0, -0.25, 10.0]
+            });
+            let store = parse_store(&[("zarr.json".into(), root.to_string().into_bytes())]).unwrap();
+            let none = HashMap::new();
+            let window = Window { x0: 2, y0: 1, x1: 5, y1: 4 };
+            assert!(is_lonlat_grid(&store, "v"), "{def}");
+            assert_eq!(locate(&store, "v", &none, -168.2, 9.3).unwrap(), Some((2, 3)), "{def}");
+            assert_eq!(window_of(&store, "v", &none, [-169.0, 9.0, -167.5, 9.75]).unwrap(), (window, false, false), "{def}");
+            let selection = Selection { variable: "v".into(), index: vec![("time".into(), 1)], window: Some(window) };
+            let plan = plan(&store, &selection).unwrap();
+            let raster = assemble(&store, &plan, &read_plan(&files, &plan), "v", None).unwrap();
+            assert_eq!(raster.crs, Crs::parse(def).unwrap(), "{def}");
+            let want: Vec<f32> = (1..4).flat_map(|row| (2..5).map(move |col| (1000 + row * 100 + col) as f32)).collect();
+            assert_eq!(raster.bands[0].data, want, "{def}");
+            assert_eq!(raster.lost.len(), usize::from(notice.is_some()), "{def}: {:?}", raster.lost);
+            if let Some(notice) = notice {
+                assert!(raster.lost[0].contains(notice), "{def}: {:?}", raster.lost);
+            }
+        }
+    }
+
+    /// A grid whose axes are named `x`/`y` but whose store gives a geographic system is wrapped by
+    /// `assemble` (0–360 read as -180–180), so a box or a point is placed with the same ±360° turns;
+    /// a projected one isn't turned.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_geographic_system_turns_boxes_and_points_on_named_x_y_axes() {
+        let f64s = |v: Vec<f64>| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        for (code, geo) in [(4326, true), (3857, false)] {
+            let mut files = window_store(false);
+            let mut root: Value = serde_json::from_slice(&files[0].1).unwrap();
+            root["consolidated_metadata"]["metadata"]["v"]["attributes"] = serde_json::json!({"epsg_code": code});
+            files[0].1 = root.to_string().into_bytes();
+            // Columns centred on 185°…295°: east of 180, as a 0–360 grid stores them.
+            files[2].1 = zstd::encode_all(&f64s((0..12).map(|i| 185.0 + 10.0 * i as f64).collect())[..], 3).unwrap();
+            let store = parse_store(&files).unwrap();
+            let coords: HashMap<String, Vec<u8>> =
+                files.iter().filter(|(k, _)| window_keys(&store, "v").unwrap().contains(k)).cloned().collect();
+            let found = locate(&store, "v", &coords, -165.0, 50.0).unwrap();
+            let placed = window_of(&store, "v", &coords, [-170.0, 30.0, -150.0, 60.0]);
+            if !geo {
+                assert_eq!(found, None, "EPSG:{code}");
+                assert!(placed.is_err(), "EPSG:{code}");
+                continue;
+            }
+            assert_eq!(found, Some((3, 1)), "EPSG:{code}");
+            let window = Window { x0: 1, y0: 2, x1: 3, y1: 5 };
+            assert_eq!(placed.unwrap(), (window, false, false), "EPSG:{code}");
+            // The same box written 0–360 is the same window.
+            assert_eq!(window_of(&store, "v", &coords, [190.0, 30.0, 210.0, 60.0]).unwrap().0, window);
+            let selection = Selection { variable: "v".into(), index: vec![("time".into(), 1)], window: Some(window) };
+            let plan = plan(&store, &selection).unwrap();
+            let raster = assemble(&store, &plan, &read_plan(&files, &plan), "v", None).unwrap();
+            assert_eq!(raster.crs, Crs::LonLat);
+            assert!((raster.transform.origin_x - -170.0).abs() < 1e-9, "{}", raster.transform.origin_x);
+        }
+    }
+
+    /// A store with longitude/latitude axes is in the geographic system it gives (ED50 with its
+    /// TOWGS84 shift, a datum with no shift, another body's), whether as WKT, a PROJ definition or an
+    /// EPSG code, not in WGS 84 (#2008). What reading it said is kept once: another body by its body,
+    /// a datum without a shift by its note. WGS 84 and a projected system the degrees contradict are
+    /// longitude/latitude, and a clean system says nothing.
+    #[test]
+    fn a_lonlat_stores_geographic_system_is_kept() {
+        use crate::raster::{planetary, wkt};
+        let coords = |dim: &str, n: usize| serde_json::json!({"zarr_format": 3, "node_type": "array", "shape": [n], "data_type": "float64", "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [n]}}, "codecs": [{"name": "bytes", "configuration": {"endian": "little"}}], "fill_value": 0, "dimension_names": [dim]});
+        let bytes = |v: &[f64]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        let read = |attrs: Value, lons: &[f64]| {
+            let elev = serde_json::json!({
+                "zarr_format": 3, "node_type": "array", "shape": [2, 2], "data_type": "int16",
+                "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [2, 2]}},
+                "chunk_key_encoding": {"name": "default", "configuration": {"separator": "/"}},
+                "codecs": [{"name": "bytes", "configuration": {"endian": "little"}}],
+                "fill_value": 0, "dimension_names": ["lat", "lon"], "attributes": attrs
+            });
+            let root = serde_json::json!({"zarr_format": 3, "node_type": "group", "consolidated_metadata": {"kind": "inline", "metadata": {
+                "elev": elev, "lat": coords("lat", 2), "lon": coords("lon", 2),
+            }}});
+            let chunks = HashMap::from([
+                ("elev/c/0/0".to_string(), [1i16, 2, 3, 4].iter().flat_map(|v| v.to_le_bytes()).collect()),
+                ("lat/c/0".to_string(), bytes(&[43.1, 43.0])),
+                ("lon/c/0".to_string(), bytes(lons)),
+            ]);
+            let store = parse_store(&[("zarr.json".into(), root.to_string().into_bytes())]).unwrap();
+            let p = plan(&store, &Selection { variable: "elev".into(), index: vec![], window: None }).unwrap();
+            assemble(&store, &p, &chunks, "elev", None).unwrap()
+        };
+        let lons = [-79.1, -79.0];
+        let ed50 = r#"GEOGCS["ED50",DATUM["European_Datum_1950",SPHEROID["International 1924",6378388,297],TOWGS84[-87,-98,-121,0,0,0,0]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]"#;
+        let local = r#"GEOGCS["Local",DATUM["Local datum",SPHEROID["Bessel 1841",6377397.155,299.1528128]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]"#;
+        let mars = r#"GEOGCS["Mars 2000",DATUM["D_Mars_2000",SPHEROID["Mars_2000_IAU_IAG",3396190,169.89444722361179]],PRIMEM["Reference_Meridian",0],UNIT["Degree",0.0174532925199433]]"#;
+        // The WKTs' own systems, with the notes reading them gives, kept: ED50 says nothing, the datum
+        // without a shift says so, and ED50's places aren't WGS 84's.
+        let (want, note) = wkt::read_wkt(ed50).unwrap();
+        let r = read(serde_json::json!({"crs_wkt": ed50}), &lons);
+        assert!(want != Crs::LonLat && want.is_geographic());
+        assert_eq!((r.crs, r.lost.clone()), (want, note.into_iter().collect::<Vec<_>>()), "{:?}", r.lost);
+        let moved = r.crs.transformer().unwrap().to_lonlat(rustgis_geom::Coord::new(10.0, 50.0)).unwrap();
+        assert!((moved.x - 10.0).abs() > 1e-4 || (moved.y - 50.0).abs() > 1e-4, "{moved:?}");
+        let osgb36 = wkt::to_wkt(Crs::Epsg(4277)).unwrap();
+        let (want, note) = wkt::read_wkt(&osgb36).unwrap();
+        let r = read(serde_json::json!({"crs_wkt": osgb36}), &lons);
+        assert!(want != Crs::LonLat && want.is_geographic());
+        assert_eq!((r.crs, r.lost), (want, note.into_iter().collect::<Vec<_>>()));
+        let (want, note) = wkt::read_wkt(local).unwrap();
+        let r = read(serde_json::json!({"crs_wkt": local}), &lons);
+        assert!(want != Crs::LonLat && want.is_geographic());
+        assert!(note.as_deref().is_some_and(|n| n.contains("has no conversion to WGS 84")), "{note:?}");
+        assert_eq!((r.crs, r.lost), (want, note.into_iter().collect::<Vec<_>>()));
+        // Another body's: kept, and said once, by its body.
+        let (want, note) = wkt::read_wkt(mars).unwrap();
+        assert!(want.is_planetary());
+        let r = read(serde_json::json!({"crs_wkt": mars}), &lons);
+        assert_eq!((r.crs, r.lost), (want, note.into_iter().collect::<Vec<_>>()));
+        let proj = "+proj=longlat +a=3396190 +b=3396190 +no_defs";
+        let want = Crs::parse(proj).unwrap();
+        assert!(want.is_planetary());
+        let r = read(serde_json::json!({"proj4": proj}), &lons);
+        assert_eq!((r.crs, r.lost), (want, planetary::note_of(want).into_iter().collect::<Vec<_>>()));
+        // A PROJ definition says what its WKT would: no datum shift is said once, a shift or a datum isn't.
+        for (def, said) in [
+            ("+proj=longlat +ellps=intl +no_defs", true),
+            ("+proj=longlat +ellps=intl +towgs84=-87,-98,-121,0,0,0,0 +no_defs", false),
+            ("+proj=longlat +datum=WGS84 +no_defs", false),
+        ] {
+            let want = Crs::parse(def).unwrap();
+            let r = read(serde_json::json!({"proj4": def}), &lons);
+            assert!(r.crs == want && want.is_geographic(), "{def}: {:?}", r.crs);
+            assert_eq!(r.lost, if said { vec![NO_DATUM_SHIFT.to_string()] } else { Vec::new() }, "{def}");
+        }
+        // An EPSG code is the system itself, and says what the same system's WKT says: nothing for
+        // WGS 84 or ED50.
+        for code in [4326u32, 4230] {
+            let want = Crs::from_epsg(code).unwrap();
+            let r = read(serde_json::json!({"epsg_code": code}), &lons);
+            assert_eq!((r.crs, r.lost), (want, Vec::new()), "EPSG:{code}");
+        }
+        let wgs84 = wkt::to_wkt(Crs::LonLat).unwrap();
+        for attrs in [serde_json::json!({"crs_wkt": wgs84}), serde_json::json!({"crs_wkt": "EPSG:4326"})] {
+            let r = read(attrs.clone(), &lons);
+            assert_eq!((r.crs, r.lost), (Crs::LonLat, Vec::new()), "{attrs}");
+        }
+        // No system at all, or a projected one on degree axes: the axes win, and the WGS 84 reading is said.
+        let said = |why: &str| vec![crate::raster::assumed_wgs84_note(why)];
+        let r = read(serde_json::json!({}), &lons);
+        assert_eq!((r.crs, r.lost), (Crs::LonLat, said("the store doesn't say its coordinate system")), "no system");
+        let utm17 = wkt::to_wkt(Crs::Epsg(32617)).unwrap();
+        let r = read(serde_json::json!({"crs_wkt": utm17}), &lons);
+        assert_eq!((r.crs, r.lost), (Crs::LonLat, said("its coordinate system isn't geographic")));
+        // A geographic system's longitudes of 0–360 are turned to start at -180, as WGS 84's are.
+        let r = read(serde_json::json!({"crs_wkt": ed50}), &[190.5, 191.5]);
+        assert!(r.crs != Crs::LonLat);
+        assert_eq!(r.transform.origin_x, -170.0);
+    }
+
+    /// 8-byte integers are labelled `Int64` and `UInt64`, as a GeoTIFF's are, not as narrower types;
+    /// the values `f32` can't hold are still counted.
+    #[test]
+    fn eight_byte_integers_are_labelled_as_such() {
+        let coords = |dim: &str| serde_json::json!({"zarr_format": 3, "node_type": "array", "shape": [2], "data_type": "float64", "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [2]}}, "codecs": [{"name": "bytes", "configuration": {"endian": "little"}}], "fill_value": 0, "dimension_names": [dim]});
+        let bytes = |v: &[f64]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        let cases: [(&str, Vec<u8>, &str); 5] = [
+            ("int64", [1i64, (1 << 60) + 1, 3, 4].iter().flat_map(|v| v.to_le_bytes()).collect(), "Int64"),
+            ("uint64", [u64::MAX, 1, 2, 3].iter().flat_map(|v| v.to_le_bytes()).collect(), "UInt64"),
+            ("int32", [1i32, 16_777_217, 3, 4].iter().flat_map(|v| v.to_le_bytes()).collect(), "Int32"),
+            ("uint32", [1u32, 3, 4, u32::MAX].iter().flat_map(|v| v.to_le_bytes()).collect(), "UInt32"),
+            ("int16", [1i16, 2, 3, 4].iter().flat_map(|v| v.to_le_bytes()).collect(), "Int16"),
+        ];
+        for (dtype, data, label) in cases {
+            let v = serde_json::json!({
+                "zarr_format": 3, "node_type": "array", "shape": [2, 2], "data_type": dtype,
+                "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [2, 2]}},
+                "chunk_key_encoding": {"name": "default", "configuration": {"separator": "/"}},
+                "codecs": [{"name": "bytes", "configuration": {"endian": "little"}}],
+                "fill_value": 0, "dimension_names": ["lat", "lon"]
+            });
+            let root = serde_json::json!({"zarr_format": 3, "node_type": "group", "consolidated_metadata": {"kind": "inline", "metadata": {
+                "v": v, "lat": coords("lat"), "lon": coords("lon"),
+            }}});
+            let chunks = HashMap::from([
+                ("v/c/0/0".to_string(), data),
+                ("lat/c/0".to_string(), bytes(&[43.1, 43.0])),
+                ("lon/c/0".to_string(), bytes(&[-79.1, -79.0])),
+            ]);
+            let store = parse_store(&[("zarr.json".into(), root.to_string().into_bytes())]).unwrap();
+            let p = plan(&store, &Selection { variable: "v".into(), index: vec![], window: None }).unwrap();
+            let r = assemble(&store, &p, &chunks, "v", None).unwrap();
+            // Only the values f32 can't hold: 2^60 + 1, 2^64 - 1, 16,777,217, 2^32 - 1 (as 2^32).
+            let counted = u64::from(matches!(dtype, "int64" | "uint64" | "int32" | "uint32"));
+            assert_eq!((r.data_type.as_str(), r.rounded.iter().sum::<u64>()), (label, counted), "{dtype}");
         }
     }
 
@@ -3129,6 +3730,72 @@ mod tests {
         assert_eq!(to_f16(1.0), 0x3c00);
         assert_eq!(f16(to_f16(-2.5)), -2.5);
         assert_eq!(DType::parse_v2(">i2").unwrap().encode(-2.0, false), vec![0xff, 0xfe]);
+    }
+
+    /// An intermediate gzip member can be one byte larger than its final chunk. The outer
+    /// Zstandard stage must return the complete member for the next codec to decode.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn bounded_zstd_keeps_an_intermediate_gzip_member() {
+        use std::io::Write;
+        let raw = [0u8; 64];
+        let gzip = |filename: Option<Vec<u8>>| {
+            let mut header = flate2::GzBuilder::new();
+            if let Some(name) = filename {
+                header = header.filename(name);
+            }
+            let mut encoder = header.write(Vec::new(), flate2::Compression::default());
+            encoder.write_all(&raw).unwrap();
+            encoder.finish().unwrap()
+        };
+        let base = gzip(None);
+        let member = gzip(Some(vec![b'a'; raw.len() - base.len()]));
+        assert_eq!(member.len(), raw.len() + 1);
+        assert_eq!(gunzip(&member, raw.len()).unwrap(), raw);
+        let frame = zstd::encode_all(member.as_slice(), 1).unwrap();
+        let codecs = [Codec::Bytes { little: true }, Codec::Gzip, Codec::Zstd];
+        let decoded = decode_chunk(&codecs, &frame, &[64], DType::parse_v3("uint8").unwrap(), None).unwrap();
+        assert_eq!(decoded.0, raw);
+    }
+
+    /// The reverse pipeline has a Zstandard frame larger than its final values too; gzip must
+    /// return that complete frame instead of applying the final array size to it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn bounded_gzip_keeps_an_intermediate_zstd_frame() {
+        use std::io::Write;
+        let raw: Vec<u8> = (0..64u16).map(|i| ((i * 73 + 17) % 251) as u8).collect();
+        let frame = zstd::encode_all(raw.as_slice(), 1).unwrap();
+        assert!(frame.len() > raw.len());
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&frame).unwrap();
+        let encoded = encoder.finish().unwrap();
+        let codecs = [Codec::Bytes { little: true }, Codec::Zstd, Codec::Gzip];
+        let decoded = decode_chunk(&codecs, &encoded, &[64], DType::parse_v3("uint8").unwrap(), None).unwrap();
+        assert_eq!(decoded.0, raw);
+    }
+
+    /// CRC32C has a fixed four-byte overhead: reject excess before stripping the checksum can
+    /// copy it or the final chunk-length handling can silently accept a prefix.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn bounded_zstd_before_crc32c_uses_the_known_length() {
+        let codecs = [Codec::Bytes { little: true }, Codec::Crc32c, Codec::Zstd];
+        // Little-endian CRC32C checksums of 64 and 128 zero bytes (Zarr's CRC32C codec).
+        for (n, checksum) in [(64, 0x03c8eb67u32), (128, 0x082764dbu32)] {
+            let mut encoded = vec![0u8; n];
+            encoded.extend(checksum.to_le_bytes());
+            let frame = zstd::encode_all(encoded.as_slice(), 1).unwrap();
+            let decoded = decode_chunk(&codecs, &frame, &[64], DType::parse_v3("uint8").unwrap(), None);
+            if n == 64 {
+                assert_eq!(decoded.unwrap().0, [0u8; 64]);
+            } else {
+                assert!(
+                    matches!(decoded, Err(DataError::Format(ref message)) if message.contains("a zstd chunk: decoded data is too large")),
+                    "{decoded:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -3215,6 +3882,96 @@ mod tests {
         let st = read_metadata(&dir).unwrap();
         assert!(st.array("v").is_some());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A header's claim of how many bytes a chunk makes is held to what its data can make, before
+    /// room is made for it: a few bytes never ask for a gigabyte.
+    #[test]
+    fn an_lz4_claim_is_held_to_what_its_data_can_make() {
+        let framed = |claim: usize, body: &[u8]| {
+            let mut f = (claim as u32).to_le_bytes().to_vec();
+            f.extend(body);
+            f
+        };
+        let gib = 1usize << 30;
+        let e = numcodecs_lz4(&framed(gib, &[0xf0, 1, 2]), gib).unwrap_err().to_string();
+        assert!(e.contains("claims more bytes than its data can hold"), "{e}");
+        // 255 bytes for each byte of the block is the most LZ4 makes: one more is refused before
+        // the decoder, the most is the decoder's to judge (this body isn't a block).
+        let junk = [0xffu8; 6];
+        let e = numcodecs_lz4(&framed(255 * junk.len() + 1, &junk), gib).unwrap_err().to_string();
+        assert!(e.contains("claims more bytes"), "{e}");
+        let e = numcodecs_lz4(&framed(255 * junk.len(), &junk), gib).unwrap_err().to_string();
+        assert!(e.contains("an LZ4 chunk:") && !e.contains("claims more bytes"), "{e}");
+        // A chunk that compresses as far as LZ4 goes is still read.
+        let zeros = vec![0u8; 1 << 20];
+        let block = lz4_block(&zeros);
+        assert!(block.len() * 255 >= zeros.len());
+        assert_eq!(numcodecs_lz4(&framed(zeros.len(), &block), zeros.len()).unwrap(), zeros);
+        assert!(numcodecs_lz4(&framed(zeros.len() + 1, &block), zeros.len() + 1).is_err());
+    }
+
+    #[test]
+    fn a_blosc_frame_is_found_in_its_bytes_before_room_is_made_for_it() {
+        // A 16-byte header (version, LZ4 version, flags, type size, then the sizes), `rest` after.
+        let frame = |nbytes: u32, blocksize: u32, flags: u8, rest: &[u8]| {
+            let mut f = vec![2u8, 1, flags, 1];
+            f.extend(nbytes.to_le_bytes());
+            f.extend(blocksize.to_le_bytes());
+            f.extend(0u32.to_le_bytes());
+            f.extend(rest);
+            f
+        };
+        let (gib, lz4) = (1usize << 30, 1u8 << 5);
+        let one_block = |cb: i32, stream: &[u8]| [&20u32.to_le_bytes()[..], &cb.to_le_bytes(), stream].concat();
+        // One block of a gigabyte made from one byte.
+        let e = blosc(&frame(1 << 30, 1 << 30, lz4, &one_block(1, &[0])), gib).unwrap_err().to_string();
+        assert!(e.contains("claims more bytes than its data can hold"), "{e}");
+        // A gigabyte in blocks of one byte has a table of four gigabytes: not in a few bytes.
+        let e = blosc(&frame(1 << 30, 1, lz4, &one_block(1, &[0])), gib).unwrap_err().to_string();
+        assert!(e.contains("a cut blosc chunk"), "{e}");
+        // Blocks of no size are not an empty chunk; a chunk of no bytes is.
+        let e = blosc(&frame(64, 0, lz4, &[]), gib).unwrap_err().to_string();
+        assert!(e.contains("blocks of no size"), "{e}");
+        assert!(blosc(&frame(0, 0, lz4, &[]), gib).unwrap().is_empty());
+        assert!(blosc(&frame(0, 64, 0x2, &[]), gib).unwrap().is_empty());
+        assert!(blosc(&frame(8, 0, 0x2, &[1, 2, 3]), gib).is_err());
+        // A block starting past the end of the frame, or whose stream does.
+        let raw: Vec<u8> = (0..4000u32).flat_map(|v| (v as f32).to_le_bytes()).collect();
+        let good = blosc_frame(&raw, 4);
+        assert_eq!(blosc(&good, raw.len()).unwrap(), raw);
+        // Offsets into the header or the block table must not be treated as compressed streams.
+        for start in [0u32, 4, 16, 19] {
+            let mut inside = good.clone();
+            inside[16..20].copy_from_slice(&start.to_le_bytes());
+            assert!(blosc(&inside, raw.len()).is_err(), "block starts at {start}");
+        }
+        let mut far = good.clone();
+        far[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(blosc(&far, raw.len()).unwrap_err().to_string().contains("a cut blosc chunk"));
+        let mut long = good.clone();
+        long[20..24].copy_from_slice(&i32::MAX.to_le_bytes());
+        assert!(blosc(&long, raw.len()).unwrap_err().to_string().contains("a cut blosc chunk"));
+        // A frame that decodes to less than it says isn't a shorter chunk.
+        let mut short = good;
+        short[4..8].copy_from_slice(&(raw.len() as u32 + 4).to_le_bytes());
+        short[8..12].copy_from_slice(&(raw.len() as u32 + 4).to_le_bytes());
+        let e = blosc(&short, raw.len() + 4).unwrap_err().to_string();
+        assert!(e.contains("not the"), "{e}");
+    }
+
+    /// Offsets and lengths read from a chunk are added with a check: `at + len` wraps a 32-bit
+    /// `usize` (the browser's) as it does a 64-bit one at these values.
+    #[test]
+    fn a_span_whose_end_overflows_is_not_in_the_chunk() {
+        let d = [1u8, 2, 3, 4];
+        assert_eq!(span(&d, 1, 2), Some(&d[1..3]));
+        assert_eq!(span(&d, 4, 0), Some(&d[4..]));
+        assert_eq!(span(&d, 5, 0), None);
+        assert_eq!(span(&d, usize::MAX, 4), None);
+        assert_eq!(span(&d, 1, usize::MAX), None);
+        assert_eq!(span(&d, usize::MAX - 3, 4), None);
+        assert_eq!(span(&d, u32::MAX as usize, 4), None);
     }
 
     #[test]
@@ -3337,12 +4094,64 @@ mod tests {
         files
     }
 
+    /// The named-array error context must retain a decoder's cancellation variant.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn bounded_zstd_named_arrays_keep_cancellation() {
+        let files = window_store(false);
+        let store = parse_store(&files[..1]).unwrap();
+        let a = store.array("v").unwrap();
+        let bytes = &files.iter().find(|(key, _)| key == "v/c/0/0/0").unwrap().1;
+        let _guard = crate::progress::install(Some(crate::progress::tests::Counted::cancelling_after(0)));
+        let result = a.decode_bytes(bytes);
+        assert!(matches!(result, Err(DataError::Cancelled)), "{result:?}");
+    }
+
+    /// A fetched inner chunk uses its own decoding path when assembling a sharded window.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn bounded_zstd_shard_windows_keep_cancellation() {
+        let files = window_store(true);
+        let store = parse_store(&files[..1]).unwrap();
+        let selection = Selection { variable: "v".into(), window: Some(Window { x0: 0, y0: 0, x1: 2, y1: 2 }), ..Default::default() };
+        let p = plan(&store, &selection).unwrap();
+        let mut got = read_plan(&files, &p);
+        got.extend(read_spans(&files, &inner_parts(&store, &p, &got).unwrap()));
+        assert!(got.contains_key("v/c/0/0/0#0"));
+        let _guard = crate::progress::install(Some(crate::progress::tests::Counted::cancelling_after(0)));
+        let result = assemble(&store, &p, &got, "v", None);
+        assert!(matches!(result, Err(DataError::Cancelled)), "{result:?}");
+    }
+
+    /// A point series reaches the separate fetched-inner-chunk path in `shard_chunk`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn bounded_zstd_shard_series_keep_cancellation() {
+        let files = window_store(true);
+        let store = parse_store(&files[..1]).unwrap();
+        let sel = Selection { variable: "v".into(), ..Default::default() };
+        let p = plan_series(&store, &sel, "time", 0, 1, 0, 0).unwrap();
+        let mut got = read_spans(&files, &p.parts);
+        got.extend(read_spans(&files, &series_inner_parts(&store, &p, &got).unwrap()));
+        let _guard = crate::progress::install(Some(crate::progress::tests::Counted::cancelling_after(0)));
+        let result = assemble_series(&store, &p, &got);
+        assert!(matches!(result, Err(DataError::Cancelled)), "{result:?}");
+    }
+
     /// What `p` reads of `files`: its whole files by key, its parts by their ids (as a web store
     /// answers ranges).
     #[cfg(not(target_arch = "wasm32"))]
     fn read_plan(files: &[(String, Vec<u8>)], p: &Plan) -> HashMap<String, Vec<u8>> {
         let mut got: HashMap<String, Vec<u8>> = files.iter().filter(|(k, _)| p.keys.contains(k)).cloned().collect();
-        for q in &p.parts {
+        got.extend(read_spans(files, &p.parts));
+        got
+    }
+
+    /// The bytes of `parts` of `files`, by their ids (as a web store answers ranges).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn read_spans(files: &[(String, Vec<u8>)], parts: &[Part]) -> HashMap<String, Vec<u8>> {
+        let mut got = HashMap::new();
+        for q in parts {
             let Some((_, f)) = files.iter().find(|(k, _)| *k == q.key) else { continue };
             let bytes = match q.span {
                 Span::Bytes(a, b) => f[a as usize..=b as usize].to_vec(),
@@ -3718,6 +4527,79 @@ mod tests {
         assert!(assemble(&store, &p, &cut, "v", None).is_err());
     }
 
+    /// A point's series of a sharded variable reads each shard's index, then by range only the
+    /// chunk holding the cell, never a whole shard (`aef-mosaic`'s are 686 MB at Viçosa, #1720).
+    /// It gives what a shard read whole gives: the fill value for a chunk the shard doesn't hold,
+    /// and no data where the shard isn't stored.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_series_of_a_sharded_variable_reads_only_the_cells_chunks() {
+        let files = window_store(true);
+        let store = parse_store(&files[..1]).unwrap();
+        let sel = Selection { variable: "v".into(), index: vec![], window: None };
+        let read = |p: &SeriesPlan| {
+            let mut got = read_spans(&files, &p.parts);
+            let inner = series_inner_parts(&store, p, &got).unwrap();
+            got.extend(read_spans(&files, &inner));
+            (inner.into_iter().map(|q| q.id).collect::<Vec<_>>(), got)
+        };
+        let show = |v: Vec<f64>| format!("{v:?}");
+        // Row 3, column 4: chunk 3 of shards (t, 0, 0). Step 0's shard doesn't hold it.
+        let p = plan_series(&store, &sel, "time", 0, 2, 3, 4).unwrap();
+        assert!(p.keys.is_empty(), "{:?}", p.keys);
+        let index = |key: &str| Part { key: key.into(), span: Span::Tail(4 * 16 + 4), id: format!("{key}#index") };
+        assert_eq!(p.parts, [index("v/c/0/0/0"), index("v/c/1/0/0")]);
+        let (ids, got) = read(&p);
+        assert_eq!(ids, ["v/c/1/0/0#3"]);
+        assert_eq!(show(assemble_series(&store, &p, &got).unwrap()), show(vec![-1.0, 1304.0]));
+        // A chunk the index places but whose bytes didn't come is an error, not the fill value.
+        let mut gone = got.clone();
+        gone.remove("v/c/1/0/0#3");
+        assert!(assemble_series(&store, &p, &gone).unwrap_err().to_string().contains("a chunk of shard v/c/1/0/0 wasn't read"));
+        // Row 5, column 7: step 0's shard (0, 1, 1) isn't stored, so no data.
+        let p = plan_series(&store, &sel, "time", 0, 2, 5, 7).unwrap();
+        let (ids, got) = read(&p);
+        assert_eq!(ids, ["v/c/1/1/1#0"]);
+        assert_eq!(show(assemble_series(&store, &p, &got).unwrap()), show(vec![f64::NAN, 1507.0]));
+        // A period of one step reads one shard's index.
+        let p = plan_series(&store, &sel, "time", 1, 1, 0, 0).unwrap();
+        assert_eq!(p.parts, [index("v/c/1/0/0")]);
+        assert_eq!(assemble_series(&store, &p, &read(&p).1).unwrap(), [1000.0]);
+        // From a folder, by range: the same values.
+        let dir = std::env::temp_dir().join(format!("rustgis-zarr-shard-series-{}", std::process::id()));
+        for (k, b) in &files {
+            let path = dir.join(k);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b).unwrap();
+        }
+        let p = plan_series(&store, &sel, "time", 0, 2, 3, 4).unwrap();
+        let (mut got, mut total) = (HashMap::new(), 0);
+        read_parts(&dir, &p.parts, &mut got, &mut total).unwrap();
+        let inner = series_inner_parts(&store, &p, &got).unwrap();
+        read_parts(&dir, &inner, &mut got, &mut total).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(show(assemble_series(&store, &p, &got).unwrap()), show(vec![-1.0, 1304.0]));
+        assert_eq!(total, 2 * 68 + inner.iter().map(|q| if let Span::Bytes(a, b) = q.span { b - a + 1 } else { 0 }).sum::<u64>());
+        // Shards of more chunks than an index read may hold, or chunks larger than a chunk read
+        // whole may be (hostile metadata), are refused, not overflowed or filled.
+        let huge = |shard: [u64; 3], inner: [u64; 3]| {
+            let z = serde_json::json!({"zarr_format": 3, "node_type": "array", "shape": [2, 1u64 << 33, 1u64 << 33], "data_type": "int16",
+                "dimension_names": ["time", "y", "x"], "fill_value": 0,
+                "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": shard}},
+                "codecs": [{"name": "sharding_indexed", "configuration": {"chunk_shape": inner, "codecs": [{"name": "bytes"}],
+                    "index_codecs": [{"name": "bytes"}, {"name": "crc32c"}]}}]});
+            parse_store(&[("zarr.json".into(), z.to_string().into_bytes())]).unwrap()
+        };
+        let one = Selection { variable: "".into(), index: vec![], window: None };
+        let e = plan_series(&huge([1, 1 << 32, 1 << 32], [1, 1, 1]), &one, "time", 0, 1, 0, 0).unwrap_err();
+        assert!(e.to_string().contains("too many chunks"), "{e}");
+        let big = huge([1, 1 << 16, 1 << 16], [1, 1 << 16, 1 << 16]);
+        let p = plan_series(&big, &one, "time", 0, 1, 0, 0).unwrap();
+        let absent = HashMap::from([(p.parts[0].id.clone(), vec![0xffu8; 20])]);
+        let e = assemble_series(&big, &p, &absent).unwrap_err();
+        assert!(e.to_string().contains("too large to read"), "{e}");
+    }
+
     /// A window of a sharded variable reads each shard's index by its last bytes, then only the
     /// shard's chunks it needs, by range; a chunk the index says isn't there shows the fill value
     /// and a shard not stored is empty, as when the shards are read whole. An index cut short, or
@@ -3782,7 +4664,9 @@ mod tests {
         let shard = dir.join("v/c/0/0/0");
         std::fs::remove_file(&shard).unwrap();
         std::fs::create_dir(&shard).unwrap();
-        assert!(read_dir(&dir, &sel(0, w0).label(), None).is_err());
+        let e = read_dir(&dir, &sel(0, w0).label(), None).unwrap_err().to_string();
+        // The message names the store and the shard.
+        assert!(e.contains(&dir.display().to_string()) && e.contains("v/c/0/0/0"), "{e}");
         let _ = std::fs::remove_dir_all(&dir);
         // A window over more than MAX_CHUNKS of the shards' chunks reads its shards whole, as a
         // window did before, rather than being refused: 260 × 260 cells of 2 × 2 chunks in shards
@@ -3809,5 +4693,151 @@ mod tests {
         lying[8..16].copy_from_slice(&u64::MAX.to_le_bytes());
         cut.insert("v/c/1/0/0#index".to_string(), lying);
         assert!(inner_parts(&store, &p, &cut).is_err());
+    }
+
+    /// A Zarr 3 store whose root group lists no arrays (as `aef-mosaic`'s): `emb(time, band, y, x)`
+    /// placed by the root's `spatial:transform`, a `time` of whole years, and no `band`, `y` or
+    /// `x` arrays. `prefix` puts `emb` and `time` in a group.
+    fn unlisted_store(prefix: &str, years: Value, time_type: &str, time_attrs: Value) -> Vec<(String, Vec<u8>)> {
+        let root = serde_json::json!({"zarr_format": 3, "node_type": "group", "attributes": {"proj:code": "EPSG:4326",
+            "spatial:dimensions": ["y", "x"], "spatial:transform": [0.5, 0.0, -43.0, 0.0, -0.5, -20.0], "spatial:shape": [4, 6]}});
+        let bytes = serde_json::json!([{"name": "bytes", "configuration": {"endian": "little"}}]);
+        let emb = serde_json::json!({"zarr_format": 3, "node_type": "array", "shape": [3, 2, 4, 6], "data_type": "int8",
+            "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [1, 2, 4, 6]}}, "codecs": bytes, "fill_value": -128,
+            "dimension_names": ["time", "band", "y", "x"]});
+        let time = serde_json::json!({"zarr_format": 3, "node_type": "array", "shape": [3], "data_type": time_type,
+            "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [3]}}, "codecs": bytes, "fill_value": 0,
+            "dimension_names": ["time"], "attributes": time_attrs});
+        let values: Vec<u8> = years
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|y| match y.as_i64() {
+                Some(i) if time_type == "int32" => (i as i32).to_le_bytes().to_vec(),
+                _ => y.as_f64().unwrap().to_le_bytes().to_vec(),
+            })
+            .collect();
+        vec![
+            ("zarr.json".into(), root.to_string().into_bytes()),
+            (format!("{prefix}emb/zarr.json"), emb.to_string().into_bytes()),
+            (format!("{prefix}time/zarr.json"), time.to_string().into_bytes()),
+            (format!("{prefix}time/c/0"), values),
+        ]
+    }
+
+    /// What a web store's reader fetches of `files` ([`member_keys`] rounds, as the engine runs
+    /// them, each file asked for once): the root's metadata, then each round's. Gives the docs and
+    /// each round's keys.
+    fn discover(files: &[(String, Vec<u8>)], variable: &str) -> (Vec<(String, Vec<u8>)>, Vec<Vec<String>>) {
+        let mut docs: Vec<(String, Vec<u8>)> = files.iter().filter(|(k, _)| METADATA_KEYS.contains(&k.as_str())).cloned().collect();
+        let (mut tried, mut rounds) = (HashSet::new(), Vec::new());
+        for _ in 0..3 {
+            let next: Vec<String> = member_keys(&docs, variable).into_iter().filter(|k| tried.insert(k.clone())).collect();
+            if next.is_empty() {
+                break;
+            }
+            docs.extend(files.iter().filter(|(k, _)| next.contains(k)).cloned());
+            rounds.push(next);
+        }
+        (docs, rounds)
+    }
+
+    /// The `time/c/0` chunk of `files`, under `prefix`.
+    fn time_chunk(files: &[(String, Vec<u8>)], prefix: &str) -> HashMap<String, Vec<u8>> {
+        files.iter().filter(|(k, _)| *k == format!("{prefix}time/c/0")).cloned().collect()
+    }
+
+    #[test]
+    fn a_store_without_consolidated_metadata_is_found_by_name_with_years_as_dates() {
+        let years = serde_json::json!([2017, 2018, 2025]);
+        let files = unlisted_store("", years.clone(), "int32", serde_json::json!({}));
+        assert!(lists_no_arrays(&files[..1]));
+        assert!(parse_store(&files[..1]).is_err(), "the root alone holds no arrays");
+        // The variable and the root's spatial:dimensions, then the variable's dimensions; the
+        // missing ones (band, y, x) asked for once.
+        let (docs, rounds) = discover(&files, "emb");
+        assert_eq!(rounds, vec![vec!["emb/zarr.json", "y/zarr.json", "x/zarr.json"], vec!["time/zarr.json", "band/zarr.json"]]);
+        let store = parse_store(&docs).unwrap();
+        assert_eq!(store.variables().iter().map(|v| v.path.as_str()).collect::<Vec<_>>(), ["emb"]);
+        // Placed by the root's transform and system, with no coordinates.
+        let emb = store.array("emb").unwrap();
+        assert!(spatial_grid(emb).is_some());
+        assert!(matches!(crs_of(&store, emb), Some((Crs::LonLat, _))));
+        // Whole years are the time axis, each on its 1 January.
+        let chunks = time_chunk(&files, "");
+        assert_eq!(coordinate_keys(&store, "emb"), ["time/c/0"]);
+        let jan1 = |y: i64| days_from_civil(y, 1, 1) as f64 * 86_400_000.0;
+        assert_eq!(time_axis(&store, "emb", &chunks), Some(("time".to_string(), vec![jan1(2017), jan1(2018), jan1(2025)])));
+        assert_eq!(jan1(2017), 1_483_228_800_000.0);
+        assert_eq!(info(&store, &chunks)["variables"][0]["dims"][0]["labels"], serde_json::json!(["2017", "2018", "2025"]));
+
+        // With no variable, only the map's dimensions are asked for, and no variable is found.
+        let (docs, _) = discover(&files, "");
+        assert!(parse_store(&docs).is_err());
+        // A variable in a group: its group's metadata, then its dimensions in its group and at
+        // the root (where coordinates are looked for too).
+        let nested = unlisted_store("g/", years.clone(), "int32", serde_json::json!({}));
+        let (docs, rounds) = discover(&nested, "g/emb");
+        assert_eq!(rounds[0], ["g/zarr.json", "g/emb/zarr.json", "y/zarr.json", "x/zarr.json"]);
+        assert_eq!(
+            rounds[1],
+            ["g/time/zarr.json", "time/zarr.json", "g/band/zarr.json", "band/zarr.json", "g/y/zarr.json", "g/x/zarr.json"]
+        );
+        let store = parse_store(&docs).unwrap();
+        assert!(time_axis(&store, "g/emb", &time_chunk(&nested, "g/")).is_some());
+        // A name that would lead out of the store isn't asked for.
+        assert_eq!(member_keys(&files[..1], "../emb"), ["y/zarr.json", "x/zarr.json"]);
+        // A store that lists its arrays asks for nothing more; nor does Zarr 2 with .zmetadata.
+        assert!(member_keys(&window_store(false)[..1], "v").is_empty());
+        let zgroup = |k: &str| (k.to_string(), br#"{"zarr_format": 2}"#.to_vec());
+        assert!(member_keys(&[zgroup(".zgroup"), (".zmetadata".into(), br#"{"metadata": {}}"#.to_vec())], "v").is_empty());
+        // Zarr 2 with no .zmetadata: an array's .zarray and .zattrs, then its _ARRAY_DIMENSIONS.
+        assert_eq!(member_keys(&[zgroup(".zgroup")], "v"), ["v/.zarray", "v/.zattrs"]);
+        let v2 =
+            [zgroup(".zgroup"), zgroup("v/.zarray"), ("v/.zattrs".into(), br#"{"_ARRAY_DIMENSIONS": ["year", "lat", "lon"]}"#.to_vec())];
+        assert_eq!(member_keys(&v2, "v"), ["year/.zarray", "year/.zattrs", "lat/.zarray", "lat/.zattrs", "lon/.zarray", "lon/.zattrs"]);
+
+        // The variable's CF grid mapping is asked for with its dimensions, and its system wins
+        // over the root's proj:code, as when the store lists it.
+        let mut mapped = files.clone();
+        let mut emb = serde_json::from_slice::<Value>(&mapped[1].1).unwrap();
+        emb["attributes"] = serde_json::json!({"grid_mapping": "gm"});
+        mapped[1].1 = emb.to_string().into_bytes();
+        let gm = serde_json::json!({"zarr_format": 3, "node_type": "array", "shape": [1], "data_type": "int8",
+            "chunk_grid": {"name": "regular", "configuration": {"chunk_shape": [1]}}, "codecs": [{"name": "bytes"}],
+            "attributes": {"epsg_code": 3857}});
+        mapped.push(("gm/zarr.json".into(), gm.to_string().into_bytes()));
+        let (docs, rounds) = discover(&mapped, "emb");
+        assert_eq!(rounds[1], ["time/zarr.json", "band/zarr.json", "gm/zarr.json"]);
+        let store = parse_store(&docs).unwrap();
+        assert!(matches!(crs_of(&store, store.array("emb").unwrap()), Some((Crs::WebMercator, _))));
+        // Names an address would read as something else aren't asked for.
+        assert_eq!(member_keys(&files[..1], "emb#x"), ["y/zarr.json", "x/zarr.json"]);
+        assert_eq!(member_keys(&files[..1], "emb?x"), ["y/zarr.json", "x/zarr.json"]);
+        // A root over MAX_METADATA isn't read (parse_store refuses it too).
+        let mut huge = serde_json::from_slice::<Value>(&files[0].1).unwrap();
+        huge["attributes"]["pad"] = "x".repeat(MAX_METADATA).into();
+        assert!(!lists_no_arrays(&[("zarr.json".into(), huge.to_string().into_bytes())]));
+        // Many other arrays naming many dimensions: the variable's own come first, within the cap.
+        let mut crowded = discover(&files, "emb").0;
+        for i in 0..16 {
+            let dims: Vec<String> = (0..MAX_DIMS).map(|d| format!("o{i}_{d}")).collect();
+            let other = serde_json::json!({"zarr_format": 3, "node_type": "array", "dimension_names": dims});
+            crowded.insert(1, (format!("a{i}/zarr.json"), other.to_string().into_bytes()));
+        }
+        let keys = member_keys(&crowded, "emb");
+        assert_eq!(keys.len(), MAX_PROBES);
+        assert_eq!(keys[..4], ["y/zarr.json", "x/zarr.json", "band/zarr.json", "o0_0/zarr.json"]);
+
+        // Not years: step numbers, units that aren't years, a float axis.
+        let not_years = |years: Value, time_type: &str, attrs: Value| {
+            let files = unlisted_store("", years, time_type, attrs);
+            let (docs, _) = discover(&files, "emb");
+            time_axis(&parse_store(&docs).unwrap(), "emb", &time_chunk(&files, ""))
+        };
+        assert_eq!(not_years(serde_json::json!([0, 1, 2]), "int32", serde_json::json!({})), None);
+        assert_eq!(not_years(years.clone(), "int32", serde_json::json!({"units": "days"})), None);
+        assert_eq!(not_years(serde_json::json!([2017.0, 2018.0, 2025.0]), "float64", serde_json::json!({})), None);
+        assert!(not_years(years, "int32", serde_json::json!({"units": "years"})).is_some());
     }
 }

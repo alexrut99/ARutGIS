@@ -7,6 +7,7 @@
 //!
 //! Sources are hostile input: malformed rows are skipped and counted, never a panic.
 
+pub mod arcgis;
 pub mod credentials;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod duckdb;
@@ -16,6 +17,7 @@ pub(crate) mod external;
 pub mod fgb;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gdal;
+pub mod geodatabase;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod geojson;
 #[cfg(not(target_arch = "wasm32"))]
@@ -33,6 +35,7 @@ pub mod pgconn;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod postgis;
 pub mod remote;
+pub mod sdefile;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod shp;
 #[cfg(not(target_arch = "wasm32"))]
@@ -164,7 +167,7 @@ pub struct SourceInfo {
     pub extent: Extent,
     /// Number of features, when known without reading them.
     pub count: Option<u64>,
-    /// The source's coordinate system, as `EPSG:…`.
+    /// The source's coordinate system, as `EPSG:…`, or as its definition ([`Crs::definition_text`]).
     pub crs: String,
     /// Whether extent queries use a spatial index rather than a scan.
     pub indexed: bool,
@@ -249,11 +252,32 @@ pub struct Batch {
     /// Date-times of date fields that had digits past the microsecond, rounded to it, counted for
     /// each field by its position. Said by [`rounded_dates_note`].
     pub rounded_dates: Vec<usize>,
+    /// Text values `<Null>` read as null, counted for each field by its position. Said by
+    /// [`null_text_note`].
+    pub null_text: Vec<usize>,
+    /// What else the read lost or assumed, one note per kind with its count (values that don't fit
+    /// their field, rings without area): said as they are.
+    pub notes: Vec<String>,
+    /// Text values of a Shapefile that aren't valid in the encoding they were read in
+    /// ([`FeatureSource::text_encoding`]), so hold U+FFFD in place of those bytes, counted for each
+    /// field by its position. Said by [`not_utf8_note`].
+    pub not_utf8: Vec<usize>,
 }
 
 /// Counts one more value of the field at `k` that wasn't a date, or one date-time rounded to the
 /// microsecond ([`Batch::unread_dates`], [`Batch::rounded_dates`]).
 pub(crate) fn unread_date(counts: &mut Vec<usize>, k: usize) {
+    unread_dates_by(counts, k, 1);
+}
+
+/// Counts one more text value `<Null>` read as null in the field at `k` ([`Batch::null_text`]).
+pub(crate) fn null_text_at(counts: &mut Vec<usize>, k: usize) {
+    unread_dates_by(counts, k, 1);
+}
+
+/// Counts one more text value that isn't valid in its encoding in the field at `k` ([`Batch::not_utf8`]).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn not_utf8_at(counts: &mut Vec<usize>, k: usize) {
     unread_dates_by(counts, k, 1);
 }
 
@@ -301,6 +325,38 @@ pub fn unread_dates_note(fields: &[crate::Field], counts: &[usize]) -> Option<St
     Some(format!("{what} read as empty, in {}", crate::io::named_fields(fields, counts)))
 }
 
+/// What a read says of text values `<Null>` it read as null ([`crate::Value::is_null_marker`],
+/// [`Batch::null_text`]), naming the first five fields. `None` when there were none. It names the
+/// marker as `Null`, without its brackets: notices are redacted, which takes `<Null>` for a tag.
+pub fn null_text_note(fields: &[crate::Field], counts: &[usize]) -> Option<String> {
+    let total: usize = counts.iter().sum();
+    if total == 0 {
+        return None;
+    }
+    let what = if total == 1 { "1 value written as Null was".to_string() } else { format!("{total} values written as Null were") };
+    Some(format!("{what} read as empty, in {}", crate::io::named_fields(fields, counts)))
+}
+
+/// What a read says of a `.dbf`'s text values that aren't valid in the `encoding` they were read in
+/// ([`Batch::not_utf8`], [`FeatureSource::text_encoding`]): how many, in which fields (the first five
+/// named), and why they were read in it. `None` when there were none.
+pub fn not_utf8_note(fields: &[crate::Field], counts: &[usize], encoding: &str) -> Option<String> {
+    let total: usize = counts.iter().sum();
+    if total == 0 {
+        return None;
+    }
+    let what = if total == 1 {
+        format!("1 text value isn't valid {encoding} and was")
+    } else {
+        format!("{total} text values aren't valid {encoding} and were")
+    };
+    Some(format!(
+        "{what} read with U+FFFD in place of the bytes that can't be read, in {}; {}",
+        crate::io::named_fields(fields, counts),
+        crate::dbf::cause(encoding)
+    ))
+}
+
 /// What a read says of date-times it rounded to the microsecond ([`Batch::rounded_dates`]), naming
 /// the first five fields. `None` when there were none.
 pub fn rounded_dates_note(fields: &[crate::Field], counts: &[usize]) -> Option<String> {
@@ -326,6 +382,12 @@ pub trait FeatureSource: Send + Sync {
     fn visits_chunks(&self) -> bool {
         self.streams_chunks()
     }
+    /// Whether a complete bounded traversal for a geographic extent is available. This also
+    /// covers readers whose view and whole-export paths still use their existing sample or
+    /// whole-read contracts.
+    fn visits_extent_chunks(&self) -> bool {
+        self.visits_chunks()
+    }
     /// Visits every matching feature in source painter order: the features and ids a complete
     /// [`FeatureSource::read`] of the same extent gives, in the same order and with the same
     /// skipped count when there is no extent (an extent read through an index may order and skip
@@ -340,6 +402,19 @@ pub trait FeatureSource: Send + Sync {
         Err(DataError::Unsupported("a source that can't be read a chunk at a time".into()))
     }
     fn info(&self) -> &SourceInfo;
+    /// The coordinate system of the features it gives: a file read in place gives them as the file
+    /// holds them, in its own system (Shapefile, GeoPackage, FlatGeobuf, GeoParquet, GeoJSON); a
+    /// source that converts them (a database or service that answers in longitude/latitude) says
+    /// longitude/latitude, the default. One that wraps another says the other's. A request's
+    /// extent is in longitude/latitude whatever this is.
+    fn coord_crs(&self) -> crate::raster::Crs {
+        crate::raster::Crs::LonLat
+    }
+    /// The encoding the source's text values are read in, for the notice of those that aren't
+    /// valid in it ([`not_utf8_note`]).
+    fn text_encoding(&self) -> &'static str {
+        "UTF-8"
+    }
     /// Whether features were left out of every read because the coordinate system the source
     /// declares can't place them, so that defining its projection again can't bring them back.
     fn lost_to_crs(&self) -> bool {
@@ -593,8 +668,16 @@ impl FeatureSource for Fetching {
         self.0.info()
     }
 
+    fn coord_crs(&self) -> crate::raster::Crs {
+        self.0.coord_crs()
+    }
+
     fn lost_to_crs(&self) -> bool {
         self.0.lost_to_crs()
+    }
+
+    fn text_encoding(&self) -> &'static str {
+        self.0.text_encoding()
     }
 
     fn skipped_at_open(&self) -> usize {
@@ -625,7 +708,8 @@ pub fn materialize(src: &dyn FeatureSource) -> Result<(Dataset, ReadReport)> {
 /// [`materialize`], with `budget` bytes for a source read a chunk at a time.
 fn materialize_within(src: &dyn FeatureSource, budget: u64) -> Result<(Dataset, ReadReport)> {
     let info = src.info();
-    let (features, skipped, unread_dates, rounded_dates) = if src.visits_chunks() { read_chunks(src, budget)? } else { read_at_once(src)? };
+    let batch = if src.visits_chunks() { read_chunks(src, budget)? } else { read_at_once(src)? };
+    let Batch { features, skipped, unread_dates, rounded_dates, null_text, notes, not_utf8, .. } = batch;
     let mut ds = Dataset::new(info.name.clone(), info.geometry_type, info.fields.clone());
     ds.crs = info.coordinate_system();
     // A streamed Shapefile skips unconvertible shapes rather than retaining empty geometry.
@@ -633,6 +717,8 @@ fn materialize_within(src: &dyn FeatureSource, budget: u64) -> Result<(Dataset, 
     ds.crs_incomplete = (info.format == "Shapefile" && skipped > 0) || src.lost_to_crs();
     ds.zm_dropped = info.zm_dropped;
     ds.features = features.into();
+    // Held as the source gives its features, in its own system.
+    ds.held_in = src.coord_crs();
     let rounded = rounded_dates_note(&info.fields, &rounded_dates);
     let unread_dates = unread_dates_note(&info.fields, &unread_dates);
     let mut report = ReadReport {
@@ -641,8 +727,14 @@ fn materialize_within(src: &dyn FeatureSource, budget: u64) -> Result<(Dataset, 
         synced: None,
         unread_dates: unread_dates.clone(),
         rounded_dates: rounded.clone(),
+        extrusion: None,
+        losses: Vec::new(),
     };
-    report.messages.extend(unread_dates.into_iter().chain(rounded).map(|n| format!("{}: {n}", info.name)));
+    let null_text = null_text_note(&info.fields, &null_text);
+    let not_utf8 = not_utf8_note(&info.fields, &not_utf8, src.text_encoding());
+    report.messages.extend(
+        unread_dates.into_iter().chain(rounded).chain(null_text).chain(notes).chain(not_utf8).map(|n| format!("{}: {n}", info.name)),
+    );
     if ds.geometry_type == GeometryType::None
         && let Some(g) = ds.features.iter().find_map(|f| f.geometry.as_ref())
     {
@@ -651,9 +743,9 @@ fn materialize_within(src: &dyn FeatureSource, budget: u64) -> Result<(Dataset, 
     Ok((ds, report))
 }
 
-/// Every feature of a source in one read, the rows it skipped and the dates it couldn't read
+/// Every feature of a source in one read, with the rows it skipped and the values it counted
 /// ([`Batch::unread_dates`]), refusing a source over [`MAX_LIMIT`] and an incomplete read.
-fn read_at_once(src: &dyn FeatureSource) -> Result<(Vec<Feature>, usize, Vec<usize>, Vec<usize>)> {
+fn read_at_once(src: &dyn FeatureSource) -> Result<Batch> {
     let info = src.info();
     let too_many = |n| DataError::Format(format!("{}: the layer has {n} features, more than the {MAX_LIMIT} read at once", info.name));
     // Refuse before reading or allocating a sample when the source already knows its size.
@@ -676,12 +768,12 @@ fn read_at_once(src: &dyn FeatureSource) -> Result<(Vec<Feature>, usize, Vec<usi
     if info.count.is_none() && batch.features.len() >= MAX_LIMIT {
         return Err(DataError::Format(format!("{}: the layer has more features than the {MAX_LIMIT} read at once", info.name)));
     }
-    Ok((batch.features, batch.skipped, batch.unread_dates, batch.rounded_dates))
+    Ok(batch)
 }
 
-/// Every feature of a source that can be read a chunk at a time, the rows it skipped and the dates
-/// it couldn't read, refusing the source once its features would hold more than `budget` bytes.
-fn read_chunks(src: &dyn FeatureSource, budget: u64) -> Result<(Vec<Feature>, usize, Vec<usize>, Vec<usize>)> {
+/// Every feature of a source that can be read a chunk at a time, with the rows it skipped and the
+/// values it counted, refusing the source once its features would hold more than `budget` bytes.
+fn read_chunks(src: &dyn FeatureSource, budget: u64) -> Result<Batch> {
     let info = src.info();
     let row_bytes = std::mem::size_of::<Feature>() as u64;
     let too_large = || {
@@ -716,7 +808,7 @@ fn read_chunks(src: &dyn FeatureSource, budget: u64) -> Result<(Vec<Feature>, us
         features.extend(chunk);
         Ok(())
     })?;
-    Ok((features, batch.skipped, batch.unread_dates, batch.rounded_dates))
+    Ok(Batch { features, ..batch })
 }
 
 /// The geometry type of a source that doesn't declare one, from its first feature.
@@ -753,8 +845,8 @@ pub(crate) struct Reproject {
 }
 
 impl Reproject {
-    /// For a reader that converts only EPSG codes: a coordinate system declared without one, by
-    /// `authority` and `code` or by a `wkt` definition, when it is another body's
+    /// For [`declared_reproject`]: a coordinate system declared by `authority` and `code` or by a
+    /// `wkt` definition, when it is another body's
     /// ([`crate::raster::planetary::declared`]). `None` when it isn't.
     /// - Its longitude/latitude are read as they are, with a note. The layer keeps the system when
     ///   the definition gives it.
@@ -836,20 +928,47 @@ impl Reproject {
         self.crs.label()
     }
 
-    /// The system as [`SourceInfo::crs`] gives it: a custom one (another body's, declared by a
-    /// definition) by its PROJ definition, which [`SourceInfo::coordinate_system`] reads back as
-    /// that very system, as the Shapefile source does; else its name.
+    /// The system as [`SourceInfo::crs`] gives it ([`Crs::definition_text`]), which
+    /// [`SourceInfo::coordinate_system`] reads back as that very system, as the Shapefile source does.
     pub(crate) fn info_crs(&self) -> String {
-        self.crs.custom_def().map(|d| d.proj4.clone()).unwrap_or_else(|| self.label())
+        self.crs.definition_text()
     }
 
-    /// The geometry in longitude/latitude; `None` when a coordinate can't be converted.
-    pub(crate) fn geometry(&self, g: Geometry) -> Option<Geometry> {
+    /// The system the source's features are given in ([`FeatureSource::coord_crs`]): its own, as
+    /// the file holds them (longitude/latitude for one read as such).
+    pub(crate) fn crs(&self) -> Crs {
+        self.crs
+    }
+
+    /// The geometry converted to longitude/latitude; `None` when a coordinate can't be converted:
+    /// for a source that gives its features there (a database, a GeoPackage table loaded for
+    /// editing), unlike [`Reproject::read`].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn to_lonlat_geometry(&self, g: Geometry) -> Option<Geometry> {
         let Some(t) = &self.t else { return Some(g) };
         let mut ok = true;
         let out = g.map_coords(&|c| t.to_lonlat(c).unwrap_or(Coord::new(f64::NAN, f64::NAN)));
         out.for_each_coord(|c| ok &= c.is_finite());
         ok.then_some(out)
+    }
+
+    /// A geometry as the file holds it, kept in the source's own coordinates
+    /// ([`Reproject::crs`]), with its box in longitude/latitude for a request's extent to test
+    /// ([`Placed::in_request`]); `None` when a coordinate can't be converted to longitude/latitude,
+    /// as a feature that can't be placed is left out. Each coordinate is converted to be checked,
+    /// none is kept converted.
+    pub(crate) fn read(&self, g: Geometry) -> Option<Placed> {
+        let Some(t) = &self.t else {
+            let lonlat = g.extent();
+            return Some(Placed { geometry: g, lonlat });
+        };
+        let mut ok = true;
+        let mut lonlat = Extent::EMPTY;
+        g.for_each_coord(|c| match t.to_lonlat(c).filter(|l| l.is_finite()) {
+            Some(l) => lonlat.expand(l),
+            None => ok = false,
+        });
+        ok.then_some(Placed { geometry: g, lonlat })
     }
 
     /// A longitude/latitude geometry in the source's coordinates.
@@ -1182,10 +1301,26 @@ pub(crate) fn clamp_limit(limit: usize) -> usize {
 }
 
 /// Whether a feature's geometry falls in a request's extent (always true without one).
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn in_request(g: &Geometry, req: &Request) -> bool {
     match &req.extent {
         Some(e) => g.extent().intersects(e),
         None => true,
+    }
+}
+
+/// A geometry a source read, in its own coordinates, and its box in longitude/latitude
+/// ([`Reproject::read`]).
+pub(crate) struct Placed {
+    pub(crate) geometry: Geometry,
+    pub(crate) lonlat: Extent,
+}
+
+impl Placed {
+    /// Whether it is within a request's extent (in longitude/latitude), as [`in_request`] asks
+    /// of a geometry there.
+    pub(crate) fn in_request(&self, req: &Request) -> bool {
+        req.extent.is_none_or(|e| self.lonlat.intersects(&e))
     }
 }
 

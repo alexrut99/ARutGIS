@@ -12,12 +12,15 @@ for the conventions.
    and ARM64); pushes to `main` test them all. `ci:full` also builds the release apps. The nightly
    workflow tests and release-builds them all when there are new commits, and opens an issue on
    failure.
-5. The docs workflow builds a site and web-app preview. A first-time fork contributor's preview
-   needs a maintainer to add `preview` or re-run the workflow; returning contributors' previews
-   publish automatically.
+5. The docs workflow builds a site and web-app preview. A fork's preview needs a maintainer to
+   add `preview` or re-run the workflow, for each new commit. Previews share one origin, so the
+   preview app keeps its settings, including AI provider keys, only until the page closes.
 
-A maintainer's `automerge` label approves and squash-merges a pull request after its required
-checks pass. Pushing again removes the label and disables auto-merge; removing the label also
+Pull requests merge through a merge queue: the queue tests each one merged with `main` and the
+pull requests ahead of it, and squash-merges it only if that passes, so two changes that pass apart
+but break together never reach `main`. The queue runs CI's Linux jobs; the Python package, Docker
+images and the phone apps are tested by the push to `main` after the merge. A maintainer's `automerge` label approves a pull request and
+adds it to the queue after its required checks pass. Pushing again removes the label and disables auto-merge; removing the label also
 disables it.
 
 A maintainer's `claude-autofix` label has Claude bring a pull request up to date: it merges the base
@@ -31,7 +34,20 @@ naming, wording, a refactor, an extra test for code that works) can be left for 
 quality pass**: before each release, maintainers gather these from the merged pull requests and fix
 them together. Reply on the comment that it's left for the release quality pass (agents end the
 reply with `<!-- quality-sweep -->`), so it can be found. Bugs, crashes, silent data loss and
-breaks of the rules in AGENTS.md are fixed in the pull request.
+breaks of the rules in AGENTS.md are fixed in the pull request, even when the problem predates it,
+the input that triggers it is rare, the fix needs a wider change or earlier code does the same. A
+defect too large for the pull request gets an issue, filed and linked from the reply, instead of
+the marker.
+
+The Claude review ends each inline comment with its category (`Category: bug`, security,
+performance, quality or agents-md). CI's **Review deferrals** check, which runs on each push and again in the
+merge queue, fails when a reply leaves a bug, security or AGENTS.md finding for the release quality
+pass. A maintainer can override it for one finding by ending a reply in its thread with
+`<!-- deferral-approved -->` and running the check again. The override isn't a reason: it records
+that a maintainer accepts the finding for the release quality pass, or judges it misclassified. A maintainer here is the repository's owner, a member of its organization or a
+collaborator, and the pull request's author may be that maintainer. Comments from
+other reviewers carry no category, so the check lets them through: those reviewers answer the
+reply themselves.
 
 Changes to saved or generated output must classify each new owning field: address, executable
 parameters, generated text or user data. Use the shared durable-output transaction and keep
@@ -146,8 +162,8 @@ The settings change every build's fingerprint, so the next build is a full one.
 
 **Build only what you're testing.** `cargo test --workspace` builds every crate's library, test
 binaries and examples; a change in `ui-egui` alone means its library twice (plain and for its unit
-tests), fifteen integration test binaries and the examples. While you work, name what you need:
-`cargo test -p rustgis-ui-egui --lib`, `cargo test -p rustgis-engine --test project_save`, or
+tests), its integration test binaries and the examples. While you work, name what you need:
+`cargo test -p rustgis-ui-egui --lib`, `cargo test -p rustgis-engine --test integration project_save::`, or
 `cargo clippy -p rustgis-ui-egui --all-targets` to check without linking.
 
 **cargo-nextest.** [cargo-nextest](https://nexte.st) (`cargo install cargo-nextest --locked`, or
@@ -164,10 +180,10 @@ its slowest test; leaving it out while you iterate keeps a run short. Run it bef
 `cargo nextest run -p rustgis-engine -E 'test(hostile_params_never_panic)'` or `cargo xtask ci`.
 A test that fails now and then can be retried with `--retries 1`.
 
-**`opt-level` 0 for UI work.** The workspace crates build at `opt-level = 1`. With
-`CARGO_PROFILE_DEV_OPT_LEVEL=0`, `ui-egui` rebuilds after an edit about five times faster, but the
-engine's tests run about six times slower (rasters, geometry and the hostile-parameter test), so
-it suits iterating on the interface only. Switching the level rebuilds the workspace crates.
+**Dev optimization levels.** In `Cargo.toml`, `[profile.dev]` defaults to `opt-level = 0` so UI,
+engine, CLI and test binaries compile quickly, while third-party crates and `rustgis-render` build
+at `opt-level = 2` and `rustgis-geom`, `rustgis-data`, `rustgis-analysis` and `rustgis-plugins`
+build at `opt-level = 1` so geometry, raster, analysis and plugin tests stay fast and reliable.
 
 **rust-analyzer in its own folder.** An editor's rust-analyzer and the terminal share `target/`:
 each waits for the other's lock ("Blocking waiting for file lock"), and as they build with
@@ -302,32 +318,43 @@ test similarly generates its KML, KMZ, CSV and GeoJSON inputs. These run automat
 `cargo test --workspace --locked` and `cargo xtask ci`, without a separate setup step or a
 public service. Extend these generators when adding cases.
 
-`crates/engine/tests/workflows.rs` runs everyday jobs from start to finish: join, overlay,
+`crates/engine/tests/integration/workflows.rs` runs everyday jobs from start to finish: join, overlay,
 summarise, map, save, reopen and export, and the same saved job twice. Its real-data case,
 Shelby County's census tracts checked against the areas the Census Bureau publishes, is
 `#[ignore]`d: the nightly build downloads the public-domain files, pinned by checksum, and runs it
 with `RUSTGIS_WORKFLOW_DATA` naming their folder (the list of files is in `nightly.yml`). To run
 it locally, download the files listed there into one folder, check them with `sha256sum` against
 the checksums beside them, and run
-`RUSTGIS_WORKFLOW_DATA=<folder> cargo test -p rustgis-engine --test workflows -- --ignored`.
+`RUSTGIS_WORKFLOW_DATA=<folder> cargo test -p rustgis-engine --test integration workflows:: -- --ignored`.
+
+### Performance regressions
+
+When changing a large-data path, add a work budget to an ordinary test. Count what the operation
+does, such as bytes fetched, tiles requested, features decoded or passes over a raster. Use a
+small fixture, check the result as well as the count, and explain the budget beside the assertion.
+Count at the read or processing boundary so repeated work counts too. For example, the
+[GeoTIFF window test](../crates/tiles/src/cog/raster.rs) counts response bytes for a view that
+crosses one source tile boundary. Use timed benchmarks to measure processing speed.
 
 ### Property tests
 
 A property test checks a rule over generated inputs instead of a few written ones: an export
-comes back the same or says what changed (`crates/engine/tests/never_silent_roundtrip.rs`). They
+comes back the same or says what changed (`crates/engine/tests/integration/never_silent_roundtrip.rs`). They
 use [proptest](https://docs.rs/proptest) (a dev-dependency) and follow one pattern, so CI runs
 them all the same way:
 
 - An integration test (`crates/<crate>/tests/`) seeds its runner from `PROPERTY_SEED` (1 if
   unset) and runs `PROPERTY_CASES` cases, with a default that takes a few seconds, and no
-  failure file. A failure panics with `PROPERTY_SEED=<seed>` and the smallest input found.
+  failure file. A value set that isn't a whole number fails rather than running the defaults.
+  A failure panics with `PROPERTY_SEED=<seed>` and the smallest input found.
 - Pull requests run the fixed seed with `cargo test`. The nightly runs each property test on a
   new seed with more cases; add a new one to its step in `nightly.yml`.
 - What the rule allows (a format's limits, a tolerance) is a list in the test, each entry with
-  its reason.
+  its reason. A rule about notices is tested both ways: lossy input gives the notice of that
+  kind, clean input gives none.
 
 To run a failing seed again, or deeper:
-`PROPERTY_SEED=7 PROPERTY_CASES=2000 cargo test -p rustgis-engine --test never_silent_roundtrip`.
+`PROPERTY_SEED=7 PROPERTY_CASES=2000 cargo test -p rustgis-engine --test integration never_silent_roundtrip::`.
 
 ## Documentation
 

@@ -5399,3 +5399,374 @@ All Automatic	อัตโนมัติทั้งหมด
 Draw this layer's labels in this map frame. The map, and other frames showing it, keep their labels either way.	วาดป้ายชื่อของชั้นข้อมูลนี้ในกรอบแผนที่นี้ ตัวแผนที่และกรอบอื่นที่แสดงแผนที่เดียวกันยังแสดงป้ายชื่อตามเดิม
 This layer has no labels to draw: choose its label field in Labeling first	ชั้นข้อมูลนี้ยังไม่มีป้ายชื่อ ให้เลือกฟิลด์ป้ายชื่อในแผงการติดป้ายชื่อก่อน
 A project with labels chosen in a map frame opens in ARutGIS 0.7.6 and later.	โปรเจกต์ที่เลือกป้ายชื่อเฉพาะกรอบแผนที่ต้องเปิดด้วย ARutGIS 0.7.6 ขึ้นไป
+0 draws no border	0 คือไม่วาดเส้นขอบ
+1 line doesn't fit the box	1 บรรทัดไม่พอดีกรอบ
+1 line isn't drawn: a text draws 200 at most	1 บรรทัดไม่ถูกวาด: ข้อความวาดได้สูงสุด 200 บรรทัด
+3010, lv95	3010, lv95
+A GeoLens server's datasets, read as features.	ชุดข้อมูลของเซิร์ฟเวอร์ GeoLens อ่านเป็นฟีเจอร์
+A PNG or JPEG file as the marker	ไฟล์ PNG หรือ JPEG ใช้เป็นมาร์กเกอร์
+A box behind the element, which moves with it.	กรอบด้านหลังองค์ประกอบ ซึ่งเคลื่อนไปพร้อมกัน
+A message takes at most {n} pictures	ข้อความหนึ่งแนบรูปได้สูงสุด {n} รูป
+A name or EPSG code, WKT or a PROJ string; empty: the map's own when it is projected, else the UTM zone at the view's centre	ชื่อหรือรหัส EPSG, WKT หรือสตริง PROJ; ว่างไว้: ใช้ของแผนที่เมื่อเป็นระบบฉาย มิฉะนั้นใช้โซน UTM ที่กึ่งกลางมุมมอง
+A project save is already in progress.	กำลังบันทึกโปรเจกต์อยู่แล้ว
+A sign-in is remembered on this computer: it signs in when a file needs it.	มีการเข้าสู่ระบบที่จำไว้ในคอมพิวเตอร์เครื่องนี้: จะเข้าสู่ระบบเองเมื่อไฟล์ต้องใช้
+A token is already being generated for this connection. Cancel it first.	กำลังสร้างโทเค็นสำหรับการเชื่อมต่อนี้อยู่แล้ว ยกเลิกก่อน
+A token is being generated. Cancel it before saving again.	กำลังสร้างโทเค็น ยกเลิกก่อนบันทึกอีกครั้ง
+A value of {field}	ค่าของ {field}
+Add STAC Bands	เพิ่มแบนด์ STAC
+Add STAC Index	เพิ่มดัชนี STAC
+Add a spectral index of the item's bands, for the part of the map in view	เพิ่มดัชนีสเปกตรัมจากแบนด์ของรายการ สำหรับส่วนของแผนที่ที่กำลังแสดง
+Add or create a polygon feature layer using Data, then choose it here.	เพิ่มหรือสร้างชั้นข้อมูลรูปหลายเหลี่ยมที่แท็บข้อมูล แล้วเลือกที่นี่
+Add the item's bands as one image, for the part of the map in view	เพิ่มแบนด์ของรายการเป็นภาพเดียว สำหรับส่วนของแผนที่ที่กำลังแสดง
+Agriculture	เกษตรกรรม
+Ambient	แสงโดยรอบ
+An API key in the URL path is saved as typed, not in the credential store.	คีย์ API ในพาธของ URL จะบันทึกตามที่พิมพ์ ไม่ได้เก็บในที่เก็บข้อมูลรับรอง
+An image picked for an earlier Image… was dropped: pick it again for that marker	ภาพที่เลือกไว้กับ ภาพ… ก่อนหน้าถูกทิ้งไป: เลือกใหม่สำหรับมาร์กเกอร์นั้น
+Analyze › Annotate	วิเคราะห์ › ใส่คำอธิบาย
+Annotate	ใส่คำอธิบาย
+Annotation export uses GeoJSON.	การส่งออกคำอธิบายใช้ GeoJSON
+Apply Conversion	ใช้การแปลง
+Apply Shape Conversion	ใช้การแปลงรูปร่าง
+ArcGIS Token Status	สถานะโทเค็น ArcGIS
+Area Unit	หน่วยพื้นที่
+Attach a picture (PNG, JPEG or WebP), or paste one into the message box	แนบรูป (PNG, JPEG หรือ WebP) หรือวางรูปลงในช่องข้อความ
+Automatic chooses columns using the whole file. Open a list to see the preview suggestions or choose columns yourself.	อัตโนมัติจะเลือกคอลัมน์จากทั้งไฟล์ เปิดรายการเพื่อดูคอลัมน์ที่แนะนำในตัวอย่าง หรือเลือกคอลัมน์เอง
+Balanced light	แสงสมดุล
+Band combinations are made on the desktop for now	ขณะนี้การผสมแบนด์ทำได้บนเดสก์ท็อปเท่านั้น
+Bands left out	แบนด์ที่ไม่ได้ใช้
+Bands: public items only	แบนด์: เฉพาะรายการสาธารณะ
+Bars	แท่ง
+Bathymetric	ความลึกท้องน้ำ
+Break the text into lines at spaces to fit the width of its box	ตัดข้อความขึ้นบรรทัดใหม่ที่ช่องว่างให้พอดีความกว้างของกรอบ
+Breaks	ค่าแบ่งช่วง
+By area	ตามพื้นที่
+By area: a value twice another draws a marker of about twice the area. By radius: twice the size.	ตามพื้นที่: ค่าที่มากเป็นสองเท่าวาดมาร์กเกอร์ที่มีพื้นที่ราวสองเท่า ตามรัศมี: ขนาดสองเท่า
+By label	ตามป้ายชื่อ
+By radius	ตามรัศมี
+By the bars	ตามแท่ง
+Cancel ArcGIS Token	ยกเลิกโทเค็น ArcGIS
+Cancel Fitting	ยกเลิกการปรับรูป
+Cancel Grid Read	ยกเลิกการอ่านกริด
+Cancel token request	ยกเลิกการขอโทเค็น
+Choose Circle or Rotated Box.	เลือกวงกลมหรือกล่องหมุน
+Choose a loaded editable polygon layer.	เลือกชั้นข้อมูลรูปหลายเหลี่ยมที่โหลดแล้วและแก้ไขได้
+Choose a polygon layer	เลือกชั้นข้อมูลรูปหลายเหลี่ยม
+Choose an image and target layer, then draw in the original image grid.	เลือกภาพและชั้นข้อมูลปลายทาง แล้ววาดในกริดของภาพต้นฉบับ
+Choose an image before using original-image pixels.	เลือกภาพก่อนใช้พิกเซลของภาพต้นฉบับ
+Choose an image or Web Mercator grid metres before drawing.	เลือกภาพหรือเมตรกริด Web Mercator ก่อนวาด
+Class {n} more than {bound}	คลาส {n} มากกว่า {bound}
+Close without applying the preview and stop any pending fit. Use Undo after applying a conversion.	ปิดโดยไม่ใช้ตัวอย่าง และหยุดการปรับรูปที่ค้างอยู่ ใช้เลิกทำหลังใช้การแปลงแล้ว
+Collapse the ribbon	ย่อริบบอน
+Color by class	สีตามคลาส
+Color infrared	อินฟราเรดสี
+Construction Grid	กริดก่อสร้าง
+Conversion closed because the source, selection or tool changed.	ปิดการแปลงแล้ว เพราะแหล่งข้อมูล การเลือก หรือเครื่องมือเปลี่ยนไป
+Convert Now	แปลงเลย
+Convert Now fits and applies immediately. Preview Conversion lets you review or adjust first.	แปลงเลย จะปรับรูปและใช้ทันที ดูตัวอย่างการแปลง ให้ตรวจหรือปรับก่อน
+Convert Polygon	แปลงรูปหลายเหลี่ยม
+Convert Polygon to Shape…	แปลงรูปหลายเหลี่ยมเป็นรูปร่าง…
+Convert Polygon…	แปลงรูปหลายเหลี่ยม…
+Convert Position	แปลงตำแหน่ง
+Convert Selected Polygon…	แปลงรูปหลายเหลี่ยมที่เลือก…
+Coordinate systems	ระบบพิกัด
+Copernicus Data Space	Copernicus Data Space
+Copernicus Data Space Status	สถานะ Copernicus Data Space
+Copernicus Data Space…	Copernicus Data Space…
+Cost Field	ฟิลด์ต้นทุน
+Could not read saved ChatGPT sign-ins: {reason}	อ่านการเข้าสู่ระบบ ChatGPT ที่บันทึกไว้ไม่ได้: {reason}
+Couldn't download the font for the {language} text on the map, so it is left out of the map and its exports; pick a language in Settings › Language to retry.	ดาวน์โหลดฟอนต์สำหรับข้อความภาษา{language}บนแผนที่ไม่ได้ ข้อความนั้นจึงไม่ปรากฏบนแผนที่และไฟล์ที่ส่งออก เลือกภาษาที่ การตั้งค่า › ภาษา เพื่อลองใหม่
+Count	จำนวน
+Create a free account	สร้างบัญชีฟรี
+Current: {action}	ปัจจุบัน: {action}
+Cutoff	ค่าตัด
+Datum Grids	กริดพื้นหลักฐาน
+Default Border	เส้นขอบค่าเริ่มต้น
+Degrees (0–90)	องศา (0–90)
+Destinations	ปลายทาง
+Destinations to Find	จำนวนปลายทางที่จะหา
+Download Datum Grids	ดาวน์โหลดกริดพื้นหลักฐาน
+Download GeoLibre Tool Translations	ดาวน์โหลดคำแปลเครื่องมือ GeoLibre
+Download GeoLibre's translations of these tools into {language} (about 2 MB, from languages.geolibre.app)	ดาวน์โหลดคำแปลเครื่องมือเหล่านี้ของ GeoLibre เป็นภาษา{language} (ราว 2 MB จาก languages.geolibre.app)
+Downloading the font for the {language} text on the map. Images exported before it arrives leave that text out.	กำลังดาวน์โหลดฟอนต์สำหรับข้อความภาษา{language}บนแผนที่ ภาพที่ส่งออกก่อนฟอนต์มาถึงจะไม่มีข้อความนั้น
+Downloading the tool translations…	กำลังดาวน์โหลดคำแปลเครื่องมือ…
+Draw on top of layers	วาดทับชั้นข้อมูล
+Draw the grid lines over the map's layers, under the labels; off: under the layers	วาดเส้นกริดทับชั้นข้อมูลของแผนที่ ใต้ป้ายชื่อ; ปิด: ใต้ชั้นข้อมูล
+Drawing cancelled because the map, image or construction grid changed. Check the grid, then start a new shape.	ยกเลิกการวาดแล้ว เพราะแผนที่ ภาพ หรือกริดก่อสร้างเปลี่ยนไป ตรวจกริดแล้วเริ่มรูปร่างใหม่
+Drawing requires editing enabled, a loaded polygon layer and a flat Earth map with zero pitch.	การวาดต้องเปิดการแก้ไข มีชั้นข้อมูลรูปหลายเหลี่ยมที่โหลดแล้ว และแผนที่แบบแบนที่ไม่เอียง
+EVI (enhanced vegetation)	EVI (พืชพรรณแบบปรับปรุง)
+Earliest available state	สถานะแรกสุดที่มี
+Enable editing	เปิดการแก้ไข
+Enter the expiry as a Unix time in milliseconds, or leave it blank.	ใส่เวลาหมดอายุเป็นเวลา Unix หน่วยมิลลิวินาที หรือเว้นว่างไว้
+Enter the password to generate a token.	ใส่รหัสผ่านเพื่อสร้างโทเค็น
+Enter the user to generate a token for.	ใส่ชื่อผู้ใช้ที่จะสร้างโทเค็นให้
+Enter this connection's password, API key or token to log in.	ใส่รหัสผ่าน คีย์ API หรือโทเค็นของการเชื่อมต่อนี้เพื่อเข้าสู่ระบบ
+Expand the ribbon	ขยายริบบอน
+Expires at (Unix milliseconds)	หมดอายุเมื่อ (มิลลิวินาที Unix)
+Export Block	ส่งออกบล็อก
+Export GeoJSON…	ส่งออก GeoJSON…
+Exports contain ordinary polygons and feature properties. Image/grid choices and exact constructions remain session-only.	ไฟล์ที่ส่งออกมีรูปหลายเหลี่ยมธรรมดาและคุณสมบัติของฟีเจอร์ ตัวเลือกภาพหรือกริดและรูปร่างที่สร้างอย่างแม่นยำใช้ได้เฉพาะในเซสชันนี้
+Extent in	ขอบเขตใน
+Extrude them all first: the base is what their walls stand on.	ยกระดับทั้งหมดก่อน: ฐานคือสิ่งที่ผนังตั้งอยู่
+Facilities	สถานบริการ
+False color urban	สีผสมเท็จเขตเมือง
+Finds the lines reachable within one or more travel costs of points, along a line network.	หาเส้นที่ไปถึงได้ภายในต้นทุนการเดินทางหนึ่งค่าหรือมากกว่าจากจุด ตามโครงข่ายเส้น
+Fit: centre of the vertex bounds, radius enclosing all vertices. This is not recovery of the original circle.	ปรับรูป: จุดศูนย์กลางของขอบเขตจุดยอด รัศมีครอบทุกจุดยอด ไม่ใช่การกู้วงกลมเดิมกลับมา
+Fit: minimum-area enclosing rectangle of the vertices in the chosen grid.	ปรับรูป: สี่เหลี่ยมพื้นที่น้อยสุดที่ครอบจุดยอดในกริดที่เลือก
+Fitting in progress. Cancel is also available in the status bar.	กำลังปรับรูป ยกเลิกได้ที่แถบสถานะด้วย
+Flat ground keeps the ramp's colour and slopes facing the sun brighten	พื้นราบคงสีตามแถบสี ส่วนลาดที่หันรับแดดจะสว่างขึ้น
+FocusAtPassStart	FocusAtPassStart
+For img1.tiff, suggest img1.geojson. Choose the location in the save dialog.	สำหรับ img1.tiff แนะนำ img1.geojson เลือกตำแหน่งในหน้าต่างบันทึก
+Forgets the sign-in, deletes the one remembered on this computer and empties the download cache.	ลืมการเข้าสู่ระบบ ลบที่จำไว้ในคอมพิวเตอร์เครื่องนี้ และล้างแคชการดาวน์โหลด
+Generate ArcGIS Token	สร้างโทเค็น ArcGIS
+Generating token…	กำลังสร้างโทเค็น…
+Geology	ธรณีวิทยา
+Go back to the phone's interface: the map with large buttons under it.	กลับไปหน้าจอแบบโทรศัพท์: แผนที่ที่มีปุ่มใหญ่ด้านล่าง
+Grid EPSG:{epsg}	กริด EPSG:{epsg}
+Grid color	สีกริด
+Grid read cancelled. Reload the grid to draw in image pixels.	ยกเลิกการอ่านกริดแล้ว โหลดกริดใหม่เพื่อวาดเป็นพิกเซลของภาพ
+Group by	จัดกลุ่มตาม
+Height (m)	ความสูง (ม.)
+Held in	เก็บพิกัดใน
+Home › Add › Add Data › From Service	หน้าหลัก › เพิ่ม › เพิ่มข้อมูล › จากบริการ
+Home › Add › Web Data › Copernicus Data Space	หน้าหลัก › เพิ่ม › ข้อมูลเว็บ › Copernicus Data Space
+Home › Add › Web Data › NASA Earthaccess	หน้าหลัก › เพิ่ม › ข้อมูลเว็บ › NASA Earthaccess
+Image	ภาพ
+Image annotation	คำอธิบายบนภาพ
+Image markers that can't be drawn were replaced by the circles they showed as: {count} on "{layer}"	มาร์กเกอร์ภาพที่วาดไม่ได้ถูกแทนด้วยวงกลมที่แสดงอยู่: {count} รายการใน "{layer}"
+Image-grid request limit reached	ถึงขีดจำกัดการขอกริดภาพแล้ว
+Import GeoLibre Tool Translations	นำเข้าคำแปลเครื่องมือ GeoLibre
+Include Empty Zones	รวมโซนที่ว่าง
+Index	ดัชนี
+Indices are made on the desktop for now	ขณะนี้ดัชนีสร้างได้บนเดสก์ท็อปเท่านั้น
+Ink	สีหมึก
+Interface	อินเทอร์เฟซ
+It opens unsaved. Save to keep it.	จะเปิดขึ้นโดยยังไม่บันทึก บันทึกเพื่อเก็บไว้
+Its own colour for its text and lines; off, the default dark grey	สีของตัวเองสำหรับข้อความและเส้น; ปิด: สีเทาเข้มตามค่าเริ่มต้น
+Keeps the username and password in the system's credential store, so RustGIS signs in by itself when it starts again. Not for an account with two-factor authentication. Unticked, a sign-in remembered before is deleted when you sign in.	เก็บชื่อผู้ใช้และรหัสผ่านไว้ในที่เก็บข้อมูลรับรองของระบบ ARutGIS จึงเข้าสู่ระบบเองเมื่อเปิดครั้งถัดไป ใช้ไม่ได้กับบัญชีที่ยืนยันตัวตนสองขั้นตอน ถ้าไม่ติ๊ก การเข้าสู่ระบบที่จำไว้ก่อนหน้าจะถูกลบเมื่อเข้าสู่ระบบ
+Largest first	มากไปน้อย
+Layer order	ตามลำดับชั้นข้อมูล
+Leave out	ไม่รวม
+Licence…	สัญญาอนุญาต…
+Line layer	ชั้นข้อมูลเส้น
+List Tables reads a file of several layers (a KML, a zip) whole, up to {limit} MiB; add it with Add Data	แสดงรายการตารางจะอ่านไฟล์ที่มีหลายชั้นข้อมูล (KML, zip) ทั้งไฟล์ ได้ถึง {limit} MiB; เพิ่มด้วย เพิ่มข้อมูล
+Load…	โหลด…
+Map Tiles	ไทล์แผนที่
+Map projections	การฉายแผนที่
+Max X	X สูงสุด
+Max Y	Y สูงสุด
+Measures the cost and length of the cheapest way along a line network from each origin to each destination.	วัดต้นทุนและความยาวของเส้นทางที่ถูกที่สุดตามโครงข่ายเส้น จากต้นทางแต่ละจุดไปยังปลายทางแต่ละจุด
+Min X	X ต่ำสุด
+Min Y	Y ต่ำสุด
+More Quick Access commands	คำสั่งเข้าถึงด่วนเพิ่มเติม
+NBR (burn ratio)	NBR (อัตราส่วนการเผาไหม้)
+NDBI (built-up)	NDBI (พื้นที่สิ่งปลูกสร้าง)
+NDVI (vegetation)	NDVI (พืชพรรณ)
+NDWI (water)	NDWI (น้ำ)
+Needed to make a token from a password	ต้องใช้เพื่อสร้างโทเค็นจากรหัสผ่าน
+Needs {what}, which isn't given: {place}.	ต้องใช้ {what} ซึ่งไม่ได้ระบุ: {place}
+Needs {what}: kept.	ต้องใช้ {what}: เก็บไว้
+Network Lines	เส้นโครงข่าย
+New maps are drawn in the project's coordinate system, and new empty layers hold their coordinates in it. Maps and layers already in the project keep theirs.	แผนที่ใหม่จะวาดในระบบพิกัดของโปรเจกต์ และชั้นข้อมูลว่างใหม่จะเก็บพิกัดในระบบนั้น แผนที่และชั้นข้อมูลที่มีอยู่แล้วคงระบบเดิม
+New maps stay in Web Mercator: {why}	แผนที่ใหม่ยังใช้ Web Mercator: {why}
+New shape grid	กริดสำหรับรูปร่างใหม่
+New shapes use the original GeoTIFF pixels, including rotation and shear. Existing objects keep their own grid.	รูปร่างใหม่ใช้พิกเซลของ GeoTIFF ต้นฉบับ รวมการหมุนและการเฉือน วัตถุที่มีอยู่คงกริดของตัวเอง
+No coordinate system matches; a code or PROJ string is used as typed.	ไม่มีระบบพิกัดที่ตรง; ใช้รหัสหรือสตริง PROJ ตามที่พิมพ์
+No image	ไม่มีภาพ
+No installed font draws the {language} text on the map, so it is left out of the map and its exports.	ไม่มีฟอนต์ที่ติดตั้งไว้ที่วาดข้อความภาษา{language}บนแผนที่ได้ ข้อความนั้นจึงไม่ปรากฏบนแผนที่และไฟล์ที่ส่งออก
+No project changes to undo or redo.	ไม่มีการเปลี่ยนแปลงโปรเจกต์ให้เลิกทำหรือทำซ้ำ
+None of these layers are polygon layers.	ไม่มีชั้นข้อมูลใดในนี้เป็นชั้นข้อมูลรูปหลายเหลี่ยม
+None: new maps in Web Mercator	ไม่มี: แผนที่ใหม่ใช้ Web Mercator
+Not signed in.	ยังไม่ได้เข้าสู่ระบบ
+OD Cost Matrix	เมทริกซ์ต้นทุนต้นทาง–ปลายทาง
+On a high-resolution (HiDPI) display, fetch raster tiles and WMS pictures for the display's own pixels, up to twice the detail: text and lines in them come out sharp and smaller. Off, they are fetched for its logical pixels and stretched: softer, with larger text.	บนจอความละเอียดสูง (HiDPI) ดึงไทล์แรสเตอร์และภาพ WMS ตามพิกเซลจริงของจอ ละเอียดขึ้นได้ถึงสองเท่า: ข้อความและเส้นในภาพจะคมและเล็กลง ปิด: ดึงตามพิกเซลเชิงตรรกะแล้วขยาย: นุ่มกว่าและตัวอักษรใหญ่กว่า
+One-time code	รหัสใช้ครั้งเดียว
+Only with two-factor authentication	เฉพาะเมื่อยืนยันตัวตนสองขั้นตอน
+Order	ลำดับ
+Original GeoTIFF pixels, including rotation and shear. Only local or embedded GeoTIFFs are supported.	พิกเซลของ GeoTIFF ต้นฉบับ รวมการหมุนและการเฉือน รองรับเฉพาะ GeoTIFF ในเครื่องหรือที่ฝังไว้
+Original Image Grid	กริดภาพต้นฉบับ
+Original image grid: {width} × {height} pixels, EPSG:{epsg}	กริดภาพต้นฉบับ: {width} × {height} พิกเซล, EPSG:{epsg}
+Original image pixels	พิกเซลภาพต้นฉบับ
+Origins	ต้นทาง
+Other bar	แท่งอื่น ๆ
+Own	ของตัวเอง
+Padding	ระยะขอบใน
+Past the limit	เกินขีดจำกัด
+Paste a token for this connection, or make one from its user and password. Remember on this computer is optional.	วางโทเค็นของการเชื่อมต่อนี้ หรือสร้างจากชื่อผู้ใช้และรหัสผ่าน จะจำไว้ในคอมพิวเตอร์เครื่องนี้หรือไม่ก็ได้
+Paste a token, or type the password to make one, or leave it blank to use this connection's session or saved login, then Save.	วางโทเค็น หรือพิมพ์รหัสผ่านเพื่อสร้าง หรือเว้นว่างเพื่อใช้เซสชันหรือการเข้าสู่ระบบที่บันทึกไว้ของการเชื่อมต่อนี้ แล้วกดบันทึก
+Paste token	วางโทเค็น
+Percent	เปอร์เซ็นต์
+Perpendicular	ตั้งฉาก
+Polygon layers only: {n} of the {all} selected	เฉพาะชั้นข้อมูลรูปหลายเหลี่ยม: {n} จาก {all} ที่เลือก
+Preview Conversion	ดูตัวอย่างการแปลง
+Preview Shape Conversion	ดูตัวอย่างการแปลงรูปร่าง
+Project Coordinate System	ระบบพิกัดของโปรเจกต์
+Project Properties	คุณสมบัติโปรเจกต์
+Project Properties…	คุณสมบัติโปรเจกต์…
+Projected system	ระบบฉาย
+Read Connection File	อ่านไฟล์การเชื่อมต่อ
+Read a script from a file in place of this one ({keys} brings it back)	อ่านสคริปต์จากไฟล์แทนสคริปต์นี้ ({keys} เพื่อเอากลับมา)
+Reading original image grid…	กำลังอ่านกริดภาพต้นฉบับ…
+Reading the download failed unexpectedly	อ่านไฟล์ที่ดาวน์โหลดไม่สำเร็จโดยไม่คาดคิด
+Reading the time series…	กำลังอ่านอนุกรมเวลา…
+Received tile {z}/0/0.	ได้รับไทล์ {z}/0/0 แล้ว
+Recently used	ใช้ล่าสุด
+Reload Grid	โหลดกริดใหม่
+Remove GeoLibre Tool Translations	ลบคำแปลเครื่องมือ GeoLibre
+Remove translations	ลบคำแปล
+Replaces only this polygon. Its ID and attributes are preserved. Apply is undoable.	แทนที่เฉพาะรูปหลายเหลี่ยมนี้ ID และข้อมูลลักษณะคงเดิม การใช้สามารถเลิกทำได้
+SAVI (vegetation over soil)	SAVI (พืชพรรณบนดิน)
+Save the connection before generating a token.	บันทึกการเชื่อมต่อก่อนสร้างโทเค็น
+Scaling	การปรับขนาด
+Search by name or code	ค้นหาด้วยชื่อหรือรหัส
+Select an image with an available filename, or uncheck Use image filename.	เลือกภาพที่มีชื่อไฟล์ หรือเอาติ๊ก ใช้ชื่อไฟล์ภาพ ออก
+Select one polygon to convert.	เลือกรูปหลายเหลี่ยมหนึ่งรูปที่จะแปลง
+Server reachable, but no tile at {z}/0/0. Check the address and the layer's zoom range.	ติดต่อเซิร์ฟเวอร์ได้ แต่ไม่มีไทล์ที่ {z}/0/0 ตรวจที่อยู่และช่วงซูมของชั้นข้อมูล
+Service Area	พื้นที่บริการ
+Settings › Datum Grids	การตั้งค่า › กริดพื้นหลักฐาน
+Settings › Map Tiles	การตั้งค่า › ไทล์แผนที่
+Shape conversion isn't recorded: its preview belongs to this session. Convert the polygon explicitly after reopening the project.	การแปลงรูปร่างไม่ถูกบันทึก: ตัวอย่างเป็นของเซสชันนี้ ให้แปลงรูปหลายเหลี่ยมเองหลังเปิดโปรเจกต์ใหม่
+Sharp Tiles on HiDPI Displays	ไทล์คมชัดบนจอ HiDPI
+Shortwave infrared	อินฟราเรดคลื่นสั้น
+Show or hide the Annotate pane.	แสดงหรือซ่อนแผงใส่คำอธิบาย
+Show or hide the graticule over the basemap, or over the layers when drawn on top: latitudes and longitudes, a measured grid, the UTM zones or the MGRS grid.	แสดงหรือซ่อนเส้นกริดพิกัดภูมิศาสตร์บนแผนที่ฐาน หรือบนชั้นข้อมูลเมื่อวาดทับ: ละติจูดและลองจิจูด กริดวัดระยะ โซน UTM หรือกริด MGRS
+Show these tools in English again	แสดงเครื่องมือเหล่านี้เป็นภาษาอังกฤษอีกครั้ง
+Sign In to Copernicus Data Space	เข้าสู่ระบบ Copernicus Data Space
+Sign Out of Copernicus Data Space	ออกจากระบบ Copernicus Data Space
+Signed in as {name}.	เข้าสู่ระบบเป็น {name}
+Signing in with the account remembered on this computer…	กำลังเข้าสู่ระบบด้วยบัญชีที่จำไว้ในคอมพิวเตอร์เครื่องนี้…
+Signing in…	กำลังเข้าสู่ระบบ…
+Size by	ขนาดตาม
+Size by Field	ขนาดตามฟิลด์
+Size each point by a number field, keeping its class's colours	กำหนดขนาดแต่ละจุดตามฟิลด์ตัวเลข โดยคงสีตามคลาส
+Sizes	ขนาด
+Slope (degrees or percent), aspect, hillshade, NDVI, band math, thresholds.	ความลาดชัน (องศาหรือเปอร์เซ็นต์) ทิศด้านลาด เงาภูมิประเทศ NDVI การคำนวณแบนด์ ค่าเกณฑ์
+Slope (degrees or percent), hillshade, NDVI and more.	ความลาดชัน (องศาหรือเปอร์เซ็นต์) เงาภูมิประเทศ NDVI และอื่น ๆ
+Slope units	หน่วยความลาดชัน
+Smallest first	น้อยไปมาก
+Snap Distance (m)	ระยะสแนป (ม.)
+Some characters of the {language} text on the map aren't in its downloaded font, so they are left out.	อักขระบางตัวของข้อความภาษา{language}บนแผนที่ไม่มีในฟอนต์ที่ดาวน์โหลด จึงไม่ปรากฏ
+Space or middle-drag pans; releasing Space returns to the active drawing tool. Undo/Redo use the existing commands.	กด Space หรือลากด้วยปุ่มกลางเพื่อเลื่อนแผนที่ ปล่อย Space เพื่อกลับไปเครื่องมือวาดที่ใช้อยู่ เลิกทำ/ทำซ้ำใช้คำสั่งเดิม
+Square to a line	ตั้งฉากกับเส้น
+Stack by	ซ้อนตาม
+Stop at the state reached so far	หยุดที่สถานะที่ไปถึงแล้ว
+Suggested filename: {name}	ชื่อไฟล์ที่แนะนำ: {name}
+Tabulate Area	ตารางพื้นที่
+Tabulates each raster class by polygon zone, as area or cell count in a standalone table.	ทำตารางแต่ละคลาสของแรสเตอร์ตามโซนรูปหลายเหลี่ยม เป็นพื้นที่หรือจำนวนเซลล์ในตารางแยก
+Take this picture off the message	เอารูปนี้ออกจากข้อความ
+Target layer	ชั้นข้อมูลปลายทาง
+Text size	ขนาดตัวอักษร
+The ArcGIS token has expired. Log in to this connection again.	โทเค็น ArcGIS หมดอายุแล้ว เข้าสู่ระบบการเชื่อมต่อนี้อีกครั้ง
+The ArcGIS token must be at most 4096 ASCII letters, digits or - _ . ~ + / = characters.	โทเค็น ArcGIS ต้องยาวไม่เกิน 4096 ตัวอักษร ประกอบด้วยตัวอักษร ASCII ตัวเลข หรืออักขระ - _ . ~ + / = เท่านั้น
+The Copernicus Data Space Ecosystem publishes the Copernicus Land Monitoring Service's global products (NDVI, LAI, Burnt Area, Water Bodies, Land Cover…) and the Sentinel-1 and Sentinel-2 mosaics as COGs. Its STAC catalog is open, but reading its files needs a sign-in with a free account.	Copernicus Data Space Ecosystem เผยแพร่ผลิตภัณฑ์ระดับโลกของ Copernicus Land Monitoring Service (NDVI, LAI, พื้นที่เผาไหม้, แหล่งน้ำ, สิ่งปกคลุมดิน…) และภาพโมเสก Sentinel-1 และ Sentinel-2 เป็น COG แค็ตตาล็อก STAC เปิดให้ใช้ได้ แต่การอ่านไฟล์ต้องลงชื่อเข้าใช้ด้วยบัญชีฟรี
+The basemap's grid color	สีกริดของแผนที่ฐาน
+The connection changed while its token was being generated. Generate it again.	การเชื่อมต่อเปลี่ยนไประหว่างสร้างโทเค็น สร้างใหม่อีกครั้ง
+The downloaded translations name none of these tools: they may be for another GeoLibre version.	คำแปลที่ดาวน์โหลดมาไม่ได้ระบุเครื่องมือเหล่านี้เลย อาจเป็นของ GeoLibre รุ่นอื่น
+The grid already has the basemap's color	กริดใช้สีของแผนที่ฐานอยู่แล้ว
+The grid's color and opacity	สีและความทึบของกริด
+The history jump stopped because the project changed.	การข้ามประวัติหยุดลงเพราะโปรเจกต์เปลี่ยนไป
+The image changed or was removed. Select it again or reload its grid.	ภาพถูกเปลี่ยนหรือถูกลบ เลือกภาพอีกครั้งหรือโหลดกริดของภาพใหม่
+The image changed. Reload its grid before drawing.	ภาพเปลี่ยนไป โหลดกริดของภาพใหม่ก่อนวาด
+The image context changed. Select the image again before drawing.	บริบทของภาพเปลี่ยนไป เลือกภาพอีกครั้งก่อนวาด
+The kept tool translations can't be read: {error}	อ่านคำแปลเครื่องมือที่เก็บไว้ไม่ได้: {error}
+The label starts at the point and runs square to the nearest line of the layer chosen below.	ป้ายเริ่มที่จุดและวางตั้งฉากกับเส้นที่ใกล้ที่สุดของชั้นข้อมูลที่เลือกด้านล่าง
+The map has no line or polygon layer to be square to.	แผนที่ไม่มีชั้นข้อมูลเส้นหรือรูปหลายเหลี่ยมให้วางตั้งฉาก
+The marker to change is no longer there	มาร์กเกอร์ที่จะเปลี่ยนไม่มีอยู่แล้ว
+The original image grid result could not be displayed.	แสดงผลกริดของภาพต้นฉบับไม่ได้
+The password is sent only to Copernicus Data Space's sign-in server and never kept in the project. The token it gives is sent only to its data servers.	รหัสผ่านจะถูกส่งไปยังเซิร์ฟเวอร์ลงชื่อเข้าใช้ของ Copernicus Data Space เท่านั้น และไม่ถูกเก็บไว้ในโปรเจกต์ โทเค็นที่ได้จะถูกส่งไปยังเซิร์ฟเวอร์ข้อมูลของบริการนั้นเท่านั้น
+The password must be at most 4096 bytes, without control characters.	รหัสผ่านต้องยาวไม่เกิน 4096 ไบต์ และไม่มีอักขระควบคุม
+The polygon layer doesn't draw at this scale. Zoom in or out until it draws, then draw.	ชั้นข้อมูลรูปหลายเหลี่ยมไม่แสดงที่มาตราส่วนนี้ ซูมเข้าหรือออกจนแสดงผล แล้วจึงวาด
+The preview replaces the boundary; curved grid edges remain straight-edge approximations after projection. Saved/exported results are ordinary polygons.	ภาพตัวอย่างจะแทนที่ขอบเขต ขอบกริดที่โค้งจะยังเป็นเส้นตรงโดยประมาณหลังฉายพิกัด ผลที่บันทึก/ส่งออกเป็นรูปหลายเหลี่ยมทั่วไป
+The project or map changed. Choose an image again or select Web Mercator grid metres before drawing.	โปรเจกต์หรือแผนที่เปลี่ยนไป เลือกภาพอีกครั้งหรือเลือกเมตรกริด Web Mercator ก่อนวาด
+The recovery copy could not keep the opened package's path because it is not UTF-8.	สำเนากู้คืนเก็บพาธของแพ็กเกจที่เปิดไว้ไม่ได้เพราะไม่ใช่ UTF-8
+The sample tile changes the connection's origin. Use a concrete hostname to test with a saved login.	ไทล์ตัวอย่างเปลี่ยนต้นทางของการเชื่อมต่อ ใช้ชื่อโฮสต์จริงเพื่อทดสอบด้วยการเข้าสู่ระบบที่บันทึกไว้
+The server answered, but the response is not a usable tile.	เซิร์ฟเวอร์ตอบกลับ แต่ผลตอบกลับไม่ใช่ไทล์ที่ใช้ได้
+The server didn't answer the token request in time.	เซิร์ฟเวอร์ไม่ตอบคำขอโทเค็นภายในเวลาที่กำหนด
+The server didn't give a token. Check the user name, password and token endpoint.	เซิร์ฟเวอร์ไม่ให้โทเค็น ตรวจสอบชื่อผู้ใช้ รหัสผ่าน และปลายทางโทเค็น
+The server's answer to the token request was too large.	คำตอบของเซิร์ฟเวอร์ต่อคำขอโทเค็นมีขนาดใหญ่เกินไป
+The server's answer wasn't an ArcGIS token.	คำตอบของเซิร์ฟเวอร์ไม่ใช่โทเค็น ArcGIS
+The share of the colour a slope turned fully from the sun keeps, from 0 to 1	สัดส่วนของสีที่ลาดซึ่งหันหนีดวงอาทิตย์เต็มที่ยังคงไว้ ตั้งแต่ 0 ถึง 1
+The sign-in expired. Sign in again.	การลงชื่อเข้าใช้หมดอายุ ลงชื่อเข้าใช้อีกครั้ง
+The source changed. Preview the conversion again.	แหล่งข้อมูลเปลี่ยนไป ดูตัวอย่างการแปลงอีกครั้ง
+The tile URL has an unsupported placeholder.	URL ของไทล์มีตัวแทนที่ไม่รองรับ
+The time series couldn't start: {error}	เริ่มอนุกรมเวลาไม่ได้: {error}
+The time series failed unexpectedly	อนุกรมเวลาล้มเหลวโดยไม่คาดคิด
+The time series was cancelled: nothing was added to the chart	อนุกรมเวลาถูกยกเลิก: ไม่มีสิ่งใดถูกเพิ่มลงในแผนภูมิ
+The time series was stopped: another project was opened	อนุกรมเวลาหยุดลง: มีการเปิดโปรเจกต์อื่น
+The token is added to each request to this address as its token parameter. With no expiry it is used until the server refuses it.	โทเค็นจะถูกเพิ่มในทุกคำขอไปยังที่อยู่นี้เป็นพารามิเตอร์ token หากไม่มีวันหมดอายุ จะใช้ไปจนกว่าเซิร์ฟเวอร์จะปฏิเสธ
+The token is renewed until you sign out.	โทเค็นจะถูกต่ออายุจนกว่าคุณจะลงชื่อออก
+The token is renewed until {date}.	โทเค็นจะถูกต่ออายุจนถึง {date}
+The token request couldn't be started.	เริ่มคำขอโทเค็นไม่ได้
+The token request failed.	คำขอโทเค็นล้มเหลว
+The token request was cancelled.	คำขอโทเค็นถูกยกเลิก
+There is no touch interface to go back to: it is on phones.	ไม่มีอินเทอร์เฟซสัมผัสให้กลับไป: มีเฉพาะบนโทรศัพท์
+These layers share no numeric field.	ชั้นข้อมูลเหล่านี้ไม่มีฟิลด์ตัวเลขร่วมกัน
+This app can't request ArcGIS tokens.	แอปนี้ขอโทเค็น ArcGIS ไม่ได้
+This build cannot save through the native picker.	รุ่นนี้บันทึกผ่านหน้าต่างเลือกไฟล์ของระบบไม่ได้
+This computer's clock can't be read, so an expiring ArcGIS token can't be used.	อ่านนาฬิกาของคอมพิวเตอร์นี้ไม่ได้ จึงใช้โทเค็น ArcGIS ที่มีวันหมดอายุไม่ได้
+This connection has no user: set user (connection.edit) to generate a token.	การเชื่อมต่อนี้ไม่มีผู้ใช้: ตั้งค่า user (connection.edit) เพื่อสร้างโทเค็น
+This image can't be a marker: RustGIS has decoded as many marker images as it does until it restarts; restart it to use another	ใช้ภาพนี้เป็นมาร์กเกอร์ไม่ได้: ARutGIS ถอดรหัสภาพมาร์กเกอร์ครบจำนวนที่ทำได้จนกว่าจะเริ่มใหม่แล้ว เริ่ม ARutGIS ใหม่เพื่อใช้ภาพอื่น
+This image can't be a marker: it has more pixels than {side} × {side}; make it smaller	ใช้ภาพนี้เป็นมาร์กเกอร์ไม่ได้: มีพิกเซลมากกว่า {side} × {side} ลดขนาดภาพลง
+This image can't be a marker: it isn't a readable PNG or JPEG	ใช้ภาพนี้เป็นมาร์กเกอร์ไม่ได้: ไม่ใช่ PNG หรือ JPEG ที่อ่านได้
+This image is too large for a marker: at most about 1.5 MiB	ภาพนี้ใหญ่เกินไปสำหรับมาร์กเกอร์: ไม่เกินประมาณ 1.5 MiB
+This image is unavailable. Choose another image or No image.	ภาพนี้ใช้ไม่ได้ เลือกภาพอื่นหรือ ไม่มีภาพ
+This item is from a local or private network, whose files Bands and Index don't read yet	รายการนี้มาจากเครือข่ายภายในหรือเครือข่ายส่วนตัว ซึ่งแบนด์และดัชนียังอ่านไฟล์ไม่ได้
+Title text	ข้อความชื่อเรื่อง
+Toggle Downloading Datum Grids	สลับการดาวน์โหลดกริดดาตัม
+Toggle Sharp Tiles on HiDPI Displays	สลับไทล์คมชัดบนจอ HiDPI
+Token	โทเค็น
+Token endpoint	ปลายทางโทเค็น
+Token from	โทเค็นจาก
+Touch\nInterface	อินเทอร์เฟซ\nสัมผัส
+Translate tools	แปลเครื่องมือ
+True color	สีจริง
+Type the token this expiry is for.	พิมพ์โทเค็นที่ใช้วันหมดอายุนี้
+Type the token, or the password to generate one, to remember it on this computer.	พิมพ์โทเค็น หรือรหัสผ่านเพื่อสร้างโทเค็น เพื่อจำไว้บนคอมพิวเตอร์นี้
+Unavailable image	ภาพที่ใช้ไม่ได้
+Unavailable image: {name}	ภาพที่ใช้ไม่ได้: {name}
+Undo History	ประวัติการเลิกทำ
+Use field range	ใช้ช่วงของฟิลด์
+Use image filename	ใช้ชื่อไฟล์ภาพ
+Use the Touch Interface	ใช้อินเทอร์เฟซสัมผัส
+Username	ชื่อผู้ใช้
+Username and password	ชื่อผู้ใช้และรหัสผ่าน
+Values	ค่า
+Values of the {of} features read for the view	ค่าของฟีเจอร์ {of} รายการที่อ่านสำหรับมุมมอง
+Values of {read} of the {of} features read for the view, evenly spread	ค่าของ {read} จาก {of} ฟีเจอร์ที่อ่านสำหรับมุมมอง กระจายเท่า ๆ กัน
+Values of {read} of {of} features, evenly spread	ค่าของ {read} จาก {of} ฟีเจอร์ กระจายเท่า ๆ กัน
+View › Interface	มุมมอง › อินเทอร์เฟซ
+Wait for the original image grid before drawing.	รอกริดของภาพต้นฉบับก่อนวาด
+Web Mercator grid metres	เมตรกริด Web Mercator
+Web Mercator grid metres, not ground metres. Image pixels are the default when an image is selected.	เมตรกริด Web Mercator ไม่ใช่เมตรบนพื้นดิน ค่าเริ่มต้นเป็นพิกเซลของภาพเมื่อเลือกภาพไว้
+What the graticule draws: latitudes and longitudes, a measured grid, the UTM zones or the MGRS grid.	สิ่งที่เส้นกริดพิกัดภูมิศาสตร์วาด: ละติจูดและลองจิจูด กริดตามระยะ โซน UTM หรือกริด MGRS
+When a coordinate system's most accurate datum transformation needs a grid RustGIS doesn't have, download it from PROJ's grid server (cdn.proj.org). Grids already downloaded stay in use for this session when this is off.	เมื่อการแปลงดาตัมที่แม่นยำที่สุดของระบบพิกัดต้องใช้กริดที่ ARutGIS ไม่มี ให้ดาวน์โหลดจากเซิร์ฟเวอร์กริดของ PROJ (cdn.proj.org) เมื่อปิดตัวเลือกนี้ กริดที่ดาวน์โหลดแล้วยังใช้ต่อได้ในเซสชันนี้
+When a coordinate system's most accurate datum transformation needs a grid RustGIS doesn't have, download it from PROJ's grid server (cdn.proj.org). Grids already downloaded stay in use when this is off: to stop using them, delete the datum-grids folder in RustGIS's app data and start RustGIS again (grids installed for PROJ are still used).	เมื่อการแปลงดาตัมที่แม่นยำที่สุดของระบบพิกัดต้องใช้กริดที่ ARutGIS ไม่มี ให้ดาวน์โหลดจากเซิร์ฟเวอร์กริดของ PROJ (cdn.proj.org) เมื่อปิดตัวเลือกนี้ กริดที่ดาวน์โหลดแล้วยังใช้ต่อ: หากต้องการเลิกใช้ ให้ลบโฟลเดอร์ datum-grids ในข้อมูลแอปของ ARutGIS แล้วเริ่ม ARutGIS ใหม่ (กริดที่ติดตั้งไว้สำหรับ PROJ ยังคงถูกใช้)
+While it has none, take it from the first layer added	ขณะที่ยังไม่มี ให้ใช้จากชั้นข้อมูลแรกที่เพิ่ม
+Wrap to the box	ตัดบรรทัดให้พอดีกรอบ
+Writes every feature with its geometry made valid where it can be: rings closed, repeated vertices and degenerate parts dropped, self-intersections, overlapping parts and holes outside their shell resolved by the chosen rule (Shells Minus Holes merges overlapping parts; Even-Odd keeps what lies inside an odd number of rings). Features with a missing or non-finite coordinate anywhere, even in a hole, or left with no usable points or, for polygons, no area once repaired, are written without geometry. Other features too complex to check, or whose repair fails, are written unchanged. Says what was repaired in each.	เขียนทุกฟีเจอร์โดยทำให้รูปทรงเรขาคณิตถูกต้องเท่าที่ทำได้: ปิดวง ตัดจุดยอดซ้ำและส่วนที่เสื่อมสภาพออก แก้การตัดกันเอง ส่วนที่ซ้อนทับ และรูที่อยู่นอกเปลือกตามกฎที่เลือก (Shells Minus Holes รวมส่วนที่ซ้อนทับ; Even-Odd เก็บส่วนที่อยู่ในวงจำนวนคี่) ฟีเจอร์ที่มีพิกัดหายหรือไม่จำกัดที่ใดก็ตาม แม้ในรู หรือเหลือไม่มีจุดที่ใช้ได้ หรือสำหรับรูปหลายเหลี่ยมไม่มีพื้นที่หลังซ่อม จะถูกเขียนโดยไม่มีรูปทรงเรขาคณิต ฟีเจอร์อื่นที่ซับซ้อนเกินกว่าจะตรวจ หรือซ่อมไม่สำเร็จ จะถูกเขียนโดยไม่เปลี่ยนแปลง และบอกว่าซ่อมอะไรไปในแต่ละรายการ
+Writes one axis-aligned bounding rectangle per feature in the layer's own coordinates when it is held in a projected system other than Web Mercator and the other world projections (Robinson, Plate Carrée and the like), else in longitude/latitude. Zero-area envelopes are skipped.	เขียนสี่เหลี่ยมขอบเขตแนวแกนหนึ่งรูปต่อฟีเจอร์ในพิกัดของชั้นข้อมูลเองเมื่อเก็บในระบบพิกัดฉายอื่นที่ไม่ใช่ Web Mercator และเส้นโครงแผนที่โลกอื่น ๆ (Robinson, Plate Carrée และอื่น ๆ) มิฉะนั้นเป็นลองจิจูด/ละติจูด ข้ามขอบเขตที่มีพื้นที่เป็นศูนย์
+Your account's email address	ที่อยู่อีเมลของบัญชีคุณ
+Zone Field	ฟิลด์โซน
+a Copernicus Data Space sign-in	การลงชื่อเข้าใช้ Copernicus Data Space
+an ArcGIS sign-in	การลงชื่อเข้าใช้ ArcGIS
+conversion request limit reached	ถึงขีดจำกัดคำขอแปลงแล้ว
+every value	ทุกค่า
+expiresAt must be a Unix time in milliseconds, in the future.	expiresAt ต้องเป็นเวลา Unix หน่วยมิลลิวินาทีในอนาคต
+given up before it was read: it was cancelled, or its project was closed	เลิกก่อนอ่าน: ถูกยกเลิก หรือโปรเจกต์ถูกปิด
+given up before it was read: its project was closed, or more than 64 downloads started after it	เลิกก่อนอ่าน: โปรเจกต์ถูกปิด หรือมีการดาวน์โหลดเริ่มหลังจากนั้นมากกว่า 64 รายการ
+image is required; use null for No image	ต้องระบุ image ใช้ null สำหรับ ไม่มีภาพ
+more than {bound}	มากกว่า {bound}
+name or code	ชื่อหรือรหัส
+on is required	ต้องระบุ on
+pasted picture	ภาพที่วาง
+pixels is required	ต้องระบุ pixels
+the Earthdata Login token	โทเค็น Earthdata Login
+the phone keeps a recovery copy after edits	โทรศัพท์เก็บสำเนากู้คืนหลังแก้ไข
+up to {bound}	ไม่เกิน {bound}
+Square root; null for a negative number	รากที่สอง; เป็น null สำหรับจำนวนลบ
+e to the power x; null when too large to represent	e ยกกำลัง x; เป็น null เมื่อมีค่าใหญ่เกินกว่าจะแทนได้
+Natural logarithm; null for zero or a negative number	ลอการิทึมธรรมชาติ; เป็น null สำหรับศูนย์หรือจำนวนลบ
+Base-10 logarithm; null for zero or a negative number	ลอการิทึมฐาน 10; เป็น null สำหรับศูนย์หรือจำนวนลบ
+As scale_linear, along a curve: 0.5 grows fast then slowly, 2 slowly then fast; null with a negative exponent at the domain's start	เหมือน scale_linear แต่ตามเส้นโค้ง: exponent 0.5 เพิ่มเร็วแล้วช้าลง, 2 เพิ่มช้าแล้วเร็วขึ้น; เป็น null เมื่อ exponent ติดลบที่จุดเริ่มของโดเมน
+The map series index feature's id (integer), null outside a series page	รหัสของฟีเจอร์ดัชนีชุดแผนที่ (จำนวนเต็ม) เป็น null นอกหน้าชุดแผนที่
+The map series page's name (text), null outside a series page	ชื่อหน้าของชุดแผนที่ (ข้อความ) เป็น null นอกหน้าชุดแผนที่
+The map series page's number (integer, from 1), null outside a series page	หมายเลขหน้าของชุดแผนที่ (จำนวนเต็ม เริ่มจาก 1) เป็น null นอกหน้าชุดแผนที่

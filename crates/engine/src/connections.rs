@@ -10,6 +10,9 @@ use serde_json::{Map, Value, json};
 
 use crate::sources::{self, Sources};
 
+#[path = "connection_tile_test.rs"]
+pub mod tile_test;
+
 /// The desktop preference saved connections are kept under.
 pub const PREF: &str = "connections";
 /// The version of that preference this RustGIS reads and writes. One from a newer RustGIS isn't
@@ -51,8 +54,9 @@ pub const DATABASE_KINDS: &[&str] = &["postgres", "mysql", "sqlserver"];
 /// The web-service kinds, which can log in with a [`SERVICE_AUTH`] method.
 pub const SERVICE_KINDS: &[&str] = &["service", "wms", "wmts", "wfs", "wcs", "ogcapi", "arcgis", "csw", "stac"];
 /// How a web-service connection logs in: not at all, HTTP basic authentication (a user name and a
-/// password), an API key in a header, or an API key in a query parameter.
-pub const SERVICE_AUTH: &[&str] = &["none", "basic", "header", "query"];
+/// password), an API key in a header, an API key in a query parameter, or an ArcGIS token (pasted,
+/// or generated from a user name and password, and sent as the request's `token` parameter).
+pub const SERVICE_AUTH: &[&str] = &["none", "basic", "header", "query", "arcgis"];
 /// The kind of a [`LoginRequest`] for a web service's origin (its `key`).
 pub const WEB: &str = "web";
 pub const S3_CREDENTIALS: &[&str] = &["keys", "profile", "environment", "none"];
@@ -158,39 +162,10 @@ impl Kept {
     /// classified on the original object first, beside the others and `address` (the one a row
     /// keeps apart from them): a bare `key` is a secret beside a web address, and an address
     /// holding a secret doesn't stop being one. Only then are the classified entries removed.
-    fn without_secrets(&mut self, mut o: Map<String, Value>, address: &str) -> Map<String, Value> {
-        // Count address-bearing siblings once; unknown preference fields are not capped.
-        let addresses =
-            o.iter().filter(|(k, v)| !k.eq_ignore_ascii_case("data") && !k.eq_ignore_ascii_case("text") && web_address(v, 0)).count();
-        let beside = web_address(&Value::String(address.into()), 0);
-        let secret: BTreeSet<String> = o
-            .iter()
-            .filter(|(k, v)| {
-                let mut probe = Map::new();
-                probe.insert((*k).clone(), (*v).clone());
-                let own_address = !k.eq_ignore_ascii_case("data") && !k.eq_ignore_ascii_case("text") && web_address(v, 0);
-                if beside || addresses > usize::from(own_address) {
-                    probe.insert("\u{1}beside".into(), "https://a".into());
-                }
-                sources::holds_secret(&Value::Object(probe))
-            })
-            .map(|(k, _)| k.clone())
-            .collect();
-        self.secrets += secret.len();
-        o.retain(|k, _| !secret.contains(k));
+    fn without_secrets(&mut self, o: Map<String, Value>, address: &str) -> Map<String, Value> {
+        let (o, secrets) = sources::without_secrets(o, sources::web_address(&Value::String(address.into()), 0));
+        self.secrets += secrets;
         o
-    }
-}
-
-/// Whether `v` is, or holds, a web address (not under a file's `data` or `text`).
-fn web_address(v: &Value, depth: usize) -> bool {
-    match v {
-        Value::String(t) => t.trim_start().get(..4).is_some_and(|p| p.eq_ignore_ascii_case("http")),
-        Value::Object(o) if depth < 4 => {
-            o.iter().any(|(k, v)| !k.eq_ignore_ascii_case("data") && !k.eq_ignore_ascii_case("text") && web_address(v, depth + 1))
-        }
-        Value::Array(a) if depth < 4 => a.iter().any(|v| web_address(v, depth + 1)),
-        _ => false,
     }
 }
 
@@ -298,6 +273,15 @@ fn clean_login(c: &mut Connection) -> Result<bool, String> {
                 return Err(format!(
                     "basic authentication needs a user of at most {MAX_NAME} characters, without ':' or control characters"
                 ));
+            }
+            Ok(false)
+        }
+        "arcgis" => {
+            // The user names who a token is generated for; it is optional (a pasted token has no
+            // use for one). The token endpoint is given per generation, never kept here.
+            c.key_name.clear();
+            if c.user.chars().count() > MAX_NAME || c.user.chars().any(char::is_control) {
+                return Err(format!("an ArcGIS token login's user must be at most {MAX_NAME} characters, without control characters"));
             }
             Ok(false)
         }
@@ -498,7 +482,20 @@ pub fn clean(mut c: Connection) -> Result<(Connection, bool), String> {
     let stripped = clean_login(&mut c)? || stripped;
     c.name = name_text(&c.name);
     if c.name.is_empty() {
-        c.name = if c.kind == "s3" && c.address.is_empty() { "AWS S3".into() } else { sources::default_name(&c.address) };
+        c.name = if c.kind == "s3" && c.address.is_empty() {
+            "AWS S3".into()
+        } else if SERVICE_KINDS.contains(&c.kind.as_str()) && tile_test::is_template(&c.address) {
+            login_origin(&c)
+                .or_else(|| {
+                    let (scheme, tail) = c.address.split_once("://")?;
+                    let host = tail.split(['/', '?', '#']).next()?.strip_prefix("{s}.")?;
+                    crate::render::rustgis_tiles::logins::origin(&format!("{scheme}://{host}"))
+                })
+                .and_then(|origin| origin.split_once("://").map(|(_, host)| host.chars().take(80).collect()))
+                .unwrap_or_else(|| "XYZ tiles".into())
+        } else {
+            sources::default_name(&c.address)
+        };
     }
     c.group = name_text(&c.group);
     if c.kind != "s3" {
@@ -1211,6 +1208,11 @@ impl DatabaseLogins {
 
     pub fn set_session_password(&mut self, id: &str, password: &str) {
         self.session.insert(id.to_string(), Secret::new(password));
+    }
+
+    /// Drops the password or token given this session for `id`, and nothing else of it.
+    pub(crate) fn clear_session_password(&mut self, id: &str) {
+        self.session.remove(id);
     }
 
     /// Drops a refused session credential and suppresses an equivalent saved value for this run.

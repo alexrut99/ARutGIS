@@ -28,6 +28,13 @@ feature edits; use ++cmd++ instead of ++ctrl++ on macOS. While typing in a text 
 shortcuts undo or redo the typing instead. Saving keeps the undo history; opening or creating
 a project clears it. Undo does not reverse files already written by an export.
 
+In the desktop and browser toolbar, open **Undo History** next to Undo and Redo to see the
+current project state and the available steps. Select a row to go directly to the state after
+that change, or **Earliest available state** to undo every retained step. You can select a newer
+row to redo those changes. On a narrow window, Undo History may be under **More Quick Access
+commands**. For longer jumps, **Cancel** in the status bar stops at the state reached so far.
+Making a new edit after going back discards the redo steps.
+
 ## Which parcel area to report
 
 **Calculate Geometry** and `area('ac')` measure the polygon on the WGS 84 ellipsoid, regardless
@@ -147,18 +154,118 @@ you edit the value or choose units; click **Apply elevation** to apply the new i
   (Move, and `edit.traverse`, which draws a line or polygon from distances and bearings).
 - **Topology**: rules (must not overlap, must not have gaps, must not self-intersect, must not
   have dangles, must be covered by); Validate lists the errors, and clicking one zooms to it.
+  Primary rows follow the layer's definition query, independently of selection, time windows
+  and display filters. For **must be covered by**, every resident row of the covering layer
+  supplies the reference coverage; its map filters do not narrow that reference set.
   On the desktop the check runs in the background, so the map stays in use: the status bar
   shows **Error Inspector** with its progress and **Cancel**, and a check that can be cancelled
   takes any amount of work (a gaps rule first joins all its polygons in one step, which
   **Cancel** stops only once it is done). A layer edited while it is checked makes the check say
-  so: run Validate again. Checked from a script, the assistant or the command line, it holds
-  the window and stops after a fixed amount of work, saying which rules weren't checked
-  completely (a gaps rule's join of its polygons has no such limit). A line or ring too complex
-  to check for self-intersections within the limit is listed at its first point, to be looked
-  at, and its rule is said to be incomplete.
+  so: run Validate again. Headless script, assistant and command-line calls check on their
+  caller's thread; when they cannot be cancelled, they stop after a fixed amount of work,
+  saying which rules weren't checked completely (a gaps rule's join has no such limit).
+  A desktop window requires the background queue instead of running the check inline. A line or
+  ring too complex to check for self-intersections within the limit is listed at its first point,
+  to be looked at, and its rule is said to be incomplete.
   Beyond 85.05° they follow the geometry tools (see
   [Geoprocessing tools](analysis.md#geoprocessing-tools), **Near the poles**).
 - **Status**: features added, changed and deleted per layer since the last save.
+
+### Annotating an image
+
+**Analyze → Annotate** opens the annotation pane. It is also available from **View → Windows**
+and Command Search. Add a GeoTIFF and a polygon feature layer first, then choose the **Image**
+and **Target layer** in the pane, enable editing, and choose Circle or Rotated Box.
+The ordinary tools remain available under Edit and share these settings.
+
+Selecting an image defaults the **New shape grid** to **Original image pixels**. RustGIS reads
+its original TIFF header, including rotation and shear, independently of any displayed overview.
+New box widths/heights and circle radii are then expressed in source-image pixels. A circle in
+image coordinates may appear elliptical on the map; a rectangle may appear skewed. The image is
+not resampled by this choice, and shapes are not clipped to its boundary.
+
+Choose **Web Mercator grid metres** explicitly to draw in map coordinates instead; those are not
+ground-distance metres. Choosing **No image** restores that grid. Under Edit, the same choices
+are in Editing → New shape grid when a circle or rotated box tool is active. Grid changes affect
+new shapes; existing shapes retain their own construction grid when moved, resized or rotated.
+Undo/Redo retain those constructions within the session.
+
+On desktop, header reads run in the background with progress and Cancel. Changing images,
+switching to Web Mercator or using **Cancel Grid Read** stops only that lookup and preserves
+unrelated queued work. The status-bar Cancel retains its queue-wide behaviour. Pixel-based
+drawing waits for a valid grid; a failed or cancelled read never silently substitutes map metres.
+After changing a source file externally, reload the image layer first, then use **Reload Grid**.
+Original-pixel drawing and conversion share the same [source checks](#image-source-checks).
+Removing/replacing an image invalidates its cached grid. Local and embedded GeoTIFFs are supported;
+download remote originals first. In the browser, upload the original GeoTIFF. Other local formats
+(including PNG, JPEG, ASCII grids and GDAL-converted images) are refused with guidance to export
+the image as a GeoTIFF and add that file; reloading the unsupported source cannot supply its grid.
+Construction grids require a supported EPSG coordinate system. Unsupported or custom systems
+are refused during the grid read; choose a supported image or **Web Mercator grid metres**.
+Changing projects or maps clears the old image binding, keeps pixel mode selected and reports a
+warning. Drawing stays blocked until you choose an image again or explicitly choose Web Mercator
+grid metres; opening the pane does not clear the warning.
+An image removed from the map keeps its last name as **Unavailable image**. Pixel drawing stays
+blocked and **Reload Grid** is disabled until the image is restored or another image is chosen.
+Choose **No image** to return explicitly to Web Mercator grid metres.
+**Original Image Grid** in Command Search reports the active image's original dimensions and
+EPSG coordinate system in a notice, while keeping the Annotate pane open.
+
+Space or middle-drag pans; releasing Space keeps the drawing tool. Use the selected object's
+existing handles, Undo/Redo, and **Export GeoJSON…**. **Shape details** is collapsed by default;
+expand it for numeric dimensions and additional editing controls. Map handles remain available
+while the section is hidden. Refused drawing gestures show an error notification even when
+**Shape details** is collapsed. The reason stays visible in the pane, and repeated refusals with
+the same message do not add duplicate notices. Changing the image/grid or invalidating its source
+cancels an unfinished new shape with an explanation; releasing afterwards does not save that
+preview or create an Undo step. Exports contain
+ordinary geographic polygons and feature properties; circles are polygon approximations.
+Check **Use image filename** to suggest `img1.geojson` for an image named `img1.tiff`.
+The preview shows the suggested basename; the save dialog still chooses the folder and lets
+you change the name. The option starts unchecked and applies only to this pane’s GeoJSON
+export; ordinary layer exports keep their layer-based names.
+
+Image selection, grid choices and exact constructions are session-only. Reopened polygons can
+be explicitly converted again. No image-binding metadata or palette sidecars are added.
+
+For CLI, Python, Assistant/MCP and permitted plugins, `raster.imageGrid={"layer":"Image"}`
+returns the original `epsg`, `width`, `height` and six affine coefficients in the same format
+accepted by `edit.addBox.box.frame` and `edit.addCircle.circle.frame`. The query is read-only,
+requires Files permission, and uses the shared read worker on desktop/MCP. Headless synchronous
+callers must run file reads off their own UI thread. The desktop Script pane prepares grid queries
+on its worker and shows the actual frame in each line's result, rather than a queue acknowledgement.
+Queries may follow replayable selection/edit steps or query embedded rasters produced by
+`gp.run` earlier in the same script. Accepted tool outputs retain their prepared raster data;
+repeated queries and tools with multiple raster outputs use the matching output's grid without
+rereading headers on the UI thread. Live output IDs and display styles are preserved. If a tool's
+inputs change while the script is being prepared, all dependent grid results are discarded and
+the script must be run again. File-opening or project-changing setup must run in a separate
+script first. Scoped callers should use the individually approved query.
+
+### Image source checks
+
+Local GeoTIFF loading records the file revision with its decoded pixels. If a verified file changes
+or becomes unverifiable during decoding, **Add Data** and **Reload Data** refuse that load rather
+than accepting potentially inconsistent pixels. Wait for writes/cloud synchronization to finish,
+then retry **Add Data**, or **Reload Data** for an existing layer. Or copy the image to a stable
+local location: for a new layer, add the copy with **Add Data**; for an existing layer, point it at
+the copy with **Repair Data Source** (**Reload Data** reads only the layer's current source, so it
+does not pick up the copy). This load-time check also applies outside annotation workflows.
+
+Original image grids are not offered for an image opened as a scan or laid over the view, which is
+drawn where it was placed rather than where its file puts it, nor for an image read in place a view
+at a time; choose map metres, or add the georeferenced GeoTIFF (clipped, if it is too large to open
+whole).
+
+Grid reads require loaded pixels and a matching verified revision. After known external edits,
+reload the image layer and retry the operation. Detection compares metadata, not content hashes:
+length and modification time, plus device/inode/change time on Unix or creation time on Windows.
+Rewrites preserving every compared field go undetected, so reload after known edits even without
+a warning. A cached grid remains aligned with the pixels retained in the session.
+
+If the initial revision capture fails, viewing can still load, but grid reads report the original
+metadata error. Check filesystem metadata support/access, or export the image as a GeoTIFF to
+another location and add it; repeated reloads cannot repair unsupported metadata.
 
 ### Rotated boxes
 
@@ -351,7 +458,12 @@ moving layers between maps.
 Pop-ups (Home › Navigate) choose which layers a click with Explore identifies: the topmost layer
 under the click, every visible layer, only selectable layers, only the layer selected in Layers, or
 nothing. The pop-up lists every feature under the click in those layers, overlapping ones included
-(up to 100): step through them with ‹ ›. The feature shown is the one selected. The magnifier in
+(up to 100): step through them with ‹ ›. The feature shown is the one selected; when the pop-up
+shows a raster's pixel or a web tile layer's feature, nothing is selected. The topmost and
+visible modes take a raster's pixel values too, placed among the features by the drawing order: a
+raster drawn over a polygon (rain clipped to an area whose outline stays on the map, say) shows its
+pixel, and a polygon drawn over a raster shows its feature. The other two modes show the topmost
+raster's pixel only when no feature is under the click. The magnifier in
 the pop-up's header zooms to it. Long feature titles and layer names are shortened with an
 ellipsis to leave room for the header controls; hover over either name to read it in full.
 
@@ -412,3 +524,79 @@ no map layer is active then, and clicking one ends it). With **Selected in Layer
 the map then identifies that tile layer alone: a WMS layer is asked as above, and a vector tile
 layer, archive or MapLibre style lists its features. This works for catalog basemaps and MapLibre
 styles too, which the topmost and visible modes leave out.
+
+### Manually converting imported polygons
+
+Circles and rotated boxes shared as GeoJSON reopen as ordinary polygons. To edit one with
+constrained handles again, turn **Edit › Edit** on, select its loaded polygon layer, right-click
+the object and choose **Convert Polygon…**. Choose Circle or Rotated Box once, in the conversion
+pane. The **Editing** pane also has
+**Convert Selected Polygon…**, and Command Search has **Convert Polygon to Shape…**. These tools
+are available independently of any annotation workflow. A right-click keeps the selected object
+under the pointer; Alt-right-click cycles overlapping objects. In Explore, selection tools and
+Edit Vertices, right-clicking a polygon selects that object for the menu. Right-clicking empty
+space preserves the selection but offers no conversion target. Circle and Rotated Box instead
+clear the selection on empty space, ready to draw another shape. Drawing and measurement tools
+keep their current selection when opening the map menu.
+
+1. Choose Circle or Rotated Box and a construction grid. The shape defaults to the active
+   Circle or Rotated Box tool when opening conversion; other tools default to Circle. The default is **Web Mercator grid
+   metres**, not ground metres. Choose an open GeoTIFF to fit in its **original image pixels**,
+   preserving the source affine transform, including rotation and shear, rather than using a
+   display overview. Local GeoTIFFs and embedded/browser-uploaded GeoTIFFs are supported; remote
+   original grids must be downloaded and added first. An unreadable or unsupported source gives
+   an error, without falling back to a different grid.
+   The same [image source checks](#image-source-checks) apply. If asked to reload, use
+   **Reload Data** on the image, then retry **Preview Conversion** or **Convert Now**.
+2. For a quick conversion, click **Convert Now** to fit and apply using the chosen shape and
+   grid, without a preview or another confirmation. Alternatively, click **Preview Conversion**
+   to show an orange outline without changing the feature or undo history, review or adjust the
+   centre and dimensions, then **Apply Conversion** or **Close**. Apply replaces Convert Now
+   in the same button position; the actions and Construction Grid stay in place after preview.
+3. Both routes replace only this feature, preserve its ID and attributes, and enable the existing
+   Circle or Rotated Box editor. One Undo restores the original polygon and construction state;
+   Redo restores the conversion. The desktop performs fitting and header reads in the background,
+   with progress and Cancel in the status bar. Cancel or a changed source/selection before fitting
+   finishes leaves the geometry and history unchanged. **Close** abandons an uncommitted
+   preview; **Cancel Fitting** stops an active fit. After applying, use the regular **Undo**
+   action to restore the original polygon. Drag the map to pan while fitting or
+   reviewing a preview.
+
+Conversion is not captured by **Record Task**: the proposal belongs to the current session and
+cannot safely be replayed after reopening a project. A notice explains when a conversion is
+omitted from the recording.
+
+A rotated box uses the minimum-area enclosing rectangle of the input vertices in the chosen
+planar grid (longer side as width, clockwise angle in `[0,180)`). A circle uses the centre of
+the vertices' axis-aligned bounds and the maximum vertex distance as radius. This deterministic
+circle encloses the vertices; it is not a least-squares or minimum-enclosing-circle fit.
+The tolerance starts at the larger of 0.25 grid units and radius/10000, before projection.
+Both operations can change the boundary; neither promises recovery of the original construction.
+Transformed edges are still represented by straight polygon edges, with the limits described above.
+
+Conversion accepts a single closed polygon without holes, with at most 4096 vertices (excluding
+its closing duplicate). Multipart features, holes, degenerate grids/polygons and unsupported
+projection boundaries are refused, never silently discarded. A source or selection changed while
+reviewing the preview invalidates it; preview again. Edit rules that change the proposed geometry,
+attributes or identity cause the whole conversion to be refused. Larger polygons must be simplified
+explicitly before fitting.
+
+The result remains an ordinary polygon on disk. Centre, radius and box dimensions live only in
+this session; saves and exports retain the existing counted construction-loss notes. No custom
+GeoJSON metadata, image bindings, class palette format or saved-file changes are introduced.
+
+Scripts, CLI, Python, the Assistant/MCP and permitted plugins use the same commands:
+
+```text
+edit.previewShapeConversion={"layer":"Annotations","row":0,"kind":"rotatedBox","image":"Original TIFF"}
+```
+
+Pass that command's complete answer as `preview` to
+`edit.applyShapeConversion={"preview":…,"confirm":true}` in the **same live session**. Preview is
+read-only and does not grant consent to Apply. Preview tokens cannot be reused after reopening
+a project; saved workflows must obtain a fresh preview. Omit `image` to use Web Mercator, or supply `frame`
+with the same EPSG, dimensions and affine fields accepted by `edit.addBox` (image and frame are
+mutually exclusive). Preview may read a source file and therefore declares the Files permission.
+Synchronous API callers must invoke fitting off their own UI thread. On the phone the commands
+are usable through its existing command interface; the desktop-style right-click menu is not a
+new touch-bar destination.

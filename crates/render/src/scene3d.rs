@@ -517,12 +517,34 @@ fn stand_up(map: &Map, sl: &SceneLayer, b: &mut Built, at: &Placing, notes: &mut
     let size = sl.size.unwrap_or(auto_size);
     let (mut shown, mut missing, mut over, mut roofless, mut unlabelled) = (0usize, 0usize, 0usize, 0usize, 0usize);
     let drawn = layer.drawn_rows(scale);
+    // A layer held in a system of its own (a projected file keeps its eastings and northings):
+    // each geometry in longitude/latitude, which the scene places, as the map drapes it.
+    let held = ds.coord_crs();
+    let to_lonlat = if held == rustgis_data::raster::Crs::LonLat {
+        None
+    } else {
+        match held.to(rustgis_data::raster::Crs::LonLat) {
+            Ok(to) => Some(to),
+            Err(e) => {
+                notes.push(format!("'{name}' is left out of the scene: its coordinates can't be placed ({e})"));
+                return Ok(());
+            }
+        }
+    };
     for row in 0..ds.features.len() {
         if !drawn.get(row).copied().unwrap_or(true) {
             continue;
         }
         go_on()?;
-        let Some(g) = ds.features.get(row).and_then(|f| f.geometry.as_ref()) else { continue };
+        let Some(source) = ds.features.geometry(row) else { continue };
+        let converted;
+        let g = match &to_lonlat {
+            Some(to) => {
+                converted = to.geometry(source);
+                &converted
+            }
+            None => source,
+        };
         let color = sl.color.unwrap_or_else(|| {
             let s = layer.renderer.symbol_for(ds, row);
             if s.fill.a() > 0 { s.fill } else { s.stroke }
@@ -1685,6 +1707,27 @@ mod tests {
         let r = pick(&b, &cam, 1.0, 400.0, 300.0, 200.0, 150.0);
         drop(installed);
         assert!(r.unwrap_err().contains("ancel"));
+    }
+
+    /// A layer held in a system of its own (RustGIS 0.8 keeps a projected file's eastings and
+    /// northings) stands up where the same layer in longitude/latitude does: its wells and their
+    /// labels in the same places.
+    #[test]
+    fn a_layer_held_in_utm_stands_where_its_longitudes_and_latitudes_are() {
+        let (m, s) = hill();
+        let plain = build(m.clone(), &s, small()).unwrap();
+        let mut held = m;
+        let wells = held.layers.iter_mut().find(|l| l.name == "wells").unwrap();
+        wells.dataset.hold_in(Crs::Epsg(32647)).unwrap();
+        assert_eq!(wells.dataset.coord_crs(), Crs::Epsg(32647));
+        let utm = build(held, &s, small()).unwrap();
+        assert_eq!(plain.labels.len(), 1, "the well with a depth");
+        assert_eq!(utm.labels.len(), plain.labels.len(), "it stands");
+        for (a, b) in plain.labels.iter().zip(&utm.labels) {
+            assert_eq!(a.text, b.text);
+            assert!(a.at.iter().zip(&b.at).all(|(p, q)| (p - q).abs() < 0.01), "{:?} against {:?}", b.at, a.at);
+        }
+        assert_eq!(plain.solids.tris.len(), utm.solids.tris.len());
     }
 
     #[test]

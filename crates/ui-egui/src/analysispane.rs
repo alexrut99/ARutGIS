@@ -28,17 +28,28 @@ pub struct Workflow {
     pub bilinear: bool,
     pub text: String,
     pub function: String,
+    /// Slope output is degrees unless the user chooses percent rise.
+    pub slope_percent: bool,
     pub chain: Vec<String>,
     pub format: String,
     pub pick: Option<Pick>,
     pub result: Option<Value>,
     pub error: Option<String>,
+    /// Only this request may replace the Similar section's pending result.
+    #[cfg(not(target_arch = "wasm32"))]
+    similar_request: Option<SimilarRequest>,
+    #[cfg(not(target_arch = "wasm32"))]
+    similar_next: u64,
     pub script: String,
     pub script_out: Vec<(String, bool)>,
     /// The Script pane's last run, shown above its results.
     pub script_last: Option<ScriptRun>,
     /// The last run's Details window is open.
     pub script_details: bool,
+    /// A script file picked with Load… in the browser or on a phone ([`script_picked`]), for
+    /// [`RustGisApp::logic`] to open in the pane once the inbox is read ([`open_script`]): what
+    /// keeps its undo needs the frame's context, which `open_picked` hasn't.
+    pub(crate) script_picked: Option<String>,
     /// When each Script pane run under way or waiting started (seconds since 1970, and the
     /// instant), and the project it was asked in ([`rustgis_engine::Session::opened`]), in the
     /// order asked, for [`script_ran`] to tell as each lands.
@@ -78,11 +89,71 @@ pub struct Workflow {
     pub job: Option<Job>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+struct SimilarRequest {
+    id: u64,
+    opened: u64,
+    map: u64,
+    layer: String,
+    instance: Option<u64>,
+}
+
+/// A pane/input change relinquishes ownership of a pending ranking. The read still completes
+/// through its ordinary command, but cannot overwrite another section or a newer request.
+pub(crate) fn forget_similar(workflow: &mut Workflow) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        workflow.similar_request = None;
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = workflow;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn start_similar(app: &mut RustGisApp) {
+    app.workflow.similar_next = app.workflow.similar_next.wrapping_add(1);
+    let id = app.workflow.similar_next;
+    app.workflow.similar_request = Some(SimilarRequest {
+        id,
+        opened: app.session.opened,
+        map: app.session.map().instance_id(),
+        layer: app.workflow.layer.clone(),
+        instance: app.session.map().layer_by_name(&app.workflow.layer).map(|l| l.instance_id()),
+    });
+    (app.workflow.result, app.workflow.error) = (None, None);
+    let params = json!({"layer": app.workflow.layer, "count": 10});
+    // Success here is only an admission receipt. Completion owns success and every failure.
+    let _ = crate::readjob::run_workflow_similar(app, params, id);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+/// Delivers only to the still-current pane request; the admission receipt never becomes output.
+pub(crate) fn similar_ran(app: &mut RustGisApp, request: u64, landed: crate::Landed) {
+    if !app.workflow.similar_request.as_ref().is_some_and(|r| r.id == request) {
+        return;
+    }
+    let Some(asked) = app.workflow.similar_request.take() else { return };
+    if app.workflow.section != "similar"
+        || app.workflow.layer != asked.layer
+        || app.session.opened != asked.opened
+        || app.session.map().instance_id() != asked.map
+        || app.session.map().layer_by_name(&asked.layer).map(|l| l.instance_id()) != asked.instance
+    {
+        return;
+    }
+    match landed {
+        crate::Landed::Ran(r) => show(app, r),
+        crate::Landed::NotRun(why) => show(app, Err(why)),
+    }
+}
+
 /// A workflow running on a thread of its own, so the window goes on while it works (#1291 step 3).
 #[cfg(not(target_arch = "wasm32"))]
 pub struct Job {
     /// What it is called, for its progress line.
     name: &'static str,
+    /// Only this section owns the pane output; data and error notices still land elsewhere.
+    section: &'static str,
     /// Stops it, and counts its progress.
     control: std::sync::Arc<rustgis_engine::analysis::control::Control>,
     kind: JobKind,
@@ -277,6 +348,20 @@ fn show(app: &mut RustGisApp, r: Result<Value, String>) {
     app.map.invalidate();
 }
 
+/// A background workflow changes only its own section's output. Its applied data redraws the
+/// map either way, and failures remain visible as notices after the user changes sections.
+#[cfg(not(target_arch = "wasm32"))]
+fn show_job(app: &mut RustGisApp, section: &'static str, r: Result<Value, String>) {
+    if app.workflow.section == section {
+        show(app, r);
+    } else {
+        if let Err(error) = r {
+            app.session.notify(error, true);
+        }
+        app.map.invalidate();
+    }
+}
+
 /// The workflows that run on a thread of their own on the desktop, as their command and name:
 /// Zonal Statistics, and those that make a raster
 /// ([`rustgis_engine::cmd::workflows::runs_in_background`]). Their work grows with the raster and
@@ -320,7 +405,7 @@ fn start(app: &mut RustGisApp, command: &'static str, name: &'static str, p: Val
     };
     match kind {
         Ok(kind) => {
-            app.workflow.job = Some(Job { name, control, kind });
+            app.workflow.job = Some(Job { name, section: app.workflow.section, control, kind });
             (app.workflow.result, app.workflow.error) = (None, None);
         }
         Err(e) => show(app, Err(e)),
@@ -340,7 +425,8 @@ fn fill<T>(slot: &crate::Slot<T>, v: T) {
 
 /// A workflow that has finished on its thread, applied (so it's in the History and can be undone):
 /// called every frame, whatever pane is in view, so a run lands though the pane closed. `true`
-/// while one is still running.
+/// while one is still running. Pane output stays in its originating section; failures still
+/// reach session notices after a section change.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn land_job(app: &mut RustGisApp) -> bool {
     use rustgis_engine::cmd::{gp, workflows};
@@ -351,8 +437,9 @@ pub fn land_job(app: &mut RustGisApp) -> bool {
             if !gp::tool_waiting(&app.session, *id) {
                 job.control.cancel();
                 let name = job.name;
+                let section = job.section;
                 app.workflow.job = None;
-                dropped(app, name);
+                dropped(app, section, name);
                 return false;
             }
             filled(slot)
@@ -362,8 +449,9 @@ pub fn land_job(app: &mut RustGisApp) -> bool {
             if !workflows::raster_waiting(&app.session, *id) {
                 job.control.cancel();
                 let name = job.name;
+                let section = job.section;
                 app.workflow.job = None;
-                dropped(app, name);
+                dropped(app, section, name);
                 return false;
             }
             filled(slot)
@@ -377,21 +465,21 @@ pub fn land_job(app: &mut RustGisApp) -> bool {
         JobKind::Tool { id, slot } => {
             let Some(done) = take(&slot) else { return false };
             let r = gp::tool_complete(&mut app.session, id, done).and_then(|_| app.finish_gp(id));
-            show(app, r);
+            show_job(app, job.section, r);
         }
         JobKind::Raster { id, command, params, slot } => match take(&slot) {
             // Added by its command, as if it had run here.
             Some(Ok(made)) => match workflows::raster_land(&mut app.session, id, made) {
                 Ok(true) => {
                     let result = app.finish_raster(command, id, &params);
-                    show(app, result);
+                    show_job(app, job.section, result);
                 }
-                Ok(false) => dropped(app, job.name),
-                Err(e) => show(app, Err(e)),
+                Ok(false) => dropped(app, job.section, job.name),
+                Err(e) => show_job(app, job.section, Err(e)),
             },
             Some(Err(e)) => {
                 workflows::raster_abandon(&mut app.session, id);
-                show(app, Err(e));
+                show_job(app, job.section, Err(e));
             }
             None => {}
         },
@@ -411,9 +499,9 @@ fn take<T>(slot: &crate::Slot<T>) -> Option<T> {
 
 /// Says that a workflow's run was dropped: its project closed while it ran.
 #[cfg(not(target_arch = "wasm32"))]
-fn dropped(app: &mut RustGisApp, name: &'static str) {
-    app.workflow.error = Some(crate::i18n::fmt("{tool} was stopped: its project was closed while it ran.", &[("tool", tl_raw!(name))]));
-    app.workflow.result = None;
+fn dropped(app: &mut RustGisApp, section: &'static str, name: &'static str) {
+    let error = crate::i18n::fmt("{tool} was stopped: its project was closed while it ran.", &[("tool", tl_raw!(name))]);
+    show_job(app, section, Err(error));
 }
 
 /// A workflow under way: its name, progress and Cancel.
@@ -537,6 +625,8 @@ fn picked(app: &mut RustGisApp, purpose: &str) -> Option<Vec<rustgis_engine::geo
     if done { app.workflow.pick.take().map(|p| p.points) } else { None }
 }
 
+/// Draws the active workflow form; raster functions share their step parameters with the
+/// Function Editor so Apply and Add Step honor the same choices.
 pub fn workflows(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     // A section whose extension was turned off while it was open: back to the first.
     if app.workflow.section.is_empty() || !section_shown(&app.session, app.workflow.section) {
@@ -544,6 +634,7 @@ pub fn workflows(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         if !app.workflow.section.is_empty() {
             app.workflow.pick = None;
         }
+        forget_similar(&mut app.workflow);
         app.workflow.section = "rasterFunctions";
     }
     egui::ComboBox::from_id_salt("wf_section")
@@ -551,7 +642,10 @@ pub fn workflows(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         .width(ui.available_width() - 8.0)
         .show_ui(ui, |ui| {
             for (id, title) in SECTIONS.iter().filter(|s| section_shown(&app.session, s.0)) {
-                if ui.selectable_label(app.workflow.section == *id, tl!(*title)).clicked() {
+                if ui.selectable_label(app.workflow.section == *id, tl!(*title)).clicked()
+                    && (app.workflow.section != "similar" || *id != "similar")
+                {
+                    forget_similar(&mut app.workflow);
                     app.workflow.section = id;
                     app.workflow.result = None;
                     app.workflow.error = None;
@@ -591,7 +685,12 @@ pub fn workflows(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         _ => &features,
     };
     if !inputs.contains(&w.layer) {
-        w.layer = inputs.first().cloned().unwrap_or_default();
+        let layer = inputs.first().cloned().unwrap_or_default();
+        if w.section == "similar" && w.layer != layer {
+            forget_similar(w);
+            (w.result, w.error) = (None, None);
+        }
+        w.layer = layer;
     }
     if (w.section == "zonalStats" || w.section == "process") && !polygons.contains(&w.layer2) {
         w.layer2 = polygons.first().cloned().unwrap_or_default();
@@ -619,9 +718,23 @@ pub fn workflows(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                 }
             });
             if app.workflow.function == "slope" {
-                ui.label(egui::RichText::new(tl!("Slope is in degrees (0–90), not percent.")).small().weak());
+                ui.horizontal(|ui| {
+                    let label = ui.label(tl!("Slope units"));
+                    egui::ComboBox::from_id_salt("wf_slope_units")
+                        .selected_text(if app.workflow.slope_percent { tl!("Percent") } else { tl!("Degrees (0–90)") })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut app.workflow.slope_percent, false, tl!("Degrees (0–90)"));
+                            ui.selectable_value(&mut app.workflow.slope_percent, true, tl!("Percent"));
+                        })
+                        .response
+                        .labelled_by(label.id);
+                });
             }
-            let step = json!({"function": app.workflow.function, "expression": app.workflow.text, "value": num(&app.workflow.number, 0.0)});
+            let mut step =
+                json!({"function": app.workflow.function, "expression": app.workflow.text, "value": num(&app.workflow.number, 0.0)});
+            if app.workflow.function == "slope" {
+                step["units"] = json!(if app.workflow.slope_percent { "percent" } else { "degrees" });
+            }
             if app.workflow.section == "rasterFunctions" {
                 if ui.button(tl!("Apply")).clicked() {
                     let mut p = step;
@@ -900,9 +1013,24 @@ pub fn workflows(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         }
         "similar" => {
             heading(ui, "Features most like the selected one");
+            let before = app.workflow.layer.clone();
             combo(ui, "wf_e", "Layer", &mut app.workflow.layer, &features);
+            if app.workflow.layer != before {
+                forget_similar(&mut app.workflow);
+                (app.workflow.result, app.workflow.error) = (None, None);
+            }
             if ui.button(tl!("Find Similar")).clicked() {
+                #[cfg(not(target_arch = "wasm32"))]
+                start_similar(app);
+                #[cfg(target_arch = "wasm32")]
                 run(app, "data.similar", json!({"layer": app.workflow.layer, "count": 10}));
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if app.workflow.similar_request.is_some() {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(tl!("Running…"));
+                });
             }
         }
         "interop" => {
@@ -951,12 +1079,31 @@ pub fn workflows(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                     .small(),
             );
             ui.horizontal_wrapped(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut app.workflow.env_crs).hint_text("EPSG:32616").desired_width(110.0));
+                let name = ui.label(tl!("Projected system"));
+                let recent = app.ui.recent_crs.clone();
+                // A row taken fills the box; Set Coordinate System applies it, since another
+                // system starts without the cell size set for this one.
+                let (edit, _) = crate::crspicker::crs_box(
+                    ui,
+                    "environment",
+                    &mut app.workflow.env_crs,
+                    &recent,
+                    crate::crspicker::Offer::Projected,
+                    130.0,
+                    "EPSG:32616",
+                    t,
+                );
+                // Named by the label beside it, for a screen reader.
+                edit.labelled_by(name.id);
                 // An empty box sets nothing; clearing the system is its own button, so a click never
                 // clears it and its cell size by accident. Cleared, a run takes the layer's system.
                 let typed = app.workflow.env_crs.trim().to_string();
                 if ui.add_enabled(!typed.is_empty(), egui::Button::new(tl!("Set Coordinate System"))).clicked() {
-                    run(app, "gp.env", json!({"crs": typed}));
+                    let crs = crate::dialogs::typed_crs(&typed);
+                    run(app, "gp.env", json!({"crs": crs}));
+                    if app.workflow.error.is_none() {
+                        app.remember_crs_if_listed(&crs);
+                    }
                 }
                 if ui.add_enabled(env.projected.is_some(), egui::Button::new(tl!("Clear Coordinate System"))).clicked() {
                     run(app, "gp.env", json!({"crs": null}));
@@ -1657,12 +1804,13 @@ fn trend(app: &mut RustGisApp, ui: &mut Ui, rasters: &[String]) {
 
 /// A trend that has finished, its layers added through `cube.trend` (so it's in the History):
 /// called every frame, whatever pane is in view, so a run lands though the Workflows pane
-/// closed. `true` while one is still running.
+/// closed. Output stays with the Trend section; failures elsewhere become notices.
+/// `true` while one is still running.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn land_trend(app: &mut RustGisApp) -> bool {
     use std::sync::atomic::Ordering;
     let Some(r) = &app.workflow.trend.running else { return false };
-    let Some(res) = r.result.lock().ok().and_then(|mut g| g.take()) else { return true };
+    let Some(res) = r.result.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() else { return true };
     let mut p = r.params.clone();
     // A run the user cancelled stops quietly: no error for it.
     let cancelled = r.cancel.load(Ordering::Relaxed);
@@ -1674,14 +1822,15 @@ pub fn land_trend(app: &mut RustGisApp) -> bool {
         Ok(_) if cancelled => {}
         // Another project opened meanwhile: nothing added, and said.
         Ok(_) if !current => {
-            app.workflow.error = Some(tl!("The trend finished after another project was opened, so it wasn't added").to_string());
+            show_job(app, "trend", Err(tl!("The trend finished after another project was opened, so it wasn't added").to_string()));
         }
         Ok((rasters, dates)) => {
             p["ran"] = json!(rustgis_engine::cmd::cube::land(&mut app.session, rasters, dates));
-            run(app, "cube.trend", p);
+            let result = app.run("cube.trend", p);
+            show_job(app, "trend", result);
         }
         Err(_) if cancelled => {}
-        Err(e) => app.workflow.error = Some(e),
+        Err(e) => show_job(app, "trend", Err(e)),
     }
     false
 }
@@ -1831,6 +1980,51 @@ pub(crate) fn open_script(app: &mut RustGisApp, ctx: &egui::Context, script: Str
     app.workflow.script = script;
     app.ui.open_right(crate::RightPane::Script);
     ctx.memory_mut(|m| m.request_focus(box_id));
+}
+
+/// Load…: a script file read into the Script pane in place of its script ([`open_script`]). In
+/// the browser and on a phone the shell's picker answers later, through [`script_picked`].
+fn load_script(app: &mut RustGisApp, ctx: &egui::Context) {
+    if let Some(open) = &app.services.open_async {
+        open("script");
+        return;
+    }
+    let Some(path) = crate::dialogs::pick_open(&["txt"], tl!("Script")) else { return };
+    // One byte past the limit is enough to refuse it, whatever the file's size.
+    let read = std::fs::File::open(&path).and_then(|file| {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        file.take(crate::SCRIPT_FILE_MAX_BYTES as u64 + 1).read_to_end(&mut bytes).map(|_| bytes)
+    });
+    let name = std::path::Path::new(&path).file_name().map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+    let unread = |e: std::io::Error| crate::i18n::fmt("{path}: {error}", &[("path", &path), ("error", &e.to_string())]);
+    match read.map_err(unread).and_then(|bytes| script_text(app, &name, &bytes)) {
+        Ok(script) => open_script(app, ctx, script),
+        Err(e) => app.session.notify(e, true),
+    }
+}
+
+/// A script file the shell's picker read for Load…, kept for [`RustGisApp::logic`] to open once
+/// the inbox is read. A file [`script_text`] refuses is said, and the pane's script stays.
+pub(crate) fn script_picked(app: &mut RustGisApp, name: &str, bytes: &[u8]) -> Result<Value, String> {
+    let script = script_text(app, name, bytes).inspect_err(|e| app.session.notify(e.clone(), true))?;
+    app.workflow.script_picked = Some(script);
+    Ok(Value::Null)
+}
+
+/// Script file `name`'s text for the Script pane, without the byte-order mark some editors
+/// start a UTF-8 file with (it would make the first line's command unknown): refused when it is
+/// over [`crate::SCRIPT_FILE_MAX_BYTES`] or isn't UTF-8 text, or while a run is under way (its
+/// results would land in the replaced script).
+fn script_text(app: &RustGisApp, name: &str, bytes: &[u8]) -> Result<String, String> {
+    if script_running(app) {
+        return Err(tl!("Wait for the run to finish").to_string());
+    }
+    if bytes.len() > crate::SCRIPT_FILE_MAX_BYTES {
+        return Err(crate::i18n::fmt("{file} is larger than 1 MB", &[("file", name)]));
+    }
+    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    std::str::from_utf8(bytes).map(str::to_owned).map_err(|_| crate::i18n::fmt("{file} isn't UTF-8 text", &[("file", name)]))
 }
 
 /// The Script pane emptied: its script, results and count, so the next run is `Run #1`, and the
@@ -2009,11 +2203,20 @@ fn script(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens, fit: bool) {
         if ui.button(tl!("Commands…")).on_hover_text(tl!("Search every command and its parameters")).clicked() {
             let _ = app.run("ui.commandSearch", Value::Null);
         }
-        // Not while a run is under way: its results would land in the emptied pane.
-        let w = &app.workflow;
-        let running = !w.script_started.is_empty();
-        let anything = !w.script.is_empty() || !w.script_out.is_empty() || w.script_last.is_some();
+        // Not while a run is under way: its results would land in the replaced or emptied pane.
+        let running = script_running(app);
         let undo = if mac { "⌘+Z" } else { "Ctrl+Z" };
+        let mut load = ui
+            .add_enabled(!running, egui::Button::new(tl!("Load…")))
+            .on_hover_text(crate::i18n::fmt("Read a script from a file in place of this one ({keys} brings it back)", &[("keys", undo)]));
+        if running {
+            load = load.on_disabled_hover_text(tl!("Wait for the run to finish"));
+        }
+        if load.clicked() {
+            load_script(app, ui.ctx());
+        }
+        let w = &app.workflow;
+        let anything = !w.script.is_empty() || !w.script_out.is_empty() || w.script_last.is_some();
         let mut clear = ui
             .add_enabled(anything && !running, egui::Button::new(tl!("Clear")))
             .on_hover_text(crate::i18n::fmt("Empty the script and its results ({keys} brings the script back)", &[("keys", undo)]));
@@ -2293,6 +2496,44 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn annotation_grid_script_pane_receives_the_frame_after_worker_delivery() {
+        use rustgis_engine::data::raster::{ColorHint, Crs, GeoTransform, Raster, geotiff};
+        for off_frame in [false, true] {
+            let raster = Raster::new(
+                "Image",
+                2,
+                3,
+                vec![vec![1.; 6]],
+                GeoTransform { origin_x: 100., origin_y: 500., pixel_width: 2., pixel_height: -3. },
+                Crs::from_epsg(3857).unwrap(),
+                None,
+                ColorHint::Gray,
+                "UInt8",
+            )
+            .unwrap();
+            let bytes = geotiff::write(&raster, 0).unwrap();
+            let expected =
+                rustgis_engine::box_edit::Frame::from_grid(&geotiff::read_image_grid(std::io::Cursor::new(&bytes)).unwrap()).unwrap();
+            let mut app = RustGisApp::new(rustgis_engine::Session::new(rustgis_engine::Project::default()));
+            let image = app.session.map_mut().add_raster("Image", rustgis_engine::map::RasterLayer::from_bytes(raster, "image.tif", bytes));
+            app.reads_off_frame = off_frame;
+            start_script(&mut app, format!("raster.imageGrid {}", json!({"layer":image})));
+            let end = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            while crate::readjob::land(&mut app) {
+                assert!(std::time::Instant::now() < end, "grid script never landed");
+                std::thread::sleep(std::time::Duration::from_millis(5)); // test-wait: await the script worker's real frame delivery
+            }
+            assert!(app.workflow.script_started.is_empty());
+            let run = app.workflow.script_last.as_ref().unwrap();
+            assert!(run.error.is_none(), "{:?}", app.workflow.script_out);
+            assert_eq!(run.ran.len(), 1);
+            assert_eq!(serde_json::from_value::<rustgis_engine::box_edit::Frame>(run.ran[0].result.clone()).unwrap(), expected);
+            assert!(app.workflow.script_out.iter().all(|(_, error)| !error));
+        }
+    }
+
     /// A Script pane run works its tools out on a thread of its own: the results say Running…
     /// until it lands, runs land in the order asked, and one cancelled or left says so.
     #[cfg(not(target_arch = "wasm32"))]
@@ -2480,6 +2721,114 @@ mod tests {
         assert!(!on(&h));
     }
 
+    /// Load… reads a script file in place of the pane's script, emptying its results as Clear
+    /// does, and Ctrl+Z brings the old script back; a cancelled picker and a file that isn't UTF-8
+    /// text leave it (the latter said), and it is off while a run is under way.
+    #[test]
+    fn load_reads_a_script_file_in_place_of_the_panes() {
+        let dir = std::env::temp_dir().join(format!("rustgis-script-load-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (good, bad) = (dir.join("zoom.txt"), dir.join("latin1.txt"));
+        std::fs::write(&good, "map.zoomFull\n").unwrap();
+        std::fs::write(&bad, b"map.new {\"name\": \"Espa\xf1a\"}").unwrap();
+        let mut app = RustGisApp::with_sample();
+        app.workflow.script = "kept".into();
+        script_ran(&mut app, crate::Landed::Ran(Ok(json!({"ran": [{"line": 1, "command": "map.zoomFull", "result": null}]}))));
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(900.0, 800.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                script_pane(app, ui, &Tokens::light());
+            },
+            app,
+        );
+        h.run();
+        let load = |h: &mut egui_kittest::Harness<'_, RustGisApp>, path: Option<&std::path::Path>| {
+            crate::dialogs::PICKED.with(|c| *c.borrow_mut() = path.map(|p| p.display().to_string()));
+            h.get_by_label("Load…").click();
+            h.run();
+        };
+        load(&mut h, None);
+        assert_eq!(h.state().workflow.script, "kept", "a cancelled picker changes nothing");
+        assert!(h.state().workflow.script_last.is_some());
+        load(&mut h, Some(&bad));
+        assert_eq!(h.state().workflow.script, "kept", "a file that isn't UTF-8 leaves the script");
+        assert!(h.state().workflow.script_last.is_some());
+        assert!(h.state().session.notices.iter().any(|n| n.text == "latin1.txt isn't UTF-8 text"), "{:?}", h.state().session.notices);
+        let said = h.state().session.notices.len();
+        load(&mut h, Some(&good));
+        let w = &h.state().workflow;
+        assert_eq!(w.script, "map.zoomFull\n");
+        assert!(w.script_out.is_empty() && w.script_last.is_none(), "the results go, as with Clear");
+        assert_eq!(h.state().session.notices.len(), said, "a clean file says nothing");
+        assert!(h.get_by_role(egui::accesskit::Role::MultilineTextInput).is_focused(), "the box has the focus");
+        // The box's own undo brings the old script back, with nothing clicked first.
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        h.run();
+        assert_eq!(h.state().workflow.script, "kept", "Ctrl+Z brings it back");
+        assert!(h.state().workflow.script_last.is_none(), "the results stay gone");
+        // A run under way: off, as its results would land in the replaced script.
+        h.state_mut().workflow.script_started.push_back((0, web_time::Instant::now(), 0));
+        h.run();
+        assert!(egui_kittest::kittest::NodeT::accesskit_node(&h.get_by_label("Load…")).is_disabled());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// In the browser and on a phone, Load… asks the shell's `"script"` picker; its file opens in
+    /// the pane on the next frame, a cancelled one (an empty answer) changes nothing, and one
+    /// landing while a run is under way is refused and said.
+    #[test]
+    fn a_script_from_the_shells_picker_opens_in_the_pane() {
+        use std::sync::{Arc, Mutex};
+        let mut app = RustGisApp::with_sample();
+        app.workflow.script = "kept".into();
+        let asked = Arc::new(Mutex::new(Vec::<String>::new()));
+        let ask = asked.clone();
+        app.services.open_async = Some(Box::new(move |purpose| ask.lock().unwrap().push(purpose.to_string())));
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(900.0, 800.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                app.logic(ui.ctx());
+                script_pane(app, ui, &Tokens::light());
+            },
+            app,
+        );
+        h.run();
+        h.get_by_label("Load…").click();
+        h.run();
+        assert_eq!(*asked.lock().unwrap(), ["script"]);
+        h.state_mut().open_picked(crate::SCRIPT_PICK, &[]).unwrap();
+        h.run();
+        assert_eq!(h.state().workflow.script, "kept", "a cancelled picker changes nothing");
+        assert!(h.state_mut().open_picked(&format!("{}bad.txt", crate::SCRIPT_PICK), b"\xff").is_err());
+        let big = vec![b'#'; crate::SCRIPT_FILE_MAX_BYTES + 1];
+        assert!(h.state_mut().open_picked(&format!("{}big.txt", crate::SCRIPT_PICK), &big).is_err());
+        assert!(h.state().session.notices.iter().any(|n| n.text == "big.txt is larger than 1 MB"));
+        h.run();
+        assert_eq!(h.state().workflow.script, "kept");
+        // A byte-order mark (Notepad's UTF-8) isn't kept: the first line's command stays known.
+        let said = h.state().session.notices.len();
+        h.state_mut().open_picked(&format!("{}zoom.txt", crate::SCRIPT_PICK), b"\xEF\xBB\xBFmap.zoomFull").unwrap();
+        h.run();
+        assert_eq!(h.state().workflow.script, "map.zoomFull");
+        assert_eq!(h.state().session.notices.len(), said, "a clean file says nothing");
+        assert_eq!(h.state().ui.right, Some(crate::RightPane::Script));
+        h.state_mut().workflow.script_started.push_back((0, web_time::Instant::now(), 0));
+        assert!(h.state_mut().open_picked(&format!("{}other.txt", crate::SCRIPT_PICK), b"map.new").is_err());
+        h.run();
+        assert_eq!(h.state().workflow.script, "map.zoomFull", "not while a run is under way");
+        assert!(h.state().session.notices.iter().any(|n| n.text == "Wait for the run to finish"), "{:?}", h.state().session.notices);
+    }
+
     /// Details… opens the last run in a window of its own, each line folded: a result the pane cuts
     /// shows whole there, laid out to read, Copy copies it and Copy All the run; a run that stopped
     /// shows why.
@@ -2597,6 +2946,77 @@ mod tests {
             _ => None,
         });
         assert_eq!(copied, Some(pretty(&long)), "Copy keeps the long line whole");
+    }
+
+    /// Ready Trend completions land through the real app frame without replacing another
+    /// section's output; Trend still receives its own result/error and Cancel stays quiet.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn trend_completion_preserves_other_workflow_output() {
+        for section in ["similar", "trend"] {
+            for outcome in ["failure", "project changed", "success", "cancelled"] {
+                let mut app = RustGisApp::new(rustgis_engine::Session::new(rustgis_engine::Project::default()));
+                let id = app.session.download_started();
+                if outcome == "project changed" {
+                    app.session.run("project.new", &Value::Null).unwrap();
+                }
+                app.run("ui.pane.workflows", json!({"section":section})).unwrap();
+                let kept = json!({"similar": [{"row":1,"distance":0.5}]});
+                app.workflow.result = Some(kept.clone());
+                let result = match outcome {
+                    "project changed" | "success" => Ok((Vec::new(), 0)),
+                    _ => Err("trend test failure".into()),
+                };
+                app.workflow.trend.running = Some(Trending {
+                    total: 1,
+                    id,
+                    params: Value::Null,
+                    cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(outcome == "cancelled")),
+                    done: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1)),
+                    result: std::sync::Arc::new(std::sync::Mutex::new(Some(result))),
+                });
+                let mark = app.session.notice_mark();
+                let mut fonts = false;
+                let mut h = egui_kittest::Harness::builder().with_size(vec2(1400.0, 900.0)).build_ui_state(
+                    move |ui, app: &mut RustGisApp| {
+                        if !fonts {
+                            crate::theme::install_fonts(ui.ctx(), &[], None);
+                            fonts = true;
+                            return;
+                        }
+                        app.logic(ui.ctx());
+                        app.ui(ui);
+                    },
+                    app,
+                );
+                for _ in 0..4 {
+                    h.step();
+                }
+                assert!(h.state().workflow.trend.running.is_none(), "the real frame consumed the worker completion");
+                let notices = h.state().session.notices_since(mark);
+                if outcome == "cancelled" || (section == "similar" && outcome == "success") {
+                    assert!(h.state().workflow.error.is_none());
+                    assert_eq!(h.state().workflow.result, Some(kept));
+                    assert!(notices.is_empty());
+                } else if outcome == "success" {
+                    assert!(h.state().workflow.error.is_none());
+                    assert_eq!(h.state().workflow.result, Some(json!({"layers":[],"dates":0})));
+                    assert!(notices.is_empty());
+                } else {
+                    let needle = if outcome == "project changed" { "after another project" } else { "trend test failure" };
+                    if section == "similar" {
+                        assert!(h.state().workflow.error.is_none(), "Trend's error belongs outside the Similar pane");
+                        assert_eq!(h.state().workflow.result, Some(kept));
+                        assert_eq!(notices.len(), 1);
+                        assert!(notices[0].error && notices[0].text.contains(needle));
+                    } else {
+                        assert!(h.state().workflow.error.as_deref().is_some_and(|e| e.contains(needle)));
+                        assert!(h.state().workflow.result.is_none());
+                        assert!(notices.is_empty());
+                    }
+                }
+            }
+        }
     }
 
     /// Interpolate runs on a thread of its own from the pane (#1291 step 3): the pane goes on while

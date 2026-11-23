@@ -92,7 +92,7 @@ fn coordsys(w: &[String]) -> std::result::Result<Option<Crs>, String> {
     };
     let proj4 = format!("{proj} {datum_proj} {unit} +no_defs");
     let label = format!("MapInfo projection {ty}");
-    Crs::custom(CustomCrs { proj4, label, geokeys: Vec::new(), doubles: Vec::new(), ascii: String::new() }).map(Some)
+    Crs::custom(CustomCrs { proj4, label, geokeys: Vec::new(), doubles: Vec::new(), ascii: String::new(), wkt: None }).map(Some)
 }
 
 /// Even-odd point in ring.
@@ -382,15 +382,18 @@ pub fn read(mif: &str, mid: Option<&str>, name: &str) -> Result<(Dataset, ReadRe
             }
         },
     };
-    let mut lost = 0usize;
+    // Held as the file holds its coordinates, in its own system, when RustGIS converts it.
+    if let (Some(_), Some(c)) = (&t, crs) {
+        ds.held_in = c;
+    }
+    let (mut lost, mut null_text) = (0usize, Vec::new());
     for (k, g) in geoms.into_iter().enumerate() {
+        // Kept as the file holds it when it has a place in longitude/latitude.
         let g = match (&t, g) {
             (Some(t), Some(g)) => {
-                let out = g.map_coords(&|c| t.to_lonlat(c).unwrap_or(Coord::new(f64::NAN, f64::NAN)));
-                let mut ok = true;
-                out.for_each_coord(|c| ok &= c.is_finite());
+                let ok = crate::io::places_in_lonlat(&g, t);
                 lost += usize::from(!ok);
-                ok.then_some(out)
+                ok.then_some(g)
             }
             (_, g) => g,
         };
@@ -399,13 +402,20 @@ pub fn read(mif: &str, mid: Option<&str>, name: &str) -> Result<(Dataset, ReadRe
             .fields
             .iter()
             .enumerate()
-            .map(|(c, f)| Value::parse_source(row.and_then(|r| r.get(c)).map(String::as_str).unwrap_or(""), f.ty))
+            .map(|(c, f)| {
+                let text = row.and_then(|r| r.get(c)).map(String::as_str).unwrap_or("");
+                if Value::is_null_marker(text) {
+                    crate::source::null_text_at(&mut null_text, c);
+                }
+                Value::parse_file(text, f.ty)
+            })
             .collect();
         ds.push_next(g, attrs);
     }
     if lost > 0 {
         report.messages.push(format!("{lost} objects couldn't be converted to longitude/latitude"));
     }
+    report.messages.extend(crate::source::null_text_note(&ds.fields, &null_text));
     ds.geometry_type = crate::io::dominant_type(&ds);
     Ok((ds, report))
 }
@@ -426,6 +436,19 @@ mod tests {
         assert_eq!(ds.value(1, 0), &Value::Float(1e30));
         assert_eq!(ds.value(2, 0), &Value::Int(3));
         assert!(report.messages.is_empty(), "{:?}", report.messages);
+    }
+
+    /// `.mid` text read as the file has it (#2059): spaces kept, `<Null>` null and counted.
+    #[test]
+    fn mid_text_keeps_its_spaces_and_counts_null_markers() {
+        let mif = "Version 300\nDelimiter \",\"\nCoordSys Earth Projection 1, 104\nColumns 2\n code Char(8)\n n Integer\nData\nPoint 0 0\nPoint 1 1\n";
+        let (ds, report) = read(mif, Some("\" 2535 \", 7 \n\"<Null>\",8\n"), "t").unwrap();
+        assert_eq!(ds.value(0, 0), &Value::Text(" 2535 ".into()));
+        assert_eq!(ds.value(0, 1), &Value::Int(7));
+        assert_eq!(ds.value(1, 0), &Value::Null);
+        assert_eq!(report.messages, ["1 value written as Null was read as empty, in 'code'"]);
+        let (_, clean) = read(mif, Some("\" 2535 \", 7 \n\"b\",8\n"), "t").unwrap();
+        assert!(clean.messages.is_empty(), "no marker, no notice: {:?}", clean.messages);
     }
 
     #[test]
@@ -484,6 +507,8 @@ mod tests {
     fn projected_and_broken() {
         let utm = "Version 300\nCoordSys Earth Projection 8, 104, \"m\", 15, 0, 0.9996, 500000, 0\nColumns 1\n  id Integer\nData\nPoint 500000 4649776\nPoint 500100 x\n";
         let (ds, rep) = read(utm, None, "u").unwrap();
+        // Held in its own system; placed in longitude/latitude.
+        let ds = ds.in_lonlat().unwrap().into_owned();
         let Some(Geometry::Point(c)) = &ds.features[0].geometry else { panic!() };
         assert!((c.x - 15.0).abs() < 1e-6 && (c.y - 42.0).abs() < 0.01, "{c:?}");
         assert_eq!(ds.features.len(), 1);
@@ -504,6 +529,7 @@ mod tests {
         // The same point in feet: the false easting is in feet too, and PROJ wants metres.
         let ft = "CoordSys Earth Projection 8, 104, \"ft\", 15, 0, 0.9996, 1640416.6667, 0\nData\nPoint 1640416.6667 15255170.6\n";
         let (ds, rep) = read(ft, None, "f").unwrap();
+        let ds = ds.in_lonlat().unwrap().into_owned();
         let Some(Geometry::Point(c)) = &ds.features[0].geometry else { panic!("{rep:?}") };
         assert!((c.x - 15.0).abs() < 1e-6 && (c.y - 42.0).abs() < 0.01, "{c:?}");
         // A datum not read keeps the coordinates as they are, and says so.
