@@ -827,10 +827,10 @@ pub static TOOLS: &[ToolSpec] = &[
             P {
                 name: "areaUnit",
                 label: "Area Unit",
-                kind: K::Choice(&["m2", "km2", "ha", "ac", "ft2", "mi2"]),
+                kind: K::Choice(&["m2", "km2", "ha", "ac", "ft2", "mi2", "rai"]),
                 required: false,
                 default: "\"km2\"",
-                help: "Square metres (m2), square kilometres (km2), hectares (ha), acres (ac), square feet (ft2) or square miles (mi2), as in Calculate Geometry and area(). The area field is named area_<unit>.",
+                help: "Square metres (m2), square kilometres (km2), hectares (ha), acres (ac), square feet (ft2), square miles (mi2) or rai (1,600 m²), as in Calculate Geometry and area(). The area field is named area_<unit>.",
             },
             P {
                 name: "includeEmptyZones",

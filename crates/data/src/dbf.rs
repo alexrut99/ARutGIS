@@ -249,11 +249,16 @@ fn is_utf8(pieces: &[&[u8]]) -> bool {
 /// - a fifth of them are at least the consonants ก to ฟ (0xA1–0xBF), symbols in Western code pages
 ///   (¡ to ¿), not letters: "J\xc4\xc4" (JÄÄ) has none;
 /// - nearly every vowel or tone mark written above or below a letter (0xD1, 0xD4–0xDA, 0xE7–0xEE)
-///   follows another Thai byte, never a plain letter or the start, as "\xe9" does in "\xe9t\xe9".
+///   follows another Thai byte, never a plain letter or the start, as "\xe9" does in "\xe9t\xe9";
+/// - a tenth of them at least are vowels and marks (0xD0–0xDA, 0xE0–0xEE), as Thai words always
+///   have: Big5 or another East Asian page's pairs fall among the consonants, and "\xb0\xaa\xb6\xaf"
+///   (高雄) has none.
 pub(crate) fn looks_thai(pieces: &[&[u8]]) -> bool {
     let thai = |b: u8| matches!(b, 0xA1..=0xDA | 0xDF..=0xFB);
     let mark = |b: u8| matches!(b, 0xD1 | 0xD4..=0xDA | 0xE7..=0xEE);
+    let vowel = |b: u8| matches!(b, 0xD0..=0xDA | 0xE0..=0xEE);
     let (mut high, mut in_thai, mut together, mut consonants, mut marks, mut stray) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut vowels = 0usize;
     for p in pieces {
         for (i, &b) in p.iter().enumerate() {
             if b < 0x80 {
@@ -262,6 +267,7 @@ pub(crate) fn looks_thai(pieces: &[&[u8]]) -> bool {
             high += 1;
             in_thai += usize::from(thai(b));
             consonants += usize::from((0xA1..=0xBF).contains(&b));
+            vowels += usize::from(vowel(b));
             let before = i.checked_sub(1).and_then(|j| p.get(j)).copied();
             let after = p.get(i + 1).copied();
             together += usize::from(before.is_some_and(|n| n >= 0x80) || after.is_some_and(|n| n >= 0x80));
@@ -271,7 +277,12 @@ pub(crate) fn looks_thai(pieces: &[&[u8]]) -> bool {
             }
         }
     }
-    high >= 3 && in_thai * 20 >= high * 19 && together * 5 >= high * 4 && consonants * 5 >= high && stray * 20 <= marks
+    high >= 3
+        && in_thai * 20 >= high * 19
+        && together * 5 >= high * 4
+        && consonants * 5 >= high
+        && vowels * 10 >= high
+        && stray * 20 <= marks
 }
 
 /// The name of a code page a language driver may name and RustGIS can't decode, for the note.
