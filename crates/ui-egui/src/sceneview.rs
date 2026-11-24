@@ -485,12 +485,14 @@ fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
     let base = app.scene3d.built.as_ref().map(|(_, b)| b.height_of(b.z_range.0));
     let metres =
         |v: Option<f64>| v.map(|v| format!("{} {}", tl!("Auto:"), plain_metres(v.round()))).unwrap_or_else(|| tl!("Auto").to_string());
-    ui.menu_button(label, |ui| {
+    settings_popup(ui, label, |ui| {
         let rows: [(&str, &str, &str, Option<f64>, String); 4] = [
             (
                 "rulerStep",
                 tl!("Ruler step"),
-                tl!("True metres between the ruler's marks; where numbers don't fit, only every few are numbered. Empty: a round step that fits the ruler"),
+                tl!(
+                    "True metres between the ruler's marks; where numbers don't fit, only every few are numbered. Empty: a round step that fits the ruler"
+                ),
                 scene.ruler_step,
                 tl!("Auto").to_string(),
             ),
@@ -526,7 +528,7 @@ fn ruler_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
 fn grid_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
     let asked = scene.grid_step.is_some() || scene.grid_z_step.is_some();
     let label = if asked { format!("{} ●", tl!("Grid Settings")) } else { tl!("Grid Settings").to_string() };
-    ui.menu_button(label, |ui| {
+    settings_popup(ui, label, |ui| {
         let z_auto = scene.ruler_step.map_or_else(|| tl!("Auto").to_string(), |st| format!("{} {}", tl!("Auto:"), plain_metres(st)));
         let rows: [(&str, &str, &str, Option<f64>, String); 2] = [
             (
@@ -546,6 +548,14 @@ fn grid_settings(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
         ];
         metres_settings(app, ui, "scene3d_grid", &rows, asked);
     });
+}
+
+/// A button opening `add`'s settings under it, which stay open while they are typed in and
+/// clicked (a menu closes at the first click in it, a box's too): closed by a click outside them,
+/// Escape or the button again.
+fn settings_popup(ui: &mut Ui, label: String, add: impl FnOnce(&mut Ui)) {
+    let button = ui.button(label);
+    egui::Popup::menu(&button).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(add);
 }
 
 /// A menu's rows of settings in metres (`scene.set` key, name, tip, value, what empty means),
@@ -1281,7 +1291,8 @@ mod tests {
         h.run_steps(2);
         let scene = |h: &egui_kittest::Harness<'_, RustGisApp>| h.state().session.map().scene.clone().unwrap();
         let type_in = |h: &mut egui_kittest::Harness<'_, RustGisApp>, field: &str, text: &str| {
-            h.get_by_role_and_label(Role::TextInput, field).focus();
+            // Clicked into, as a hand does: the menu stays open.
+            h.get_by_role_and_label(Role::TextInput, field).click();
             h.run();
             h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
             h.key_press(egui::Key::Backspace);
@@ -1296,6 +1307,7 @@ mod tests {
         h.run_steps(2);
         type_in(&mut h, "Ruler step", "25");
         assert_eq!(scene(&h).ruler_step, Some(25.0));
+        assert!(h.query_by_role_and_label(Role::TextInput, "Ruler top").is_some(), "still open after a click into it and Enter");
         type_in(&mut h, "Ruler top", "1,200 m");
         assert_eq!(scene(&h).ruler_max, Some(1200.0));
         type_in(&mut h, "Ruler step", "");
