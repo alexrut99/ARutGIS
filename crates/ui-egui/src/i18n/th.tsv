@@ -5799,3 +5799,365 @@ These eastings and northings are not in that UTM zone	ค่าพิกัด�
 Use These Corners	ใช้พิกัดมุมนี้
 The scene shows the box these corners make	ฉากจะแสดงกรอบตามพิกัดมุมที่พิมพ์
 Study Area: drag a box on the map · Esc goes back to the 3D scene	พื้นที่ศึกษา: ลากกรอบบนแผนที่ · กด Esc เพื่อกลับไปที่ฉาก 3 มิติ
+A photo is already being taken. Take another when it is done.	กำลังถ่ายภาพอยู่ รอให้เสร็จก่อนแล้วค่อยถ่ายภาพใหม่
+Another file is already being chosen. Choose files again when it is done.	กำลังเลือกไฟล์อื่นอยู่ รอให้เสร็จก่อนแล้วค่อยเลือกไฟล์อีกครั้ง
+RustGIS has no window to show the picker over yet.	ARutGIS ยังไม่มีหน้าต่างให้แสดงหน้าต่างเลือกไฟล์
+RustGIS wasn't given leave to use this device's location: allow it in Settings › Privacy & Security › Location Services.	ARutGIS ไม่ได้รับอนุญาตให้ใช้ตำแหน่งของอุปกรณ์นี้ อนุญาตได้ที่ การตั้งค่า › ความเป็นส่วนตัวและความปลอดภัย › บริการหาตำแหน่ง
+RustGIS wasn't given leave to use this device's location: its position can't be shown.	ARutGIS ไม่ได้รับอนุญาตให้ใช้ตำแหน่งของอุปกรณ์นี้ จึงแสดงตำแหน่งไม่ได้
+The copies of picked files will be in this device's backups: {error}	สำเนาของไฟล์ที่เลือกจะอยู่ในข้อมูลสำรองของอุปกรณ์นี้: {error}
+The files chosen weren't opened: {error}	ไม่ได้เปิดไฟล์ที่เลือก: {error}
+The photo wasn't kept: {error}	ไม่ได้เก็บภาพไว้: {error}
+The picker answered after it was taken for not shown: nothing was opened or saved. Try again.	หน้าต่างเลือกไฟล์ตอบกลับหลังจากถือว่าไม่ได้แสดงแล้ว จึงไม่ได้เปิดหรือบันทึกอะไร ลองอีกครั้ง
+The picker couldn't be shown just now: try again.	แสดงหน้าต่างเลือกไฟล์ไม่ได้ในตอนนี้ ลองอีกครั้ง
+This device has no camera.	อุปกรณ์นี้ไม่มีกล้อง
+This device's location can't be read: {error}	อ่านตำแหน่งของอุปกรณ์นี้ไม่ได้: {error}
+the camera gave no picture	กล้องไม่ได้ส่งภาพมา
+the system didn't let it be read	ระบบไม่อนุญาตให้อ่าน
+the system gave no path for it	ระบบไม่ได้ให้ที่อยู่ไฟล์มา
+{name} wasn't opened: {error}	ไม่ได้เปิด {name}: {error}
+{name} wasn't saved: another file is waiting for its place to be chosen.	ไม่ได้บันทึก {name}: มีไฟล์อื่นกำลังรอเลือกที่เก็บอยู่
+{name} wasn't saved: no place was chosen for it.	ไม่ได้บันทึก {name}: ไม่ได้เลือกที่เก็บ
+{name} wasn't saved: {error}	ไม่ได้บันทึก {name}: {error}
+{count} positions found while RustGIS was out of sight were dropped: more were waiting than it keeps.	ทิ้งตำแหน่ง {count} จุดที่ได้มาตอน ARutGIS ไม่ได้แสดงอยู่บนหน้าจอ เพราะตำแหน่งที่รออยู่มีมากกว่าที่เก็บได้
+{count} positions the system reported weren't used: it gave them no accuracy, or they weren't on the Earth.	ไม่ได้ใช้ตำแหน่ง {count} จุดที่ระบบส่งมา เพราะไม่มีค่าความแม่นยำ หรือไม่อยู่บนพื้นโลก
+Android refused: {error}	Android ปฏิเสธ: {error}
+Android's Java side can't be reached: {error}	ติดต่อส่วน Java ของ Android ไม่ได้: {error}
+The files in {dir} weren't opened: {error}	ไม่ได้เปิดไฟล์ใน {dir}: {error}
+This device gives RustGIS no folder for files put on it: there are no pushed files to open.	อุปกรณ์นี้ไม่มีโฟลเดอร์ให้ ARutGIS รับไฟล์ที่ส่งเข้ามา จึงไม่มีไฟล์ให้เปิด
+This device gives RustGIS no folder of its own: settings, the tile cache and recovery copies are off.	อุปกรณ์นี้ไม่มีโฟลเดอร์ของ ARutGIS เอง จึงปิดการตั้งค่า แคชไทล์ และสำเนากู้คืนไว้
+{count} entries of {dir} couldn't be read and weren't opened: {error}	อ่านรายการ {count} รายการใน {dir} ไม่ได้ จึงไม่ได้เปิด: {error}
+{count} other projects in {dir} weren't opened: only the first project is.	ไม่ได้เปิดโปรเจกต์อื่นอีก {count} โปรเจกต์ใน {dir} เปิดเฉพาะโปรเจกต์แรก
+{error}. Every button that asks for a file does nothing.	{error} ปุ่มที่ต้องเลือกไฟล์จะใช้ไม่ได้ทั้งหมด
+{file} is larger than 1 MB	{file} ใหญ่กว่า 1 MB
+{names} weren't attached: a message takes at most {n} pictures	ไม่ได้แนบ {names}: ข้อความหนึ่งแนบภาพได้ไม่เกิน {n} ภาพ
+{name} wasn't opened: a shortcut file is at most {limit} bytes.	ไม่ได้เปิด {name}: ไฟล์ทางลัดต้องไม่เกิน {limit} ไบต์
+{n} pictures weren't attached, such as {first}	ไม่ได้แนบภาพ {n} ภาพ เช่น {first}
+?embed receives its project from the host page, so {count} {param} link(s) were left out	?embed รับโปรเจกต์จากหน้าเว็บที่ฝังไว้ จึงข้ามลิงก์ {param} ไป {count} ลิงก์
+Reading {name} a part at a time (it is larger than {mb} MB)…	กำลังอ่าน {name} ทีละส่วน (ไฟล์ใหญ่กว่า {mb} MB)…
+opening it needs more than the web app's {mb} MB, as it isn't cloud-optimised (tiled, with overviews); open it in the desktop app	การเปิดไฟล์นี้ต้องใช้หน่วยความจำมากกว่า {mb} MB ที่เว็บแอปมี เพราะไฟล์ไม่ได้ปรับให้เหมาะกับคลาวด์ (แบ่งไทล์และมีภาพย่อ) ให้เปิดในแอปบนเครื่องแทน
+the file ends before its data does	ไฟล์จบก่อนข้อมูลจะครบ
+too many reads; open it in the desktop app	ต้องอ่านไฟล์หลายครั้งเกินไป ให้เปิดในแอปบนเครื่องแทน
+?project= opens a project or imports a map, so {list} links were left out	?project= เปิดโปรเจกต์หรือนำเข้าแผนที่ได้อย่างเดียว จึงข้ามลิงก์ {list} ไป
+The browser cannot verify this redirect's destination. Use the final service address.	เบราว์เซอร์ตรวจปลายทางของการเปลี่ยนเส้นทางนี้ไม่ได้ ให้ใช้ที่อยู่สุดท้ายของบริการแทน
+This is a pull request preview. Previews share the browser's storage with each other, so this one saves nothing there: settings, AI provider keys and addresses, and plugin settings last until the page closes.	หน้านี้เป็นตัวอย่างของ pull request ตัวอย่างทุกหน้าใช้พื้นที่เก็บข้อมูลของเบราว์เซอร์ร่วมกัน หน้านี้จึงไม่บันทึกอะไรไว้ การตั้งค่า คีย์และที่อยู่ของผู้ให้บริการ AI และการตั้งค่าปลั๊กอินจะหายไปเมื่อปิดหน้า
+Additional project files not opened: {n}. Open projects one at a time.	ไม่ได้เปิดไฟล์โปรเจกต์อื่นอีก {n} ไฟล์ ให้เปิดโปรเจกต์ทีละไฟล์
+Autosave is off: {error}	ปิดการบันทึกอัตโนมัติ: {error}
+Settings could not be saved reliably ({error}).	บันทึกการตั้งค่าได้ไม่แน่นอน ({error})
+Bring All to Front	นำทั้งหมดมาไว้ด้านหน้า
+Enter Full Screen	เต็มหน้าจอ
+Hide Others	ซ่อนแอปอื่น
+Hide RustGIS	ซ่อน ARutGIS
+Minimize	ย่อหน้าต่าง
+Services	บริการ
+Show All	แสดงทั้งหมด
+Request {current} of {count}	คำขอที่ {current} จาก {count}
+{count} requests waiting	คำขอรออยู่ {count} รายการ
+{c}° (in degrees only)	{c}° (เป็นองศาเท่านั้น)
+{file} isn't UTF-8 text	{file} ไม่ใช่ข้อความ UTF-8
+{section} is part of the {name} extension, which is off; turn it on in Plugins › Extensions	{section} เป็นส่วนหนึ่งของส่วนขยาย {name} ที่ปิดอยู่ เปิดได้ที่ ปลั๊กอิน › ส่วนขยาย
+{tool} is still running: wait for it, or cancel it.	{tool} ยังทำงานอยู่ รอให้เสร็จ หรือยกเลิก
+{tool} was stopped: its project was closed while it ran.	หยุด {tool} แล้ว เพราะปิดโปรเจกต์ระหว่างที่ทำงานอยู่
+Shape details	รายละเอียดรูปร่าง
+{width} × {height} pixels · EPSG:{epsg}	{width} × {height} พิกเซล · EPSG:{epsg}
+{actions} · 1 project edit	{actions} · แก้ไขโปรเจกต์ 1 รายการ
+{actions} · {count} project edits	{actions} · แก้ไขโปรเจกต์ {count} รายการ
+{action} {done} of {total}	{action} {done} จาก {total}
+{n} downloads	ดาวน์โหลด {n} รายการ
+Asks this server for a token, over https:// only, and keeps the token and its expiry, never the password.	ขอโทเค็นจากเซิร์ฟเวอร์นี้ผ่าน https:// เท่านั้น แล้วเก็บโทเค็นกับวันหมดอายุไว้ ไม่เก็บรหัสผ่าน
+Enter the token endpoint (https://host/arcgis/tokens/generateToken).	ใส่ที่อยู่สำหรับขอโทเค็น (https://host/arcgis/tokens/generateToken)
+Send the login over unencrypted http://	ส่งข้อมูลเข้าสู่ระบบผ่าน http:// ที่ไม่เข้ารหัส
+The connection's address has no http:// or https:// origin a login can go to.	ที่อยู่ของการเชื่อมต่อนี้ไม่มีต้นทาง http:// หรือ https:// ที่ส่งข้อมูลเข้าสู่ระบบไปได้
+The token endpoint must be an https:// address at this connection's own origin, without user information, a query or a fragment.	ที่อยู่สำหรับขอโทเค็นต้องเป็น https:// ที่ต้นทางเดียวกับการเชื่อมต่อนี้ ไม่มีข้อมูลผู้ใช้ query หรือ fragment
+This connection uses unencrypted http://. Tick the confirmation before sending its password or key.	การเชื่อมต่อนี้ใช้ http:// ที่ไม่เข้ารหัส ติ๊กยืนยันก่อนส่งรหัสผ่านหรือคีย์
+{name} now reads {n} project sources; {reading} still being read and {failed} could not be read	{name} อ่านแหล่งข้อมูลโปรเจกต์แล้ว {n} แหล่ง ยังอ่านอยู่ {reading} และอ่านไม่ได้ {failed}
+{name} now reads {n} project sources; {reading} still being read	{name} อ่านแหล่งข้อมูลโปรเจกต์แล้ว {n} แหล่ง ยังอ่านอยู่ {reading}
+Forget the recently used coordinate systems, in every coordinate system box	ล้างรายการระบบพิกัดที่ใช้ล่าสุด ในทุกช่องเลือกระบบพิกัด
+No layer of the map has a coordinate system of its own	ไม่มีชั้นข้อมูลใดในแผนที่ที่มีระบบพิกัดของตัวเอง
+Presets	ค่าที่ตั้งไว้
+The project has no coordinate system (Project Properties)	โปรเจกต์ยังไม่มีระบบพิกัด (คุณสมบัติโปรเจกต์)
+Use the first layer's	ใช้ของชั้นข้อมูลแรก
+Use the project's	ใช้ของโปรเจกต์
+e.g. 3035, lv95, vn2000tm3	เช่น 32647, 24047, 3035
+(can't be checked)	(ตรวจไม่ได้)
+(missing on disk)	(ไม่พบไฟล์บนดิสก์)
+Another map has that name: open the map and use Reload Data from the Layers pane.	มีแผนที่อื่นใช้ชื่อนี้ ให้เปิดแผนที่นั้นแล้วใช้ โหลดข้อมูลใหม่ จากแผงชั้นข้อมูล
+Changed on disk	ไฟล์บนดิสก์เปลี่ยนแล้ว
+Changed on disk: the file may have changed since it was read. Reload Data reads it again.	ไฟล์บนดิสก์เปลี่ยนแล้ว: ไฟล์อาจเปลี่ยนไปหลังจากที่อ่านไว้ กด โหลดข้อมูลใหม่ เพื่ออ่านอีกครั้ง
+Checking linked files for changes on disk couldn't start ({error}); it is tried again every few seconds.	เริ่มตรวจการเปลี่ยนแปลงของไฟล์ที่เชื่อมไว้บนดิสก์ไม่ได้ ({error}) จะลองใหม่ทุกไม่กี่วินาที
+Checking linked files for changes on disk is waiting for a file that doesn't answer (a network drive?). Changes aren't reported until it does, and reloading, saving or exporting a file there may wait for it too.	การตรวจการเปลี่ยนแปลงของไฟล์ที่เชื่อมไว้กำลังรอไฟล์ที่ไม่ตอบสนอง (อยู่บนไดรฟ์เครือข่ายหรือไม่?) จะยังไม่แจ้งการเปลี่ยนแปลงจนกว่าไฟล์จะตอบ และการโหลดใหม่ บันทึก หรือส่งออกไฟล์ที่นั่นอาจต้องรอด้วย
+Folder source — changes are not monitored. Use Reload Data.	แหล่งข้อมูลเป็นโฟลเดอร์ — ไม่ได้ตรวจการเปลี่ยนแปลง ใช้ โหลดข้อมูลใหม่
+Keep the data shown now. The layer stays marked; a newer change is reported again.	ใช้ข้อมูลที่แสดงอยู่ต่อไป ชั้นข้อมูลยังมีเครื่องหมายไว้ ถ้าไฟล์เปลี่ยนอีกจะแจ้งอีกครั้ง
+The file can't be checked: {error}	ตรวจไฟล์ไม่ได้: {error}
+The file is missing. Restore it, or use Repair Data Source.	ไม่พบไฟล์ ให้นำไฟล์กลับมา หรือใช้ ซ่อมแซมแหล่งข้อมูล
+The file is missing. Restore it.	ไม่พบไฟล์ ให้นำไฟล์กลับมา
+The file may have changed since it was read. What the map shows may be out of date until you reload.	ไฟล์อาจเปลี่ยนไปหลังจากที่อ่านไว้ สิ่งที่แผนที่แสดงอาจไม่เป็นปัจจุบันจนกว่าจะโหลดใหม่
+The layer or archive is no longer in the project.	ชั้นข้อมูลหรือไฟล์บีบอัดนี้ไม่อยู่ในโปรเจกต์แล้ว
+{language} cells don't run here: open this notebook in Jupyter to run them.	เซลล์ {language} รันที่นี่ไม่ได้ ให้เปิดโน้ตบุ๊กนี้ใน Jupyter เพื่อรัน
+z	z
+ · {n} more left out: zoom in for them	 · ข้ามไปอีก {n} รายการ ซูมเข้าเพื่อดู
+ · {n} tile-years had a second file; the first was taken	 · มีไทล์-ปี {n} รายการที่มีไฟล์ที่สอง ใช้ไฟล์แรก
+{name} is off: its tab and commands are hidden.	ปิด {name} แล้ว ซ่อนแท็บและคำสั่งของส่วนขยายนี้
+{name} is on.	เปิด {name} แล้ว
+{place} {count} commands.	{place} {count} คำสั่ง
+{n} additional geocoding candidates were not used; the first match was kept for each address.	ไม่ได้ใช้ผลค้นหาพิกัดที่เหลืออีก {n} รายการ ใช้ผลแรกของแต่ละที่อยู่
+{n} of the geocoder's places had no usable position (no coordinate, or an unreadable one) and were left out	ข้ามสถานที่ {n} แห่งจากบริการค้นหาพิกัด เพราะไม่มีตำแหน่งที่ใช้ได้ (ไม่มีพิกัด หรืออ่านพิกัดไม่ได้)
+Border	เส้นขอบ
+{n} lines aren't drawn: a text draws 200 at most	ไม่ได้วาด {n} บรรทัด: ข้อความหนึ่งวาดได้ไม่เกิน 200 บรรทัด
+{n} lines don't fit the box or the 200 a text draws	{n} บรรทัดไม่พอดีกรอบ หรือเกิน 200 บรรทัดที่ข้อความหนึ่งวาดได้
+{n} lines don't fit the box	{n} บรรทัดไม่พอดีกรอบ
+{n} or more lines aren't drawn: a text draws 200 at most	ไม่ได้วาดตั้งแต่ {n} บรรทัดขึ้นไป: ข้อความหนึ่งวาดได้ไม่เกิน 200 บรรทัด
+{n} or more lines don't fit the box or the 200 a text draws	ตั้งแต่ {n} บรรทัดขึ้นไปไม่พอดีกรอบ หรือเกิน 200 บรรทัดที่ข้อความหนึ่งวาดได้
+{n} or more lines don't fit the box	ตั้งแต่ {n} บรรทัดขึ้นไปไม่พอดีกรอบ
+The rows field package '{name}' gave couldn't be kept on this device ({why}): Send Field Package sends its whole map, which Bring Back refuses if its offline area has been brought back or synced since the package was made	เก็บแถวที่ได้จากแพ็กเกจงานภาคสนาม '{name}' ไว้ในอุปกรณ์นี้ไม่ได้ ({why}) ส่งแพ็กเกจงานภาคสนาม จะส่งทั้งแผนที่ ซึ่ง นำกลับ จะปฏิเสธถ้าพื้นที่ออฟไลน์นั้นถูกนำกลับหรือซิงค์ไปแล้วหลังจากสร้างแพ็กเกจ
+cancelled	ยกเลิกแล้ว
+ui.scale accepts only the factor parameter	ui.scale รับเฉพาะพารามิเตอร์ factor
+ui.scale needs a number at factor	ui.scale ต้องมีตัวเลขที่ factor
+ui.theme accepts only the dark parameter	ui.theme รับเฉพาะพารามิเตอร์ dark
+ui.theme needs true or false at dark	ui.theme ต้องมี true หรือ false ที่ dark
+ui.themeFile accepts only the name parameter	ui.themeFile รับเฉพาะพารามิเตอร์ name
+ui.themeFile needs a name string	ui.themeFile ต้องมีข้อความ name
+{file} changed since {layer} was read from it ({parts})	{file} เปลี่ยนไปหลังจากอ่าน {layer} มาจากไฟล์นี้ ({parts})
+{layer} is in step with {file}	{layer} ตรงกับ {file}
+{layer} was edited since it was read from {file}	{layer} ถูกแก้ไขหลังจากอ่านมาจาก {file}
+{layer} was edited, and {file} changed, since the layer was read from it ({parts})	{layer} ถูกแก้ไข และ {file} ก็เปลี่ยนไป หลังจากอ่านชั้นข้อมูลมาจากไฟล์นี้ ({parts})
+{n} theme adjustment notice(s): {details}. Open Settings > Theme for all details.	มีข้อแจ้งการปรับธีม {n} รายการ: {details} ดูรายละเอียดทั้งหมดได้ที่ การตั้งค่า > ธีม
+{n} theme files were refused. Open Settings > Theme for the reason.	ไม่รับไฟล์ธีม {n} ไฟล์ ดูเหตุผลได้ที่ การตั้งค่า > ธีม
+{url}: its project was closed while it was read, so it wasn't added	{url}: ปิดโปรเจกต์ระหว่างที่อ่านอยู่ จึงไม่ได้เพิ่ม
+{url}: its read didn't start: {error}	{url}: เริ่มอ่านไม่ได้: {error}
+{url}: {count} windows are being read already: ask again once one has been added	{url}: กำลังอ่านอยู่แล้ว {count} หน้าต่าง ให้ขอใหม่เมื่อเพิ่มเสร็จไปหนึ่งหน้าต่าง
+Area cannot be measured: ring winds beyond one whole surface · Perimeter {perimeter}	วัดพื้นที่ไม่ได้: วงรอบพันเกินหนึ่งรอบผิวโลก · เส้นรอบรูป {perimeter}
+Copy Link	คัดลอกลิงก์
+Fetches the picture from {host}, which learns your IP address and that it was viewed	ดึงภาพจาก {host} ซึ่งจะรู้ที่อยู่ IP ของคุณและรู้ว่ามีการเปิดดูภาพ
+Loading picture…	กำลังโหลดภาพ…
+Show Picture	แสดงภาพ
+Spectral Profile	โปรไฟล์สเปกตรัม
+Spectral Profile: chart every band here, and compare points	โปรไฟล์สเปกตรัม: แสดงกราฟค่าทุกแบนด์ที่จุดนี้ และเปรียบเทียบระหว่างจุด
+The graphics card ran out of memory, so the map is now drawn without it (CPU), which is slower. Click CPU in the status bar to try the graphics card again, with a smaller window or fewer layers.	หน่วยความจำการ์ดจอไม่พอ ตอนนี้จึงวาดแผนที่ด้วย CPU แทน ซึ่งช้ากว่า กด CPU ในแถบสถานะเพื่อลองใช้การ์ดจออีกครั้ง โดยใช้หน้าต่างเล็กลงหรือลดจำนวนชั้นข้อมูล
+The graphics card reported an error, so the map may be drawn wrongly. Clicking GPU in the status bar draws it on the CPU instead.	การ์ดจอแจ้งข้อผิดพลาด แผนที่อาจแสดงผิด กด GPU ในแถบสถานะเพื่อวาดด้วย CPU แทน
+The graphics card reported an error, so the window may be drawn wrongly.	การ์ดจอแจ้งข้อผิดพลาด หน้าต่างอาจแสดงผิด
+from {host}	จาก {host}
+to	ถึง
+{n} more classes aren't listed: the list's limit doesn't change how they're drawn	ไม่ได้แสดงอีก {n} คลาสในรายการ ข้อจำกัดของรายการไม่มีผลกับการวาด
+{type} · {format}, read in place · a sample of {n} of the {matched} features in view matching the definition query (zoom in to see them all) · {renderer}	{type} · {format} อ่านจากไฟล์ต้นทางโดยตรง · ตัวอย่าง {n} จาก {matched} ฟีเจอร์ในมุมมองที่ตรงกับคิวรีกำหนดข้อมูล (ซูมเข้าเพื่อดูทั้งหมด) · {renderer}
+{pick}: click the map · Esc cancels	{pick}: คลิกบนแผนที่ · กด Esc เพื่อยกเลิก
+{pick}: drag a box on the map · Esc cancels	{pick}: ลากกรอบบนแผนที่ · กด Esc เพื่อยกเลิก
+{southwest} to {northeast}	{southwest} ถึง {northeast}
+Not run, because another project opened: {commands}.	ไม่ได้รัน เพราะเปิดโปรเจกต์อื่นแล้ว: {commands}
+Running {command}…	กำลังรัน {command}…
+{id} wasn't loaded: {error}	ไม่ได้โหลด {id}: {error}
+{id} wasn't removed: {error}	ไม่ได้ลบ {id}: {error}
+{n} plugin(s) were withdrawn from the plugin registry and turned off: {names}	ปลั๊กอิน {n} ตัวถูกถอนออกจากทะเบียนปลั๊กอินและปิดไว้แล้ว: {names}
+{n} plugins weren't loaded: {ids}. Open Plugins › Plugin Manager to see them.	ไม่ได้โหลดปลั๊กอิน {n} ตัว: {ids} ดูได้ที่ ปลั๊กอิน › ตัวจัดการปลั๊กอิน
+Picture unavailable: only https:// pictures are fetched	แสดงภาพไม่ได้: ดึงเฉพาะภาพที่เป็น https:// เท่านั้น
+A background read	การอ่านเบื้องหลัง
+Keep Field Package Rows	เก็บแถวจากแพ็กเกจงานภาคสนาม
+List Service Layers	แสดงรายการชั้นข้อมูลของบริการ
+{n} reads were left, the first {what}: {why}	ค้างการอ่านไว้ {n} รายการ รายการแรกคือ {what}: {why}
+{n} waiting	รออยู่ {n}
+{tool} of {what} was cancelled	ยกเลิก {tool} ของ {what} แล้ว
+{tool} was cancelled	ยกเลิก {tool} แล้ว
+{what} was cancelled before starting ({n} requests)	ยกเลิก {what} ก่อนเริ่ม ({n} คำขอ)
+{what} was cancelled before starting	ยกเลิก {what} ก่อนเริ่ม
+{what} was left: {why}	ค้าง {what} ไว้: {why}
+Paper color	สีกระดาษ
+{name} (built-in fallback)	{name} (ตัวสำรองในตัวแอป)
+{name} (download)	{name} (ดาวน์โหลด)
+{name} (downloading…)	{name} (กำลังดาวน์โหลด…)
+a field of the associated input holding coordinates	ฟิลด์ของข้อมูลนำเข้าที่เกี่ยวข้องซึ่งเก็บพิกัด
+a field of the associated input	ฟิลด์ของข้อมูลนำเข้าที่เกี่ยวข้อง
+a numeric field of the associated input	ฟิลด์ตัวเลขของข้อมูลนำเข้าที่เกี่ยวข้อง
+expression	นิพจน์
+field and statistic pairs	คู่ฟิลด์และค่าสถิติ
+field names (separated by commas)	ชื่อฟิลด์ (คั่นด้วยจุลภาค)
+ordered field names	ชื่อฟิลด์ตามลำดับ
+{count} entries	{count} รายการ
+{count} of {total} entries	{count} จาก {total} รายการ
+{ms} ms	{ms} มิลลิวินาที
+{name}: not in it: {said}	{name}: ไม่มีอยู่ใน: {said}
+{time} UTC · {project}	{time} UTC · {project}
+{name}: another layer has this name, so its profile would be read from that one: rename one of them	{name}: มีชั้นข้อมูลอื่นชื่อเดียวกัน โปรไฟล์จะอ่านจากชั้นนั้นแทน ให้เปลี่ยนชื่อชั้นใดชั้นหนึ่ง
+{n} point(s) taken off: they were read on {old} on another map.	นำจุดออก {n} จุด: จุดเหล่านี้อ่านจาก {old} บนแผนที่อื่น
+{n} point(s) taken off: they were read on {old}, not on {now}.	นำจุดออก {n} จุด: จุดเหล่านี้อ่านจาก {old} ไม่ใช่ {now}
+{n} point(s) taken off: {old} has changed or gone since they were read.	นำจุดออก {n} จุด: {old} เปลี่ยนไปหรือไม่อยู่แล้วหลังจากอ่านจุดเหล่านี้
+{n} raster(s) couldn't be read, so they are left out.	อ่านราสเตอร์ {n} ชั้นไม่ได้ จึงไม่ได้รวมไว้
+{n} raster(s) left out: another layer has the same name. Rename them to chart them.	ไม่ได้รวมราสเตอร์ {n} ชั้น: มีชั้นข้อมูลอื่นชื่อเดียวกัน เปลี่ยนชื่อก่อนเพื่อแสดงในกราฟ
+{n} catalog links were left out because the listing limit was reached	ข้ามลิงก์แค็ตตาล็อก {n} ลิงก์ เพราะถึงขีดจำกัดของรายการแล้ว
+{n} catalog links were left out because their addresses are missing, invalid or not HTTP(S)	ข้ามลิงก์แค็ตตาล็อก {n} ลิงก์ เพราะไม่มีที่อยู่ ที่อยู่ไม่ถูกต้อง หรือไม่ใช่ HTTP(S)
+{n} catalog links were refused by the document's network reach	ไม่รับลิงก์แค็ตตาล็อก {n} ลิงก์ ตามขอบเขตเครือข่ายที่เอกสารนี้เข้าถึงได้
+{n} preview links were refused by the document's network reach	ไม่รับลิงก์ภาพตัวอย่าง {n} ลิงก์ ตามขอบเขตเครือข่ายที่เอกสารนี้เข้าถึงได้
+All 1 row	ทั้งหมด 1 แถว
+All {n} rows	ทั้งหมด {n} แถว
+An earlier field has this name but for case, and edits by name reach that one: this column can't be changed here.	มีฟิลด์ก่อนหน้าชื่อเดียวกันต่างแค่ตัวพิมพ์เล็ก-ใหญ่ การแก้ไขตามชื่อจะไปถึงฟิลด์นั้น จึงแก้คอลัมน์นี้ที่นี่ไม่ได้
+Convert to Date and Time	แปลงเป็นวันที่และเวลา
+Convert to Date	แปลงเป็นวันที่
+Maximum	ค่าสูงสุด
+Minimum	ค่าต่ำสุด
+Not numbers	ไม่ใช่ตัวเลข
+Standard deviation	ส่วนเบี่ยงเบนมาตรฐาน
+Statistics…	สถิติ…
+Sum	ผลรวม
+The 1 selected row	1 แถวที่เลือก
+The {n} selected rows	{n} แถวที่เลือก
+more than {n}	มากกว่า {n}
+none	ไม่มี
+{field} ({type}) · click to sort, right-click for columns	{field} ({type}) · คลิกเพื่อเรียง คลิกขวาเพื่อจัดคอลัมน์
+Checking rows: {done} of {total}	กำลังตรวจแถว: {done} จาก {total}
+Choose what the text means. Dates are never guessed.	เลือกว่าข้อความหมายถึงอะไร แอปจะไม่เดารูปแบบวันที่เอง
+Date format scan stopped	หยุดตรวจรูปแบบวันที่แล้ว
+First year of 100-year window	ปีแรกของช่วง 100 ปี
+Include two-digit years	รวมปีแบบสองหลัก
+No preset reads every non-empty value. Use an explicit format with edit.convertField, or correct the text first.	ไม่มีรูปแบบสำเร็จรูปที่อ่านค่าที่ไม่ว่างได้ครบทุกค่า ให้ระบุรูปแบบเองด้วย edit.convertField หรือแก้ข้อความก่อน
+A theme file must be a JSON object.	ไฟล์ธีมต้องเป็นออบเจกต์ JSON
+No settings folder to keep a theme in.	ไม่มีโฟลเดอร์การตั้งค่าให้เก็บธีม
+a theme file is at most {limit} KB	ไฟล์ธีมต้องไม่เกิน {limit} KB
+duplicate colour {name}	สี {name} ซ้ำกัน
+is not a #RRGGBB colour: {text}	ไม่ใช่สีแบบ #RRGGBB: {text}
+is not a #RRGGBB or #RRGGBBAA colour: {text}	ไม่ใช่สีแบบ #RRGGBB หรือ #RRGGBBAA: {text}
+no free file name for {name}	ไม่มีชื่อไฟล์ว่างสำหรับ {name}
+this is not a file	นี่ไม่ใช่ไฟล์
+{name} is already set by {path}	{name} ถูกกำหนดไว้แล้วโดย {path}
+{name}: 1 control character at an end of the name was removed	{name}: ลบอักขระควบคุม 1 ตัวที่ปลายชื่อออกแล้ว
+{name}: 1 control character in the name was shown as a space	{name}: แสดงอักขระควบคุม 1 ตัวในชื่อเป็นช่องว่าง
+{name}: 1 size was held to what the window draws	{name}: จำกัดขนาด 1 ค่าให้อยู่ในช่วงที่หน้าต่างวาดได้
+{name}: extends {wanted}, which is not a built-in theme	{name}: ต่อยอดจาก {wanted} ซึ่งไม่ใช่ธีมในตัวแอป
+{name}: missing {names}	{name}: ขาด {names}
+{name}: the name was longer than {limit} characters, so it was cut	{name}: ชื่อยาวเกิน {limit} ตัวอักษร จึงถูกตัด
+{name}: theme schema {found} is not {schema}	{name}: schema ของธีม {found} ไม่ใช่ {schema}
+{name}: unknown {names}	{name}: ไม่รู้จัก {names}
+{name}: {n} control characters at the ends of the name were removed	{name}: ลบอักขระควบคุม {n} ตัวที่ปลายชื่อออกแล้ว
+{name}: {n} control characters in the name were shown as spaces	{name}: แสดงอักขระควบคุม {n} ตัวในชื่อเป็นช่องว่าง
+{name}: {n} sizes were held to what the window draws	{name}: จำกัดขนาด {n} ค่าให้อยู่ในช่วงที่หน้าต่างวาดได้
+{path}: the theme is unchanged, but a recovery copy remains at {recovery}; compare the files before removing it and retrying.	{path}: ธีมไม่ได้เปลี่ยน แต่ยังมีสำเนากู้คืนอยู่ที่ {recovery} ให้เปรียบเทียบไฟล์ก่อนลบสำเนาแล้วลองใหม่
+{path}: the theme was written, but save completion failed: {reason}. A recovery copy may remain at {recovery}; compare the files before removing it and retrying.	{path}: เขียนธีมแล้ว แต่บันทึกไม่สมบูรณ์: {reason} อาจยังมีสำเนากู้คืนอยู่ที่ {recovery} ให้เปรียบเทียบไฟล์ก่อนลบสำเนาแล้วลองใหม่
+{reason}; the previous theme is kept at {recovery}; restoration failed: {restore}	{reason} เก็บธีมเดิมไว้ที่ {recovery} แต่กู้คืนไม่สำเร็จ: {restore}
+The release's checksums aren't text.	ไฟล์ checksum ของรุ่นนี้ไม่ใช่ข้อความ
+The release's checksums don't list {name}.	ไฟล์ checksum ของรุ่นนี้ไม่มี {name}
+There is no cache folder to keep the installer in.	ไม่มีโฟลเดอร์แคชให้เก็บตัวติดตั้ง
+{name} changed after it was checked: download it again.	{name} เปลี่ยนไปหลังจากตรวจแล้ว ให้ดาวน์โหลดใหม่
+{name} doesn't match the release's checksum: the download is damaged.	{name} ไม่ตรงกับ checksum ของรุ่นนี้ ไฟล์ที่ดาวน์โหลดเสียหาย
+{done} of {total} steps read	อ่านแล้ว {done} จาก {total} ขั้นตอน
+No copies of picked files are unused: the project names every one.	ไม่มีสำเนาไฟล์ที่เลือกซึ่งไม่ได้ใช้ โปรเจกต์อ้างถึงทุกไฟล์
+Stopped before the rest.	หยุดก่อนทำส่วนที่เหลือ
+The document-copy owner is invalid.	เจ้าของสำเนาเอกสารไม่ถูกต้อง
+The document-copy owner was already initialized.	ตั้งค่าเจ้าของสำเนาเอกสารไว้แล้ว
+The unused copies weren't looked for: {error}	ไม่ได้ค้นหาสำเนาที่ไม่ได้ใช้: {error}
+The unused copies weren't removed: {error}	ไม่ได้ลบสำเนาที่ไม่ได้ใช้: {error}
+{n} KB	{n} KB
+{n} MB	{n} MB
+{n} couldn't be removed, the first: {first}	ลบไม่ได้ {n} รายการ รายการแรก: {first}
+{n} kept: the project names them now.	เก็บไว้ {n} รายการ เพราะตอนนี้โปรเจกต์อ้างถึงแล้ว
+{n} picks are still being copied into and were kept.	เก็บไว้ {n} รายการ เพราะยังคัดลอกไฟล์ที่เลือกไม่เสร็จ
+{n} picks couldn't be read in full and were kept.	เก็บไว้ {n} รายการ เพราะอ่านไฟล์ที่เลือกได้ไม่ครบ
+Editing was turned on for this map.	เปิดการแก้ไขสำหรับแผนที่นี้แล้ว
+Move the map to where the point goes, then Move Point Here.	เลื่อนแผนที่ไปยังที่ที่จะวางจุด แล้วกด ย้ายจุดมาที่นี่
+Nothing was moved: only a single point moves here, not a multipoint's points.	ไม่ได้ย้ายอะไร: ที่นี่ย้ายได้เฉพาะจุดเดี่ยว ไม่ใช่จุดในกลุ่มจุด
+Put the cross on a vertex and pick it.	วางกากบาทบนจุดยอดแล้วเลือก
+Vertex {n} of {all} picked: move the map to where it goes, then Move Here. Add After puts a new vertex at the cross after it.	เลือกจุดยอดที่ {n} จาก {all} แล้ว: เลื่อนแผนที่ไปยังที่ที่จะวาง แล้วกด ย้ายมาที่นี่ ส่วน เพิ่มต่อจากนี้ จะเพิ่มจุดยอดใหม่ที่กากบาทต่อจากจุดนี้
+snapped to a line's end	สแนปที่ปลายเส้น
+snapped to a vertex	สแนปที่จุดยอด
+snapped to an edge	สแนปที่ขอบ
+April	เมษายน
+August	สิงหาคม
+December	ธันวาคม
+February	กุมภาพันธ์
+January	มกราคม
+July	กรกฎาคม
+June	มิถุนายน
+March	มีนาคม
+May	พฤษภาคม
+November	พฤศจิกายน
+October	ตุลาคม
+September	กันยายน
+Today	วันนี้
+{month} {year}	{month} {year}
+Add After	เพิ่มต่อจากนี้
+Add Photo	เพิ่มภาพ
+Add Point Here	เพิ่มจุดที่นี่
+Add Vertex Here	เพิ่มจุดยอดที่นี่
+Added a line to {layer}.	เพิ่มเส้นใน {layer} แล้ว
+Added a point to {layer}.	เพิ่มจุดใน {layer} แล้ว
+Added a polygon to {layer}.	เพิ่มรูปหลายเหลี่ยมใน {layer} แล้ว
+At the cross, {snapped}: {lon}, {lat}	ที่กากบาท {snapped}: {lon}, {lat}
+At the cross: {lon}, {lat}	ที่กากบาท: {lon}, {lat}
+Average Position	เฉลี่ยตำแหน่ง
+Capture	เก็บข้อมูล
+Choose a date	เลือกวันที่
+Close the calendar	ปิดปฏิทิน
+Close the keyboard for the buttons.	ปิดแป้นพิมพ์เพื่อใช้ปุ่ม
+Delete Feature	ลบฟีเจอร์
+Delete Vertex	ลบจุดยอด
+Fields marked * need a value.	ฟิลด์ที่มีเครื่องหมาย * ต้องใส่ค่า
+Finish Line	จบเส้น
+Go to My Position	ไปที่ตำแหน่งของฉัน
+Hide My Position	ซ่อนตำแหน่งของฉัน
+Hide this layer	ซ่อนชั้นข้อมูลนี้
+Keep Them	เก็บไว้
+Looking for unused copies…	กำลังค้นหาสำเนาที่ไม่ได้ใช้…
+Move Here	ย้ายมาที่นี่
+Move Point Here	ย้ายจุดมาที่นี่
+No feature of {layer} is under the cross.	ไม่มีฟีเจอร์ของ {layer} อยู่ใต้กากบาท
+No value fits the others chosen.	ไม่มีค่าที่เข้ากับค่าอื่นที่เลือกไว้
+No vertex is near the cross. Move the map so the cross is on one.	ไม่มีจุดยอดใกล้กากบาท เลื่อนแผนที่ให้กากบาทอยู่บนจุดยอด
+No vertex was added: the cross is off the map. Move the map under it.	ไม่ได้เพิ่มจุดยอด: กากบาทอยู่นอกแผนที่ เลื่อนแผนที่ให้อยู่ใต้กากบาท
+No vertex was added: the cross is where the last one is. Move the map under it.	ไม่ได้เพิ่มจุดยอด: กากบาทอยู่ที่จุดยอดล่าสุด เลื่อนแผนที่ก่อน
+Nothing was added. Fill in: {fields}.	ไม่ได้เพิ่มอะไร ให้กรอก: {fields}
+Nothing was added. Not a value the field can hold, in: {fields}.	ไม่ได้เพิ่มอะไร มีค่าที่ฟิลด์เก็บไม่ได้ใน: {fields}
+Nothing was added: the cross is off the map. Move the map under it.	ไม่ได้เพิ่มอะไร: กากบาทอยู่นอกแผนที่ เลื่อนแผนที่ให้อยู่ใต้กากบาท
+Nothing was changed: the cross is off the map. Move the map under it.	ไม่ได้เปลี่ยนอะไร: กากบาทอยู่นอกแผนที่ เลื่อนแผนที่ให้อยู่ใต้กากบาท
+Nothing was changed: the cross is on the vertex next to it, and two in one place make an edge of no length. Move the map.	ไม่ได้เปลี่ยนอะไร: กากบาทอยู่บนจุดยอดที่อยู่ติดกัน ถ้าจุดยอดสองจุดอยู่ที่เดียวกันจะได้ขอบที่ไม่มีความยาว ให้เลื่อนแผนที่
+Pick Feature at Cross	เลือกฟีเจอร์ที่กากบาท
+Pick Vertex at Cross	เลือกจุดยอดที่กากบาท
+Put the cross on a feature of {layer} and pick it.	วางกากบาทบนฟีเจอร์ของ {layer} แล้วเลือก
+Record a Track	บันทึกเส้นทาง
+Recording a track: its positions are drawn on the map. Stop adds it to the Tracks layer.	กำลังบันทึกเส้นทาง ตำแหน่งจะแสดงบนแผนที่ กด หยุด เพื่อเพิ่มลงชั้นข้อมูลเส้นทาง
+Remove Them	ลบออก
+Remove Unused Copies	ลบสำเนาที่ไม่ได้ใช้
+Removing the unused copies…	กำลังลบสำเนาที่ไม่ได้ใช้…
+Send Field Package	ส่งแพ็กเกจงานภาคสนาม
+Show My Position	แสดงตำแหน่งของฉัน
+Show this layer	แสดงชั้นข้อมูลนี้
+Stop the Track	หยุดบันทึกเส้นทาง
+Take Photo	ถ่ายภาพ
+Take this photo off the feature	นำภาพนี้ออกจากฟีเจอร์
+Template	แม่แบบ
+The cross is off the map: move the map under it.	กากบาทอยู่นอกแผนที่ เลื่อนแผนที่ให้อยู่ใต้กากบาท
+The desktop interface is on. View › Touch Interface brings this one back.	เปิดอินเทอร์เฟซเดสก์ท็อปแล้ว กลับมาหน้านี้ได้ที่ มุมมอง › อินเทอร์เฟซสัมผัส
+The photo wasn't attached to the feature. It is kept at {paths}.	ไม่ได้แนบภาพกับฟีเจอร์ ภาพเก็บไว้ที่ {paths}
+The template {name} is no longer on this layer.	แม่แบบ {name} ไม่อยู่ในชั้นข้อมูลนี้แล้ว
+The track is kept and still recorded: Stop tries to add it again.	เก็บเส้นทางไว้และยังบันทึกอยู่ กด หยุด เพื่อลองเพิ่มอีกครั้ง
+The {field} field added for it was taken away again.	นำฟิลด์ {field} ที่เพิ่มไว้ออกแล้ว
+This device's position isn't known yet.	ยังไม่ทราบตำแหน่งของอุปกรณ์นี้
+This map has no layer to capture into. Add Data puts one on it.	แผนที่นี้ไม่มีชั้นข้อมูลให้เก็บข้อมูลลงไป กด เพิ่มข้อมูล เพื่อเพิ่มชั้นข้อมูล
+This map has no layers yet. Add Data puts one on it.	แผนที่นี้ยังไม่มีชั้นข้อมูล กด เพิ่มข้อมูล เพื่อเพิ่มชั้นข้อมูล
+Undo Vertex	เลิกทำจุดยอด
+Use Average ({n})	ใช้ค่าเฉลี่ย ({n})
+Use Average	ใช้ค่าเฉลี่ย
+Use the Desktop Interface	ใช้อินเทอร์เฟซเดสก์ท็อป
+Wait for the unused copies to be removed.	รอให้ลบสำเนาที่ไม่ได้ใช้เสร็จก่อน
+Zoom to this layer	ซูมไปที่ชั้นข้อมูลนี้
+a date and time	วันที่และเวลา
+a date, as 2026-03-05	วันที่ เช่น 2026-03-05
+a number from {min} to {max}	ตัวเลขตั้งแต่ {min} ถึง {max}
+a number	ตัวเลข
+{added} Its {n} photo(s) are named in its {field} field.	{added} ภาพ {n} ภาพถูกระบุไว้ในฟิลด์ {field}
+Added a photos field to {layer}: it lists each feature's photos.	เพิ่มฟิลด์ภาพใน {layer} แล้ว ฟิลด์นี้เก็บรายการภาพของแต่ละฟีเจอร์
+Attached {n} photo(s) to the feature, in its {field} field.	แนบภาพ {n} ภาพกับฟีเจอร์ในฟิลด์ {field} แล้ว
+Nothing was added or attached: {layer}'s field {field} isn't a text field to list the photos in.	ไม่ได้เพิ่มหรือแนบอะไร: ฟิลด์ {field} ของ {layer} ไม่ใช่ฟิลด์ข้อความที่ใช้เก็บรายการภาพได้
+The feature's {field} field lists the photo(s) already.	ฟิลด์ {field} ของฟีเจอร์มีภาพนี้อยู่แล้ว
+Added the track to {layer}: {notes}.	เพิ่มเส้นทางลงใน {layer} แล้ว: {notes}
+Averaging {n} positions: about {spread} m from their average (root mean square).	กำลังเฉลี่ย {n} ตำแหน่ง: ห่างจากค่าเฉลี่ยประมาณ {spread} m (รากที่สองของค่าเฉลี่ยกำลังสอง)
+Averaging: waiting for the first position…	กำลังเฉลี่ย: รอตำแหน่งแรก…
+Recording a track: {n} positions	กำลังบันทึกเส้นทาง: {n} ตำแหน่ง
+Recording a track: {n} positions, {m} min	กำลังบันทึกเส้นทาง: {n} ตำแหน่ง {m} นาที
+The track has breaks where this device's position was off: it is stored in {n} parts, not joined across them.	เส้นทางขาดเป็นช่วงตอนที่ปิดตำแหน่งของอุปกรณ์ จึงเก็บเป็น {n} ส่วน ไม่ได้ต่อเข้าด้วยกัน
+The track wasn't added: it has fewer than two positions.	ไม่ได้เพิ่มเส้นทาง: มีน้อยกว่าสองตำแหน่ง
+The track wasn't added: this device's position was off between each of its positions, so no part of it has two.	ไม่ได้เพิ่มเส้นทาง: ตำแหน่งของอุปกรณ์ปิดอยู่ระหว่างทุกตำแหน่ง จึงไม่มีส่วนไหนมีสองตำแหน่ง
+Track paused: this device's position is off.	หยุดบันทึกเส้นทางชั่วคราว: ตำแหน่งของอุปกรณ์ปิดอยู่
+Track {start}	เส้นทาง {start}
+Track	เส้นทาง
+{n} of the oldest positions were dropped before they could be taken: at most {kept} are kept between looks.	ทิ้งตำแหน่งเก่าสุด {n} ตำแหน่งก่อนนำมาใช้ได้ ระหว่างการอ่านแต่ละครั้งเก็บได้ไม่เกิน {kept} ตำแหน่ง
+{n} positions over {m} min	{n} ตำแหน่ง ใน {m} นาที
+{n} positions were left out of the track: each came after a later one.	ไม่ได้รวม {n} ตำแหน่งในเส้นทาง: แต่ละตำแหน่งมาหลังตำแหน่งที่ใหม่กว่า
+{n} positions were left out of the track: each was alone between two breaks, too few for a line.	ไม่ได้รวม {n} ตำแหน่งในเส้นทาง: แต่ละตำแหน่งอยู่ลำพังระหว่างช่วงขาด น้อยเกินไปที่จะเป็นเส้น
+{n} positions were left out of the track: each was less exact than {m} m.	ไม่ได้รวม {n} ตำแหน่งในเส้นทาง: แต่ละตำแหน่งแม่นยำน้อยกว่า {m} m
+{n} positions	{n} ตำแหน่ง
