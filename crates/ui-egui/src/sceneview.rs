@@ -480,13 +480,11 @@ impl Corners {
         });
         let text = if utm {
             let (mut e, mut n) = ((f64::INFINITY, f64::NEG_INFINITY), (f64::INFINITY, f64::NEG_INFINITY));
-            for i in 0..=8 {
-                let f = f64::from(i) / 8.0;
-                let (lon, lat) = (sw.x + (ne.x - sw.x) * f, sw.y + (ne.y - sw.y) * f);
-                for c in [Coord::new(lon, sw.y), Coord::new(lon, ne.y), Coord::new(sw.x, lat), Coord::new(ne.x, lat)] {
-                    if let Some((x, y)) = utm::to_utm_in_zone(c, zone, north) {
-                        (e, n) = ((e.0.min(x), e.1.max(x)), (n.0.min(y), n.1.max(y)));
-                    }
+            // A parallel's northing is extreme on the central meridian, a meridian's easting on
+            // the equator.
+            for (lon, lat) in edge_points([sw.x, sw.y, ne.x, ne.y], utm::central_meridian(zone), 0.0) {
+                if let Some((x, y)) = utm::to_utm_in_zone(Coord::new(lon, lat), zone, north) {
+                    (e, n) = ((e.0.min(x), e.1.max(x)), (n.0.min(y), n.1.max(y)));
                 }
             }
             if e.0.is_finite() && n.0.is_finite() {
@@ -526,18 +524,36 @@ impl Corners {
             return Ok(v);
         }
         let mut b = Extent::EMPTY;
-        for i in 0..=8 {
-            let f = f64::from(i) / 8.0;
-            let (x, y) = (w + (e - w) * f, s + (n - s) * f);
-            for (x, y) in [(x, s), (x, n), (w, y), (e, y)] {
-                let c = utm::from_utm(self.zone, self.north, x, y)
-                    .filter(|c| c.y.abs() <= 85.0)
-                    .ok_or_else(|| tl!("These eastings and northings are not in that UTM zone").to_string())?;
-                b.expand(c);
-            }
+        // A side of constant northing is farthest from the equator on the central meridian
+        // (500,000 m E), a side of constant easting farthest from it on the equator.
+        let equator = if self.north { 0.0 } else { 10_000_000.0 };
+        for (x, y) in edge_points(v, 500_000.0, equator) {
+            let c = utm::from_utm(self.zone, self.north, x, y)
+                .filter(|c| c.y.abs() <= 85.0)
+                .ok_or_else(|| tl!("These eastings and northings are not in that UTM zone").to_string())?;
+            b.expand(c);
         }
         Ok([b.min_x.max(-180.0), b.min_y, b.max_x.min(180.0), b.max_y])
     }
+}
+
+/// Places along the sides of the box `[x0, y0, x1, y1]` for the box around it in another system:
+/// 33 along each side, and where a side crosses `mid_x` (on its bottom and top) and `mid_y` (on its
+/// left and right), where a side's extreme can fall between them.
+fn edge_points([x0, y0, x1, y1]: [f64; 4], mid_x: f64, mid_y: f64) -> Vec<(f64, f64)> {
+    let mut pts = Vec::with_capacity(4 * 33 + 4);
+    for i in 0..=32 {
+        let f = f64::from(i) / 32.0;
+        let (x, y) = (x0 + (x1 - x0) * f, y0 + (y1 - y0) * f);
+        pts.extend([(x, y0), (x, y1), (x0, y), (x1, y)]);
+    }
+    if (x0..=x1).contains(&mid_x) {
+        pts.extend([(mid_x, y0), (mid_x, y1)]);
+    }
+    if (y0..=y1).contains(&mid_y) {
+        pts.extend([(x0, mid_y), (x1, mid_y)]);
+    }
+    pts
 }
 
 /// West, south, east or north (`i`, 0 to 3), as the boxes name them.
@@ -1754,6 +1770,16 @@ mod tests {
         let ub = u.bbox().unwrap();
         assert!(ub[0] <= 100.4 && ub[1] <= 13.6 && ub[2] >= 100.7 && ub[3] >= 13.9, "{ub:?}");
         assert!(ub.iter().zip([100.4, 13.6, 100.7, 13.9]).all(|(a, b)| (a - b).abs() < 0.02), "{ub:?}");
+        // A box of metres across the central meridian: its top reaches farthest north there.
+        let wide = Corners {
+            utm: true,
+            zone: 32,
+            north: true,
+            text: ["100000", "6500000", "800000", "6600000"].map(String::from),
+            ..Corners::default()
+        };
+        let top = rustgis_engine::geom::utm::from_utm(32, true, 500_000.0, 6_600_000.0).unwrap();
+        assert!(wide.bbox().unwrap()[3] >= top.y, "{:?} {top:?}", wide.bbox());
         assert_eq!(read_degrees(" 100.25° "), Some(100.25));
         assert_eq!(read_degrees("\u{2212}5"), Some(-5.0));
         assert_eq!(read_degrees("east"), None);
