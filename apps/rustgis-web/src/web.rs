@@ -735,6 +735,10 @@ async fn fetch_reached(
     omit: &'static [u16],
 ) -> Result<rustgis_ui_egui::rustgis_engine::render::rustgis_tiles::cache::Fetched, String> {
     use rustgis_ui_egui::rustgis_engine::render::rustgis_tiles::{cache::RequestDiagnostics, failure::Failure};
+    // The app's own files (its Thai fonts) are named relative to the page: the address checks
+    // below read only absolute ones.
+    let absolute = against_page(url);
+    let url = absolute.as_str();
     let mut diagnostics = RequestDiagnostics::with_capture(url, "GET", capture);
     diagnostics.omit_statuses(omit);
     let answer = async {
@@ -1135,6 +1139,19 @@ async fn head(
 }
 
 /// Checks the URL as the browser parses it, before any request or login renewal is sent.
+/// `url` read against the page's address when it is relative, as the browser's own fetch reads
+/// it (the app's own files, such as its fonts); an absolute or unreadable one as it is.
+fn against_page(url: &str) -> String {
+    if web_sys::Url::new(url).is_ok() {
+        return url.to_string();
+    }
+    web_sys::window()
+        .and_then(|w| w.location().href().ok())
+        .and_then(|page| web_sys::Url::new_with_base(url, &page).ok())
+        .map(|u| u.href())
+        .unwrap_or_else(|| url.to_string())
+}
+
 fn check_destination(url: &str, ceiling: rustgis_ui_egui::rustgis_engine::render::rustgis_tiles::address::Reach) -> Result<String, String> {
     crate::request::destination(url, ceiling, |url| {
         web_sys::Url::new(url).map(|normalized| normalized.href()).map_err(|_| "not a valid request address".into())
