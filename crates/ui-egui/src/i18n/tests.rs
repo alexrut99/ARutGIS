@@ -432,3 +432,180 @@ fn the_expression_help_is_thai() {
     let missing: Vec<&str> = keys.iter().copied().filter(|k| catalog.get(*k).is_none_or(|t| t == k)).collect();
     assert!(missing.is_empty(), "{} without Thai:\n{}", missing.len(), missing.join("\n"));
 }
+
+/// The interface strings written in the source: the literals given to `tl!`, `tl_raw!` and the
+/// `fmt` family in the interface crates and apps, test code left out.
+fn source_strings() -> Vec<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut files = Vec::new();
+    for dir in ["crates/ui-egui/src", "crates/ui-touch/src", "apps/rustgis/src", "apps/rustgis-web/src", "apps/rustgis-mobile/src"] {
+        let mut stack = vec![root.join(dir)];
+        while let Some(d) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&d) else { continue };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    if p.file_name().is_some_and(|n| n != "tests") {
+                        stack.push(p);
+                    }
+                } else if p.extension().is_some_and(|x| x == "rs")
+                    && p.file_name().is_some_and(|n| n != "tests.rs" && !n.to_string_lossy().ends_with("_tests.rs"))
+                {
+                    files.push(p);
+                }
+            }
+        }
+    }
+    files.sort();
+    let mut found = Vec::new();
+    for f in files {
+        let Ok(text) = std::fs::read_to_string(&f) else { continue };
+        // Up to the file's test module.
+        let end = text.find("#[cfg(test)]\nmod ").unwrap_or(text.len());
+        let src = &text[..end];
+        let name = f.strip_prefix(&root).unwrap_or(&f).display().to_string();
+        for s in literals_after(src, &["tl!(", "tl_raw!(", "fmt(", "fmt_raw(", "t(", "t_raw("]) {
+            found.push((name.clone(), s));
+        }
+        // The template is the second argument of the context forms.
+        for s in second_literals_after(src, &["fmt_context(", "t_context(", "t_raw_context("]) {
+            found.push((name.clone(), s));
+        }
+    }
+    found
+}
+
+/// The string literals right after each of `calls` (not part of a longer name) in `src`.
+fn literals_after(src: &str, calls: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for call in calls {
+        let mut from = 0;
+        while let Some(i) = src[from..].find(call) {
+            let at = from + i;
+            from = at + call.len();
+            let before = src[..at].chars().next_back();
+            if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+                continue;
+            }
+            if let Some((s, _)) = rust_literal(src[from..].trim_start()) {
+                out.push(s);
+            }
+        }
+    }
+    out
+}
+
+/// The second argument of each of `calls` in `src`, when it is a string literal.
+fn second_literals_after(src: &str, calls: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for call in calls {
+        let mut from = 0;
+        while let Some(i) = src[from..].find(call) {
+            let at = from + i;
+            from = at + call.len();
+            let before = src[..at].chars().next_back();
+            if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+                continue;
+            }
+            let rest = src[from..].trim_start();
+            let Some((_, n)) = rust_literal(rest) else { continue };
+            let rest = rest[n..].trim_start();
+            let Some(rest) = rest.strip_prefix(',') else { continue };
+            if let Some((s, _)) = rust_literal(rest.trim_start()) {
+                out.push(s);
+            }
+        }
+    }
+    out
+}
+
+/// The value of the Rust string literal `s` starts with, and how long it is; `None` when it
+/// doesn't start with one.
+fn rust_literal(s: &str) -> Option<(String, usize)> {
+    if let Some(raw) = s.strip_prefix('r') {
+        let hashes = raw.len() - raw.trim_start_matches('#').len();
+        let body = raw[hashes..].strip_prefix('"')?;
+        let close = format!("\"{}", "#".repeat(hashes));
+        let end = body.find(&close)?;
+        return Some((body[..end].to_string(), 1 + hashes + 1 + end + close.len()));
+    }
+    let body = s.strip_prefix('"')?;
+    let mut out = String::new();
+    let mut chars = body.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' => return Some((out, i + 2)),
+            '\\' => match chars.next()?.1 {
+                'n' => out.push('\n'),
+                't' => out.push('\t'),
+                'r' => out.push('\r'),
+                '0' => out.push('\0'),
+                '\\' => out.push('\\'),
+                '"' => out.push('"'),
+                '\'' => out.push('\''),
+                'u' => {
+                    let rest: String = chars.by_ref().map(|(_, c)| c).take_while(|c| *c != '}').collect();
+                    out.push(u32::from_str_radix(rest.trim_start_matches('{'), 16).ok().and_then(char::from_u32)?);
+                }
+                '\n' => {
+                    // A line continued: the next line's leading space is left out.
+                    while chars.clone().next().is_some_and(|(_, c)| c.is_whitespace()) {
+                        chars.next();
+                    }
+                }
+                _ => return None,
+            },
+            c => out.push(c),
+        }
+    }
+    None
+}
+
+/// Whether `s` has letters outside its `{placeholders}`: one that is only placeholders and marks
+/// reads the same in every language.
+fn has_words(s: &str) -> bool {
+    let mut depth = 0;
+    s.chars().any(|c| {
+        match c {
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            c if depth == 0 && c.is_alphabetic() => return true,
+            _ => {}
+        }
+        false
+    })
+}
+
+/// Every interface string written in the source has a Thai entry (not only those another
+/// catalog has), so a new one isn't left in English. Strings with no words of their own are left
+/// out.
+#[test]
+fn every_interface_string_in_the_source_is_thai() {
+    let th = Lang::from_code("th").unwrap_or(Lang::EN);
+    let (thai, _) = parse(th.0.source);
+    let contextual = |s: &str| th.0.catalog().values().any(|m| m.contains_key(s));
+    let strings = source_strings();
+    assert!(strings.len() > 4000, "the source scan finds the interface's strings ({})", strings.len());
+    let mut missing: Vec<String> = strings
+        .into_iter()
+        .filter(|(_, s)| has_words(s) && !thai.contains_key(s) && !contextual(s))
+        .map(|(f, s)| format!("{f}: {s:?}"))
+        .collect();
+    missing.sort();
+    missing.dedup();
+    assert!(missing.is_empty(), "{} missing from th.tsv:\n{}", missing.len(), missing.join("\n"));
+}
+
+#[test]
+fn rust_literals_are_read_as_written() {
+    assert_eq!(rust_literal(r#""a \"b\"\n" x"#), Some(("a \"b\"\n".to_string(), 11)));
+    assert_eq!(rust_literal("\"one \\\n        two\""), Some(("one two".to_string(), 19)));
+    assert_eq!(rust_literal(r##"r#"say "hi""# x"##), Some(("say \"hi\"".to_string(), 13)));
+    assert_eq!(rust_literal("\"\\u{2212}5\""), Some(("\u{2212}5".to_string(), 11)));
+    assert_eq!(rust_literal("name)"), None);
+    assert!(has_words("{n} rows") && has_words("z") && !has_words("{path}: {reason}") && !has_words("{a} × {b}"));
+    assert_eq!(
+        literals_after("tl!(\"Open\") x.fmt(\"no\") format(\"no\") fmt(\"{n} rows\", &[])", &["tl!(", "fmt("]),
+        vec!["Open", "{n} rows"]
+    );
+}
