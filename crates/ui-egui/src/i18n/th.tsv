@@ -5780,3 +5780,22 @@ True metres between the grid's heights. Empty: the ruler's step when it has one,
 Auto:	อัตโนมัติ:
 Empty the box: its automatic value	ล้างช่อง: ใช้ค่าอัตโนมัติ
 type a number of metres, or leave it empty for Auto	พิมพ์ตัวเลขเป็นเมตร หรือเว้นว่างไว้เพื่อใช้ค่าอัตโนมัติ
+Draw on the Map…	วาดบนแผนที่…
+Drag a box on the map: the scene shows what is inside it. Esc goes back to the scene as it was	ลากกรอบบนแผนที่ ฉากจะแสดงพื้นที่ในกรอบนั้น กด Esc เพื่อกลับไปที่ฉากเดิม
+Corners	พิกัดมุม
+UTM metres	UTM (เมตร)
+North of the equator	ซีกโลกเหนือ
+South of the equator	ซีกโลกใต้
+easting	ค่าตะวันออก (E)
+northing	ค่าเหนือ (N)
+longitude	ลองจิจูด
+latitude	ละติจูด
+type a number of degrees	พิมพ์ตัวเลขเป็นองศา
+type a number of metres	พิมพ์ตัวเลขเป็นเมตร
+West is less than East	ค่าทิศตะวันตกต้องน้อยกว่าทิศตะวันออก
+South is less than North	ค่าทิศใต้ต้องน้อยกว่าทิศเหนือ
+Longitudes are -180 to 180, latitudes -85 to 85	ลองจิจูดต้องอยู่ระหว่าง -180 ถึง 180 และละติจูดระหว่าง -85 ถึง 85
+These eastings and northings are not in that UTM zone	ค่าพิกัดตะวันออกและเหนือนี้ไม่อยู่ในโซน UTM ที่เลือก
+Use These Corners	ใช้พิกัดมุมนี้
+The scene shows the box these corners make	ฉากจะแสดงกรอบตามพิกัดมุมที่พิมพ์
+Study Area: drag a box on the map · Esc goes back to the 3D scene	พื้นที่ศึกษา: ลากกรอบบนแผนที่ · กด Esc เพื่อกลับไปที่ฉาก 3 มิติ

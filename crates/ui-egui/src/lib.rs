@@ -3281,7 +3281,11 @@ impl RustGisApp {
             self.map.cancel_sketch();
             // Esc chooses Explore: a plugin's pick stops waiting for the map, as for any tool.
             pluginpanel::cancel_pick(self);
+            // The 3D scene's study area being drawn goes back to the scene.
+            sceneview::cancel_area_pick(self);
         }
+        // Another map or project chosen: the 3D scene's study area being drawn was for the one before.
+        sceneview::drop_stale_area_pick(self);
         // Nested commands (including scripts) can replace rows too; never retarget a chosen
         // vertex or held gesture to the replacement feature at the same row.
         crate::vertexedit::cancel_stale_drag(self);

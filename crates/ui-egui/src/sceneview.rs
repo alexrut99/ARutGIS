@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use crate::RustGisApp;
 use crate::theme::{Tokens, regular, semibold};
+use rustgis_engine::Tool;
 
 /// What the view keeps between frames.
 #[derive(Default)]
@@ -52,6 +53,9 @@ pub struct SceneView {
     picking: Option<Job<(Drawn, [u32; 2]), Result<Option<scene3d::Picked>, String>>>,
     /// The project the view was for: another one drops what it kept.
     opened: u64,
+    /// The study area is being drawn on the map, for the project and map it was started on
+    /// ([`whose`]): a box dragged there is that map's scene's.
+    area_pick: Option<(u64, u64)>,
 }
 
 /// Work running on a thread of its own: what it is for, where its answer lands, and its Cancel,
@@ -202,10 +206,16 @@ pub fn open(app: &mut RustGisApp, p: &Value) -> Result<Value, String> {
             made?;
         }
     }
+    app.scene3d.area_pick = None;
+    back_to_scene(app);
+    Ok(Value::Null)
+}
+
+/// The view shown again, in place of the map, the map book and a layout.
+fn back_to_scene(app: &mut RustGisApp) {
     app.mb.active = false;
     let _ = app.run("layout.close", Value::Null);
     app.scene3d.shown = true;
-    Ok(Value::Null)
 }
 
 /// Whether the active map's scene shows.
@@ -399,7 +409,14 @@ fn ground_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
         run(app, "scene.set", json!({"walls": format!("#{:02X}{:02X}{:02X}", d.r(), d.g(), d.b())}));
     }
     ui.separator();
-    ui.menu_button(tl!("Study Area"), |ui| {
+    study_area(app, ui, scene);
+}
+
+/// The study area: the DEM's extent, the map's view, a layer's extent, a box drawn on the map, or
+/// its corners typed in degrees or UTM metres; in a box that stays open while it is typed in.
+fn study_area(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
+    settings_popup(ui, tl!("Study Area").to_string(), |ui| {
+        ui.set_min_width(320.0);
         if let Some(d) = scene.dem.clone()
             && ui.button(tl!("The DEM's Extent")).clicked()
         {
@@ -410,16 +427,311 @@ fn ground_row(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
             run(app, "scene.set", json!({"extent": "view"}));
             ui.close();
         }
+        if ui
+            .button(tl!("Draw on the Map…"))
+            .on_hover_text(tl!("Drag a box on the map: the scene shows what is inside it. Esc goes back to the scene as it was"))
+            .clicked()
+        {
+            draw_area(app);
+            ui.close();
+        }
         let names: Vec<String> = app.session.map().layers.iter().map(|l| l.name.clone()).collect();
-        ui.menu_button(tl!("A Layer's Extent"), |ui| {
-            for n in names {
-                if ui.button(&n).clicked() {
-                    run(app, "scene.set", json!({"extentOf": n}));
-                    ui.close();
+        if !names.is_empty() {
+            ui.label(tl!("A Layer's Extent"));
+            egui::ScrollArea::vertical().id_salt("scene3d_area_layers").max_height(140.0).show(ui, |ui| {
+                for n in names {
+                    if ui.button(&n).clicked() {
+                        run(app, "scene.set", json!({"extentOf": n}));
+                        ui.close();
+                    }
+                }
+            });
+        }
+        ui.separator();
+        area_corners(app, ui, scene);
+    });
+}
+
+/// The study area's corners as typed: in degrees, or in UTM metres in a zone; the scene's
+/// extent they were written from, and why the last ones typed weren't taken.
+#[derive(Clone, Default)]
+struct Corners {
+    utm: bool,
+    zone: u8,
+    north: bool,
+    /// West, south, east and north.
+    text: [String; 4],
+    from: [f64; 4],
+    error: Option<String>,
+}
+
+impl Corners {
+    /// The scene's `extent` (Web Mercator metres) written in degrees, or with `utm` in UTM metres
+    /// in `zone` (the zone of its middle when none is given): the box of eastings and northings
+    /// around it, to the metre.
+    fn of(extent: [f64; 4], utm: bool, zone: Option<(u8, bool)>) -> Corners {
+        use rustgis_engine::geom::{Coord, merc_to_lonlat, utm};
+        let [x0, y0, x1, y1] = extent;
+        let (sw, ne) = (merc_to_lonlat(Coord::new(x0, y0)), merc_to_lonlat(Coord::new(x1, y1)));
+        let mid = Coord::new((sw.x + ne.x) / 2.0, (sw.y + ne.y) / 2.0);
+        let (zone, north) = zone.unwrap_or_else(|| {
+            let z = utm::utm_zone(mid).unwrap_or_else(|| (((mid.x + 180.0) / 6.0).floor() as i64 + 1).clamp(1, 60) as u8);
+            (z, mid.y >= 0.0)
+        });
+        let text = if utm {
+            let (mut e, mut n) = ((f64::INFINITY, f64::NEG_INFINITY), (f64::INFINITY, f64::NEG_INFINITY));
+            // A parallel's northing is extreme on the central meridian, a meridian's easting on
+            // the equator.
+            for (lon, lat) in edge_points([sw.x, sw.y, ne.x, ne.y], utm::central_meridian(zone), 0.0) {
+                if let Some((x, y)) = utm::to_utm_in_zone(Coord::new(lon, lat), zone, north) {
+                    (e, n) = ((e.0.min(x), e.1.max(x)), (n.0.min(y), n.1.max(y)));
                 }
             }
-        });
+            if e.0.is_finite() && n.0.is_finite() {
+                [e.0.floor(), n.0.floor(), e.1.ceil(), n.1.ceil()].map(plain_metres)
+            } else {
+                Default::default()
+            }
+        } else {
+            [sw.x, sw.y, ne.x, ne.y].map(plain_degrees)
+        };
+        Corners { utm, zone, north, text, from: extent, error: None }
+    }
+
+    /// The box `[west, south, east, north]` in degrees the corners typed give, or why they don't
+    /// give one. A box of UTM metres is the box of degrees around it.
+    fn bbox(&self) -> Result<[f64; 4], String> {
+        use rustgis_engine::geom::{Extent, utm};
+        let mut v = [0.0; 4];
+        for (i, t) in self.text.iter().enumerate() {
+            let read = if self.utm { read_metres(t).ok().flatten() } else { read_degrees(t) };
+            v[i] = read.ok_or_else(|| {
+                let what = if self.utm { tl!("type a number of metres") } else { tl!("type a number of degrees") };
+                format!("{}: {}", side_name(i), what)
+            })?;
+        }
+        let [w, s, e, n] = v;
+        if w >= e {
+            return Err(tl!("West is less than East").to_string());
+        }
+        if s >= n {
+            return Err(tl!("South is less than North").to_string());
+        }
+        if !self.utm {
+            if w < -180.0 || e > 180.0 || s < -85.0 || n > 85.0 {
+                return Err(tl!("Longitudes are -180 to 180, latitudes -85 to 85").to_string());
+            }
+            return Ok(v);
+        }
+        let mut b = Extent::EMPTY;
+        // A side of constant northing is farthest from the equator on the central meridian
+        // (500,000 m E), a side of constant easting farthest from it on the equator.
+        let equator = if self.north { 0.0 } else { 10_000_000.0 };
+        for (x, y) in edge_points(v, 500_000.0, equator) {
+            let c = utm::from_utm(self.zone, self.north, x, y)
+                .filter(|c| c.y.abs() <= 85.0)
+                .ok_or_else(|| tl!("These eastings and northings are not in that UTM zone").to_string())?;
+            b.expand(c);
+        }
+        Ok([b.min_x.max(-180.0), b.min_y, b.max_x.min(180.0), b.max_y])
+    }
+}
+
+/// Places along the sides of the box `[x0, y0, x1, y1]` for the box around it in another system:
+/// 33 along each side, and where a side crosses `mid_x` (on its bottom and top) and `mid_y` (on its
+/// left and right), where a side's extreme can fall between them.
+fn edge_points([x0, y0, x1, y1]: [f64; 4], mid_x: f64, mid_y: f64) -> Vec<(f64, f64)> {
+    let mut pts = Vec::with_capacity(4 * 33 + 4);
+    for i in 0..=32 {
+        let f = f64::from(i) / 32.0;
+        let (x, y) = (x0 + (x1 - x0) * f, y0 + (y1 - y0) * f);
+        pts.extend([(x, y0), (x, y1), (x0, y), (x1, y)]);
+    }
+    if (x0..=x1).contains(&mid_x) {
+        pts.extend([(mid_x, y0), (mid_x, y1)]);
+    }
+    if (y0..=y1).contains(&mid_y) {
+        pts.extend([(x0, mid_y), (x1, mid_y)]);
+    }
+    pts
+}
+
+/// West, south, east or north (`i`, 0 to 3), as the boxes name them.
+fn side_name(i: usize) -> &'static str {
+    match i {
+        0 => tl!("West"),
+        1 => tl!("South"),
+        2 => tl!("East"),
+        _ => tl!("North"),
+    }
+}
+
+/// The study area's corners typed, in degrees or UTM metres: set by Enter in a box or the button,
+/// so a box changed alone doesn't build the scene again.
+fn area_corners(app: &mut RustGisApp, ui: &mut Ui, scene: &Scene) {
+    let id = egui::Id::unique("scene3d_corners");
+    let mut c =
+        ui.data(|d| d.get_temp::<Corners>(id)).filter(|c| c.from == scene.extent).unwrap_or_else(|| Corners::of(scene.extent, false, None));
+    ui.horizontal(|ui| {
+        ui.label(tl!("Corners"));
+        let was = (c.utm, c.zone, c.north);
+        ui.selectable_value(&mut c.utm, false, tl!("Degrees"));
+        ui.selectable_value(&mut c.utm, true, tl!("UTM metres"));
+        if c.utm {
+            ui.label(tl!("Zone"));
+            ui.add(egui::DragValue::new(&mut c.zone).range(1..=60));
+            ui.selectable_value(&mut c.north, true, "N").on_hover_text(tl!("North of the equator"));
+            ui.selectable_value(&mut c.north, false, "S").on_hover_text(tl!("South of the equator"));
+        }
+        if (c.utm, c.zone, c.north) != was {
+            c = Corners::of(scene.extent, c.utm, Some((c.zone, c.north)));
+        }
     });
+    let (unit, hints) = if c.utm {
+        ("m", [tl!("easting"), tl!("northing"), tl!("easting"), tl!("northing")])
+    } else {
+        ("°", [tl!("longitude"), tl!("latitude"), tl!("longitude"), tl!("latitude")])
+    };
+    let mut enter = false;
+    egui::Grid::new("scene3d_corner_boxes").num_columns(4).spacing([6.0, 6.0]).show(ui, |ui| {
+        for row in [[0, 2], [1, 3]] {
+            for i in row {
+                let name = side_name(i);
+                ui.label(name);
+                ui.horizontal(|ui| {
+                    let r = ui.add(egui::TextEdit::singleline(&mut c.text[i]).hint_text(hints[i]).desired_width(110.0));
+                    r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, name));
+                    enter |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    ui.label(unit);
+                });
+            }
+            ui.end_row();
+        }
+    });
+    if let Some(e) = &c.error {
+        ui.colored_label(ui.visuals().error_fg_color, e);
+    }
+    let used = ui.button(tl!("Use These Corners")).on_hover_text(tl!("The scene shows the box these corners make")).clicked();
+    if used || enter {
+        // Left as written, nothing changes: a box of UTM metres read back would grow a little.
+        if c.text == Corners::of(scene.extent, c.utm, Some((c.zone, c.north))).text {
+            ui.data_mut(|d| d.remove::<Corners>(id));
+            ui.close();
+            return;
+        }
+        match c.bbox() {
+            Ok(bbox) if run(app, "scene.set", json!({"bbox": bbox})).is_some() => {
+                ui.data_mut(|d| d.remove::<Corners>(id));
+                ui.close();
+                return;
+            }
+            Ok(_) => c.error = app.scene3d.message.as_ref().map(|m| m.0.clone()),
+            Err(e) => c.error = Some(e),
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(id, c));
+}
+
+/// Degrees as typed: a number, a degree sign after it let through.
+fn read_degrees(text: &str) -> Option<f64> {
+    let t = text.trim().trim_end_matches('°').trim().replace('\u{2212}', "-");
+    t.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// Degrees written to six decimals (about 10 cm), no needless zeros.
+fn plain_degrees(v: f64) -> String {
+    let s = format!("{v:.6}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" { "0".to_string() } else { s.to_string() }
+}
+
+/// Starts drawing the study area on the map: the map shows, with Explore, and a box dragged on it
+/// is the scene's ([`area_picked`]); Esc, or another tool, goes back to the scene as it was.
+fn draw_area(app: &mut RustGisApp) {
+    if app.session.tool != Tool::Explore
+        && let Err(e) = app.run("tool.set", json!({"tool": "explore"}))
+    {
+        app.scene3d.message = Some((e, true));
+        return;
+    }
+    app.map.popup = None;
+    app.scene3d.area_pick = Some(whose(app));
+    app.scene3d.shown = false;
+}
+
+/// Whether a drag on the map draws the study area.
+pub(crate) fn picks_area(app: &RustGisApp) -> bool {
+    app.scene3d.area_pick == Some(whose(app)) && app.session.map().scene.is_some()
+}
+
+/// The open project and its active map, which a study area being drawn is for.
+fn whose(app: &RustGisApp) -> (u64, u64) {
+    (app.session.opened, app.session.map().instance_id())
+}
+
+/// A study area being drawn for a map no longer active (another map or project chosen) stops,
+/// so a drag on the map now active is its own again.
+pub(crate) fn drop_stale_area_pick(app: &mut RustGisApp) {
+    if app.scene3d.area_pick.is_some_and(|w| w != whose(app)) {
+        app.scene3d.area_pick = None;
+    }
+}
+
+/// What the map waits for while the study area is drawn, for its hint.
+pub(crate) fn area_hint(app: &RustGisApp) -> Option<String> {
+    picks_area(app).then(|| tl!("Study Area: drag a box on the map · Esc goes back to the 3D scene").to_string())
+}
+
+/// A box dragged on the map, `e` in degrees: the scene's study area when it is being drawn (and
+/// the scene shows again); false when it isn't.
+pub(crate) fn area_picked(app: &mut RustGisApp, e: &rustgis_engine::geom::Extent) -> bool {
+    if !picks_area(app) {
+        return false;
+    }
+    app.scene3d.area_pick = None;
+    let bbox = [e.min_x.max(-180.0), e.min_y.max(-85.0), e.max_x.min(180.0), e.max_y.min(85.0)];
+    back_to_scene(app);
+    run(app, "scene.set", json!({"bbox": bbox}));
+    true
+}
+
+/// The study area stops being drawn (Esc, another tool): the scene shows again as it was.
+pub(crate) fn cancel_area_pick(app: &mut RustGisApp) {
+    if app.scene3d.area_pick.take().is_some() {
+        app.map.cancel_box_drag();
+        back_to_scene(app);
+    }
+}
+
+/// The scene's study area outlined on the map while a new one is drawn.
+pub(crate) fn paint_area(
+    app: &RustGisApp,
+    p: &egui::Painter,
+    t: &Tokens,
+    to_screen: impl Fn(rustgis_engine::geom::Coord) -> Option<egui::Pos2>,
+) {
+    use rustgis_engine::geom::{Coord, merc_to_lonlat};
+    if !picks_area(app) {
+        return;
+    }
+    let Some(scene) = app.session.map().scene.as_ref() else { return };
+    let [x0, y0, x1, y1] = scene.extent;
+    let (sw, ne) = (merc_to_lonlat(Coord::new(x0, y0)), merc_to_lonlat(Coord::new(x1, y1)));
+    // Each side in steps, so it bends with the globe.
+    let n = 16;
+    let mut ring = Vec::new();
+    for (a, b) in [(sw, Coord::new(ne.x, sw.y)), (Coord::new(ne.x, sw.y), ne), (ne, Coord::new(sw.x, ne.y)), (Coord::new(sw.x, ne.y), sw)] {
+        for i in 0..n {
+            let f = f64::from(i) / f64::from(n);
+            ring.push(to_screen(Coord::new(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f)));
+        }
+    }
+    let pts: Vec<egui::Pos2> = ring.into_iter().flatten().collect();
+    if pts.len() > 2 {
+        let mut closed = pts.clone();
+        closed.push(pts[0]);
+        p.extend(egui::Shape::dashed_line(&closed, Stroke::new(2.0, t.accent), 8.0, 5.0));
+    }
 }
 
 /// The toolbar's second row: how the scene is shown, and what can be done with it.
@@ -1331,6 +1643,147 @@ mod tests {
         type_in(&mut h, "Height step", "20");
         let s = scene(&h);
         assert_eq!((s.grid_step, s.grid_z_step), (Some(250.0), Some(20.0)));
+    }
+
+    /// The study area's corners typed: in degrees, set by Enter with the other corners as they
+    /// were; in UTM metres by the button; one that isn't a number, or west past east, is said and
+    /// sets nothing. The box stays open while it is typed in.
+    #[test]
+    fn the_study_areas_corners_are_typed() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        use rustgis_engine::geom::{Coord, merc_to_lonlat};
+        let mut app = RustGisApp::with_sample();
+        app.run("scene.set", json!({"bbox": [100.4, 13.6, 100.7, 13.9]})).unwrap();
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1200.0, 600.0)).with_accessibility_check(false).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                let Some(scene) = app.session.map().scene.clone() else { return };
+                ui.horizontal_wrapped(|ui| study_area(app, ui, &scene));
+            },
+            app,
+        );
+        h.run_steps(2);
+        let corners = |h: &egui_kittest::Harness<'_, RustGisApp>| {
+            let [x0, y0, x1, y1] = h.state().session.map().scene.as_ref().unwrap().extent;
+            let (a, b) = (merc_to_lonlat(Coord::new(x0, y0)), merc_to_lonlat(Coord::new(x1, y1)));
+            [a.x, a.y, b.x, b.y]
+        };
+        let near = |a: [f64; 4], b: [f64; 4]| a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-6);
+        let type_in = |h: &mut egui_kittest::Harness<'_, RustGisApp>, field: &str, text: &str, enter: bool| {
+            h.get_by_role_and_label(Role::TextInput, field).click();
+            h.run();
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+            h.key_press(egui::Key::Backspace);
+            h.get_by_role_and_label(Role::TextInput, field).type_text(text);
+            h.run();
+            if enter {
+                h.key_press(egui::Key::Enter);
+                h.run_steps(2);
+            }
+        };
+        h.get_by_label("Study Area").click();
+        h.run_steps(2);
+        type_in(&mut h, "West", "100.5", true);
+        assert!(near(corners(&h), [100.5, 13.6, 100.7, 13.9]), "{:?}", corners(&h));
+        // Not a number, and west past east: said, nothing set; the box stays open.
+        h.get_by_label("Study Area").click();
+        h.run_steps(2);
+        type_in(&mut h, "North", "lots", true);
+        assert!(h.query_by_label_contains("type a number of degrees").is_some());
+        type_in(&mut h, "North", "13.9", false);
+        type_in(&mut h, "East", "100.1", true);
+        assert!(h.query_by_label_contains("West is less than East").is_some());
+        assert!(near(corners(&h), [100.5, 13.6, 100.7, 13.9]));
+        // In UTM metres, zone 47 N (the scene's middle), by the button.
+        h.get_by_label("UTM metres").click();
+        h.run_steps(2);
+        for (field, v) in [("West", "660000"), ("South", "1510000"), ("East", "680000"), ("North", "1530000")] {
+            type_in(&mut h, field, v, false);
+        }
+        h.get_by_label("Use These Corners").click();
+        h.run_steps(2);
+        let [w, s, e, n] = corners(&h);
+        let sw = rustgis_engine::geom::utm::from_utm(47, true, 660_000.0, 1_510_000.0).unwrap();
+        let ne = rustgis_engine::geom::utm::from_utm(47, true, 680_000.0, 1_530_000.0).unwrap();
+        // The box of degrees around the box of metres: its corners inside, within a few metres.
+        assert!(w <= sw.x + 1e-9 && s <= sw.y + 1e-9 && e >= ne.x - 1e-9 && n >= ne.y - 1e-9, "{:?} {sw:?} {ne:?}", [w, s, e, n]);
+        assert!((w - sw.x).abs() < 0.01 && (n - ne.y).abs() < 0.01, "{:?}", [w, s, e, n]);
+    }
+
+    /// The study area drawn on the map: the map shows while it is, a box dragged there is the
+    /// scene's and the scene shows again; Esc goes back to the scene as it was.
+    #[test]
+    fn the_study_area_is_drawn_on_the_map() {
+        use rustgis_engine::geom::Extent;
+        let mut app = RustGisApp::with_sample();
+        app.run("scene.set", json!({"bbox": [100.4, 13.6, 100.7, 13.9]})).unwrap();
+        app.scene3d.shown = true;
+        let before = app.session.map().scene.as_ref().unwrap().extent;
+        app.run("tool.set", json!({"tool": "select"})).unwrap();
+        draw_area(&mut app);
+        assert!(picks_area(&app) && !shown(&app), "the map shows, waiting for the box");
+        assert_eq!(app.session.tool, Tool::Explore, "drags are the box's, not a selection's");
+        assert!(area_hint(&app).is_some());
+        // Esc.
+        app.run("tool.set", json!({"tool": "explore"})).unwrap();
+        assert!(!picks_area(&app) && shown(&app));
+        assert_eq!(app.session.map().scene.as_ref().unwrap().extent, before);
+        // Drawn.
+        draw_area(&mut app);
+        let e = Extent { min_x: 98.8, min_y: 18.7, max_x: 99.1, max_y: 18.9 };
+        assert!(area_picked(&mut app, &e));
+        assert!(!picks_area(&app) && shown(&app));
+        let a = rustgis_engine::geom::lonlat_to_merc(rustgis_engine::geom::Coord::new(98.8, 18.7));
+        let got = app.session.map().scene.as_ref().unwrap().extent;
+        assert!((got[0] - a.x).abs() < 1e-6 && (got[1] - a.y).abs() < 1e-6, "{got:?}");
+        // No longer waiting: a box dragged is the map's again.
+        assert!(!area_picked(&mut app, &e));
+        // Another map, with a scene of its own, chosen while it waits: its drags are its own.
+        draw_area(&mut app);
+        app.run("map.new", json!({"name": "อีกแผนที่"})).unwrap();
+        app.run("scene.set", json!({"bbox": [100.4, 13.6, 100.7, 13.9]})).unwrap();
+        let other = app.session.map().scene.as_ref().unwrap().extent;
+        assert!(!picks_area(&app) && area_hint(&app).is_none());
+        assert!(!area_picked(&mut app, &e));
+        assert_eq!(app.session.map().scene.as_ref().unwrap().extent, other);
+        assert_eq!(app.scene3d.area_pick, None, "dropped when another map was chosen");
+    }
+
+    /// Corners written and read back give the same box in degrees; in UTM metres the box around it.
+    #[test]
+    fn corners_read_back_as_written() {
+        use rustgis_engine::geom::{Coord, lonlat_to_merc};
+        let (a, b) = (lonlat_to_merc(Coord::new(100.4, 13.6)), lonlat_to_merc(Coord::new(100.7, 13.9)));
+        let extent = [a.x, a.y, b.x, b.y];
+        let c = Corners::of(extent, false, None);
+        assert_eq!(c.text, ["100.4", "13.6", "100.7", "13.9"].map(String::from));
+        let bb = c.bbox().unwrap();
+        assert!(bb.iter().zip([100.4, 13.6, 100.7, 13.9]).all(|(a, b)| (a - b).abs() < 1e-9));
+        let u = Corners::of(extent, true, None);
+        assert_eq!((u.zone, u.north), (47, true));
+        let ub = u.bbox().unwrap();
+        assert!(ub[0] <= 100.4 && ub[1] <= 13.6 && ub[2] >= 100.7 && ub[3] >= 13.9, "{ub:?}");
+        assert!(ub.iter().zip([100.4, 13.6, 100.7, 13.9]).all(|(a, b)| (a - b).abs() < 0.02), "{ub:?}");
+        // A box of metres across the central meridian: its top reaches farthest north there.
+        let wide = Corners {
+            utm: true,
+            zone: 32,
+            north: true,
+            text: ["100000", "6500000", "800000", "6600000"].map(String::from),
+            ..Corners::default()
+        };
+        let top = rustgis_engine::geom::utm::from_utm(32, true, 500_000.0, 6_600_000.0).unwrap();
+        assert!(wide.bbox().unwrap()[3] >= top.y, "{:?} {top:?}", wide.bbox());
+        assert_eq!(read_degrees(" 100.25° "), Some(100.25));
+        assert_eq!(read_degrees("\u{2212}5"), Some(-5.0));
+        assert_eq!(read_degrees("east"), None);
+        assert_eq!(plain_degrees(-0.0000001), "0");
     }
 
     #[test]
