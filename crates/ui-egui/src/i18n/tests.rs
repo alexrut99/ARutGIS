@@ -579,7 +579,10 @@ fn has_words(s: &str) -> bool {
 /// Every interface string written in the source has a Thai entry (not only those another
 /// catalog has), so a new one isn't left in English. Strings with no words of their own are left
 /// out.
+/// A release check, not a pull request's: a pull request need not translate its strings (AGENTS.md),
+/// the maintainer does before each release, running this to find them (docs/i18n.md).
 #[test]
+#[ignore = "release check: maintainers translate new strings before each release (AGENTS.md); run with --ignored"]
 fn every_interface_string_in_the_source_is_thai() {
     let th = Lang::from_code("th").unwrap_or(Lang::EN);
     let (thai, _) = parse(th.0.source);

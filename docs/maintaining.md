@@ -289,3 +289,6 @@ A proposal for a dependency answers:
 One maintainer takes the [release quality pass](contributing.md#releases) for each release and
 says so in the version-bump pull request. Each point left for the pass is fixed, filed as an issue,
 or dropped with a reply on its comment; none carries into a second release unrecorded.
+In ARutGIS the pass also translates the interface strings added since the last release into Thai,
+until `every_interface_string_in_the_source_is_thai` passes with `--ignored`
+([Thai](i18n.md)).
