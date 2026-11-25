@@ -3061,6 +3061,8 @@ fn interact(app: &mut RustGisApp, ui: &mut Ui, resp: &egui::Response, rect: Rect
             match tool {
                 // A plugin's pick waiting for a box draws it.
                 Tool::Explore if crate::pluginpanel::picks_box(app) => DragKind::Box,
+                // So does the 3D scene's study area being drawn.
+                Tool::Explore if crate::sceneview::picks_area(app) => DragKind::Box,
                 Tool::Explore if shift => DragKind::Box,
                 // Ctrl+drag turns and tilts the map, as the right button does.
                 Tool::Explore if ctrl => DragKind::Turn,
@@ -3270,6 +3272,8 @@ fn interact(app: &mut RustGisApp, ui: &mut Ui, resp: &egui::Response, rect: Rect
                 .flatten();
             if e.is_empty() {
                 // Nothing on the globe.
+            } else if (start - end).length() > 6.0 && crate::sceneview::area_picked(app, &e) {
+                // The 3D scene's study area took it.
             } else if (start - end).length() > 6.0 && crate::pluginpanel::box_picked(app, &grid, n + 1, pole) {
                 // A plugin's pick took it.
             } else if tool == Tool::Select {
@@ -3724,6 +3728,8 @@ fn overlays(app: &mut RustGisApp, ui: &mut Ui, p: &egui::Painter, rect: Rect, t:
     crate::nldiui::paint(app, p, rect, t, |c| lonlat_to_screen(app, rect, c));
     // The places a plugin's panel holds.
     crate::pluginpanel::paint(app, p, t, |c| lonlat_to_screen(app, rect, c));
+    // The 3D scene's study area, while a new one is drawn.
+    crate::sceneview::paint_area(app, p, t, |c| lonlat_to_screen(app, rect, c));
     // The spectral profile's points, while its section shows.
     crate::spectralui::paint(app, p, t, |c| lonlat_to_screen(app, rect, c));
     // Points picked for a workflow.
@@ -3926,7 +3932,9 @@ fn overlays(app: &mut RustGisApp, ui: &mut Ui, p: &egui::Painter, rect: Rect, t:
     };
     let measuring = !app.map.sketch.is_empty() && matches!(app.session.tool, Tool::Measure | Tool::MeasureArea);
     // A plugin's pick waiting for the map says what it waits for instead.
-    let hint = crate::pluginpanel::pick_hint(app).or_else(|| hint.filter(|_| !measuring).map(|h| tl!(h).to_string()));
+    let hint = crate::sceneview::area_hint(app)
+        .or_else(|| crate::pluginpanel::pick_hint(app))
+        .or_else(|| hint.filter(|_| !measuring).map(|h| tl!(h).to_string()));
     if let Some(h) = hint {
         let g = p.layout_no_wrap(h, regular(12.0), Color32::WHITE);
         let bg = Rect::from_center_size(pos2(rect.center().x, rect.max.y - 26.0), g.size() + vec2(22.0, 10.0));

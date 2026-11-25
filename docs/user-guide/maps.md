@@ -268,7 +268,11 @@ the map's first) as its ground and that raster's extent, or the map's view witho
 - **Ground opacity** (`"groundOpacity"`, 0 to 1): below 1 the ground is glass, its nearest
   surface laid over what is under it, so the wells show through it.
 - **Study Area**: the DEM's extent, the map's current view, or a layer's extent (`"extent"`,
-  `"bbox"` in degrees, `"extentOf"`), at most 2,000 km a side.
+  `"bbox"` in degrees, `"extentOf"`), at most 2,000 km a side. **Draw on the Map…** shows the map
+  with the study area dashed on it: drag a box there and the scene shows what is inside it (Esc
+  goes back to the scene as it was). Or type its **Corners**, west, south, east and north, in
+  degrees or in UTM metres in a zone (the zone of the scene's middle to begin with), and press
+  Enter or **Use These Corners**; a box of UTM metres is shown as the box of degrees around it.
 - **Layers in the Scene** (`scene.layer`): a point layer as **wells** (`"depth"`, a field of
   metres below the head; `"top"`, a field of the head's height above sea level, else the
   ground's; `"water"`, a field of the water level's depth below the head, marked by a blue ring),
