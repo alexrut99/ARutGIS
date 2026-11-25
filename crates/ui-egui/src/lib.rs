@@ -3284,6 +3284,8 @@ impl RustGisApp {
             // The 3D scene's study area being drawn goes back to the scene.
             sceneview::cancel_area_pick(self);
         }
+        // Another map or project chosen: the 3D scene's study area being drawn was for the one before.
+        sceneview::drop_stale_area_pick(self);
         // Nested commands (including scripts) can replace rows too; never retarget a chosen
         // vertex or held gesture to the replacement feature at the same row.
         crate::vertexedit::cancel_stale_drag(self);

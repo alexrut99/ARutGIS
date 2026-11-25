@@ -53,8 +53,9 @@ pub struct SceneView {
     picking: Option<Job<(Drawn, [u32; 2]), Result<Option<scene3d::Picked>, String>>>,
     /// The project the view was for: another one drops what it kept.
     opened: u64,
-    /// The study area is being drawn on the map: a box dragged there is the scene's.
-    area_pick: bool,
+    /// The study area is being drawn on the map, for the project and map it was started on
+    /// ([`whose`]): a box dragged there is that map's scene's.
+    area_pick: Option<(u64, u64)>,
 }
 
 /// Work running on a thread of its own: what it is for, where its answer lands, and its Cancel,
@@ -205,7 +206,7 @@ pub fn open(app: &mut RustGisApp, p: &Value) -> Result<Value, String> {
             made?;
         }
     }
-    app.scene3d.area_pick = false;
+    app.scene3d.area_pick = None;
     back_to_scene(app);
     Ok(Value::Null)
 }
@@ -638,13 +639,26 @@ fn draw_area(app: &mut RustGisApp) {
         return;
     }
     app.map.popup = None;
-    app.scene3d.area_pick = true;
+    app.scene3d.area_pick = Some(whose(app));
     app.scene3d.shown = false;
 }
 
 /// Whether a drag on the map draws the study area.
 pub(crate) fn picks_area(app: &RustGisApp) -> bool {
-    app.scene3d.area_pick && app.session.map().scene.is_some()
+    app.scene3d.area_pick == Some(whose(app)) && app.session.map().scene.is_some()
+}
+
+/// The open project and its active map, which a study area being drawn is for.
+fn whose(app: &RustGisApp) -> (u64, u64) {
+    (app.session.opened, app.session.map().instance_id())
+}
+
+/// A study area being drawn for a map no longer active (another map or project chosen) stops,
+/// so a drag on the map now active is its own again.
+pub(crate) fn drop_stale_area_pick(app: &mut RustGisApp) {
+    if app.scene3d.area_pick.is_some_and(|w| w != whose(app)) {
+        app.scene3d.area_pick = None;
+    }
 }
 
 /// What the map waits for while the study area is drawn, for its hint.
@@ -658,7 +672,7 @@ pub(crate) fn area_picked(app: &mut RustGisApp, e: &rustgis_engine::geom::Extent
     if !picks_area(app) {
         return false;
     }
-    app.scene3d.area_pick = false;
+    app.scene3d.area_pick = None;
     let bbox = [e.min_x.max(-180.0), e.min_y.max(-85.0), e.max_x.min(180.0), e.max_y.min(85.0)];
     back_to_scene(app);
     run(app, "scene.set", json!({"bbox": bbox}));
@@ -667,7 +681,7 @@ pub(crate) fn area_picked(app: &mut RustGisApp, e: &rustgis_engine::geom::Extent
 
 /// The study area stops being drawn (Esc, another tool): the scene shows again as it was.
 pub(crate) fn cancel_area_pick(app: &mut RustGisApp) {
-    if std::mem::take(&mut app.scene3d.area_pick) {
+    if app.scene3d.area_pick.take().is_some() {
         app.map.cancel_box_drag();
         back_to_scene(app);
     }
@@ -1714,6 +1728,15 @@ mod tests {
         assert!((got[0] - a.x).abs() < 1e-6 && (got[1] - a.y).abs() < 1e-6, "{got:?}");
         // No longer waiting: a box dragged is the map's again.
         assert!(!area_picked(&mut app, &e));
+        // Another map, with a scene of its own, chosen while it waits: its drags are its own.
+        draw_area(&mut app);
+        app.run("map.new", json!({"name": "อีกแผนที่"})).unwrap();
+        app.run("scene.set", json!({"bbox": [100.4, 13.6, 100.7, 13.9]})).unwrap();
+        let other = app.session.map().scene.as_ref().unwrap().extent;
+        assert!(!picks_area(&app) && area_hint(&app).is_none());
+        assert!(!area_picked(&mut app, &e));
+        assert_eq!(app.session.map().scene.as_ref().unwrap().extent, other);
+        assert_eq!(app.scene3d.area_pick, None, "dropped when another map was chosen");
     }
 
     /// Corners written and read back give the same box in degrees; in UTM metres the box around it.
