@@ -101,8 +101,10 @@ jobs:
             [ "$attempt" -gt 1 ] && sleep $((attempt * 20))
             choco install nsis -y --no-progress || true
           done
+          # windows-11-arm's image has NSIS already (and no winget); windows-latest's has winget
+          # but not NSIS, so it depends on Chocolatey or winget each release.
           for attempt in 1 2 3; do
-            have_nsis && break
+            have_nsis || ! command -v winget > /dev/null && break
             echo "::warning::Chocolatey didn't install NSIS; trying winget ($attempt)"
             [ "$attempt" -gt 1 ] && sleep $((attempt * 20))
             winget install --id NSIS.NSIS --exact --silent --scope machine --disable-interactivity \
