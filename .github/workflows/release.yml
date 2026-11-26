@@ -91,15 +91,26 @@ jobs:
           tools="$HOME/.dotnet/tools"
           "$tools/wix" extension add --global WixToolset.UI.wixext/5.0.2
           cygpath -w "$tools" >> "$GITHUB_PATH"
-          # The Chocolatey feed times out now and then (504) and choco still exits 0, so retry
-          # and fail here, not later in package.sh with "makensis not found".
+          # The Chocolatey feed times out now and then (503, 504) and choco still exits 0, so
+          # retry, then fall back to winget (Microsoft's community repository, which checks the
+          # installer's hash), and fail here, not later in package.sh with "makensis not found".
           nsis="/c/Program Files (x86)/NSIS/makensis.exe"
-          for attempt in 1 2 3 4 5; do
-            command -v makensis > /dev/null || [ -x "$nsis" ] && break
+          have_nsis() { command -v makensis > /dev/null || [ -x "$nsis" ]; }
+          for attempt in 1 2 3; do
+            have_nsis && break
             [ "$attempt" -gt 1 ] && sleep $((attempt * 20))
             choco install nsis -y --no-progress || true
           done
-          command -v makensis > /dev/null || [ -x "$nsis" ] || { echo "::error::NSIS did not install"; exit 1; }
+          # windows-11-arm's image has NSIS already (and no winget); windows-latest's has winget
+          # but not NSIS, so it depends on Chocolatey or winget each release.
+          for attempt in 1 2 3; do
+            have_nsis || ! command -v winget > /dev/null && break
+            echo "::warning::Chocolatey didn't install NSIS; trying winget ($attempt)"
+            [ "$attempt" -gt 1 ] && sleep $((attempt * 20))
+            winget install --id NSIS.NSIS --exact --silent --scope machine --disable-interactivity \
+              --accept-source-agreements --accept-package-agreements || true
+          done
+          have_nsis || { echo "::error::NSIS did not install from Chocolatey or winget"; exit 1; }
 
       # macOS: import the Developer ID certificate into a throwaway keychain and write the
       # App Store Connect API key for notarization. Skipped when the secrets are absent (a
